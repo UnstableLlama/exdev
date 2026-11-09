@@ -1,0 +1,16 @@
+{
+  "type": "feature",
+  "status": "draft",
+  "problem": "Conversion selects cuda:0 and each tile-quantization batch runs on one device. The parent LDLQ loop contains a TODO about splitting tile work across GPUs.",
+  "reasoning": "Adds a comma-separated devices option, uses the first selected device for the main conversion work and passes the list through quant_args. The new quantize_tiles_multigpu stages input tiles in pinned host memory, splits the batch across selected GPUs, launches work on cached per-device streams and gathers reconstructions and indices back to the first device. Events order the host copy, per-device work and final gather. Single-device use returns through the existing tile routine. A separate synchronous variant is added but the modified LDLQ and scale-search callers select the asynchronous variant.\n\nTemporary Viterbi buffers are now cached by device and K, and pinned host buffers grow for larger batches. The LDLQ outer loop and error-compensation state remain on the main device; independent tile batches are what get distributed. Golden-section scale evaluations use the same multi-GPU routine. Blockwise RMS/error helper defaults increase from 16 to 32.\n\nThe added progress expression is `100 - 100 * int(delta2 / delta1)`. After the first strict interval shrink, the ratio lies between zero and one, so integer truncation makes the displayed value 100 immediately. This is a source-level progress issue, independent of numerical quantization correctness.",
+  "impact": "Introduces multi-GPU conversion work distribution, not tensor-parallel inference. It adds stream/event and persistent-buffer lifetime requirements, plus host staging traffic. Speedup depends on workload and transfer costs; the commit alone cannot establish scaling or equivalence across devices.",
+  "links": [
+    1,
+    13,
+    22,
+    23
+  ],
+  "source_notes": "No explicit external URL, paper, issue/PR number or HF repository is present in this commit message and diff. No external source was used for this entry. Evidence is the pinned raw diff and its parent context.",
+  "confidence": "High for the dataflow and selected call sites, limited for concurrency correctness and performance because no CUDA multi-GPU run was executed. Cached buffers imply reuse assumptions that need runtime verification. The lowercase phi candidate is again a numerical variable rather than a model reference.",
+  "external_sources": []
+}
