@@ -8,7 +8,7 @@ Original tooling and commentary: [MIT](LICENSE). Upstream code and diffs: retain
 
 ## Current status
 
-The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) defines the project. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are ready for review. No training traces have been generated. Entries with source gaps are explicitly drafts.
+The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) defines the project. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; the required teacher runner is not implemented yet. No training traces have been generated.
 
 ```sh
 python3 -m unittest discover -s tests
@@ -40,7 +40,7 @@ Read the [validation report](reports/graph-validation.md) for evidence and limit
 
 ## Historical graph integration
 
-The chronological pipeline has indexed and verified the first **25 commits from the root**. It stores isolated snapshots, adds evidence-bearing Python-to-native edges, records first-parent symbol events, and links the existing Encyclopedia entries to symbols.
+The chronological pipeline passed its initial **25-commit integration checkpoint** and an independent audit through **commit 165**. The full 2,264-commit graph walk is continuing; the local status file below records its live progress. It stores isolated snapshots, adds evidence-bearing Python-to-native edges, records first-parent symbol events, and links the existing Encyclopedia entries to symbols.
 
 - **695 symbol events and 62 entry links** in the first batch; SQLite foreign-key checks pass.
 - All five graph tools are implemented with [frozen version-one schemas](schema/graph-tools-v1.json). The trusted caller sets the historical cutoff outside model arguments.
@@ -69,10 +69,10 @@ This is later-phase work; no viewer is implemented yet. See the [human browser p
 
 ## Review remediation
 
-Fable's review shifted the next priority to historical authoring correctness:
+[Fable's original review](astra-review.md), covering commit `45b7af1`, shifted the next priority to historical authoring correctness:
 ancestor-only context and merge provenance, eligible issue evidence, then the
 sandboxed teacher tools. The first 25 drafts will be redone in fresh restricted
-contexts before a trace dry run. See the [agreed remediation order](docs/review-remediation.md).
+contexts before a trace dry run. The review is preserved as historical feedback; some findings have since been addressed. See the [agreed remediation order and completed fixes](docs/review-remediation.md).
 
 The [measured storage projection](reports/graph-storage-projection.md) is about
 47.2 GiB for the original full-history layout. Removing duplicate uncompressed
