@@ -15,7 +15,7 @@ import subprocess
 import tarfile
 import tempfile
 from .bindings import supplement
-from .timeline import symbol_diff, symbols
+from .timeline import symbol_diff, symbols, read_snapshot
 from .validate import ROOT
 
 
@@ -79,8 +79,8 @@ def audit(store,limit=None):
             if upstream!=parents:raise ValueError('Upstream parent mismatch')
             serialized=json.dumps(s,sort_keys=True,separators=(',',':'))
             if hashlib.sha256(serialized.encode()).hexdigest()!=fingerprint:raise ValueError('Snapshot fingerprint mismatch')
-            stored=db.execute('SELECT snapshot,parent_sha FROM commits WHERE sha=?',(sha,)).fetchone()
-            if json.loads(stored[0])!=s or stored[1]!=(parents[0] if parents else None):raise ValueError('Timeline snapshot mismatch')
+            stored=db.execute('SELECT snapshot_path,parent_sha FROM commits WHERE sha=?',(sha,)).fetchone()
+            if read_snapshot(store,stored[0],fingerprint)!=s or stored[1]!=(parents[0] if parents else None):raise ValueError('Timeline snapshot mismatch')
             archive=store/'graphs'/(sha+'.db.gz')
             if hashlib.sha256(archive.read_bytes()).hexdigest()!=s['provenance']['backend_db_sha256']:raise ValueError('Database archive checksum mismatch')
             with tempfile.TemporaryDirectory(prefix='exdev-audit-') as tmp:
@@ -93,7 +93,7 @@ def audit(store,limit=None):
                        if p.endswith(('.py','.cpp','.cc','.cu'))}
             if supplement(s,textfiles)['edges']!=s['supplemental_edges']:raise ValueError('Binding edges do not reproduce from source')
             if parents:
-                previous=last if last and last['sha']==parents[0] else json.loads(db.execute('SELECT snapshot FROM commits WHERE sha=?',(parents[0],)).fetchone()[0])
+                previous=last if last and last['sha']==parents[0] else read_snapshot(store,*db.execute('SELECT snapshot_path,fingerprint FROM commits WHERE sha=?',(parents[0],)).fetchone())
                 before=previous['nodes']
             else:before=[]
             events=[dict(zip(('qn','event','previous_qn','file','start','end'),r)) for r in db.execute('SELECT qn,event,previous_qn,file,start,end FROM symbol_events WHERE sha=?',(sha,))]

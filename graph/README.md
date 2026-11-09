@@ -129,3 +129,18 @@ records a failure rather than asserting completion. Watcher status is in
 `store/final-graph-audit.json`. Indexing completion and audit completion are
 separate states. A full-history completion claim requires both to succeed at
 the requested final position.
+
+
+## Timeline schema v2 and merge provenance
+
+The timeline references canonical `graphs/<sha>.json.gz` files through
+`commits.snapshot_path`; it no longer duplicates their full JSON inside SQLite.
+Reads verify the stored fingerprint. Run `python3 -m graph.migrate_timeline` only
+with the indexer stopped; it acquires the index lock, validates every archive,
+retains a v1 database backup, updates transactionally and compacts the result.
+Existing snapshots and first-parent events are unchanged by migration.
+
+`symbol_event_provenance` exposes the preserved events with `origin` set to
+`merge_arrival` or `direct_commit` and all parent identities. `symbol_history`
+returns these fields too. A merge-arrival event is not automatically a new
+independent change for training. See the [authoring remediation policy](../docs/review-remediation.md).

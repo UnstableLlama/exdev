@@ -87,3 +87,31 @@ class MergeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'checksum mismatch'):mine.mine(repo,out)
 
 if __name__ == '__main__': unittest.main()
+
+class StdinTests(unittest.TestCase):
+    def test_git_helper_does_not_inherit_open_stdin(self):
+        from unittest.mock import patch
+        with patch.object(mine.subprocess, 'check_output', return_value=b'empty') as run:
+            mine.git(Path('/repo'), 'hash-object', '-t', 'tree', '--stdin')
+            self.assertEqual(run.call_args.kwargs.get('stdin'), subprocess.DEVNULL)
+
+    def test_empty_tree_hash_finishes_while_callers_stdin_stays_open(self):
+        import sys
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(['git', 'init', '-q', tmp], check=True)
+            script_dir = str(Path(__file__).parents[1] / 'scripts')
+            program = ('import sys; sys.path.insert(0, sys.argv[1]); '
+                       'from mine import git; '
+                       'print(git(sys.argv[2], "hash-object", "-t", "tree", "--stdin").decode().strip())')
+            child = subprocess.Popen([sys.executable, '-c', program, script_dir, tmp],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                self.assertEqual(child.wait(timeout=5), 0)
+                self.assertEqual(child.stdout.read().strip(), b'4b825dc642cb6eb9a060e54bf8d69288fbee4904')
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait()
+                child.stdin.close()
+                child.stdout.close()
+                child.stderr.close()

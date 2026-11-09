@@ -2,6 +2,7 @@
 """Transactional commit snapshots and first-parent symbol events with ancestry guards."""
 from collections import defaultdict
 import hashlib
+import gzip
 import json
 from pathlib import Path
 import sqlite3
@@ -43,7 +44,7 @@ def symbol_diff(before, after):
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS commits(
  sha TEXT PRIMARY KEY, position INTEGER NOT NULL UNIQUE, parents TEXT NOT NULL,
- parent_sha TEXT REFERENCES commits(sha), fingerprint TEXT NOT NULL, snapshot TEXT NOT NULL);
+ parent_sha TEXT REFERENCES commits(sha), fingerprint TEXT NOT NULL, snapshot_path TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS symbols(
  qn TEXT PRIMARY KEY, first_observed_sha TEXT NOT NULL REFERENCES commits(sha),
  last_observed_sha TEXT NOT NULL REFERENCES commits(sha));
@@ -59,17 +60,36 @@ CREATE TABLE IF NOT EXISTS entry_links(
  sha TEXT NOT NULL, qn TEXT NOT NULL, entry_id TEXT NOT NULL,
  PRIMARY KEY(sha,qn,entry_id), FOREIGN KEY(sha,qn) REFERENCES occurrences(sha,qn));
 CREATE INDEX IF NOT EXISTS events_symbol ON symbol_events(qn);
-PRAGMA user_version=1;
+CREATE VIEW IF NOT EXISTS symbol_event_provenance AS
+SELECT e.*, c.parents,
+       CASE WHEN json_array_length(c.parents)>1 THEN 'merge_arrival'
+            ELSE 'direct_commit' END AS origin
+FROM symbol_events e JOIN commits c USING(sha);
+PRAGMA user_version=2;
 '''
+
+
+def read_snapshot(directory, relative, fingerprint):
+    directory = Path(directory).resolve()
+    path = (directory / relative).resolve()
+    if not path.is_relative_to(directory):
+        raise ValueError('Snapshot path escapes its store')
+    with gzip.open(path, 'rt') as handle:
+        snapshot = json.load(handle)
+    serialized = json.dumps(snapshot, sort_keys=True, separators=(',', ':'))
+    if hashlib.sha256(serialized.encode()).hexdigest() != fingerprint:
+        raise ValueError('Snapshot fingerprint mismatch: ' + relative)
+    return snapshot
 
 
 class Timeline:
     def __init__(self, path):
-        Path(path).parent.mkdir(parents=True,exist_ok=True)
-        self.db=sqlite3.connect(path)
+        self.path = Path(path).resolve()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.db=sqlite3.connect(self.path)
         self.db.execute('PRAGMA foreign_keys=ON')
-        if self.db.execute('PRAGMA user_version').fetchone()[0] not in (0,1):
-            self.db.close();raise ValueError('Unsupported timeline schema version')
+        if self.db.execute('PRAGMA user_version').fetchone()[0] not in (0,2):
+            self.db.close();raise ValueError('Timeline schema requires explicit migration with graph.migrate_timeline')
         self.db.executescript(SCHEMA)
 
     def close(self): self.db.close()
@@ -91,10 +111,13 @@ class Timeline:
         if commit not in self.ancestors(cutoff):
             raise ValueError('Requested commit is not an ancestor of the authorized cutoff')
 
-    def snapshot(self,sha):
-        row=self.db.execute('SELECT snapshot FROM commits WHERE sha=?',(sha,)).fetchone()
-        if not row: raise ValueError('Unknown commit: '+sha)
-        return json.loads(row[0])
+    def snapshot(self, sha):
+        row = self.db.execute(
+            'SELECT snapshot_path,fingerprint FROM commits WHERE sha=?', (sha,)
+        ).fetchone()
+        if not row:
+            raise ValueError('Unknown commit: ' + sha)
+        return read_snapshot(self.path.parent, row[0], row[1])
 
     def ingest(self,snapshot):
         # Persist only semantic inputs; runtime logs and timing are not identity.
@@ -106,6 +129,7 @@ class Timeline:
         old=self.db.execute('SELECT fingerprint FROM commits WHERE sha=?',(s['sha'],)).fetchone()
         if old:
             if old[0]!=digest: raise ValueError('Commit already has different snapshot inputs')
+            self.snapshot(s['sha'])
             return False
         for parent in s['parents']:
             p=self.db.execute('SELECT position FROM commits WHERE sha=?',(parent,)).fetchone()
@@ -115,8 +139,20 @@ class Timeline:
             raise ValueError('Additional disconnected root is not supported')
         previous=self.snapshot(s['parents'][0])['nodes'] if s['parents'] else []
         events=symbol_diff(previous,s['nodes'])
+        if Path(s['sha']).name != s['sha'] or s['sha'] in ('.', '..'):
+            raise ValueError('Invalid snapshot identity')
+        relative = 'graphs/' + s['sha'] + '.json.gz'
+        archive = self.path.parent / relative
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        if archive.exists():
+            read_snapshot(self.path.parent, relative, digest)
+        else:
+            temp = archive.with_suffix('.tmp')
+            with gzip.open(temp, 'wt') as handle:
+                handle.write(serialized)
+            temp.replace(archive)
         with self.db:
-            self.db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)',(s['sha'],s['position'],json.dumps(s['parents']),s['parents'][0] if s['parents'] else None,digest,serialized))
+            self.db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)',(s['sha'],s['position'],json.dumps(s['parents']),s['parents'][0] if s['parents'] else None,digest,relative))
             for q,n in sorted(symbols(s['nodes']).items()):
                 self.db.execute('INSERT INTO symbols VALUES (?,?,?) ON CONFLICT(qn) DO UPDATE SET last_observed_sha=excluded.last_observed_sha',(q,s['sha'],s['sha']))
                 self.db.execute('INSERT INTO occurrences VALUES (?,?,?)',(s['sha'],q,json.dumps(n,sort_keys=True)))
@@ -124,7 +160,19 @@ class Timeline:
                 self.db.execute('INSERT INTO symbol_events VALUES (?,?,?,?,?,?,?)',(s['sha'],e['qn'],e['event'],e['previous_qn'],e['file'],e['start'],e['end']))
         return True
 
-    def history(self,qn,commit):
-        allowed=self.ancestors(commit)
-        rows=self.db.execute('SELECT e.sha,e.event,e.previous_qn,e.file,e.start,e.end,c.position FROM symbol_events e JOIN commits c USING(sha) WHERE e.qn=? ORDER BY c.position',(qn,)).fetchall()
-        return [dict(zip(('sha','event','previous_qn','file','start','end','position'),r)) for r in rows if r[0] in allowed]
+    def history(self, qn, commit):
+        allowed = self.ancestors(commit)
+        rows = self.db.execute(
+            'SELECT e.sha,e.event,e.previous_qn,e.file,e.start,e.end,c.position,e.origin,e.parents '
+            'FROM symbol_event_provenance e JOIN commits c USING(sha) '
+            'WHERE e.qn=? ORDER BY c.position', (qn,)
+        ).fetchall()
+        result = []
+        for row in rows:
+            if row[0] not in allowed:
+                continue
+            event = dict(zip(('sha', 'event', 'previous_qn', 'file', 'start', 'end',
+                              'position', 'origin', 'parents'), row))
+            event['parents'] = json.loads(event['parents'])
+            result.append(event)
+        return result

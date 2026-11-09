@@ -64,3 +64,14 @@ class TimelineTests(unittest.TestCase):
         for s in [snap('root',nodes=[symbol()]),snap('gone',['root'],[],2),snap('back',['gone'],[symbol()],3)]:
             self.db.ingest(s)
         self.assertEqual([e['event'] for e in self.db.history('p.a.f','back')], ['added','removed','added'])
+
+    def test_merge_events_are_preserved_with_arrival_provenance(self):
+        for s in [snap('root', nodes=[symbol()]),
+                  snap('a', ['root'], [symbol(body='a')], 2),
+                  snap('b', ['root'], [symbol(body='b')], 3),
+                  snap('merge', ['a', 'b'], [symbol(body='b')], 4)]:
+            self.db.ingest(s)
+        event = self.db.history('p.a.f', 'merge')[-1]
+        self.assertEqual(event['event'], 'changed')
+        self.assertEqual(event['origin'], 'merge_arrival')
+        self.assertEqual(event['parents'], ['a', 'b'])

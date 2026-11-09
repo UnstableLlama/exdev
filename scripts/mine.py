@@ -18,7 +18,7 @@ VERSION = 5
 DEFAULT_URL = 'https://github.com/turboderp-org/exllamav3.git'
 
 def git(repo, *args):
-    return subprocess.check_output(['git', '-C', str(repo), *args])
+    return subprocess.check_output(['git', '-C', str(repo), *args], stdin=subprocess.DEVNULL)
 
 def text(raw):
     return raw.decode('utf-8', errors='surrogateescape')
