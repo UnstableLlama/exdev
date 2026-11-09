@@ -1,7 +1,7 @@
 ---
 entry_schema_version: 1
 training_traces_generated: 0
-tool_schema_status: proposed_not_frozen
+tool_schema_status: graph_v1_frozen_repo_tools_proposed
 review_checkpoint: 25
 ---
 
@@ -64,3 +64,17 @@ The work order proposes repo_read, repo_list, repo_grep, git_show, git_log, hf_f
 ## Future web reading view
 
 These Markdown and JSON records will also back a wiki-style human reading view, with commit navigation, symbol pages and links into an interactive graph viewer. The [human browser plan](../docs/human-browser-plan.md) describes this later phase. The repository records remain the source of truth, and draft/source-gap labels must carry through to the website.
+
+
+## Graph symbol links
+
+The first 25 entries have [62 explicit symbol links](symbol-links.json), generated
+from [maintained link seeds](../seeds/entry-symbol-links.json). Removed routines
+link to their first-parent source snapshot. File-level documentation and packaging
+entries can have no function/class links. Link validation does not change the
+entries' draft/review status.
+
+The [five graph tool schemas](../schema/graph-tools-v1.json) are now frozen at v1;
+the original repository/source tools described above remain proposed. The trusted
+runner must set a task's parent commit as cutoff and withhold direct access to the
+full source repository and timeline. See [graph integration](../graph/README.md).

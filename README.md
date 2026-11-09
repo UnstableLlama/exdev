@@ -34,18 +34,29 @@ Validation is complete at commit positions **1, 755, 1,509 and 2,264**:
 - Selected Python call-trace checks pass with test code included.
 - At the pinned tip, the diagnostic probe finds 2,902 of 3,000 simple Python call candidates. This is a narrow coverage check, not an overall accuracy score.
 - All 1,106 uniquely resolved Python-to-native call sites at the tip need supplemental edges; 80 files have partial parsing diagnostics.
-- All 13 tooling tests pass. No GPU execution or training has been performed.
+- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 34 tests. No GPU execution or training has been performed.
 
 Read the [validation report](reports/graph-validation.md) for evidence and limitations, and the [validation setup](graph/README.md) to reproduce the probe. Raw backend responses and snapshot databases remain local. These validation worktrees share full Git history and are not teacher-facing artifacts.
 
-## Next work
+## Historical graph integration
 
-1. Add Python-to-C++/CUDA binding edges with explicit source evidence and unresolved cases.
-2. Build source-hash diffs and the temporal database against each commit's actual parent.
-3. Implement the five commit-restricted graph tools and link Encyclopedia entries to symbols.
-4. Walk the full graph history from the first commit forward, processing parents before children.
+The chronological pipeline has indexed and verified the first **25 commits from the root**. It stores isolated snapshots, adds evidence-bearing Python-to-native edges, records first-parent symbol events, and links the existing Encyclopedia entries to symbols.
 
-The graph timeline and student-facing tools are not implemented yet. Later training will combine **repository code, Encyclopedia explanations and graph relationships**, joined by commit and symbol. Historical examples must use only evidence available at their cutoff, including isolated Git metadata; future explanations and graph states must not leak into earlier tasks.
+- **695 symbol events and 62 entry links** in the first batch; SQLite foreign-key checks pass.
+- All five graph tools are implemented with [frozen version-one schemas](schema/graph-tools-v1.json). The trusted caller sets the historical cutoff outside model arguments.
+- Read-only Cypher queries and call traces include supplemental binding edges. Real-data checks reject future commits and mutation queries.
+- Rerunning the first 25 commits verifies and reuses completed snapshots without duplicate imports.
+
+See the [integration report](reports/graph-integration.md), [tool and indexing instructions](graph/README.md), and [entry/symbol links](encyclopedia/symbol-links.json). Snapshot databases and the timeline remain local under ignored `store/`.
+
+The full graph-history walk is the next long-running step. It resumes from the verified prefix, processing parents before children:
+
+```sh
+python3 -m graph.walk --stop-position 2264
+# Progress and completion/error status are written to store/walk-status.json.
+```
+
+The Encyclopedia still stops at 25 draft entries. No training traces have been generated. The broader repository/source tool set and the teacher runner's operating-system isolation remain unfinished. Later training will combine **repository code, Encyclopedia explanations and graph relationships**, joined by commit and symbol, using only evidence available at the historical cutoff.
 
 ## Planned human-facing views
 
