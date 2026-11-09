@@ -33,7 +33,7 @@ class FreshSession:
         """model(messages, tools) must be stateless: no prior thread/session IDs.
 
         It returns {'text': ...} or {'calls': [{'id': ..., 'tool': ..., 'arguments': ...}]}.
-        This adapter contract is provider-neutral; a live provider adapter is still required.
+        This adapter contract is provider-neutral; CodexTeacher provides the separate app-server adapter.
         """
         if self.used:
             raise ValueError('A fresh authoring session cannot be reused')

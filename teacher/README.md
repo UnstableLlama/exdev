@@ -20,7 +20,7 @@ python3 -m teacher.graph_packet --packet .teacher/000010
 python3 -m teacher.audit_boundary
 ```
 
-Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eight sandbox tests unless the environment flag is set. The host-enabled suite passed all 78 tests.
+Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eight sandbox tests unless the environment flag is set. The host-enabled suite passed all 92 tests.
 
 `python3 -m teacher.runner --packet .teacher/000009` reads one JSON request from stdin: `{"tool":"repo_list","arguments":{"commit":"ANCESTOR_SHA"}}`. Packet selection and cutoff are trusted configuration, never model arguments. Consult the schema for complete arguments.
 
@@ -36,7 +36,7 @@ Repository reads allow ancestor trees only; `git_show` additionally permits the 
 
 ## Remaining work
 
-The five graph tools are attached through the restricted packet bridge. Add a live model adapter, independently review the complete boundary, revise the editorial schema, then author entries in fresh per-task contexts. Only afterward run a real training-example dry run and freeze the schemas. See the [boundary review guide](../docs/teacher-boundary.md).
+The five graph tools are attached through the restricted packet bridge. The Codex Astra/medium adapter and editorial v2 candidate are now implemented. Independently review the complete boundary and add approved ancestor-prose export, then author entries in fresh per-task contexts. Only afterward run a real training-example dry run and freeze the schemas. See the [boundary review guide](../docs/teacher-boundary.md).
 
 ## Restricted graph bridge
 
@@ -47,3 +47,22 @@ The worker reuses the existing frozen graph tool implementations through `Packet
 Graph calls additionally mount an explicit list of graph modules, the frozen graph schema and the checksum-pinned backend executable. Their bounded runtime allows 4 GiB of virtual address space and 256 MiB per file for disposable databases; source `run` calls retain 768 MiB and 2 MiB limits. The 25-second CPU and 30-second outer wall limits remain. Large future snapshots may require a separately tested budget adjustment; exceeding the budget fails closed. Native graph queries may use threads; the source `run` single-process restriction is unchanged.
 
 The real-packet audit checks all five graph tools for entries 9 and 10, plus mutation, task-result and future-commit denials. These are administrative checks, not training traces or an independent boundary review.
+
+## Codex Astra with medium reasoning
+
+The provider is pinned to `gpt-6-astra`, medium reasoning and Codex CLI 0.167.0. The [restricted model profile](../schema/codex-teacher-model.json) keeps that model identity but disables native patching, multi-agent and experimental tools, and uses direct dynamic tools instead of Code Mode. Do not remove that profile and rely only on feature flags. The local wire test caught the extra native tools that would otherwise be exposed.
+
+`codex_transport.py` launches a fresh Bubblewrap-isolated app-server with temporary state. It copies the selected Codex auth file into a private temporary directory and removes the copy on exit. It does not modify the original login or user configuration. The provider process has network access for inference; it has no repository, packet, old thread, review or credential directory mounted. Only the copied auth file is available to the trusted provider. The historical tool workers have separate networkless namespaces and no credentials.
+
+`codex_adapter.py` starts an ephemeral thread, rejects model/effort changes and inherited instruction sources, and routes only the advertised dynamic tools to `Runner`. It never resumes or forks a thread. Unknown native tool events, foreign thread events, duplicate calls and approval requests abort the run. Raw assistant text is saved before editorial validation; malformed outputs stay failed rather than becoming corpus entries.
+
+```sh
+# Startup only; starts no authoring/model turn:
+python3 -m teacher.codex_preflight --packet .teacher/000009
+# Full local fake-provider and sandbox checks, without real inference:
+EXDEV_SANDBOX_TESTS=1 python3 -m unittest discover -s tests
+```
+
+After boundary review and preparation of the first historical packet, the draft command is `python3 -m teacher.author --packet PACKET --output .teacher/runs/NEW_RUN`. It starts real inference and writes only a new unpublished draft directory. Never use an existing output directory or an output inside the packet. It records the packet and implementation hashes, raw transcript, validated draft JSON/Markdown and a separate pending review record. It does not update Encyclopedia entries, the mining database or training data. No real invocation of this command has been performed yet.
+
+The startup [report](../reports/codex-preflight.json) and [wire-test report](../reports/codex-wire-validation.json) distinguish real process checks from fake model responses. See the [editorial v2 contract](../docs/editorial-v2.md).

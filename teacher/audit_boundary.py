@@ -48,10 +48,10 @@ def main():
     report=dict(status='passed',purpose='administrative_boundary_validation',checks=checks,
                 live_model_invoked=False,entries_rewritten=0,training_trace_dry_run=False,
                 runtime='Linux amd64 Bubblewrap; Python stdlib and pinned graph backend; no network; single-process run',
-                limitations=['Provider-neutral driver has no live model adapter yet',
+                limitations=['Codex adapter is implemented but no live model authoring has been validated',
                              'No GPU or third-party Python dependency profile',
                              'HF and header tools require curator-approved pinned cache objects',
-                             'Independent boundary review and editorial schema revision remain required'])
+                             'Independent boundary and editorial-schema review remain required'])
     (ROOT/'reports/teacher-boundary.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:v for k,v in report.items() if k!='checks'},indent=2))
 
