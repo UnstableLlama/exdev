@@ -1,6 +1,8 @@
 # exdev
 
-**exdev is an independent project by UnstableLlama**, building a specialist development model through repository history, an explanatory Encyclopedia, and code graphs.
+**exdev** builds a historical Encyclopedia and code graph of a repository, then uses them to generate training data for training models.
+
+The order is **repository history → Encyclopedia + graph → training data → trained models**. The current work is building and validating the Encyclopedia and graph.
 
 The upstream project studied here is **[exllamav3](https://github.com/turboderp-org/exllamav3)**, created by **Turboderp** and developed with its contributors. That credit applies to exllamav3. exdev's tooling and annotations are separate work, and exdev is not authored or endorsed by Turboderp.
 
@@ -8,7 +10,7 @@ Original tooling and commentary: [MIT](LICENSE). Upstream code and diffs: retain
 
 ## Current status
 
-The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) defines the project. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; a candidate isolated runner is implemented and awaiting boundary review before live authoring. No training traces have been generated.
+The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) describes the historical extraction and teacher workflow. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; the isolated runner has produced a separate, validated root-entry candidate that is pending review. No training traces have been generated.
 
 ```sh
 python3 -m unittest discover -s tests
@@ -34,7 +36,7 @@ Validation is complete at commit positions **1, 755, 1,509 and 2,264**:
 - Selected Python call-trace checks pass with test code included.
 - At the pinned tip, the diagnostic probe finds 2,902 of 3,000 simple Python call candidates. This is a narrow coverage check, not an overall accuracy score.
 - All 1,106 uniquely resolved Python-to-native call sites at the tip need supplemental edges; 80 files have partial parsing diagnostics.
-- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 92 tests with host sandbox tests enabled. No GPU execution or training has been performed.
+- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 102 tests with host sandbox tests enabled. No GPU execution or training has been performed.
 
 Read the [validation report](reports/graph-validation.md) for evidence and limitations, and the [validation setup](graph/README.md) to reproduce the probe. Raw backend responses and snapshot databases remain local. These validation worktrees share full Git history and are not teacher-facing artifacts.
 
@@ -58,7 +60,7 @@ python3 -m graph.walk --stop-position 2264
 
 An independent [source/database audit](reports/graph-audit.json) has verified the first 165 commits. `python3 -m graph.verify` audits the currently completed prefix; `python3 -m graph.finalize_walk` waits for the active walk and audits its full result. Live audit status and final results remain local under `store/`.
 
-The Encyclopedia still stops at 25 draft entries. No training traces have been generated. The nine repository/source tools and operating-system isolation are implemented as a review candidate; the restricted graph bridge and Codex Astra/medium adapter are implemented, while independent boundary review and live authoring remain pending. See the [teacher runner](teacher/README.md) and [boundary review guide](docs/teacher-boundary.md). Later training will combine **repository code, Encyclopedia explanations and graph relationships**, joined by commit and symbol, using only evidence available at the historical cutoff.
+The Encyclopedia still stops at 25 draft entries. No training traces have been generated. The nine repository/source tools and operating-system isolation are implemented as a review candidate; the restricted graph bridge and Codex Astra/medium adapter are implemented, with the first live root-entry candidate pending review and independent boundary review still outstanding. See the [teacher runner](teacher/README.md) and [boundary review guide](docs/teacher-boundary.md). The **repository code, Encyclopedia explanations and graph relationships**, joined by commit and symbol, will provide the evidence for generating training data. That data will then be used to train models. Historical examples must use only evidence available at their cutoff.
 
 ## Planned human-facing views
 
@@ -82,4 +84,6 @@ source audit and resume check. The graph walk continues in the background.
 
 Eligible issue/PR evidence for entries 9 and 10 has been recovered with content-edit cutoffs. Entry 9 receives historical edit-event text, not a claimed reconstruction of the complete issue body. See the [recovery report](reports/github-evidence-recovery.json). No drafts were rewritten by this administrative session.
 
-The [Codex adapter and editorial schema](docs/editorial-v2.md) are ready for review. A real app-server startup check and local fake-provider round trip pass; the latter verifies the exact 14-tool allowlist. No real model authoring turn or training trace has run.
+The [Codex adapter and editorial schema](docs/editorial-v2.md) are ready for review. A real app-server startup check and local fake-provider round trip pass; the latter verifies the exact 14-tool allowlist. The first fresh root-entry candidate has passed schema and evidence-reference validation and awaits review. See the [live-run report](reports/root-authoring-candidate.json). No training trace has been generated.
+
+[Approved ancestor context](docs/ancestor-context.md) now verifies exact reviewed artifacts and supplies only strict-ancestor explanations to each new teacher session. Existing drafts remain unchanged while the first fresh root-entry candidate is evaluated separately.

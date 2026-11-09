@@ -1,6 +1,6 @@
 # Historical authoring runner
 
-This is a boundary-review candidate, not a completed authoring service. No live model has been invoked, no entries rewritten and no training traces generated. The [nine tool schemas](../schema/repo-tools-v1.json) remain unfrozen.
+This is a boundary-review candidate, not a completed authoring service. Initial live root-entry attempts are retained as separate review candidates; no canonical entries have been rewritten and no training traces generated. The [nine tool schemas](../schema/repo-tools-v1.json) remain unfrozen.
 
 The trusted curator builds one packet per task. `packet.py` exports strict ancestors of all task parents as content-addressed blobs, ancestor diffs, the explicit task diff and approved external evidence. It does not export `.git`, source mirrors, existing Encyclopedia drafts, `astra-review.md`, administrative reports or conversation history. `entry_analysis` mode deliberately reveals the task diff: it must not be reused as a code-prediction student's input packet.
 
@@ -20,7 +20,7 @@ python3 -m teacher.graph_packet --packet .teacher/000010
 python3 -m teacher.audit_boundary
 ```
 
-Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eight sandbox tests unless the environment flag is set. The host-enabled suite passed all 92 tests.
+Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eight sandbox tests unless the environment flag is set. The host-enabled suite passed all 102 tests.
 
 `python3 -m teacher.runner --packet .teacher/000009` reads one JSON request from stdin: `{"tool":"repo_list","arguments":{"commit":"ANCESTOR_SHA"}}`. Packet selection and cutoff are trusted configuration, never model arguments. Consult the schema for complete arguments.
 
@@ -36,7 +36,7 @@ Repository reads allow ancestor trees only; `git_show` additionally permits the 
 
 ## Remaining work
 
-The five graph tools are attached through the restricted packet bridge. The Codex Astra/medium adapter and editorial v2 candidate are now implemented. Independently review the complete boundary and add approved ancestor-prose export, then author entries in fresh per-task contexts. Only afterward run a real training-example dry run and freeze the schemas. See the [boundary review guide](../docs/teacher-boundary.md).
+The five graph tools are attached through the restricted packet bridge. The Codex Astra/medium adapter and editorial v2 candidate are now implemented. Approved ancestor-prose export is also implemented. Independently review the complete boundary before promoting any fresh authoring into the corpus. Only afterward run a real training-example dry run and freeze the schemas. See the [boundary review guide](../docs/teacher-boundary.md).
 
 ## Restricted graph bridge
 
@@ -63,6 +63,10 @@ python3 -m teacher.codex_preflight --packet .teacher/000009
 EXDEV_SANDBOX_TESTS=1 python3 -m unittest discover -s tests
 ```
 
-After boundary review and preparation of the first historical packet, the draft command is `python3 -m teacher.author --packet PACKET --output .teacher/runs/NEW_RUN`. It starts real inference and writes only a new unpublished draft directory. Never use an existing output directory or an output inside the packet. It records the packet and implementation hashes, raw transcript, validated draft JSON/Markdown and a separate pending review record. It does not update Encyclopedia entries, the mining database or training data. No real invocation of this command has been performed yet.
+After boundary review and preparation of the first historical packet, the draft command is `python3 -m teacher.author --packet PACKET --output .teacher/runs/NEW_RUN`. It starts real inference and writes only a new unpublished draft directory. Never use an existing output directory or an output inside the packet. It records the packet and implementation hashes, raw transcript, validated draft JSON/Markdown and a separate pending review record. It does not update Encyclopedia entries, the mining database or training data. An initial root-entry invocation produces a separate review candidate; it does not replace or approve the existing root entry.
 
 The startup [report](../reports/codex-preflight.json) and [wire-test report](../reports/codex-wire-validation.json) distinguish real process checks from fake model responses. See the [editorial v2 contract](../docs/editorial-v2.md).
+
+## Earlier explanations
+
+Use the [approved ancestor-context workflow](../docs/ancestor-context.md) to review replacement drafts and attach their content before authoring later commits. The author CLI and session APIs fail before inference if a non-root packet lacks complete approved ancestor prose. Review comments and original conversations are not included. The current full-prose context budget is 256 KiB; exceeding it requires implementing bounded retrieval rather than silently truncating history.

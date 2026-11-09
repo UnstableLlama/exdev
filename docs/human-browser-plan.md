@@ -1,5 +1,7 @@
 # Human-readable Encyclopedia and graph viewer
 
+The project first builds the Encyclopedia and graph, uses them to generate training data, and then trains models on that data. Human views make the same Encyclopedia and graph useful for readers.
+
 Status: planned for a later phase; no website or viewer is implemented. This adds a human-facing use for exdev's source, Encyclopedia and graph data without changing the current priority: reliable bindings, historical indexing, query tools and symbol links.
 
 exdev is a project by UnstableLlama. The source history studied here is exllamav3, by Turboderp and its contributors. Both credits should remain clearly distinguished in the interface.

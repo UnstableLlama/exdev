@@ -6,10 +6,16 @@ from unittest.mock import patch
 from teacher.author import author
 from test_codex_teacher import FakeTransport
 import test_teacher_packet
+import test_ancestor_context
+from teacher.ancestor_context import approve_run, attach_entries
 
 
 class AuthorTests(unittest.TestCase):
-    setUp=test_teacher_packet.PacketTests.setUp
+    def setUp(self):
+        test_teacher_packet.PacketTests.setUp(self)
+        run,source=test_ancestor_context.AncestorContextTests.run_fixture(self)
+        approve_run(run,source,'TEST REVIEWER','TEST FIXTURE approval')
+        attach_entries(self.packet,[run])
     tearDown=test_teacher_packet.PacketTests.tearDown
 
     def test_save_draft_with_provenance_and_separate_pending_review(self):

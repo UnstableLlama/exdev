@@ -46,6 +46,13 @@ def build_packet(repo, task, destination, evidence=None):
         show = f'Commit: {sha}\nParents: {" ".join(ps)}\nDate: {date}\n\n{message}\n\n'.encode() + patch
         manifest['shows'][sha] = store(show)
         if sha == task:
+            boundaries=list(re.finditer(rb'^diff --git .*$',show,re.MULTILINE))
+            manifest['task_change_sections']=[]
+            for i,match in enumerate(boundaries):
+                end=boundaries[i+1].start() if i+1<len(boundaries) else len(show)
+                manifest['task_change_sections'].append({
+                    'header':match.group().decode(errors='replace'),'offset':match.start(),
+                    'bytes':end-match.start(),'binary':b'GIT binary patch' in show[match.start():end]})
             continue  # Task diff is explicit input; its solved tree is not a repo-tool target.
         tree = {}
         for line in git(repo, 'ls-tree', '-rz', '--full-tree', sha).split(b'\0'):

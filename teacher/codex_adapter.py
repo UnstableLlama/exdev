@@ -2,7 +2,7 @@
 """Fresh Codex app-server authoring session, pinned to Astra with medium reasoning."""
 from copy import deepcopy
 import json
-from .editorial import SCHEMA, assemble_draft
+from .editorial import output_schema, assemble_draft
 
 MODEL = 'gpt-6-astra'
 EFFORT = 'medium'
@@ -14,10 +14,15 @@ DISABLED_FEATURES = (
 )
 INSTRUCTIONS = '''Return one JSON annotation matching the supplied editorial schema.
 Use only the provided historical tools. Cite each claim using evidence_id values
-returned by tools. Use basis source for inspection, execution only for a measured
+returned by tools, or ancestor:<sha> for supplied approved ancestor prose. Use basis source for inspection, execution only for a measured
 result supported by a successful run, and inference for interpretations. Keep
 substantive uncertainty in limitations; do not repeat pipeline bookkeeping.
-The canonical root entry may contain linked subsystem chapters. Do not invent
+Use the supplied task_change_sections offsets with git_show to inspect individual
+files without paging through binary payloads. Explain the main subsystems in the
+canonical root entry using linked chapters; inspect representative implementations
+for each major subsystem before summarizing it, and state any coverage gaps.
+The links field contains ONLY supplied ancestor commit SHAs, never chapter IDs.
+For a root commit links must be []. Chapters are local sections linked by the renderer. Do not invent
 ancestor entries or mark an annotation reviewed or training eligible.'''
 
 
@@ -38,9 +43,11 @@ def thread_parameters(session, cwd):
 
 class CodexTeacher:
     def run(self, session, transport, record=None, max_calls=256):
+        session.require_authoring_context()
         if session.used:
             raise ValueError('A fresh authoring session cannot be reused')
         session.used=True
+        manifest=json.loads((session.runner.packet/'manifest.json').read_text())
         transcript=deepcopy(session.initial)
         def save():
             if record is not None:
@@ -55,7 +62,7 @@ class CodexTeacher:
             raise ValueError('Unexpected inherited instruction sources')
         thread=started['thread']['id']
         turn=transport.request('turn/start',{'threadId':thread,'model':MODEL,'effort':EFFORT,
-            'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':SCHEMA,
+            'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
             'input':[{'type':'text','text':session.initial[1]['content']}]})['turn']['id']
         allowed={tool['name'] for tool in session.tools}
         seen=set(); final=None

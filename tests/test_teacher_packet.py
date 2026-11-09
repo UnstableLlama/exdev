@@ -71,3 +71,12 @@ class PacketTests(unittest.TestCase):
         target=self.root/'invalid'
         with self.assertRaisesRegex(ValueError,'newer'):build_packet(self.repo,self.task,target,evidence)
         self.assertFalse((target/'manifest.json').exists())
+
+    def test_task_change_index_points_to_exact_diff_sections(self):
+        import json
+        manifest=json.loads((self.packet/'manifest.json').read_text())
+        section=manifest['task_change_sections'][0]
+        result=dispatch(self.packet,'git_show',{'commit':self.task,'offset':section['offset'],'max_bytes':section['bytes']})
+        self.assertTrue(result['text'].startswith(section['header']+'\n'))
+        self.assertIn('+value = 2',result['text'])
+        self.assertFalse(section['binary'])

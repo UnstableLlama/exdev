@@ -14,12 +14,18 @@ from teacher.codex_adapter import CodexTeacher
 from teacher.codex_transport import CodexTransport, configuration
 from teacher.session import FreshSession
 import test_teacher_packet
+import test_ancestor_context
+from teacher.ancestor_context import approve_run, attach_entries
 import test_teacher_graph
 
 
 @unittest.skipUnless(os.environ.get('EXDEV_SANDBOX_TESTS')=='1','Host namespace and loopback integration test')
 class CodexWireTests(unittest.TestCase):
-    setUp=test_teacher_packet.PacketTests.setUp
+    def setUp(self):
+        test_teacher_packet.PacketTests.setUp(self)
+        run,source=test_ancestor_context.AncestorContextTests.run_fixture(self)
+        approve_run(run,source,'TEST REVIEWER','ADMIN_REVIEW_SECRET')
+        attach_entries(self.packet,[run])
     tearDown=test_teacher_packet.PacketTests.tearDown
 
     def test_actual_codex_request_has_only_approved_tools_and_no_inherited_context(self):
@@ -110,7 +116,7 @@ class CodexWireTests(unittest.TestCase):
                     self.assertEqual(names,{t['name'] for t in FreshSession(self.packet).tools})
                     catalogs_checked+=1
                 serialized=json.dumps(request)
-                for forbidden in ['ADMIN_SECRET',self.future,str(self.repo),'astra-review.md','<skills_instructions>','<multi_agent_role>']:
+                for forbidden in ['ADMIN_SECRET','ADMIN_REVIEW_SECRET','TEST REVIEWER',self.future,str(self.repo),'astra-review.md','<skills_instructions>','<multi_agent_role>']:
                     self.assertNotIn(forbidden,serialized)
             self.assertGreater(catalogs_checked,0)
         finally:

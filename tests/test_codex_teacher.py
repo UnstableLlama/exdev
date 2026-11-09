@@ -5,6 +5,8 @@ from unittest.mock import Mock
 from teacher.codex_adapter import CodexTeacher, thread_parameters
 from teacher.session import FreshSession
 import test_teacher_packet
+import test_ancestor_context
+from teacher.ancestor_context import approve_run, attach_entries
 from test_editorial import fixture
 
 
@@ -29,7 +31,11 @@ class FakeTransport:
 
 
 class CodexTeacherTests(unittest.TestCase):
-    setUp=test_teacher_packet.PacketTests.setUp
+    def setUp(self):
+        test_teacher_packet.PacketTests.setUp(self)
+        run,source=test_ancestor_context.AncestorContextTests.run_fixture(self)
+        approve_run(run,source,'TEST REVIEWER','ADMIN_REVIEW_SECRET')
+        attach_entries(self.packet,[run])
     tearDown=test_teacher_packet.PacketTests.tearDown
 
     def test_exact_model_and_fresh_context_with_dynamic_tools(self):

@@ -3,10 +3,16 @@ import unittest
 from unittest.mock import patch
 from teacher.session import FreshSession
 import test_teacher_packet
+import test_ancestor_context
+from teacher.ancestor_context import approve_run, attach_entries
 
 
 class FreshSessionTests(unittest.TestCase):
-    setUp=test_teacher_packet.PacketTests.setUp
+    def setUp(self):
+        test_teacher_packet.PacketTests.setUp(self)
+        run,source=test_ancestor_context.AncestorContextTests.run_fixture(self)
+        approve_run(run,source,'TEST REVIEWER','ADMIN_REVIEW_SECRET')
+        attach_entries(self.packet,[run])
     tearDown=test_teacher_packet.PacketTests.tearDown
 
     def test_only_nine_tools_and_no_previous_conversation(self):

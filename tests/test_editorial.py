@@ -62,3 +62,10 @@ class EditorialTests(unittest.TestCase):
             with self.assertRaises(ValueError):validate_annotation(bad,self.manifest,self.transcript)
         bad=fixture();bad['problem'][0]['text']=''
         with self.assertRaises(ValueError):validate_annotation(bad,self.manifest,self.transcript)
+
+    def test_provider_schema_constrains_links_to_supplied_ancestors(self):
+        from teacher.editorial import output_schema
+        self.assertEqual(output_schema(self.manifest)['properties']['links']['maxItems'],0)
+        self.manifest['commits']['b'*40]={}
+        self.manifest['ancestor_entries']=[{'sha':'b'*40}]
+        self.assertEqual(output_schema(self.manifest)['properties']['links']['items']['enum'],['b'*40])

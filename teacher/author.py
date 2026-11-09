@@ -23,6 +23,7 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
     if output.is_relative_to(packet):
         raise ValueError('Draft output must be outside the immutable packet')
     session=FreshSession(packet)
+    session.require_authoring_context()
     output.mkdir(parents=True,exist_ok=False)
     manifest=(packet/'manifest.json').read_bytes()
     provenance={'model':MODEL,'reasoning_effort':EFFORT,'codex_version':SUPPORTED_VERSION,

@@ -19,8 +19,11 @@ class FreshSession:
     def __init__(self, packet):
         self.runner = Runner(packet)
         manifest = json.loads((self.runner.packet/'manifest.json').read_text())
+        from .ancestor_context import load_entries
         task = {'task_sha': manifest['task_sha'], 'task_parents': manifest['task_parents'],
                 'base_commit': manifest['base_commit'], 'cutoff_date': manifest['cutoff_date'],
+                'ancestor_entries':load_entries(self.runner.packet,manifest),
+                'task_change_sections':manifest.get('task_change_sections',[]),
                 'evidence_catalog': [{k:v for k,v in e.items() if k!='blob'} for e in manifest['evidence']]}
         self.initial = [{'role':'system','content':SYSTEM},
                         {'role':'user','content':json.dumps(task, sort_keys=True)}]
@@ -29,12 +32,20 @@ class FreshSession:
             self.tools += json.loads((ROOT/'schema/graph-tools-v1.json').read_text())['tools']
         self.used = False
 
+    def require_authoring_context(self):
+        manifest=json.loads((self.runner.packet/'manifest.json').read_text())
+        if manifest['commits'] and not manifest.get('ancestor_context_complete'):
+            raise ValueError('Authoring requires complete approved ancestor prose')
+        from .ancestor_context import load_entries
+        load_entries(self.runner.packet,manifest)
+
     def run(self, model, max_turns=64):
         """model(messages, tools) must be stateless: no prior thread/session IDs.
 
         It returns {'text': ...} or {'calls': [{'id': ..., 'tool': ..., 'arguments': ...}]}.
         This adapter contract is provider-neutral; CodexTeacher provides the separate app-server adapter.
         """
+        self.require_authoring_context()
         if self.used:
             raise ValueError('A fresh authoring session cannot be reused')
         self.used = True

@@ -9,6 +9,17 @@ import re
 SCHEMA = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v2.json').read_text())
 
 
+def output_schema(manifest):
+    """Constrain generation as well as post-validation to the actual supplied prose."""
+    schema=deepcopy(SCHEMA)
+    allowed=sorted({e['sha'] for e in manifest.get('ancestor_entries',[])} & set(manifest['commits']))
+    if allowed:
+        schema['properties']['links']['items']['enum']=allowed
+    else:
+        schema['properties']['links']['maxItems']=0
+    return schema
+
+
 def validate_shape(value, schema, path='annotation'):
     """Small validator for this schema's deliberately bounded JSON Schema subset."""
     kind = schema['type']
@@ -42,7 +53,7 @@ def evidence_ledger(transcript):
     for message in transcript:
         if message['role']=='assistant':
             for call in message.get('calls',[]):
-                if call['id'] in calls:
+                if call['id'].startswith('ancestor:') or call['id'] in calls:
                     raise ValueError('Duplicate evidence call ID')
                 calls[call['id']] = call
         elif message['role']=='tool':
@@ -58,6 +69,8 @@ def evidence_ledger(transcript):
 def validate_annotation(annotation, manifest, transcript):
     validate_shape(annotation,SCHEMA)
     ledger=evidence_ledger(transcript)
+    context={'ancestor:'+e['sha']:{'kind':'approved_ancestor_context','sha':e['sha'],'content_sha256':e['blob']}
+             for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits']}
     claims=[claim for field in ('problem','reasoning','impact','source_notes') for claim in annotation[field]]
     chapter_ids=set()
     for chapter in annotation['chapters']:
@@ -71,10 +84,10 @@ def validate_annotation(annotation, manifest, transcript):
         if len(set(refs))!=len(refs):
             raise ValueError('Duplicate evidence anchor')
         for ref in refs:
-            if ref not in ledger or ledger[ref]['result'].get('ok') is not True:
+            if ref not in context and (ref not in ledger or ledger[ref]['result'].get('ok') is not True):
                 raise ValueError('Unknown or unsuccessful evidence call')
         if claim['basis']=='execution':
-            runs=[ledger[ref] for ref in refs if ledger[ref]['tool']=='run']
+            runs=[ledger[ref] for ref in refs if ref in ledger and ledger[ref]['tool']=='run']
             if not any(r['result'].get('result',{}).get('returncode')==0 and
                        not r['result']['result'].get('timed_out',False) for r in runs):
                 raise ValueError('Execution claims require successful run evidence')
@@ -83,7 +96,7 @@ def validate_annotation(annotation, manifest, transcript):
         raise ValueError('Duplicate ancestor link')
     if not set(annotation['links']) <= approved & set(manifest['commits']):
         raise ValueError('Links require approved, supplied ancestor prose')
-    return ledger
+    return dict(ledger,**context)
 
 
 def assemble_draft(annotation, manifest, transcript):
