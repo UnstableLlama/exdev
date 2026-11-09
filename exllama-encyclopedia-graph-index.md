@@ -131,3 +131,7 @@ Insert between "Start mining" and "Start the Exllama Encyclopedia":
 - agentforge-graph on PyPI: https://pypi.org/project/agentforge-graph/0.3.3/
 - RepoGraph (arXiv:2410.14684): https://arxiv.org/html/2410.14684v2
 - Aider architecture overview: https://pyshine.com/aider/
+
+## Later human-facing views
+
+The graph and Encyclopedia will also support a wiki-style website and an interactive HTML viewer. The [human browser plan](docs/human-browser-plan.md) defines the later-phase scope: shared commit/symbol identifiers, provenance-bearing edges, revision navigation, bounded graph exploration and explicit historical comparisons. This does not change the current indexing priority or authorize a deployment. Implementation status and measured backend behavior are recorded in the [validation report](reports/graph-validation.md); the original caveats above describe the proposal before validation.

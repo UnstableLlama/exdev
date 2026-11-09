@@ -60,3 +60,7 @@ The work order proposes repo_read, repo_list, repo_grep, git_show, git_log, hf_f
 - [000023 — Skip GC while converting](entries/000023.md) · draft
 - [000024 — Multi-GPU quantization](entries/000024.md) · draft
 - [000025 — Fix time formatting](entries/000025.md) · draft
+
+## Future web reading view
+
+These Markdown and JSON records will also back a wiki-style human reading view, with commit navigation, symbol pages and links into an interactive graph viewer. The [human browser plan](../docs/human-browser-plan.md) describes this later phase. The repository records remain the source of truth, and draft/source-gap labels must carry through to the website.

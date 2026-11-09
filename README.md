@@ -46,3 +46,9 @@ Read the [validation report](reports/graph-validation.md) for evidence and limit
 4. Walk the full graph history from the first commit forward, processing parents before children.
 
 The graph timeline and student-facing tools are not implemented yet. Later training will combine **repository code, Encyclopedia explanations and graph relationships**, joined by commit and symbol. Historical examples must use only evidence available at their cutoff, including isolated Git metadata; future explanations and graph states must not leak into earlier tasks.
+
+## Planned human-facing views
+
+Alongside the model tools, we plan a **wiki-style Encyclopedia website** and an **interactive HTML graph viewer**. Readers will be able to browse commits, explanations and symbols, explore call relationships, and compare historical revisions. Both views will use the same source records and commit/symbol links as the training infrastructure, with draft status, evidence gaps and upstream credit visible.
+
+This is later-phase work; no viewer is implemented yet. See the [human browser plan](docs/human-browser-plan.md) for the proposed experience, data contracts and delivery order.
