@@ -25,6 +25,8 @@ class FreshSession:
         self.initial = [{'role':'system','content':SYSTEM},
                         {'role':'user','content':json.dumps(task, sort_keys=True)}]
         self.tools = json.loads((ROOT/'schema/repo-tools-v1.json').read_text())['tools']
+        if 'graphs' in manifest:
+            self.tools += json.loads((ROOT/'schema/graph-tools-v1.json').read_text())['tools']
         self.used = False
 
     def run(self, model, max_turns=64):

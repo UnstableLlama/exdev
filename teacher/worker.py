@@ -28,6 +28,9 @@ def safe_path(value, root_allowed=False):
 def args_for(name, args):
     schema_path = Path(__file__).resolve().parents[1]/'schema/repo-tools-v1.json'
     schemas = {t['name']:t['parameters'] for t in json.loads(schema_path.read_text())['tools']}
+    if name not in schemas and name in ('graph_search','graph_trace','graph_query','symbol_history','repo_map'):
+        from graph.tools import arguments
+        return arguments(name, args)
     if name not in schemas or not isinstance(args, dict):
         raise ValueError('Unknown tool or invalid arguments')
     schema = schemas[name]
@@ -122,6 +125,9 @@ def dispatch(packet, name, supplied):
     packet=Path(packet)
     args=args_for(name,supplied)
     manifest=json.loads((packet/'manifest.json').read_text())
+    if name in ('graph_search','graph_trace','graph_query','symbol_history','repo_map'):
+        from teacher.graph_worker import invoke
+        return invoke(packet, manifest, name, args)
     commits=manifest['commits']
     if name in ('repo_read','repo_list','repo_grep'):
         if args['commit'] not in commits:
@@ -239,4 +245,6 @@ def main():
 
 
 if __name__=='__main__':
+    # Only the supervisor's read-only application mounts are importable here.
+    sys.path.insert(0, '/app')
     main()

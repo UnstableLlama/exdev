@@ -18,7 +18,7 @@ SCHEMAS=json.loads((ROOT/'schema/graph-tools-v1.json').read_text())
 
 def arguments(name,args):
     schemas={t['name']:t['parameters'] for t in SCHEMAS['tools']}
-    if name not in schemas:raise ValueError('Unknown graph tool')
+    if name not in schemas or not isinstance(args,dict):raise ValueError('Unknown graph tool or invalid arguments')
     schema=schemas[name];props=schema['properties']
     if set(args)-set(props) or set(schema['required'])-set(args):raise ValueError('Missing or unknown tool arguments')
     out={k:v['default'] for k,v in props.items() if 'default' in v};out.update(args)
