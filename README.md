@@ -34,7 +34,7 @@ Validation is complete at commit positions **1, 755, 1,509 and 2,264**:
 - Selected Python call-trace checks pass with test code included.
 - At the pinned tip, the diagnostic probe finds 2,902 of 3,000 simple Python call candidates. This is a narrow coverage check, not an overall accuracy score.
 - All 1,106 uniquely resolved Python-to-native call sites at the tip need supplemental edges; 80 files have partial parsing diagnostics.
-- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 34 tests. No GPU execution or training has been performed.
+- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 41 tests. No GPU execution or training has been performed.
 
 Read the [validation report](reports/graph-validation.md) for evidence and limitations, and the [validation setup](graph/README.md) to reproduce the probe. Raw backend responses and snapshot databases remain local. These validation worktrees share full Git history and are not teacher-facing artifacts.
 
@@ -49,12 +49,14 @@ The chronological pipeline has indexed and verified the first **25 commits from 
 
 See the [integration report](reports/graph-integration.md), [tool and indexing instructions](graph/README.md), and [entry/symbol links](encyclopedia/symbol-links.json). Snapshot databases and the timeline remain local under ignored `store/`.
 
-The full graph-history walk is the next long-running step. It resumes from the verified prefix, processing parents before children:
+The full graph-history walk is running locally. It resumes from the verified prefix, processing parents before children:
 
 ```sh
 python3 -m graph.walk --stop-position 2264
 # Progress and completion/error status are written to store/walk-status.json.
 ```
+
+An independent [source/database audit](reports/graph-audit.json) has verified the first 59 commits. `python3 -m graph.verify` audits the currently completed prefix; `python3 -m graph.finalize_walk` waits for the active walk and audits its full result. Live audit status and final results remain local under `store/`.
 
 The Encyclopedia still stops at 25 draft entries. No training traces have been generated. The broader repository/source tool set and the teacher runner's operating-system isolation remain unfinished. Later training will combine **repository code, Encyclopedia explanations and graph relationships**, joined by commit and symbol, using only evidence available at the historical cutoff.
 

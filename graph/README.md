@@ -109,3 +109,23 @@ function/class links. These links do not upgrade draft explanations to reviewed.
 
 The first 25 chronological snapshots and all five tools have been exercised against
 real data. See `reports/graph-integration.json` for counts and boundary checks.
+
+## Independent read-only audit
+
+`python3 -m graph.verify` captures the completed prefix at startup and audits it
+without altering the indexer's live source tree or backend cache. Use
+`--stop-position N` to limit the prefix, or `--out PATH` to choose the report.
+The command checks exact node/edge multisets against archived SQLite databases,
+source-range hashes against upstream Git archives, binding-edge reproduction,
+actual Git parents, stored first-parent events, symbol occurrences, fingerprints
+and foreign keys. Its report states the verified final position; newer snapshots
+may have been indexed while the audit ran.
+
+`python3 -m graph.finalize_walk` follows the existing walk recorded in
+`store/walk-status.json` and runs the audit when that run completes. It never
+restarts the walk. If the run fails, disappears or is replaced, the watcher
+records a failure rather than asserting completion. Watcher status is in
+`store/final-audit-status.json`; a successful complete audit is saved as
+`store/final-graph-audit.json`. Indexing completion and audit completion are
+separate states. A full-history completion claim requires both to succeed at
+the requested final position.
