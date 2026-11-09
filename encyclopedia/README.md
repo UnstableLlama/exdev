@@ -1,7 +1,7 @@
 ---
 entry_schema_version: 1
 training_traces_generated: 0
-tool_schema_status: graph_v1_frozen_repo_tools_proposed
+tool_schema_status: graph_v1_frozen_repo_tools_candidate
 review_checkpoint: 25
 ---
 
@@ -25,7 +25,7 @@ Source caches are local under `data/sources/`. Exact GitHub revision pins for th
 
 ## Tool schema
 
-The work order proposes repo_read, repo_list, repo_grep, git_show, git_log, hf_fetch, safetensors_header, web_fetch and run. Their inference/training wrappers and final argument schemas are **not yet implemented or frozen**. The miner and review utilities are preparation tools, not fabricated student tool-use traces. Freeze and record the actual schema here before generating the first trace.
+The work order proposes repo_read, repo_list, repo_grep, git_show, git_log, hf_fetch, safetensors_header, web_fetch and run. Their [candidate schemas](../schema/repo-tools-v1.json) and [isolated runner](../teacher/README.md) are implemented, but are **not frozen**; boundary review, live model integration and a real trace dry run remain pending. The miner and review utilities are preparation tools, not fabricated student tool-use traces. Freeze and record the actual schema here before generating the first trace.
 
 ## Snapshots
 
@@ -75,6 +75,6 @@ entries can have no function/class links. Link validation does not change the
 entries' draft/review status.
 
 The [five graph tool schemas](../schema/graph-tools-v1.json) are now frozen at v1;
-the original repository/source tools described above remain proposed. The trusted
+the repository/source tools described above are a review candidate. The trusted
 runner must set a task's parent commit as cutoff and withhold direct access to the
 full source repository and timeline. See [graph integration](../graph/README.md).
