@@ -1,6 +1,8 @@
 # exdev
 
-Tools and an annotated history for studying **[exllamav3](https://github.com/turboderp-org/exllamav3), created by Turboderp and its contributors**. The goal is a specialist development model grounded in real upstream changes. This is an independent project; explanations are exdev annotations, not statements or endorsements by the upstream authors.
+**exdev is an independent project by UnstableLlama**, building a specialist development model through repository history, an explanatory Encyclopedia, and code graphs.
+
+The upstream project studied here is **[exllamav3](https://github.com/turboderp-org/exllamav3)**, created by **Turboderp** and developed with its contributors. That credit applies to exllamav3. exdev's tooling and annotations are separate work, and exdev is not authored or endorsed by Turboderp.
 
 Original tooling and commentary: [MIT](LICENSE). Upstream code and diffs: retain Turboderp's [MIT notice](LICENSES/exllamav3-MIT.txt). See [NOTICE](NOTICE) and [ATTRIBUTION.md](ATTRIBUTION.md) for scope, credits and external-source handling.
 

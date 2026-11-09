@@ -1,6 +1,8 @@
 # Attribution and license scope
 
-exdev studies **[exllamav3](https://github.com/turboderp-org/exllamav3), created by Turboderp and developed with its contributors**. The code changes being studied belong to those authors. exdev contributes the mining tools, source organization and explanatory annotations.
+**exdev is an independent project by UnstableLlama.** Its original tooling and explanatory annotations are credited to UnstableLlama and exdev contributors.
+
+The upstream project exdev studies is **[exllamav3](https://github.com/turboderp-org/exllamav3), created by Turboderp and developed with its contributors**. The code changes being studied belong to those authors. exdev contributes the mining tools, source organization and explanatory annotations.
 
 ## Original work and upstream work
 
