@@ -90,3 +90,14 @@ Impact is separate from classification and confidence: high, medium, low or unkn
 `ledger.retrospectives.append` requires evidence hashes and creates a new revision file exclusively. Corrections supersede the existing leaf. `eligible_revisions` checks every dependency against both a timezone-aware cutoff and an explicit repository/SHA allowlist before resolving supersession. It is not connected to teacher packet building or training selection. The first-record tests cover future fixes, held-out branches, evidence tampering and correction visibility; general merge/regression analysis and the training policy engine remain unimplemented.
 
 The root cross-chapter consistency limitation is in `.teacher/assemblies/root-002/known-limits.md`, an administrative companion excluded from ancestor export. Original root artifacts and existing packet hashes are unchanged.
+
+The setup-path record (`exllamav3-absolute-setup-source-paths--r001`) checks each
+ancestor of commit 9 individually and distinguishes source inspection from the
+build results reported in issue #2. No extension build was run. Its new record
+awaits review; the accepted underlying draft does not automatically review the
+administrative extraction. It is excluded from historical teacher context.
+
+External evidence dependencies carry `url`, `source_id`, `content_sha256`, and
+`available_at`. Closure selection requires the exact `(url, content_sha256)` in
+the allowlist as well as the cutoff, alongside ordinary `(repository, sha)` Git
+dependencies. A later issue revision cannot substitute for the saved evidence.

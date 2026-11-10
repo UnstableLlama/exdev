@@ -16,7 +16,7 @@ class WalkInputTests(unittest.TestCase):
 
     def bundle(self):
         m=json.loads((self.packet/'manifest.json').read_text());content='ELIGIBLE_ISSUE_FIXTURE: setup paths must be relative.'
-        item={'source_id':'fixture-issue','url':'https://example.test/issues/2',
+        item={'source_id':'fixture-issue','author_login':'fixture-author','url':'https://example.test/issues/2',
               'created_at':m['cutoff_date'],'revision_at':m['cutoff_date'],
               'content':content,'content_sha256':hashlib.sha256(content.encode()).hexdigest()}
         directory=self.root/'evidence';directory.mkdir()
@@ -41,6 +41,8 @@ class WalkInputTests(unittest.TestCase):
         self.assertEqual(m['evidence'][0]['source_id'],'fixture-issue')
         task=json.loads(FreshSession(packet).initial[1]['content'])
         self.assertEqual(task['evidence_catalog'][0]['source_id'],'fixture-issue')
+        self.assertEqual(task['evidence_catalog'][0]['author_login'],'fixture-author')
+        self.assertEqual(task['task_author_name'],self.git('show','-s','--format=%an',self.task))
         validate_bundle(packet,directory/'000009-eligible.json')
 
     def test_builder_cannot_silently_drop_bundle(self):
@@ -66,3 +68,37 @@ class WalkInputTests(unittest.TestCase):
         with self.assertRaises(ValueError):prepare(self.repo,self.task,9,self.root/'empty',directory)
         original['task_sha']=self.future;p.write_text(json.dumps(original))
         with self.assertRaises(ValueError):prepare(self.repo,self.task,9,self.root/'wrong-task',directory)
+
+    def test_reference_recovery_gate_and_bound_marker(self):
+        from teacher.walk_inputs import references
+        self.git('commit','--allow-empty','-m','Fix #42 https://github.com/a/b/pull/43')
+        sha=self.git('rev-parse','HEAD');directory=self.root/'recovery';directory.mkdir()
+        packet=self.root/'gated'
+        with self.assertRaisesRegex(ValueError,'recovery required'):prepare(self.repo,sha,10,packet,directory)
+        self.assertFalse(packet.exists())
+        marker={'status':'recovered_none_eligible','task_sha':sha,
+                'cutoff':self.git('show','-s','--format=%cI',sha),
+                'references':references(self.git('show','-s','--format=%B',sha)),
+                'recovery_report':'fixture: all referenced objects recovered; none before cutoff'}
+        path=directory/'000010-recovered-none.json'
+        for field,value in [('task_sha',self.task),('cutoff','wrong'),('references',[]),('status','not_recovered'),('recovery_report','')]:
+            path.write_text(json.dumps(dict(marker,**{field:value})))
+            with self.assertRaises(ValueError):prepare(self.repo,sha,10,packet,directory)
+            self.assertFalse(packet.exists())
+        path.write_text(json.dumps(marker));m=prepare(self.repo,sha,10,packet,directory)
+        self.assertEqual(m['evidence'],[])
+        validate_bundle(packet,directory/'000010-eligible.json')
+        path.write_text(json.dumps(dict(marker,recovery_report='changed')))
+        with self.assertRaisesRegex(ValueError,'marker changed'):validate_bundle(packet,directory/'000010-eligible.json')
+
+    def test_referenced_commit_with_bundle_passes(self):
+        directory=self.bundle();self.git('commit','--allow-empty','-m','Fix #2')
+        sha=self.git('rev-parse','HEAD');p=directory/'000009-eligible.json';b=json.loads(p.read_text())
+        b.update(task_sha=sha,cutoff=self.git('show','-s','--format=%cI',sha));p.write_text(json.dumps(b))
+        self.assertEqual(len(prepare(self.repo,sha,9,self.root/'referenced',directory)['evidence']),1)
+
+    def test_reference_detection_is_conservative(self):
+        from teacher.walk_inputs import references
+        self.assertEqual(references('Fix org/repo#2 and #2'),['#2'])
+        self.assertTrue(references('See HTTPS://GITHUB.COM/a/b/issues/42'))
+        self.assertEqual(references('Ordinary housekeeping'),[])

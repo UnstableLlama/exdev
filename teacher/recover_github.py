@@ -8,7 +8,7 @@ import subprocess
 from .evidence import eligible_content
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = 'id url createdAt updatedAt lastEditedAt body'
+BASE = 'id url createdAt updatedAt lastEditedAt body author { login }'
 EDIT = 'id createdAt editedAt deletedAt diff'
 
 

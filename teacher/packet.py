@@ -47,6 +47,7 @@ def build_packet(repo, task, destination, evidence=None):
         manifest['shows'][sha] = store(show)
         if sha == task:
             manifest['task_commit_message']=message
+            manifest['task_author_name']=git(repo,'show','-s','--format=%an',task).decode(errors='replace').rstrip('\n')
             manifest['task_changed_files']=git(repo,'diff','--no-renames','--name-only','-z',base,sha,'--').decode().strip('\0').split('\0') if patch else []
             boundaries=list(re.finditer(rb'^diff --git .*$',show,re.MULTILINE))
             manifest['task_change_sections']=[]
@@ -87,9 +88,10 @@ def build_packet(repo, task, destination, evidence=None):
                     raise ValueError('HF artifact role has not been approved by the curator')
             if hashlib.sha256(data).hexdigest() != item['content_sha256']:
                 raise ValueError('Evidence checksum mismatch')
-            allowed_keys = ('url', 'source_id', 'created_at', 'revision_at', 'retrieved_at', 'representation',
+            allowed_keys = ('author_login', 'url', 'source_id', 'created_at', 'revision_at', 'retrieved_at', 'representation',
                             'content_sha256', 'kind', 'repo_id', 'revision', 'path', 'artifact_role', 'mirror_provenance')
             exported = {k:item[k] for k in allowed_keys if k in item}
+            exported.setdefault('author_login',None)
             exported.update(blob=store(data), kind=item.get('kind', 'web'),content_bytes=len(data))
             if exported['kind']=='safetensors_header':
                 exported['tensor_count']=len([k for k in json.loads(data) if k!='__metadata__'])

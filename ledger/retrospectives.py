@@ -11,6 +11,15 @@ REQUIRED={'defect_id','revision_id','supersedes','origin','classification','stat
           'verification','evidence','recorded_at','reviewed_at','reviewer','affected_revisions','dependencies'}
 
 
+def dependency_identity(dep):
+    if 'sha' in dep:
+        if not re.fullmatch('[0-9a-f]{40}',dep['sha']):raise ValueError('Invalid evidence revision')
+        return dep['repository'],dep['sha']
+    if not dep.get('source_id') or not dep.get('url') or not re.fullmatch('[0-9a-f]{64}',dep.get('content_sha256','')):
+        raise ValueError('Invalid external evidence dependency')
+    return dep['url'],dep['content_sha256']
+
+
 def validate(record):
     if not REQUIRED<=record.keys():raise ValueError('Missing retrospective fields')
     for key in ('defect_id','revision_id'):
@@ -20,10 +29,10 @@ def validate(record):
     if record['classification'] not in ('defect','behavior_change','new_requirement','external_compatibility','unresolved'):raise ValueError('Unknown classification')
     if not record['dependencies'] or not record['evidence']:raise ValueError('Evidence closure required')
     for dep in record['dependencies']:
-        if not re.fullmatch('[0-9a-f]{40}',dep['sha']):raise ValueError('Invalid evidence revision')
+        dependency_identity(dep)
         if datetime.fromisoformat(dep['available_at']).tzinfo is None:raise ValueError('Timezone required')
     if record['origin']=='fix_derived':
-        dependencies={(d['repository'],d['sha']) for d in record['dependencies']}
+        dependencies={dependency_identity(d) for d in record['dependencies']}
         if not record['fixes'] or any((f['repository'],f['sha']) not in dependencies for f in record['fixes']):
             raise ValueError('Fix-derived record must depend on its fixing revisions')
 
@@ -51,7 +60,7 @@ def eligible_revisions(records, cutoff, allowed_revisions):
     eligible=[]
     for record in records:
         validate(record)
-        if all((d['repository'],d['sha']) in allowed_revisions and datetime.fromisoformat(d['available_at'])<=cutoff for d in record['dependencies']):
+        if all(dependency_identity(d) in allowed_revisions and datetime.fromisoformat(d['available_at'])<=cutoff for d in record['dependencies']):
             eligible.append(record)
     superseded={(r['defect_id'],r['supersedes']) for r in eligible if r['supersedes']}
     return [r for r in eligible if (r['defect_id'],r['revision_id']) not in superseded]

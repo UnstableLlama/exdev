@@ -30,6 +30,8 @@ class FreshSession:
             if manifest.get('ancestor_matches_version') == 1:
                 from .ancestor_matches import opening_matches
                 task['ancestor_file_matches']=opening_matches(self.runner.packet,manifest)
+        if 'task_author_name' in manifest:
+            task['task_author_name']=manifest['task_author_name']
         if 'task_commit_message' in manifest:
             task['task_commit_message']=manifest['task_commit_message']
         self.reasoning_effort = 'high' if not manifest['task_parents'] or manifest.get('authoring_task') else 'medium'

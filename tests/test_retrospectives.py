@@ -42,3 +42,12 @@ class RetrospectiveTests(unittest.TestCase):
     def test_fix_dependency_cannot_be_omitted(self):
         self.record['dependencies'][0]['sha']='c'*40
         with self.assertRaises(ValueError):validate(self.record)
+
+    def test_external_dependency_requires_hash_allowlist_and_cutoff(self):
+        dep={'url':'https://example.test/issues/2','source_id':'issue-edit','content_sha256':'b'*64,'available_at':'2025-01-03T00:00:00+00:00'}
+        self.record['dependencies'].append(dep)
+        allowed={('fixture','a'*40)}
+        self.assertEqual(eligible_revisions([self.record],'2025-01-04T00:00:00+00:00',allowed),[])
+        allowed.add((dep['url'],dep['content_sha256']))
+        self.assertEqual(eligible_revisions([self.record],'2025-01-02T00:00:00+00:00',allowed),[])
+        self.assertEqual(eligible_revisions([self.record],'2025-01-04T00:00:00+00:00',allowed),[self.record])

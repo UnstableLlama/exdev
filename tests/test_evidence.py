@@ -33,3 +33,7 @@ class EvidenceTests(unittest.TestCase):
     def test_unpublished_review_is_excluded(self):
         o=self.obj();o['publishedAt']=None
         self.assertIsNone(eligible_content(o,'2025-01-02T00:00:00Z'))
+
+    def test_author_attribution_and_unknown_author(self):
+        self.assertEqual(eligible_content(self.obj(author={'login':'reporter'}),'2025-01-02T00:00:00Z')['author_login'],'reporter')
+        self.assertIsNone(eligible_content(self.obj(author=None),'2025-01-02T00:00:00Z')['author_login'])

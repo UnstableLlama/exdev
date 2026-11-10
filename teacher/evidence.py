@@ -33,6 +33,6 @@ def eligible_content(obj, cutoff):
         edit = max(candidates, key=lambda e: timestamp(e['editedAt']))
         content, revision, source_id = edit['diff'], edit['editedAt'], edit['id']
         representation = 'edit_event_text'
-    return {'url': obj['url'], 'source_id': source_id, 'created_at': obj['createdAt'],
+    return {'author_login': (obj.get('author') or {}).get('login'), 'url': obj['url'], 'source_id': source_id, 'created_at': obj['createdAt'],
             'revision_at': revision, 'representation': representation, 'content': content,
             'content_sha256': hashlib.sha256(content.encode()).hexdigest()}

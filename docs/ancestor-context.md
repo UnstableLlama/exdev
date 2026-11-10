@@ -67,3 +67,21 @@ New packets carry the full task commit message as explicit opening-context input
 The walk reads `data/evidence/github/POSITION-eligible.json` when present and passes it through the packet builder’s task identity, cutoff and content-hash checks. A new input contract binds the complete source-ID/content-hash list and bundle fingerprint. Empty present bundles, dropped/partial evidence, changed/disappeared bundles and missing task messages fail before inference. Preparation and pre-launch checks enforce the bundle against disk; the session additionally checks the manifest contract. No eligible file is different from a present file silently ignored.
 
 Rejected attempts are preserved. A resumed position allocates the next unused packet and run suffix; neither existing packets nor authored drafts are overwritten. The commit-message audit for positions 2–8 is recorded in `reports/commit-message-audit-002-008.json`; no earlier rerun was indicated by those comparisons.
+
+Walk input contract v2 stops before packet creation when a task message contains
+`#N` or a GitHub URL and no eligible bundle exists. Recovery with zero eligible
+items must instead leave `POSITION-recovered-none.json` with `status` equal to
+`recovered_none_eligible`, the exact `task_sha`, `cutoff`, sorted unique
+`references` (from `teacher.walk_inputs.references`), and a nonempty
+`recovery_report` identifying the curator's recovery record. This is a trusted
+curator attestation, not proof inferred from an absent bundle. Never generate it
+without recovering the referenced material. Preparation validates those fields;
+the manifest binds the marker and its bytes, checked again before launch. An
+empty eligible bundle still fails. This gate does not itself perform recovery.
+
+New opening contexts include `task_author_name` from Git's author field. Evidence
+catalogs preserve `author_login` from GitHub recovery (null when unavailable),
+including when the evidence is a historical edit. These are attribution fields,
+not independent corroboration or authorization. GitHub logins are those returned
+at recovery time; no historical username reconstruction is claimed. Already saved
+packets and drafts remain unchanged.
