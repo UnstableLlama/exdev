@@ -21,6 +21,14 @@ def output_schema(manifest):
         schema['properties']['chapters']['minItems']=1
         schema['properties']['chapters']['maxItems']=1
         schema['properties']['chapters']['items']['properties']['id']['enum']=[manifest['authoring_task']['id']]
+    task=manifest.get('authoring_task',{})
+    if 'chapter_catalog' in task:
+        chapter=schema['properties']['chapters']['items']
+        allowed=[c['id'] for c in task['chapter_catalog'] if c['id']!=task['id']]
+        refs={'type':'array','items':{'type':'string','minLength':1},'maxItems':len(allowed)}
+        if allowed:refs['items']['enum']=allowed
+        chapter['properties']['related_chapters']=refs
+        chapter['required'].append('related_chapters')
     return schema
 
 
@@ -71,7 +79,7 @@ def evidence_ledger(transcript):
 
 
 def validate_annotation(annotation, manifest, transcript):
-    validate_shape(annotation,SCHEMA)
+    validate_shape(annotation,output_schema(manifest) if 'chapter_catalog' in manifest.get('authoring_task',{}) else SCHEMA)
     from .coverage import require_coverage
     require_coverage(manifest,transcript)
     task=manifest.get('authoring_task')
@@ -87,6 +95,8 @@ def validate_annotation(annotation, manifest, transcript):
         if chapter['id'] in chapter_ids:
             raise ValueError('Duplicate chapter ID')
         chapter_ids.add(chapter['id']);claims.extend(chapter['claims'])
+        refs=chapter.get('related_chapters',[])
+        if len(refs)!=len(set(refs)):raise ValueError('Duplicate chapter reference')
     for claim in claims:
         refs=claim['evidence']
         if not refs:
@@ -133,6 +143,10 @@ def render(entry):
     for chapter in annotation['chapters']:
         parts.append(f'<a id="{chapter["id"]}"></a>\n\n## {chapter["title"]}')
         parts.extend(c['text']+' ['+c['basis']+'; '+', '.join(c['evidence'])+']' for c in chapter['claims'])
+        titles={c['id']:c['title'] for c in annotation['chapters']}
+        refs=chapter.get('related_chapters',[])
+        if refs:
+            parts.append('Related chapters: '+', '.join(f'[{titles[r]}](#{r})' if r in titles else r+' (assembly link pending)' for r in refs))
     if annotation['limitations']:
         parts.extend(['## Uncertainty and limits',*annotation['limitations']])
     return '\n\n'.join(parts)+'\n'

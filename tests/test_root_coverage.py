@@ -69,3 +69,13 @@ class CoverageTests(unittest.TestCase):
         first=page(0,'a','first')
         with self.assertRaises(ValueError):require_coverage(manifest,first+page(0,'a','again'))
         self.assertEqual(require_coverage(manifest,first+page(1,'b','rest'))['fully_read_evidence'],['header'])
+
+    def test_required_execution_rejects_no_run_and_failed_run(self):
+        manifest=json.loads((self.packet/'manifest.json').read_text())
+        manifest['authoring_task']={'required_sections':[],'required_evidence':[],'execution_required':True}
+        with self.assertRaises(ValueError):require_coverage(manifest,[])
+        calls=[{'role':'assistant','calls':[{'id':'compute','tool':'run','arguments':{}}]},
+               {'role':'tool','name':'run','call_id':'compute','content':json.dumps({'ok':True,'result':{'returncode':1}})}]
+        with self.assertRaises(ValueError):require_coverage(manifest,calls)
+        calls[-1]['content']=json.dumps({'ok':True,'result':{'returncode':0,'timed_out':False}})
+        self.assertEqual(require_coverage(manifest,calls)['successful_required_runs'],['compute'])

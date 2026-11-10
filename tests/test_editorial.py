@@ -69,3 +69,19 @@ class EditorialTests(unittest.TestCase):
         self.manifest['commits']['b'*40]={}
         self.manifest['ancestor_entries']=[{'sha':'b'*40}]
         self.assertEqual(output_schema(self.manifest)['properties']['links']['items']['enum'],['b'*40])
+
+    def test_chapter_references_are_catalog_bound_and_render_when_assembled(self):
+        self.manifest['authoring_task']={'kind':'chapter','id':'quantizer','required_sections':[],
+            'required_evidence':[],'chapter_catalog':[{'id':'quantizer'},{'id':'gemm'}]}
+        annotation=fixture();annotation['chapters']=[{'id':'quantizer','title':'Quantizer',
+            'claims':annotation['problem'],'related_chapters':['gemm']}]
+        entry,_=assemble_draft(annotation,self.manifest,self.transcript)
+        self.assertIn('assembly link pending',render(entry))
+        entry['annotation']['chapters'].append({'id':'gemm','title':'GEMM','claims':[],'related_chapters':[]})
+        self.assertIn('[GEMM](#gemm)',render(entry))
+        annotation['chapters'][0]['related_chapters']=['future']
+        with self.assertRaises(ValueError):validate_annotation(annotation,self.manifest,self.transcript)
+        annotation['chapters'][0]['related_chapters']=['gemm','gemm']
+        with self.assertRaises(ValueError):validate_annotation(annotation,self.manifest,self.transcript)
+        annotation['chapters'][0]['related_chapters']=['quantizer']
+        with self.assertRaises(ValueError):validate_annotation(annotation,self.manifest,self.transcript)

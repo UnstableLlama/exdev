@@ -29,6 +29,19 @@ Function-level paper mappings must identify actual functions and distinguish exa
 correspondence from analogy. Do not claim source inspection proves measured behavior.
 The chapter is a component of one eventual canonical root entry, not the whole root.
 State substantive gaps honestly; do not summarize uninspected files as inspected.
+Explain the meaning of numerical constants and thresholds, deriving them from
+permitted sources where possible. When a claim can be checked with a small bounded
+standard-library Python computation, use run and cite the result as execution.
+Examples include decoder statistics, indexing/permutation inverses, packing identities,
+and shape arithmetic. Inspect the source first; do not manufacture a passing check.
+A CPU scalar emulation is not a GPU kernel test. State any material mismatch in
+integer overflow, precision or execution environment. If no useful computation is
+feasible for the chapter, explain that limitation rather than adding a trivial run.
+When chapter_catalog is supplied, use related_chapters for useful cross-references
+from that catalog. It is a navigation plan, not evidence about another chapter's prose.
+Explain the local side of each interface from source; do not claim to have read
+other chapter drafts. Do not use position-dependent wording such as "described below"
+in limitations; name the relevant function or mechanism instead.
 The links field contains ONLY supplied ancestor commit SHAs, never chapter IDs.
 For a root commit links must be []. Chapters are local sections linked by the renderer. Do not invent
 ancestor entries or mark an annotation reviewed or training eligible.'''

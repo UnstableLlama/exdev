@@ -49,3 +49,7 @@ The human site may offer an explicitly labeled overview of all indexed history. 
 Before publishing, verify that deep links resolve at the correct revision, entry/symbol links agree with their source records, draft and parsing-gap labels survive export, and historical views reveal no later data. Exercise a merge comparison, a renamed symbol, a missing snapshot and a source-gap entry. Validate keyboard/text navigation and demonstrate that a large snapshot loads a bounded neighborhood rather than the entire graph.
 
 This phase does not require finishing every Encyclopedia entry before a first reading preview, but it must accurately display incomplete coverage. Deployment is a separate later task; documenting this plan does not publish a site.
+
+## Later defect findings
+
+The present-day view may overlay the separate [defect ledger](defect-retrospectives.md): show whether a finding was observed during historical authoring or derived from a later fix, its confirmation status, trigger, evidence, introduction candidates and verified fixes. Keep original prose unchanged. Historical views must filter the entire overlay—including counts, navigation and search—by the selected evidence cutoff and ancestry. A later fix must not silently make an earlier historical page claim knowledge from the future.

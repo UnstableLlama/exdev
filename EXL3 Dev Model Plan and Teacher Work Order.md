@@ -15,7 +15,7 @@ The commits are the ground truth. The teacher does not invent exl3 expertise; it
 Five rules hold for every stage of the work.
 
 1. **Start from commit one.** The walk begins at the first exllamav3 commit and moves forward in order. Nothing is skipped ahead to.
-2. **No hindsight.** When the teacher works on a commit, it sees the repository only as it stood at that commit's parent, plus Encyclopedia entries already written. It does not look at later commits to explain earlier ones.
+2. **No hindsight in historical authoring.** The teacher receives the task diff, repository evidence from its strict ancestors, approved ancestor Encyclopedia entries, and eligible external sources; it never uses later commits to explain an earlier change. Later defect findings belong in a separate, labeled retrospective layer used for sample generation and human retrospective views, subject to the evaluation cutoff and permitted ancestry. They never rewrite historical prose or leak into intervening authoring contexts. See [defect retrospective policy](docs/defect-retrospectives.md).
 3. **Pin external material to the commit date.** Papers are read at the version that existed then. HuggingFace repos are read at the revision that existed then. If the dated version cannot be recovered, the entry says so.
 4. **The teacher annotates; it does not originate.** Every code change in the dataset is a real change from the history. The teacher supplies the problem statement, the reasoning, and the surrounding research.
 5. **Training samples are tool-use traces.** The student learns to inspect before it writes: open the config, read the tensor manifest, check the paper, then produce the change. Traces use only the shared tool set defined below.

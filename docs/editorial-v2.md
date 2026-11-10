@@ -21,3 +21,9 @@ Tests use explicitly labeled fixtures. The real installed Codex binary is tested
 Protocol references: [official Codex app-server documentation](https://learn.chatgpt.com/docs/app-server) and [official configuration schema](https://learn.chatgpt.com/docs/config-schema.json). The adapter is pinned to the locally generated 0.167.0 protocol; upgrades require rerunning the wire and boundary checks.
 
 The provider-facing output schema also restricts `links` to supplied ancestor SHAs (an empty array at the root). Local chapter anchors are a separate field. This restriction was added after the first live root attempt confused chapter IDs with ancestor links; that response was rejected and preserved rather than repaired by the administrative session.
+
+## Chapter instruction revision 2
+
+New chapter packets carry a catalog of planned IDs/topics. Their generated schema adds `related_chapters`, validated against the catalog and distinct from ancestor SHA links. Old packet/draft schemas remain replayable. Standalone references display as pending; combined entries render available chapter targets as anchors. See [chapter revisions](chapter-revisions.md).
+
+Explain constants and perform meaningful bounded pure-Python checks through `run` where feasible. The quantizer rerun specifically requires a successful computation, while correctness and relevance of that computation remain review responsibilities. Do not feed reviewer-supplied expected answers into the teacher context. Retrospective defect labels follow the [separate policy](defect-retrospectives.md); they are not new historical authoring input.

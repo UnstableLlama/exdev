@@ -27,7 +27,7 @@ Fresh contexts must be scoped per task/entry to its permitted ancestry. One fres
 
 Eligible issue/PR evidence for entries 9 and 10 is recovered. Entry 9 can see pre-cutoff issue edit-event text; PR 3 was created 43 seconds after its commit and is excluded. Entry 10 can see the eligible issue body, PR body and two comments. Historical edit-event text is explicitly not certified as a complete historical body. Raw retrievals remain local; the [report](../reports/github-evidence-recovery.json) records provenance and eligibility.
 
-The nine repository/source tools, packet builder, Bubblewrap supervisor and provider-neutral fresh-session driver are implemented as a candidate. All 114 tests pass with host sandbox tests enabled after the root coverage changes. Real packets for entries 9 and 10 passed [boundary checks](../reports/teacher-boundary.json). See the [review guide](teacher-boundary.md) and [runner instructions](../teacher/README.md).
+The nine repository/source tools, packet builder, Bubblewrap supervisor and provider-neutral fresh-session driver are implemented as a candidate. All 116 tests pass with host sandbox tests enabled after the root coverage changes. Real packets for entries 9 and 10 passed [boundary checks](../reports/teacher-boundary.json). See the [review guide](teacher-boundary.md) and [runner instructions](../teacher/README.md).
 
 The five graph tools now use an ancestor-only packet bridge, including isolated native queries and ancestry-filtered symbol history. All five passed real-packet checks for entries 9 and 10; mutations and task/future graph requests were denied. No global graph timeline is exposed to the runner.
 
@@ -52,3 +52,7 @@ Historical external evidence has been recovered for QTIP v3, QuIP# v2, the pinne
 Section-relative `git_show` truncation and assigned-range coverage checks are implemented and tested. Recovery alone does not mean that an author has inspected these sources or that a revised root entry is ready for approval.
 
 The [quantizer chapter report](../reports/root-quantizer-candidate.json) records 26 successful tool calls, complete assigned coverage and exact draft replay. The chapter contains function-level paper mappings and source-level discrepancy observations, not measured GPU results. A chapter cannot be approved through the complete-entry approval path or supplied as a complete ancestor entry. The other nine chapter runs, synthesis and canonical promotion remain pending.
+
+## Next checkpoint after quantizer review
+
+Fable accepted the quantizer as a template, subject to stronger treatment of constants, useful `run` computations, cross-references and a fresh rerun rather than hand repair. Instruction revision 2 and catalog-bound chapter references are implemented; old draft prose is unchanged. The remaining nine chapters have not started under these changes. Run them next, then rerun the quantizer last under the [revision policy](chapter-revisions.md). The [retrospective defect policy](defect-retrospectives.md) defines later sample filtering and human overlays; its ledger and sample-policy engine remain to be implemented before training-data generation.

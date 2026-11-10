@@ -32,7 +32,8 @@ def task_for(chapter, manifest):
     paths=[section_path(s) for s in manifest['task_change_sections']]
     return {'kind':'chapter','id':chapter['id'],'focus':chapter['focus'],
             'required_sections':[paths.index(p) for p in chapter['files']],
-            'required_evidence':chapter['required_evidence'],'reasoning_effort':'high'}
+            'required_evidence':chapter['required_evidence'],'reasoning_effort':'high',
+            'execution_required':chapter.get('execution_required',False)}
 
 
 def validate_task(manifest):
@@ -65,6 +66,7 @@ def prepare(plan, bundle, destination):
         packet=destination/chapter['id']
         shutil.copytree(base,packet)
         scoped=dict(manifest,authoring_task=task_for(chapter,manifest),graphs={},ancestor_context_complete=True)
+        scoped['authoring_task']['chapter_catalog']=[{'id':c['id'],'focus':c['focus']} for c in plan['chapters']]
         validate_task(scoped)
         (packet/'manifest.json').write_text(json.dumps(scoped,indent=2)+'\n')
     return len(plan['chapters'])

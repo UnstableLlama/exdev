@@ -70,4 +70,15 @@ def require_coverage(manifest, transcript):
         if covered(ranges,0,length):evidence_complete.append(source_id)
         else:missing.append(source_id)
     if missing:raise ValueError('Required evidence not fully read: '+', '.join(missing))
-    return {'fully_read_sections':complete,'fully_read_evidence':evidence_complete,'policy':'complete_assigned_ranges'}
+    report={'fully_read_sections':complete,'fully_read_evidence':evidence_complete,'policy':'complete_assigned_ranges'}
+    if task.get('execution_required'):
+        calls={c['id']:c for m in transcript if m['role']=='assistant' for c in m.get('calls',[])}
+        successful=[]
+        for m in transcript:
+            if m['role']!='tool' or m['name']!='run' or calls.get(m['call_id'],{}).get('tool')!='run':continue
+            result=json.loads(m['content'])
+            if result.get('ok') and result.get('result',{}).get('returncode')==0 and not result['result'].get('timed_out',False):
+                successful.append(m['call_id'])
+        if not successful:raise ValueError('Assigned computation requires a successful run')
+        report['successful_required_runs']=successful
+    return report
