@@ -10,6 +10,8 @@ Original tooling and commentary: [MIT](LICENSE). Upstream code and diffs: retain
 
 ## Current status
 
+The accepted ten root chapters now have a [combined assembly candidate](.teacher/assemblies/root-002/entry.md), preserving their prose and resolving chapter links. The user-supplied review accepts it, and hash-bound ancestor approval plus bounded retrieval are implemented; the canonical Encyclopedia has not been replaced. [Validation report](reports/root-assembly-validation-002.json).
+
 The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) describes the historical extraction and teacher workflow. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; the second isolated root-entry candidate was rejected for insufficient coverage, and the restart now uses assigned subsystem chapters. No training traces have been generated.
 
 ```sh
@@ -36,7 +38,7 @@ Validation is complete at commit positions **1, 755, 1,509 and 2,264**:
 - Selected Python call-trace checks pass with test code included.
 - At the pinned tip, the diagnostic probe finds 2,902 of 3,000 simple Python call candidates. This is a narrow coverage check, not an overall accuracy score.
 - All 1,106 uniquely resolved Python-to-native call sites at the tip need supplemental edges; 80 files have partial parsing diagnostics.
-- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 122 tests with host sandbox tests enabled. No GPU execution or training has been performed.
+- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 140 tests with host sandbox tests enabled. No GPU execution or training has been performed.
 
 Read the [validation report](reports/graph-validation.md) for evidence and limitations, and the [validation setup](graph/README.md) to reproduce the probe. Raw backend responses and snapshot databases remain local. These validation worktrees share full Git history and are not teacher-facing artifacts.
 
@@ -90,6 +92,6 @@ The [Codex adapter and editorial schema](docs/editorial-v2.md) are ready for rev
 
 The rejected [root-entry draft](.teacher/runs/root-candidate-002/draft.md), [evidence transcript](.teacher/runs/root-candidate-002/raw-transcript.json) and [review record](.teacher/runs/root-candidate-002/review.json) are tracked for audit. The rejected first attempt is preserved alongside them. Prepared source packets and graph databases remain local.
 
-The [root chapter assignments](schema/root-chapters-v1.json) cover all source and documentation files. [Pinned external evidence](reports/root-evidence-recovery.json) is recovered for QTIP, QuIP#, QTIP reference code and five model architectures, including the public Unsloth Gemma 2 mirror. The first [quantizer chapter](.teacher/runs/root-quantizer-001/draft.md) passed full-read validation for 13 source files and five external references in a fresh Astra/high session. Fable accepted it as the template for the other chapters, with instruction improvements and a later fresh rerun requested; a complete replacement root entry is not yet available. See the [run report](reports/root-quantizer-candidate.json).
+The [root chapter assignments](schema/root-chapters-v1.json) cover all source and documentation files. [Pinned external evidence](reports/root-evidence-recovery.json) is recovered for QTIP, QuIP#, QTIP reference code and five model architectures, including the public Unsloth Gemma 2 mirror. The first [quantizer chapter](.teacher/runs/root-quantizer-001/draft.md) passed full-read validation for 13 source files and five external references in a fresh Astra/high session. Fable accepted it as the template for the other chapters, with instruction improvements and a later fresh rerun requested; the later accepted chapter assembly is linked above. See the [run report](reports/root-quantizer-candidate.json).
 
 [Retrospective defect records](docs/defect-retrospectives.md) are planned as a separate layer for human browsing and cutoff-safe sample selection, preserving historical explanations. [Chapter revision rules](docs/chapter-revisions.md) define immutable attempts, fresh reruns, useful execution checks and cross-chapter navigation. These documents do not mean the defect ledger or sample-policy engine is implemented.

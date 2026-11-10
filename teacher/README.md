@@ -1,6 +1,6 @@
 # Historical authoring runner
 
-This is a boundary-review candidate, not a completed authoring service. Initial live root-entry attempts are retained as separate review candidates; no canonical entries have been rewritten and no training traces generated. The [nine tool schemas](../schema/repo-tools-v1.json) remain unfrozen.
+This is a boundary-review candidate, not a completed authoring service. Initial live root-entry attempts are retained as separate review candidates; no canonical entries have been rewritten and no training traces generated. The [source and retrieval tool schemas](../schema/repo-tools-v1.json) remain unfrozen.
 
 The trusted curator builds one packet per task. `packet.py` exports strict ancestors of all task parents as content-addressed blobs, ancestor diffs, the explicit task diff and approved external evidence. It does not export `.git`, source mirrors, existing Encyclopedia drafts, `astra-review.md`, administrative reports or conversation history. `entry_analysis` mode deliberately reveals the task diff: it must not be reused as a code-prediction student's input packet.
 
@@ -20,7 +20,7 @@ python3 -m teacher.graph_packet --packet .teacher/000010
 python3 -m teacher.audit_boundary
 ```
 
-Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eight sandbox tests unless the environment flag is set. The host-enabled suite passed all 122 tests.
+Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eleven host-only tests unless the environment flag is set. The host-enabled suite passed all 140 tests.
 
 `python3 -m teacher.runner --packet .teacher/000009` reads one JSON request from stdin: `{"tool":"repo_list","arguments":{"commit":"ANCESTOR_SHA"}}`. Packet selection and cutoff are trusted configuration, never model arguments. Consult the schema for complete arguments.
 
@@ -32,7 +32,7 @@ Repository reads allow ancestor trees only; `git_show` additionally permits the 
 
 `run` materializes the first-parent source tree and applies optional disposable file replacements. It runs isolated standard-library Python only, with time, memory, file-size and output limits. A seccomp filter denies process/thread creation and namespace changes. This profile cannot execute Torch, GPU workloads or threaded tests. Those require a separately reviewed runtime profile.
 
-`FreshSession.run(model)` accepts a stateless provider callback and starts with only its generic instructions, task metadata and approved evidence catalog. It exposes the nine source tools, plus the five graph tools when a graph packet is attached. It rejects reuse of the session object. The callback must not attach prior conversations or remote session IDs. The driver returns an unpublished draft/transcript; it does not save corpus entries. Tests use explicit fixtures, not fabricated model outputs.
+`FreshSession.run(model)` accepts a stateless provider callback and starts with only its generic instructions, task metadata and approved evidence catalog. It exposes nine source tools, `ancestor_read` for retrieval packets, and five graph tools when a graph packet is attached. It rejects reuse of the session object. The callback must not attach prior conversations or remote session IDs. The driver returns an unpublished draft/transcript; it does not save corpus entries. Tests use explicit fixtures, not fabricated model outputs.
 
 ## Remaining work
 
@@ -69,7 +69,7 @@ The startup [report](../reports/codex-preflight.json) and [wire-test report](../
 
 ## Earlier explanations
 
-Use the [approved ancestor-context workflow](../docs/ancestor-context.md) to review replacement drafts and attach their content before authoring later commits. The author CLI and session APIs fail before inference if a non-root packet lacks complete approved ancestor prose. Review comments and original conversations are not included. The current full-prose context budget is 256 KiB; exceeding it requires implementing bounded retrieval rather than silently truncating history.
+Use the [approved ancestor-context workflow](../docs/ancestor-context.md) to review replacement drafts and attach their content before authoring later commits. The author CLI and session APIs fail before inference if a non-root packet lacks complete approved ancestor prose. Review comments and original conversations are not included. New packets use an 8 KiB opening catalog and on-demand entry/chapter reads and mechanical file/symbol search. The legacy 256 KiB inline cap is unchanged; see the workflow for paging and evidence semantics.
 
 ## Tracked review artifacts
 
@@ -140,3 +140,15 @@ Each record retains exact prose excerpts and JSON pointers, run/artifact hashes 
 [Provenance validation](../reports/findings/root-legacy-extraction-001-validation.json) passed: 220 prose paragraphs accounted for, 119 exact excerpt checks, 206 evidence-reference checks, six recovered source-quote checks, and unchanged original run hashes. This does not prove exhaustive discovery or confirm each finding. The separate generation inventory is linked from the report; cross-chapter overlap remains available for review rather than silently merged. Findings extraction is complete; extraction review, root-entry assembly and canonical approval remain separate work.
 
 Fable has [accepted the administrative extraction](../reports/findings/root-legacy-extraction-001-review.json) for fidelity and provenance. This supersedes its pending extraction-review state administratively, without rewriting the inventory. [The normalization policy](../schema/finding-taxonomy-v1.json) separates classification, unsupported configurations and coarse impact for future ledger ingestion. Individual finding confirmation and impact assessment remain separate.
+
+## Root assembly ready for review
+
+[The combined root entry](../.teacher/assemblies/root-002/entry.md) preserves the ten selected annotations, including generation 004, and resolves their chapter links. [Assembly verification](../reports/root-assembly-validation-002.json) checks 244 prose/limitation strings, 67 links and unchanged source evidence/artifact hashes. No new model session was used.
+
+Reproduce into a new output directory:
+
+```sh
+python3 -m teacher.assembly --selection reports/root-chapter-selection-001.json --packets reports/root-assembly-packets-001.json --output .teacher/assemblies/NEW_ATTEMPT
+```
+
+Original local packets are required for replay. Candidate output is retained for review, with a separate pending review record. The user-supplied review now accepts root-002 for ancestor use. Canonical promotion remains pending. Bounded retrieval exports prose without the old evidence ledger and supports file/symbol search; see the ancestor-context workflow.

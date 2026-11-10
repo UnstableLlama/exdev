@@ -41,6 +41,8 @@ def args_for(name, args):
     result.update(args)
     for key, value in result.items():
         rule = props[key]
+        if 'enum' in rule and value not in rule['enum']:
+            raise ValueError('Invalid ' + key)
         kind = rule['type']
         if kind == 'integer':
             if type(value) is not int or not rule['minimum'] <= value <= rule['maximum']:
@@ -121,6 +123,76 @@ def evidence_item(manifest, args, kind):
     return matches[0]
 
 
+def ancestor_read(packet, manifest, args):
+    if manifest.get('ancestor_context_mode') != 'retrieval_v1' or not manifest.get('ancestor_context_complete'):
+        raise ValueError('No approved ancestor retrieval packet')
+    refs = manifest.get('ancestor_entries', [])
+    if [r['sha'] for r in refs] != manifest['history_order'] or set(manifest['history_order']) != set(manifest['commits']):
+        raise ValueError('Ancestor retrieval does not match strict ancestry')
+    if args['mode'] == 'search':
+        if args.get('commit') or args.get('chapter') or not (args.get('file') or args.get('symbol')):
+            raise ValueError('Search needs a file or symbol query, without content selectors')
+        rows = json.loads(load_blob(packet, manifest['ancestor_search_blob']))
+        allowed = {r['sha']:r for r in refs}
+        for row in rows:
+            if row['sha'] not in allowed or (row['chapter'] and row['chapter'] not in allowed[row['sha']]['chapters']):
+                raise ValueError('Search target outside approved ancestry or chapters')
+        grouped = {}
+        total_records = 0
+        for row in rows:
+            if args.get('file','') not in row['file'] or args.get('symbol','') not in row['symbol']:
+                continue
+            total_records += 1
+            key = (row['sha'], row['chapter'])
+            target = grouped.setdefault(key, {'sha':row['sha'], 'chapter':row['chapter'],
+                'match_count':0, 'match_basis':[], 'examples':[]})
+            target['match_count'] += 1
+            if row['match_basis'] not in target['match_basis']:
+                target['match_basis'].append(row['match_basis'])
+            if len(target['examples']) < 3:
+                target['examples'].append({k:row[k] for k in ('file','symbol','match_basis')})
+        rank = {sha:i for i,sha in enumerate(manifest['history_order'])}
+        matches = sorted(grouped.values(), key=lambda r:(-rank[r['sha']],r['chapter']))
+        start = args.get('offset',0)
+        if start > len(matches):
+            raise ValueError('Search offset exceeds matches')
+        page = []
+        for row in matches[start:start+args.get('limit',20)]:
+            if len(json.dumps(page+[row]).encode()) > args.get('max_bytes',16384):
+                if not page:
+                    raise ValueError('Search match exceeds page budget; increase max_bytes')
+                break
+            page.append(row)
+        end = start+len(page)
+        return {'kind':'ancestor_search','matches':page,'offset':start,'next_offset':end,
+                'truncated':end<len(matches),'total_matches':len(matches),'total_matching_records':total_records,
+                'graph_indexed_ancestors':len(manifest.get('ancestor_search_graph_commits',[])),
+                'total_ancestors':len(refs),'content_sha256':manifest['ancestor_search_blob']}
+    if args.get('file') or args.get('symbol'):
+        raise ValueError('File and symbol selectors require search mode')
+    if args['mode'] == 'catalog':
+        if args.get('commit') or args.get('chapter'):
+            raise ValueError('Catalog does not accept content selectors')
+        digest = manifest['ancestor_catalog_blob']
+        identity = {'kind': 'ancestor_catalog'}
+    else:
+        ref = next((r for r in refs if r['sha'] == args['commit']), None)
+        if ref is None:
+            raise ValueError('Commit is outside approved strict ancestors')
+        chapter = args.get('chapter', '')
+        if chapter:
+            if chapter not in ref['chapters']:
+                raise ValueError('Unknown ancestor chapter')
+            digest = ref['chapters'][chapter]
+        else:
+            digest = ref['prose_blob']
+        identity = {'kind': 'ancestor_prose', 'sha': ref['sha'], 'chapter': chapter}
+    data = load_blob(packet, digest)
+    if args.get('offset', 0) > len(data):
+        raise ValueError('Offset exceeds content length')
+    return dict(excerpt(data, args), **identity, content_sha256=digest, content_bytes=len(data))
+
+
 def dispatch(packet, name, supplied):
     packet=Path(packet)
     args=args_for(name,supplied)
@@ -128,6 +200,8 @@ def dispatch(packet, name, supplied):
     if name in ('graph_search','graph_trace','graph_query','symbol_history','repo_map'):
         from teacher.graph_worker import invoke
         return invoke(packet, manifest, name, args)
+    if name == 'ancestor_read':
+        return ancestor_read(packet, manifest, args)
     commits=manifest['commits']
     if name in ('repo_read','repo_list','repo_grep'):
         if args['commit'] not in commits:

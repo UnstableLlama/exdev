@@ -1,22 +1,47 @@
 # Approved ancestor context
 
-A fresh teacher receives earlier explanations only after an administrative reviewer approves the exact replacement draft and its recorded evidence. This does not approve the draft for training or promote it into the canonical Encyclopedia.
+A fresh teacher receives earlier explanations only after an administrative reviewer approves exact artifacts. Ancestor approval does not promote an entry into the canonical Encyclopedia or make it training eligible.
 
-`teacher.ancestor_context approve` reassembles the draft from its original packet and raw transcript, checks the packet fingerprint and identity, and records hashes of the draft, transcript and provenance. It requires a named reviewer and rationale. It is an administrative CLI, not a teacher tool; neither the provider process nor a tool worker receives its code or review files. This is a trusted review record, not a cryptographic attestation of model execution or a substitute for checking claim quality.
+Ordinary runs use the existing replay and fingerprint check:
 
 ```sh
 python3 -m teacher.ancestor_context approve --run RUN_DIRECTORY --packet ORIGINAL_PACKET --reviewer REVIEWER --note 'Review rationale'
-python3 -m teacher.ancestor_context attach --packet NEXT_PACKET --run APPROVED_RUN_1 --run APPROVED_RUN_2
 ```
 
-Attachment requires exactly one approved replacement for every strict Git ancestor. Pending, edited, duplicated, unrelated and future entries are rejected. Entry identity, parents and cutoff must match Git history. Only explanatory content and evidence references are exported as checksum-verified blobs; reviewer names, notes, raw conversations and provider metadata stay outside the packet. A root packet can attach an empty set.
+Root assemblies use the original selection, packet map and chapter plan. Approval rebuilds the assembly, replays the selected drafts, verifies its JSON and Markdown and binds the assembly/provenance hashes. The approved chapter file assignments are copied from that verified plan into the administrative review record.
 
-`FreshSession` reads these verified blobs into its initial task context. Each entry has an `ancestor:<sha>` evidence ID. The editorial validator permits those IDs for source-based claims and inferences, but an execution claim still requires a successful `run` in the current session. Ancestor citations are stored as `approved_ancestor_context`, never fabricated tool calls. Actual code access remains limited to the packet's ancestry.
+```sh
+python3 -m teacher.retrieval --assembly ASSEMBLY_DIRECTORY --selection SELECTION_JSON --packets PACKET_MAP_JSON --plan CHAPTER_PLAN_JSON --reviewer REVIEWER --note 'Review rationale'
+```
 
-The current implementation supplies full approved prose inline for the first-25 restart, capped at 256 KiB of serialized context. It fails rather than silently dropping entries if that budget is exceeded. Scalable retrieval for later history remains future work; this cap must not be bypassed by mixing unrelated branch summaries into the prompt.
+The user-supplied Fable review accepts `.teacher/assemblies/root-002`. Its administrative review record now permits ancestor export. The immutable assembled Markdown still carries its original pending-review banner; the separate review record is authoritative. Canonical and training approval remain false.
 
-The author CLI and both model-session entry points reject missing ancestor context before inference. Preparation and startup checks can still inspect an incomplete packet. Graphs, source, evidence and prose must all be attached before authoring, because the recorded manifest fingerprint describes that exact input packet. A review binds that fingerprint even if preparation later creates other packets.
+## Retrieval packets
 
-The task diff also has a byte-offset index for each file section. This lets `git_show` read a selected part of the explicit task change without scanning binary payloads. It adds no future files or new tools and is particularly useful for the large initial commit.
+New `teacher.packet` CLI packets select `ancestor_context_mode: retrieval_v1` and editorial schema 4. Attach graph data before explanations so the search index includes those graph records:
 
-Existing first-25 drafts have not been approved or imported. Synthetic test fixtures are used only in tests. The independent boundary review remains outstanding; any initial live output is a separate review candidate, not a replacement corpus entry.
+```sh
+python3 -m teacher.packet --task TASK_SHA --destination NEW_PACKET
+python3 -m teacher.graph_packet --packet NEW_PACKET --store store
+python3 -m teacher.ancestor_context attach --packet NEW_PACKET --run APPROVED_ENTRY_OR_ASSEMBLY
+```
+
+Repeat `--run` for each strict ancestor. Attachment requires exactly one approved replacement for every strict Git ancestor. Pending, edited, duplicate, unrelated and future entries fail closed. Identity, parents and cutoff must match Git history. Exported blobs contain authored explanations and basis/verification labels, without evidence ledgers, old-session citation arrays, reviewer notes, raw transcripts or provider metadata. Saved original artifacts are unchanged.
+
+The opening prompt contains at most 8 KiB of catalog bytes. The catalog lists commit SHA, Git title, short summary, chapter IDs/titles/focus and files touched. Focus is a labeled excerpt from the first authored chapter claim (or problem claim), capped at 400 characters with an explicit truncation flag. Catalog entries are newest-first in reverse topological history order. The catalog itself stays in the packet and can be paged; it is not all injected at startup. Newly authored ordinary entries require a nonempty summary of at most 1,000 characters under schema 4. Schemas 2 and 3 remain supported for replay.
+
+One packet-only `ancestor_read` tool supports three modes:
+
+- `catalog`: browse the catalog with byte `offset` and `max_bytes` (maximum 16 KiB).
+- `search`: supply a case-sensitive `file` and/or `symbol` substring. Both filters must match when supplied together. `offset` counts grouped entry/chapter targets; `limit` is at most 50. Results are newest-first by history position, grouped by entry SHA and chapter ID, with `match_count`, distinct `match_basis` values and at most three file/symbol examples. Paging counts targets; `total_matching_records` preserves the underlying row count. Graph coverage is reported.
+- `content`: supply ancestor `commit` and optional `chapter`; read prose using byte `offset` and `max_bytes` (maximum 16 KiB).
+
+Catalog/content pages can end inside JSON or a UTF-8 character. Follow `next_offset` while `truncated` is true and concatenate bytes before parsing complete JSON; split UTF-8 pages use base64, consistent with existing source tools. Search results are structured records, bounded by both record count and page bytes. There is no regex execution or live lookup.
+
+Search is built mechanically. Git changed-file lists index ordinary entries. Root files join to chapters through the approved plan. Root graph snapshot symbols join to those chapter assignments by file; later commits use their scoped graph symbol events. Structured finding locations add explicitly labeled authored matches. No model-selected topics or retrospective administrative findings ledger is imported. A symbol-file join means the symbol is in a chapter's assigned file, not that the chapter discusses that symbol. Missing graph coverage is reported; an empty result does not establish absence of discussion.
+
+All search targets and reads are restricted to approved strict ancestors. Search/catalog calls are navigation, rejected as claim evidence. Content reads are ordinary recorded tool calls, citable by their current session IDs and hashed results, carrying the ancestor/chapter identity and byte range. In retrieval mode an ancestor link also requires a successful, nonempty prose page read in the same session. Reading a chapter qualifies its entry; this is not a full-entry-read requirement. Historical prose is not current execution evidence. Findings still require inspected source; execution claims still require a successful current-session `run`.
+
+The original 256 KiB inline path and `ancestor:<sha>` citations remain available only for legacy packets. Its limit has not changed. Retrieval bounds initial catalog and individual read sizes; packet storage, index construction and lookup work still grow with history, and accumulated tool responses remain subject to the existing session/tool-call budgets.
+
+The author rejects incomplete ancestor context before inference. All source, evidence, graph and prose attachment must finish before authoring so the manifest fingerprint binds the exact packet. The actual Codex protocol passes a local fake-provider test with all 15 allowed tools, a citable ancestor read and a schema-4 response. The user supplied Fable’s code review and real-packet boundary probes, accepting this path for commit 2. This is recorded in `reports/ancestor-retrieval-review-001.json`, without claiming formal certification. The three follow-up fixes pass the revised suite and the second-commit authoring run uses a new packet. No training trace is generated by this workflow.

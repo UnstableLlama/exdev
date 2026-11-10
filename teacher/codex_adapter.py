@@ -64,7 +64,7 @@ def thread_parameters(session, cwd):
             'ephemeral':True,'cwd':str(cwd),'runtimeWorkspaceRoots':[],
             'environments':[],'selectedCapabilityRoots':[], 'approvalPolicy':'never',
             'sandbox':'read-only','baseInstructions':session.initial[0]['content'],
-            'developerInstructions':INSTRUCTIONS,
+            'developerInstructions':INSTRUCTIONS + (RETRIEVAL_INSTRUCTIONS if any(t['name']=='ancestor_read' for t in session.tools) else ''),
             'config':{'model_reasoning_effort':session.reasoning_effort, 'web_search':'disabled',
                       'project_doc_max_bytes':0,
                       'features':{**{name:False for name in DISABLED_FEATURES},
@@ -147,3 +147,6 @@ class CodexTeacher:
         entry, review=assemble_draft(annotation,manifest,transcript)
         return {'draft':entry,'review':review,'transcript':transcript,'published':False,
                 'model':MODEL,'reasoning_effort':session.reasoning_effort}
+
+# Retrieval instructions are appended without changing historical saved prompts.
+RETRIEVAL_INSTRUCTIONS = "\nWhen ancestor_read is available, the initial ancestor catalog is navigation only. Page it with mode=catalog and next_offset (byte offsets). Use mode=search with file and/or symbol substrings to find entry and chapter targets; search offsets count grouped entry/chapter targets, newest first. Each target gives match_count and up to three examples. Search results are navigation only. Empty search results do not prove absence of discussion; graph coverage is reported. Read relevant entries or chapters with mode=content; cite that current tool call ID. Old session evidence IDs and catalog pages are not evidence. Follow truncated/next_offset for complete reads. The links field may name only ancestors whose prose you successfully read in this session. For schema 4 include a concise entry-level summary.\n"

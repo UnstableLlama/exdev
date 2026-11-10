@@ -25,11 +25,15 @@ class FreshSession:
                 'ancestor_entries':load_entries(self.runner.packet,manifest),
                 'task_change_sections':manifest.get('task_change_sections',[]),
                 'evidence_catalog': [{k:v for k,v in e.items() if k!='blob'} for e in manifest['evidence']]}
+        if manifest.get('ancestor_context_mode') == 'retrieval_v1':
+            task['ancestor_catalog'] = task.pop('ancestor_entries')
         self.reasoning_effort = 'high' if not manifest['task_parents'] or manifest.get('authoring_task') else 'medium'
         if manifest.get('authoring_task'):task['authoring_task']=manifest['authoring_task']
         self.initial = [{'role':'system','content':SYSTEM},
                         {'role':'user','content':json.dumps(task, sort_keys=True)}]
         self.tools = json.loads((ROOT/'schema/repo-tools-v1.json').read_text())['tools']
+        if manifest.get('ancestor_context_mode') != 'retrieval_v1':
+            self.tools = [t for t in self.tools if t['name'] != 'ancestor_read']
         if 'graphs' in manifest:
             self.tools += json.loads((ROOT/'schema/graph-tools-v1.json').read_text())['tools']
         self.used = False

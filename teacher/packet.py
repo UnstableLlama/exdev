@@ -101,11 +101,12 @@ def main():
     p.add_argument('--task', required=True)
     p.add_argument('--destination', type=Path, required=True)
     p.add_argument('--evidence', type=Path)
-    p.add_argument('--editorial-schema-version', type=int, choices=(2,3), default=3)
+    p.add_argument('--editorial-schema-version', type=int, choices=(2,3,4), default=4)
     a = p.parse_args()
     evidence = json.loads(a.evidence.read_text()) if a.evidence else None
     manifest = build_packet(ROOT/'.sources/exllamav3.git', a.task, a.destination, evidence)
     manifest['editorial_schema_version']=a.editorial_schema_version
+    manifest['ancestor_context_mode']='retrieval_v1'
     (a.destination/'manifest.json').write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'task_sha': manifest['task_sha'], 'ancestor_commits': len(manifest['commits']),
                       'eligible_evidence': len(manifest['evidence'])}))

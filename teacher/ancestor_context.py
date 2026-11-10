@@ -62,6 +62,9 @@ def attach_entries(packet, runs, max_bytes=MAX_CONTEXT_BYTES):
     manifest=json.loads(read_regular(packet/'manifest.json'))
     if manifest.get('ancestor_context_complete'):
         raise ValueError('Ancestor context is already published')
+    if manifest.get('ancestor_context_mode') == 'retrieval_v1':
+        from .retrieval import attach
+        return attach(packet, runs, manifest)
     expected=set(manifest['commits'])
     entries={}
     for run in map(Path,runs):
@@ -99,6 +102,11 @@ def attach_entries(packet, runs, max_bytes=MAX_CONTEXT_BYTES):
 def load_entries(packet, manifest):
     """Load only verified published prose into a fresh task's initial context."""
     from .worker import load_blob
+    if manifest.get('ancestor_context_mode') == 'retrieval_v1':
+        if not manifest.get('ancestor_context_complete'):
+            return []
+        from .worker import ancestor_read
+        return ancestor_read(Path(packet), manifest, {'mode':'catalog','offset':0,'max_bytes':8192})
     refs=manifest.get('ancestor_entries',[])
     if not refs:
         if manifest.get('ancestor_context_complete') and manifest['commits']:

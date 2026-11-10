@@ -29,9 +29,23 @@ class CodexWireTests(unittest.TestCase):
     tearDown=test_teacher_packet.PacketTests.tearDown
 
     def test_actual_codex_request_has_only_approved_tools_and_no_inherited_context(self):
+        self.exercise_wire()
+
+    def test_retrieval_wire_has_citable_content_and_fifteen_tools(self):
+        self.exercise_wire(retrieval=True)
+
+    def exercise_wire(self, retrieval=False):
         test_teacher_graph.GraphPacketTests.prepare(self)
+        if retrieval:
+            path=self.packet/'manifest.json';manifest=json.loads(path.read_text())
+            manifest.update(ancestor_context_mode='retrieval_v1',editorial_schema_version=4)
+            manifest.pop('ancestor_context_complete');manifest['ancestor_entries']=[]
+            path.write_text(json.dumps(manifest))
+            attach_entries(self.packet,[self.root/('run-'+self.first)])
         captured=[]
         task=self.task
+        first=self.first
+        expected_tool='ancestor_read' if retrieval else 'git_show'
         class Handler(BaseHTTPRequestHandler):
             protocol_version="HTTP/1.1"
             def log_message(self,*args):pass
@@ -69,12 +83,14 @@ class CodexWireTests(unittest.TestCase):
             def respond(self,websocket,tool_call=False):
                 annotation={'schema_version':2,'type':'noise','problem':[], 'reasoning':[],
                     'impact':[], 'source_notes':[], 'limitations':['TEST FIXTURE ONLY'], 'links':[], 'chapters':[]}
+                if retrieval:
+                    annotation.update(schema_version=4,summary='TEST FIXTURE ONLY overview',findings=[])
                 if not tool_call:
                     annotation['problem']=[{'text':'TEST FIXTURE ONLY','basis':'source','evidence':['read-1']}]
                 item={'id':'msg_fixture','type':'message','role':'assistant','phase':'final_answer',
                     'content':[{'type':'output_text','text':json.dumps(annotation),'annotations':[]}]}
                 if tool_call:
-                    item={'id':'fc_fixture','type':'function_call','call_id':'read-1','name':'git_show','arguments':json.dumps({'commit':task})}
+                    item={'id':'fc_fixture','type':'function_call','call_id':'read-1','name':expected_tool,'arguments':json.dumps({'mode':'content','commit':first} if retrieval else {'commit':task})}
                 events=[{'type':'response.created','response':{'id':'resp_fixture','status':'in_progress'}},
                         {'type':'response.output_item.done','output_index':0,'item':item},
                         {'type':'response.completed','response':{'id':'resp_fixture','status':'completed','output':[item],
@@ -101,8 +117,8 @@ class CodexWireTests(unittest.TestCase):
                         transport.stderr.seek(0)
                         raise AssertionError(transport.stderr.read(4096).decode(errors="replace"))
             self.assertFalse(result['published'])
-            self.assertEqual(result['draft']['evidence']['read-1']['tool'],'git_show')
-            self.assertEqual(len(FreshSession(self.packet).tools),14)
+            self.assertEqual(result['draft']['evidence']['read-1']['tool'],expected_tool)
+            self.assertEqual(len(FreshSession(self.packet).tools),15 if retrieval else 14)
             self.assertTrue(captured)
             requests=[r for r in captured if r.get('generate') is not False]
             self.assertTrue(requests, 'No actual turn request captured')

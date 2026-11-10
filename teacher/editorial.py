@@ -7,16 +7,17 @@ from pathlib import Path
 import re
 
 SCHEMA = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v2.json').read_text())
+SCHEMA_V4 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v4.json').read_text())
 SCHEMA_V3 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v3.json').read_text())
 
 
 def output_schema(manifest):
     """Constrain generation as well as post-validation to the actual supplied prose."""
     version=manifest.get('editorial_schema_version',2)
-    if type(version) is not int or version not in (2,3):
+    if type(version) is not int or version not in (2,3,4):
         raise ValueError('Unsupported editorial schema version')
-    schema=deepcopy(SCHEMA if version==2 else SCHEMA_V3)
-    if version==3:
+    schema=deepcopy(SCHEMA if version==2 else SCHEMA_V3 if version==3 else SCHEMA_V4)
+    if version>=3:
         schema['properties']['findings']['items']['properties']['locations']['items']['properties']['commit']['enum']=sorted(set(manifest['commits'])|{manifest['task_sha']})
     allowed=sorted({e['sha'] for e in manifest.get('ancestor_entries',[])} & set(manifest['commits']))
     if allowed:
@@ -93,8 +94,12 @@ def validate_annotation(annotation, manifest, transcript):
         if len(annotation['chapters'])!=1 or annotation['chapters'][0]['id']!=task['id']:
             raise ValueError('Chapter output does not match assigned subsystem')
     ledger=evidence_ledger(transcript)
+    if manifest.get('ancestor_context_mode') == 'retrieval_v1':
+        for item in ledger.values():
+            if item['tool'] == 'ancestor_read' and item['arguments'].get('mode') != 'content':
+                item['catalog_only'] = True
     context={'ancestor:'+e['sha']:{'kind':'approved_ancestor_context','sha':e['sha'],'content_sha256':e['blob']}
-             for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits']}
+             for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits'] and manifest.get('ancestor_context_mode') != 'retrieval_v1'}
     claims=[claim for field in ('problem','reasoning','impact','source_notes') for claim in annotation[field]]
     chapter_ids=set()
     for chapter in annotation['chapters']:
@@ -110,7 +115,7 @@ def validate_annotation(annotation, manifest, transcript):
         if len(set(refs))!=len(refs):
             raise ValueError('Duplicate evidence anchor')
         for ref in refs:
-            if ref not in context and (ref not in ledger or ledger[ref]['result'].get('ok') is not True):
+            if ref not in context and (ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only'))):
                 raise ValueError('Unknown or unsuccessful evidence call')
         if claim['basis']=='execution':
             runs=[ledger[ref] for ref in refs if ref in ledger and ledger[ref]['tool']=='run']
@@ -122,7 +127,7 @@ def validate_annotation(annotation, manifest, transcript):
     def checked_refs(refs):
         if len(refs)!=len(set(refs)):
             raise ValueError('Duplicate finding evidence')
-        if any(ref not in ledger or ledger[ref]['result'].get('ok') is not True for ref in refs):
+        if any(ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only')) for ref in refs):
             raise ValueError('Findings require successful current-session evidence')
         return [ledger[ref] for ref in refs]
     for finding in annotation.get('findings',[]):
@@ -148,6 +153,18 @@ def validate_annotation(annotation, manifest, transcript):
         raise ValueError('Duplicate ancestor link')
     if not set(annotation['links']) <= approved & set(manifest['commits']):
         raise ValueError('Links require approved, supplied ancestor prose')
+    if manifest.get('ancestor_context_mode') == 'retrieval_v1':
+        read_entries=set()
+        for item in ledger.values():
+            args=item['arguments']; result=item['result']
+            content=result.get('result',{})
+            if (item['tool']=='ancestor_read' and args.get('mode')=='content' and result.get('ok') is True
+                and content.get('kind')=='ancestor_prose' and content.get('sha')==args.get('commit')
+                and content.get('chapter','')==args.get('chapter','')
+                and content.get('next_offset',0)>content.get('offset',0)):
+                read_entries.add(args['commit'])
+        if not set(annotation['links']) <= read_entries:
+            raise ValueError('Ancestor links require a successful nonempty prose read in this session')
     return dict(ledger,**context)
 
 
@@ -166,6 +183,8 @@ def render(entry):
     parts=[f"# {entry['sha']}\n",'Draft — pending review.\n',
            'An exdev annotation by the UnstableLlama project. Upstream exllamav3 was created by Turboderp and its contributors.',
            f"[Upstream commit](https://github.com/turboderp-org/exllamav3/commit/{entry['sha']}) · [Evidence ledger](draft.json)"]
+    if 'summary' in annotation:
+        parts.append(annotation['summary'])
     if annotation['chapters']:
         parts.append('\n'.join(f"- [{c['title']}](#{c['id']})" for c in annotation['chapters']))
     for field in ('problem','reasoning','impact','source_notes'):
