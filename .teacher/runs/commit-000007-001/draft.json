@@ -1,0 +1,168 @@
+{
+  "schema_version": 4,
+  "sha": "95b4da216a7e911e0e578c241765f07934aa1f1a",
+  "parent_shas": [
+    "7163258443e84ddfee2517adb6d8d46794c507d1"
+  ],
+  "cutoff_date": "2025-04-06T21:56:40+02:00",
+  "annotation": {
+    "schema_version": 4,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The comparison evaluator retained input_ids through the end of each row and performed no per-row CUDA cache clearing. Its progress updates stopped at rows - 1 rather than explicitly reaching the total.",
+        "basis": "source",
+        "evidence": [
+          "call_41d65f5292464960b19440f5ab11a760"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change places cleanup after the relevant tensors' last uses and adds a final progress update without changing likelihood accumulation or the perplexity formula.",
+        "basis": "source",
+        "evidence": [
+          "call_7d8778037b8f452095a51ab9977394ce"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Evaluation now requests CUDA cache clearing after every scored row and explicitly reports completion before calculating perplexity.",
+        "basis": "source",
+        "evidence": [
+          "call_7d8778037b8f452095a51ab9977394ce"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The ancestor explanation establishes compare_q.py as a cached, multi-backend perplexity comparison runner; this patch modifies its shared evaluation loop rather than a backend adapter.",
+        "basis": "source",
+        "evidence": [
+          "call_d2ae4f30f0f44b99926ee4096add5db5",
+          "call_7d8778037b8f452095a51ab9977394ce"
+        ]
+      }
+    ],
+    "limitations": [
+      "No evaluator or CUDA workload was run. Memory savings, allocator overhead and displayed progress timing were not measured.",
+      "A scalar computation would not establish CUDA allocator behavior or Rich rendering; the changed operations introduce no numerical formula requiring a scalar check."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Per-row cleanup and evaluation completion",
+        "claims": [
+          {
+            "text": "test_ppl obtains each input row from eval_ids, forwards it through the selected backend, and gathers next-token log probabilities. The new del input_ids follows creation of target_ids, so subsequent scoring uses target_ids rather than the deleted local reference. eval_ids itself remains alive until evaluation finishes; deleting the row reference does not establish that its backing storage is freed.",
+            "basis": "source",
+            "evidence": [
+              "call_41d65f5292464960b19440f5ab11a760",
+              "call_7d8778037b8f452095a51ab9977394ce"
+            ]
+          },
+          {
+            "text": "torch.cuda.empty_cache() is called after the row's probability sum and target count have been accumulated and target tensors deleted. This moves cache-clearing requests inside the loop instead of relying solely on the existing end-of-evaluation free_mem() call.",
+            "basis": "source",
+            "evidence": [
+              "call_41d65f5292464960b19440f5ab11a760",
+              "call_7d8778037b8f452095a51ab9977394ce"
+            ]
+          },
+          {
+            "text": "Per-row cache clearing favors releasing reusable allocator capacity between forwards over retaining it for later rows. Whether that tradeoff reduces memory pressure or increases evaluation time depends on the backend and workload.",
+            "basis": "inference",
+            "evidence": [
+              "call_7d8778037b8f452095a51ab9977394ce"
+            ]
+          },
+          {
+            "text": "ProgressBar.update interprets its argument as an absolute completed count. The existing loop reports zero-based row indices before processing each row; the added pb.update(rows) reports the full total after the loop. This matters because the default transient progress bar does not automatically set completion in __exit__; that automatic update is restricted to non-transient bars.",
+            "basis": "source",
+            "evidence": [
+              "call_18f9e0e3e3a3402b91018ba0678cbc4d",
+              "call_41d65f5292464960b19440f5ab11a760",
+              "call_7d8778037b8f452095a51ab9977394ce"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds per-row cleanup and CUDA cache clearing to perplexity comparisons, plus an explicit final progress update."
+  },
+  "evidence": {
+    "call_7d8778037b8f452095a51ab9977394ce": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "95b4da216a7e911e0e578c241765f07934aa1f1a",
+        "offset": 184,
+        "max_bytes": 884
+      },
+      "result_sha256": "53e3022c0b725d84e79bd1f42276d4cd12db590af7574ca9104b681feb7bff6d"
+    },
+    "call_41d65f5292464960b19440f5ab11a760": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7163258443e84ddfee2517adb6d8d46794c507d1",
+        "path": "eval/compare_q.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "054ca1d58ec5498113cfc409c255cb694b42eaa4f7090f42978f60fa645d7b28"
+    },
+    "call_18f9e0e3e3a3402b91018ba0678cbc4d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7163258443e84ddfee2517adb6d8d46794c507d1",
+        "path": "exllamav3/util/progress.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "08c40965aaab0f672d67a47a13275beb2196bca1f9120fb232726746677942ce"
+    },
+    "call_9adc50c68afd42acbed3832027817263": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 8192,
+        "max_bytes": 3000
+      },
+      "result_sha256": "c5f0c0d3df8c8163d8d9ed8f095f14b5a6fb796325b355570c9952b75270c746",
+      "catalog_only": true
+    },
+    "call_06c40d117abe461ba651aaa0743f1372": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 20000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_d2ae4f30f0f44b99926ee4096add5db5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 8192
+      },
+      "result_sha256": "2f9cf835ad22730beb419ef4b87ac04da4ed2505d080e9109e5fcfdcbdf4ecfb"
+    },
+    "call_895a76ac53f44a76a60e0b8e8e37ec5f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "offset": 8192,
+        "max_bytes": 8192
+      },
+      "result_sha256": "19fcd8dccb6f044bd5cab3bc7be9bf9878d72691f5e2ff0c859761001c92569e"
+    }
+  }
+}
