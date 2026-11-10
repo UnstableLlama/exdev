@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 
 SCHEMA = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v2.json').read_text())
+SCHEMA_V5 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v5.json').read_text())
 SCHEMA_V4 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v4.json').read_text())
 SCHEMA_V3 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v3.json').read_text())
 
@@ -14,9 +15,9 @@ SCHEMA_V3 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-an
 def output_schema(manifest):
     """Constrain generation as well as post-validation to the actual supplied prose."""
     version=manifest.get('editorial_schema_version',2)
-    if type(version) is not int or version not in (2,3,4):
+    if type(version) is not int or version not in (2,3,4,5):
         raise ValueError('Unsupported editorial schema version')
-    schema=deepcopy(SCHEMA if version==2 else SCHEMA_V3 if version==3 else SCHEMA_V4)
+    schema=deepcopy(SCHEMA if version==2 else SCHEMA_V3 if version==3 else SCHEMA_V4 if version==4 else SCHEMA_V5)
     if version>=3:
         schema['properties']['findings']['items']['properties']['locations']['items']['properties']['commit']['enum']=sorted(set(manifest['commits'])|{manifest['task_sha']})
     allowed=sorted({e['sha'] for e in manifest.get('ancestor_entries',[])} & set(manifest['commits']))
@@ -117,6 +118,13 @@ def validate_annotation(annotation, manifest, transcript):
         for ref in refs:
             if ref not in context and (ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only'))):
                 raise ValueError('Unknown or unsuccessful evidence call')
+        if annotation['schema_version'] >= 5:
+            ancestor_refs=[ref for ref in refs if ref in context or
+                           (ledger[ref]['tool']=='ancestor_read' and ledger[ref]['arguments'].get('mode')=='content')]
+            if len(ancestor_refs)==len(refs) and claim['basis']!='ancestor':
+                raise ValueError('Ancestor-only claims require basis ancestor')
+            if claim['basis']=='ancestor' and not ancestor_refs:
+                raise ValueError('Ancestor basis requires ancestor prose evidence')
         if claim['basis']=='execution':
             runs=[ledger[ref] for ref in refs if ref in ledger and ledger[ref]['tool']=='run']
             if not any(r['result'].get('result',{}).get('returncode')==0 and

@@ -129,6 +129,52 @@ class RetrievalTests(unittest.TestCase):
         m['ancestor_entries']=[]
         with self.assertRaises(ValueError):opening_matches(self.packet,m)
 
+    def ancestor_claim_fixture(self, version=5):
+        run,m=self.prepare();m['editorial_schema_version']=version
+        a=json.loads((run/'draft.json').read_text())['annotation']
+        a.update(schema_version=version,summary='TEST overview',findings=[])
+        a['problem'][0]['evidence']=['ancestor-read']
+        args={'mode':'content','commit':self.first}
+        t=[{'role':'assistant','calls':[{'id':'ancestor-read','tool':'ancestor_read','arguments':args}]},
+           {'role':'tool','name':'ancestor_read','call_id':'ancestor-read','content':json.dumps({'ok':True,'result':dispatch(self.packet,'ancestor_read',args)})}]
+        return a,m,t
+
+    def test_schema_five_requires_ancestor_basis_across_all_claim_fields(self):
+        from teacher.editorial import assemble_draft,render
+        a,m,t=self.ancestor_claim_fixture()
+        for basis in ('source','execution','inference'):
+            a['problem'][0]['basis']=basis
+            with self.assertRaisesRegex(ValueError,'Ancestor-only'):validate_annotation(a,m,t)
+        a['problem'][0]['basis']='ancestor'
+        entry,_=assemble_draft(a,m,t);self.assertIn('[ancestor;',render(entry))
+        claim=a['problem'].pop()
+        for field in ('problem','reasoning','impact','source_notes'):
+            a[field]=[dict(claim,basis='source')]
+            with self.assertRaises(ValueError):validate_annotation(a,m,t)
+            a[field]=[]
+        a['chapters']=[{'id':'fixture','title':'Fixture','claims':[dict(claim,basis='source')]}]
+        with self.assertRaises(ValueError):validate_annotation(a,m,t)
+        a['chapters'][0]['claims'][0]['basis']='ancestor';validate_annotation(a,m,t)
+
+    def test_mixed_evidence_and_ancestor_basis_without_ancestor(self):
+        a,m,t=self.ancestor_claim_fixture()
+        args={'commit':self.task}
+        t.extend([{'role':'assistant','calls':[{'id':'primary','tool':'git_show','arguments':args}]},
+                  {'role':'tool','name':'git_show','call_id':'primary','content':json.dumps({'ok':True,'result':dispatch(self.packet,'git_show',args)})}])
+        a['problem'][0]['evidence'].append('primary')
+        for basis in ('source','inference','ancestor'):
+            a['problem'][0]['basis']=basis;validate_annotation(a,m,t)
+        a['problem'][0]['evidence']=['primary']
+        with self.assertRaisesRegex(ValueError,'requires ancestor'):validate_annotation(a,m,t)
+        a['problem'][0]['evidence']=['ancestor-read'];t[1]['content']=json.dumps({'ok':False})
+        with self.assertRaises(ValueError):validate_annotation(a,m,t)
+
+    def test_schema_four_replay_keeps_previous_attribution(self):
+        a,m,t=self.ancestor_claim_fixture(version=4)
+        validate_annotation(a,m,t)
+        a['problem'][0]['basis']='ancestor'
+        with self.assertRaises(ValueError):validate_annotation(a,m,t)
+
     def test_large_file_list_stays_searchable_outside_catalog(self):
         run,source=self.run_fixture();approve_run(run,source,'reviewer','fixture')
         path=self.packet/'manifest.json';m=json.loads(path.read_text())

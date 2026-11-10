@@ -1,6 +1,6 @@
 # Defect records and retrospective annotations
 
-Status: structured authoring-time findings are implemented; new packets use editorial v4. An administrative append-only ledger and evidence-eligibility selector now have their first fix-derived record. The training sample-policy engine remains a design, not an implemented feature. Historical authoring and original commit diffs remain unchanged.
+Status: structured authoring-time findings are implemented; new packets use editorial v5. An administrative append-only ledger and evidence-eligibility selector now have their first fix-derived record. The training sample-policy engine remains a design, not an implemented feature. Historical authoring and original commit diffs remain unchanged.
 
 ## Two views, one source history
 
@@ -67,7 +67,7 @@ Excluding a hunk is an optional future refinement, not a default shortcut: prove
 
 ## Implemented authoring-time findings (editorial v3)
 
-New CLI-prepared packets select editorial schema v4, retaining v3 findings and adding the summary. Old packets without an explicit version retain v2 validation; their immutable drafts and transcripts are not upgraded. The low-level packet builder retains its legacy default; callers must explicitly select v3 before authoring if they bypass the CLI.
+New CLI-prepared packets select editorial schema v5, retaining findings and summary while distinguishing ancestor prose. Old packets without an explicit version retain v2 validation; their immutable drafts and transcripts are not upgraded. The low-level packet builder retains its legacy default; callers must explicitly select v3 before authoring if they bypass the CLI.
 
 The top-level `findings` array records local IDs, suspected status, classification, concrete description/trigger/expected/actual behavior, historical commit/path/symbol locations, inspected-source evidence and verification records. No observations is represented by an empty array. Teachers cannot mark findings confirmed or fix-derived. These observations are not the later retrospective ledger, and do not automatically filter training examples.
 

@@ -26,7 +26,7 @@ def resume(state_path, auth_file):
         state['runs'].append(record);state['status']='running';write_json(state_path,state)
         try:
             m=build_packet(repo,sha,packet)
-            m.update(editorial_schema_version=4,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1)
+            m.update(editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1)
             write_json(packet/'manifest.json',m);attach_graphs(packet,ROOT/'store')
             sources=[ROOT/p for p in state['approved_entries']]
             # Merge ancestry may exclude entries on another branch. Filter by packet allowlist.

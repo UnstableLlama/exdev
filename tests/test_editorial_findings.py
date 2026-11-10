@@ -77,5 +77,5 @@ class FindingTests(unittest.TestCase):
         validate_annotation(fixtures.fixture(),self.manifest,self.transcript)
         self.manifest['editorial_schema_version']=3
         with self.assertRaises(ValueError):validate_annotation(fixtures.fixture(),self.manifest,self.transcript)
-        self.manifest['editorial_schema_version']=5
+        self.manifest['editorial_schema_version']=6
         with self.assertRaises(ValueError):output_schema(self.manifest)

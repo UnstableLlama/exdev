@@ -38,7 +38,7 @@ class CodexWireTests(unittest.TestCase):
         test_teacher_graph.GraphPacketTests.prepare(self)
         if retrieval:
             path=self.packet/'manifest.json';manifest=json.loads(path.read_text())
-            manifest.update(ancestor_context_mode='retrieval_v1',editorial_schema_version=4)
+            manifest.update(ancestor_context_mode='retrieval_v1',editorial_schema_version=5)
             manifest.pop('ancestor_context_complete');manifest['ancestor_entries']=[]
             path.write_text(json.dumps(manifest))
             attach_entries(self.packet,[self.root/('run-'+self.first)])
@@ -84,9 +84,9 @@ class CodexWireTests(unittest.TestCase):
                 annotation={'schema_version':2,'type':'noise','problem':[], 'reasoning':[],
                     'impact':[], 'source_notes':[], 'limitations':['TEST FIXTURE ONLY'], 'links':[], 'chapters':[]}
                 if retrieval:
-                    annotation.update(schema_version=4,summary='TEST FIXTURE ONLY overview',findings=[])
+                    annotation.update(schema_version=5,summary='TEST FIXTURE ONLY overview',findings=[])
                 if not tool_call:
-                    annotation['problem']=[{'text':'TEST FIXTURE ONLY','basis':'source','evidence':['read-1']}]
+                    annotation['problem']=[{'text':'TEST FIXTURE ONLY','basis':'ancestor' if retrieval else 'source','evidence':['read-1']}]
                 item={'id':'msg_fixture','type':'message','role':'assistant','phase':'final_answer',
                     'content':[{'type':'output_text','text':json.dumps(annotation),'annotations':[]}]}
                 if tool_call:

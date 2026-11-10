@@ -102,7 +102,7 @@ def main():
     p.add_argument('--task', required=True)
     p.add_argument('--destination', type=Path, required=True)
     p.add_argument('--evidence', type=Path)
-    p.add_argument('--editorial-schema-version', type=int, choices=(2,3,4), default=4)
+    p.add_argument('--editorial-schema-version', type=int, choices=(2,3,4,5), default=5)
     a = p.parse_args()
     evidence = json.loads(a.evidence.read_text()) if a.evidence else None
     manifest = build_packet(ROOT/'.sources/exllamav3.git', a.task, a.destination, evidence)
