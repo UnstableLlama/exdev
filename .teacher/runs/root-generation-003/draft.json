@@ -1,0 +1,507 @@
+{
+  "schema_version": 3,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 3,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The generation component must coordinate requests with different prompt lengths and output budgets over a fixed KV cache, while preserving per-request sampling and streaming state.",
+        "basis": "inference",
+        "evidence": [
+          "call_0e9349feb2f24f3ab46de6c954e338e4",
+          "call_c0b25765772c45ff97dece0cd1e21e8c",
+          "call_a150891a785743f5af384d25e3d1a08a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation separates scheduling in Generator, request state in Job, logical-to-physical cache mapping in PageTable/Sequence, and tensor storage in CacheLayer. This allows completed requests to release ownership without immediately discarding reusable KV contents.",
+        "basis": "source",
+        "evidence": [
+          "call_5bf8bd9c08d3461b8f387ec9bc465690",
+          "call_b4190e936a8a416e8c642a65f7825580",
+          "call_a150891a785743f5af384d25e3d1a08a",
+          "call_71abcef9c0cc40029509f65faf1a3fac"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The component exposes synchronous iteration, a convenience generate() method, and asynchronous per-job result streams. It also implements prompt-cache reuse and optional draft-model decoding; these are source-supported capabilities, not measured throughput results.",
+        "basis": "source",
+        "evidence": [
+          "call_689ed356333741a390bffbe75576ecf4",
+          "call_8e8de27ede304d75b60b89e5245c9227",
+          "call_0e9349feb2f24f3ab46de6c954e338e4",
+          "call_5bf8bd9c08d3461b8f387ec9bc465690",
+          "call_b4190e936a8a416e8c642a65f7825580"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Cache defaults to CacheLayer_fp16. Its documentation mentions other cache types, but the inspected cache exports provide Cache, CacheLayer and CacheLayer_fp16; those mentions do not establish quantized-cache support.",
+        "basis": "source",
+        "evidence": [
+          "call_d89dcb9a77cd4dc9807c32df284bd5f7",
+          "call_856022042b084789b18a3e49cd7be57c"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository implementation, model inference, CUDA kernel, FlashAttention call or performance benchmark was executed. The successful run checked transcribed integer formulas and a minimal asyncio queue-wait model using the standard library.",
+      "The scalar checks cover bounded page arithmetic and selected control-flow triggers, not all page-reference, speculative-decoding or checkpoint interleavings.",
+      "Cache sharing relies on chained hashes and consistent cached state. Collision behavior and correctness under concurrent external cache mutation were not experimentally evaluated.",
+      "Native string matching and sampler distributions are outside this chapter's inspected implementation scope; their local Job interfaces are explained without claiming native execution."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Dynamic generation, paged KV ownership and streaming",
+        "claims": [
+          {
+            "text": "A Job accepts one CPU token tensor of shape (1, n), or a list of such tensors for separate inference with collective sampling. Each becomes a Sequence with its own token history, KV position and page mapping. enqueue() attaches the job to its generator, prepares capacity requirements, assigns a serial number and puts it in the pending queue. Streaming events retain the job, serial and optional caller identifier.",
+            "basis": "source",
+            "evidence": [
+              "call_c0b25765772c45ff97dece0cd1e21e8c",
+              "call_b4190e936a8a416e8c642a65f7825580",
+              "call_0e9349feb2f24f3ab46de6c954e338e4"
+            ]
+          },
+          {
+            "text": "Each iterate() first admits jobs, then performs one prefill round for every active job, then decodes jobs whose prefill is complete. Admission counts sequences rather than jobs against max_batch_size (default 256), and requires enough unreferenced pages for uncached context plus private output reservations. Smaller fitting jobs may bypass larger ones; default max_skips=4 bounds such bypasses before admission stops behind an older skipped request. This favors utilization initially, then limits starvation by accepting head-of-line blocking.",
+            "basis": "source",
+            "evidence": [
+              "call_0e9349feb2f24f3ab46de6c954e338e4",
+              "call_5bf8bd9c08d3461b8f387ec9bc465690",
+              "call_c0b25765772c45ff97dece0cd1e21e8c",
+              "call_b4190e936a8a416e8c642a65f7825580"
+            ]
+          },
+          {
+            "text": "PAGE_SIZE is 256 tokens. For effective prompt length L and output budget N, Sequence.prepare() hashes floor((L\u22121)/256) context pages and reserves ceil((L+N+h)/256) total pages, where h=1 when healing removed a prompt token. The remaining pages are private reservations. Keeping the final prompt token outside the reusable context is consistent with the decode invariant kv_position == len(sequence_ids)\u22121: the next forward consumes that last token and obtains its next-token logits.",
+            "basis": "source",
+            "evidence": [
+              "call_6d3aebc425664168a35a204c95576834",
+              "call_a150891a785743f5af384d25e3d1a08a",
+              "call_c0b25765772c45ff97dece0cd1e21e8c"
+            ]
+          },
+          {
+            "text": "A standard-library transcription checked 8,192 combinations of L=1\u20261024, N in {1,4,100,256} and healing adjustment 0/1. Every case satisfied the ceiling-capacity bounds, retained at least one private page, and left the last prompt token outside the hashed context. This validates those integer identities only, not allocation or inference.",
+            "basis": "execution",
+            "evidence": [
+              "call_341940d4bcc142e8aa1cdd2c473f79f5"
+            ]
+          },
+          {
+            "text": "Page identity combines a 16-byte BLAKE2b digest of token bytes with the preceding page's hash. Consequently reuse is prefix-dependent, not merely a match of the current 256 tokens. Unfinished/private pages receive monotonically generated 16-byte identifiers despite the random_hash name. Allocation first reuses matching referenced pages, then matching unreferenced pages, otherwise evicts the unreferenced page with the oldest assignment serial. A newly assigned context hash can exist before its KV is computed, so kv_position\u2014not hash presence alone\u2014controls whether prefill may be skipped.",
+            "basis": "source",
+            "evidence": [
+              "call_a150891a785743f5af384d25e3d1a08a",
+              "call_b4190e936a8a416e8c642a65f7825580"
+            ]
+          },
+          {
+            "text": "The ownership invariant is that referenced_pages contains pages with positive ref_count, while unreferenced_pages contains reclaimable pages with zero references. add_ref()/sub_ref() move pages between these dictionaries. Private allocation backs up metadata; if a reservation is released before being modified, it can restore the old identity and validity. Writes disable that reversion. Completing a generated page computes its chained content hash and can replace it with an already referenced identical page, rebuilding the sequence's block table. Generation writes assert exclusive ownership of the page being extended.",
+            "basis": "source",
+            "evidence": [
+              "call_a150891a785743f5af384d25e3d1a08a",
+              "call_c0b25765772c45ff97dece0cd1e21e8c",
+              "call_e7c011c8ff494e6da381e80f46df8ee9"
+            ]
+          },
+          {
+            "text": "Reserving the full output budget before admission makes capacity predictable, but ties up pages that an early-ending job may never use. Full pages can be shared directly; partial-prefix reuse instead copies matching K/V into a private destination. Job.prefill() scans pages with the same prev_hash, selects the longest token match, and copies only when the match exceeds one token. This trades a cache scan and copy for avoided prefill computation; the source supplies no measured break-even justification for the greater-than-one threshold.",
+            "basis": "inference",
+            "evidence": [
+              "call_a150891a785743f5af384d25e3d1a08a",
+              "call_b4190e936a8a416e8c642a65f7825580"
+            ]
+          },
+          {
+            "text": "Cache constructs one storage layer per model layer and registers it with cache-capable modules. Attention.load() allocates those tensors on the module's device, and unload() frees them. FP16 storage consists of separate K and V tensors shaped (max_num_tokens/256, 256, num_kv_heads, head_dim); allocation requires page-aligned capacity. Partial-page copies copy K and V slices across every cache layer. Job completion or cancellation decrements page references rather than freeing these tensors. PageTable.defrag() is currently a no-op.",
+            "basis": "source",
+            "evidence": [
+              "call_856022042b084789b18a3e49cd7be57c",
+              "call_71abcef9c0cc40029509f65faf1a3fac",
+              "call_2b0839ad8b10476ea4e556a72781afe7",
+              "call_a150891a785743f5af384d25e3d1a08a",
+              "call_5bf8bd9c08d3461b8f387ec9bc465690"
+            ]
+          },
+          {
+            "text": "Prefill uses a default max_chunk_size of 2048, rounds the proposed endpoint down to a page boundary, then caps it at prompt length minus one. It advances over valid full pages, optionally copies a partial prefix, and calls model.prefill() only for the remaining tokens. Smaller chunks are documented as trading prompt ingestion speed for shorter interruptions to ongoing jobs. The budget applies within each sequence's prefill call, not globally across the entire iteration; page rounding also imposes a progress constraint noted in the findings.",
+            "basis": "source",
+            "evidence": [
+              "call_0e9349feb2f24f3ab46de6c954e338e4",
+              "call_b4190e936a8a416e8c642a65f7825580"
+            ]
+          },
+          {
+            "text": "For decoding, Generator assembles an int32 block_table with one physical-page-index row per ready sequence and an int32 cache_seqlens vector containing its KV position. It concatenates the unprocessed token IDs, calls model.forward(), then uses logit_mapping to route slices back to jobs. Sampling remains per job rather than batched. At the modules interface, Attention.decode_flash_attn() obtains layer K/V tensors and passes them, the block table, sequence lengths and new Q/K/V to flash_attn_with_kvcache; sequence lengths also supply default rotary positions.",
+            "basis": "source",
+            "evidence": [
+              "call_0e9349feb2f24f3ab46de6c954e338e4",
+              "call_5bf8bd9c08d3461b8f387ec9bc465690",
+              "call_2b0839ad8b10476ea4e556a72781afe7"
+            ]
+          },
+          {
+            "text": "Optional speculative decoding requires a draft cache with the same token capacity as the main cache. The default draft length is four; constructor validation compares it with max_q_size, default eight. The draft model greedily proposes tokens, and the main model evaluates the current token plus those proposals. Job sampling advances through the resulting logits while sampled tokens equal the draft. A mismatch records rejected tokens, rolls back page-validity counts for the rejected suffix, and stops consuming that logit batch. The two models use the same logical page mapping, and partial-prefix reuse copies both caches.",
+            "basis": "source",
+            "evidence": [
+              "call_0e9349feb2f24f3ab46de6c954e338e4",
+              "call_5bf8bd9c08d3461b8f387ec9bc465690",
+              "call_b4190e936a8a416e8c642a65f7825580"
+            ]
+          },
+          {
+            "text": "Job.receive_logits() supplies the sampler with logits, the first sequence's token history, a per-job RNG-derived seed, and blocked/allowed token sets. Stop tokens are blocked until min_new_tokens; stop strings remain active. Healing removes the final prompt token, constrains its replacement through tokenizer prefix lookup, and emits only the added suffix. Banned-string handling lowercases text, checkpoints a possible match, and on a full match rewinds sequence/KV state while blocking explored replacement tokens. The checkpoint restoration contains the suspected token-buffer error recorded in the findings.",
+            "basis": "source",
+            "evidence": [
+              "call_c0b25765772c45ff97dece0cd1e21e8c",
+              "call_e7c011c8ff494e6da381e80f46df8ee9",
+              "call_b4190e936a8a416e8c642a65f7825580"
+            ]
+          },
+          {
+            "text": "Output is buffered so partial stop strings and incomplete decoded characters need not be emitted immediately. The character heuristic retries decoding when held text contains one through four replacement characters; no derivation for that cutoff is provided. Native matcher result \u22122 means the caller continues holding text, while a nonnegative result triggers a match path. A stop token is retained in held data rather than emitted; a stop string truncates emitted text at its match position. The max-token check precedes character, banned-string and stop-string checks and uses max_new_tokens minus num_draft_tokens. EOS events include completion text, counts and timing fields, after which Generator releases the job's pages.",
+            "basis": "source",
+            "evidence": [
+              "call_e7c011c8ff494e6da381e80f46df8ee9",
+              "call_b4190e936a8a416e8c642a65f7825580",
+              "call_5bf8bd9c08d3461b8f387ec9bc465690"
+            ]
+          },
+          {
+            "text": "AsyncGenerator is a cooperative wrapper, not a separate inference worker: its task calls synchronous Generator.iterate(), dispatches results into unbounded per-job asyncio queues, then yields with sleep(0). A condition parks the task when there are no jobs. EOS removes the job from the wrapper's registry; an exception is delivered to every registered job. cancel() removes the underlying job and its page references, while close() cancels and awaits the iteration task but does not clear the underlying generator queue. The blocked-consumer cancellation edge case is recorded separately.",
+            "basis": "source",
+            "evidence": [
+              "call_8e8de27ede304d75b60b89e5245c9227",
+              "call_0e9349feb2f24f3ab46de6c954e338e4"
+            ]
+          },
+          {
+            "text": "Callers can either drive enqueue()/iterate() for streaming control or use generate(), which tokenizes prompts, creates jobs, collects text by serial number and optionally returns terminal result dictionaries. generate() polls abort_event only after an iteration and clears the queue when it is set. Filter-worker scheduling, multimodal embeddings and filter-driven termination appear as commented TODO paths, not implemented generation guarantees.",
+            "basis": "source",
+            "evidence": [
+              "call_5bf8bd9c08d3461b8f387ec9bc465690",
+              "call_e7c011c8ff494e6da381e80f46df8ee9"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "modules",
+          "sampling",
+          "loading-tokenization",
+          "runtime",
+          "usage-evaluation"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "generation-prefill-small-chunk",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "A positive max_chunk_size below one page can leave a fresh job permanently unable to prefill.",
+        "trigger": "Use max_chunk_size=128 with an uncached 600-token prompt and initial kv_position=0.",
+        "expected_behavior": "Reject an unusable chunk size or ingest a positive number of prompt tokens.",
+        "actual_behavior": "The endpoint rounds down to zero; prefill continues without inference or progress, and the job remains ineligible for decoding on subsequent iterations.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.prefill"
+          }
+        ],
+        "source_evidence": [
+          "call_b4190e936a8a416e8c642a65f7825580",
+          "call_0e9349feb2f24f3ab46de6c954e338e4"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the inspected endpoint formula for a 600-token prompt. Chunk sizes 128 and 255 produced endpoint zero; 256 produced 256 and 2048 produced 599.",
+            "evidence": [
+              "call_341940d4bcc142e8aa1cdd2c473f79f5"
+            ],
+            "limits": "Integer arithmetic only; no Job or model implementation executed."
+          }
+        ]
+      },
+      {
+        "id": "generation-multisequence-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Enqueue-time capacity validation omits private pages for all but the last sequence.",
+        "trigger": "Enqueue a two-sequence job with 100 prompt tokens and max_new_tokens=100 per sequence into a one-page cache, with max_batch_size at least two.",
+        "expected_behavior": "Reject the impossible two-page request during preparation.",
+        "actual_behavior": "prepare_for_queue() accumulates all_unique_pages but calculates total_pages using only the last seq.new_unique_pages. It accepts the one-page estimate; current_new_pages_required() later correctly requests two pages, preventing admission indefinitely.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.prepare_for_queue"
+          },
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.current_new_pages_required"
+          }
+        ],
+        "source_evidence": [
+          "call_b4190e936a8a416e8c642a65f7825580",
+          "call_a150891a785743f5af384d25e3d1a08a",
+          "call_5bf8bd9c08d3461b8f387ec9bc465690"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the two inspected capacity formulas: enqueue estimate one page, scheduler requirement two pages, cache capacity one page.",
+            "evidence": [
+              "call_341940d4bcc142e8aa1cdd2c473f79f5"
+            ],
+            "limits": "No actual enqueue or scheduler loop was executed."
+          }
+        ]
+      },
+      {
+        "id": "generation-async-cancel-waiter",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Cancelling an AsyncJob does not wake a consumer already waiting on its empty result queue.",
+        "trigger": "A consumer is suspended at await self.queue.get() when another coroutine calls AsyncJob.cancel().",
+        "expected_behavior": "The cancelled job's asynchronous iterator terminates without needing another result.",
+        "actual_behavior": "Cancellation removes the job from the generator and sets cancelled=True, but supplies no queue sentinel or waiter cancellation. The flag is checked only before the pending queue.get(), so that consumer can remain suspended.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/async_generator.py",
+            "symbol": "AsyncJob.__aiter__"
+          },
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/async_generator.py",
+            "symbol": "AsyncJob.cancel"
+          }
+        ],
+        "source_evidence": [
+          "call_8e8de27ede304d75b60b89e5245c9227"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Ran a minimal asyncio model of the flag check and empty-queue wait. After setting the cancellation flag and yielding to the loop, the consumer task was still pending.",
+            "evidence": [
+              "call_341940d4bcc142e8aa1cdd2c473f79f5"
+            ],
+            "limits": "This modeled the wait mechanism, not the repository wrapper or inference."
+          }
+        ]
+      },
+      {
+        "id": "generation-draft-output-cutoff",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Enabling draft decoding reduces the terminal output-token threshold by the configured draft length.",
+        "trigger": "Generate without healing or other stop conditions using max_new_tokens=100 and num_draft_tokens=4.",
+        "expected_behavior": "Draft lookahead should not itself terminate the response before the requested 100-token budget.",
+        "actual_behavior": "receive_sample() terminates when new_tokens reaches 96 because it compares against max_new_tokens\u2212num_draft_tokens. With both values equal to four, the first generated token already satisfies the cutoff.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample"
+          }
+        ],
+        "source_evidence": [
+          "call_e7c011c8ff494e6da381e80f46df8ee9",
+          "call_5bf8bd9c08d3461b8f387ec9bc465690"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the first positive counter satisfying the source predicate: 100 for budget/draft 100/0, 96 for 100/4 and one for 4/4.",
+            "evidence": [
+              "call_341940d4bcc142e8aa1cdd2c473f79f5"
+            ],
+            "limits": "Only the stopping predicate was evaluated; no draft acceptance or model execution was tested."
+          }
+        ]
+      },
+      {
+        "id": "generation-banned-string-token-rewind",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Banned-string rewind restores a differently named attribute instead of the token buffer used for emission.",
+        "trigger": "A banned-string match reaches rewind_checkpoint() before the max-token termination branch.",
+        "expected_behavior": "Restore held_tokens to the checkpoint alongside held_text and the other held buffers, keeping rejected tokens out of ordinary token_ids output.",
+        "actual_behavior": "The code assigns self.held_token, singular. emit() still reads self.held_tokens, plural, which retains the rejected suffix and can emit it as token_ids despite rewinding the sequence and text.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample.rewind_checkpoint"
+          }
+        ],
+        "source_evidence": [
+          "call_b4190e936a8a416e8c642a65f7825580",
+          "call_e7c011c8ff494e6da381e80f46df8ee9"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the checkpoint assignment with the held_tokens buffer initialized by prepare_for_queue() and consumed by emit().",
+            "evidence": [
+              "call_b4190e936a8a416e8c642a65f7825580",
+              "call_e7c011c8ff494e6da381e80f46df8ee9"
+            ],
+            "limits": "No banned-string generation or native string matcher was executed."
+          }
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_d89dcb9a77cd4dc9807c32df284bd5f7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2363998,
+        "max_bytes": 346
+      },
+      "result_sha256": "550728fbdbc3167e1c57ec4ca6d4ffca0832e96b886166351048482dbd18fc39"
+    },
+    "call_856022042b084789b18a3e49cd7be57c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2364344,
+        "max_bytes": 4376
+      },
+      "result_sha256": "2d01d7886a5676fa774959511a6c67b44abe50a0ae1c302f63f80bf236dcb00b"
+    },
+    "call_71abcef9c0cc40029509f65faf1a3fac": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2368720,
+        "max_bytes": 1837
+      },
+      "result_sha256": "463018e13560fefe7ec02f65b82b69c7185bc59009f457cb9f826c9f853d0a0c"
+    },
+    "call_689ed356333741a390bffbe75576ecf4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5935614,
+        "max_bytes": 396
+      },
+      "result_sha256": "1de899298fc337eb4c3f5c640828f4463bcd320bb06df4932f515cb08a14a096"
+    },
+    "call_8e8de27ede304d75b60b89e5245c9227": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5936010,
+        "max_bytes": 3499
+      },
+      "result_sha256": "8c47ffa36be6674028efaf6dca0ab74a9cb8d4ac99ab82bdd958345a4b7bdba1"
+    },
+    "call_0e9349feb2f24f3ab46de6c954e338e4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5939509,
+        "max_bytes": 14000
+      },
+      "result_sha256": "79a24e0b59589d0c8f12d55636cb20de5cff6f9dc3e5a72a448bb1bb1317afbb"
+    },
+    "call_5bf8bd9c08d3461b8f387ec9bc465690": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5953509,
+        "max_bytes": 13462
+      },
+      "result_sha256": "2c48998a5e4d21705196afa847d0a19a881a300c3a5453f440f0cb1f719f665d"
+    },
+    "call_c0b25765772c45ff97dece0cd1e21e8c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5966971,
+        "max_bytes": 12500
+      },
+      "result_sha256": "f49bf6bba66c312c112c415170ac56e27f2c3005675ec052145adb6cb8fd4eb0"
+    },
+    "call_e7c011c8ff494e6da381e80f46df8ee9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5979471,
+        "max_bytes": 12500
+      },
+      "result_sha256": "e4de1e3e53176ef7b7355a608c9a6d94aec0954704725fc8dcb20c42a8e2f8e2"
+    },
+    "call_b4190e936a8a416e8c642a65f7825580": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5991971,
+        "max_bytes": 12456
+      },
+      "result_sha256": "2068bfb715ce0909161283523d6e12c34a027753392486b2961ca38685939771"
+    },
+    "call_a150891a785743f5af384d25e3d1a08a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6004427,
+        "max_bytes": 12714
+      },
+      "result_sha256": "2ec829f454723b0c26ce43681bd69869d18357d89008105f9b035e7773f91674"
+    },
+    "call_6d3aebc425664168a35a204c95576834": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2370557,
+        "max_bytes": 245
+      },
+      "result_sha256": "7ff4c71e9340f53127831ffcb5e414c7863b18d6cbc2116ce4e274676946e883"
+    },
+    "call_2b0839ad8b10476ea4e556a72781afe7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6088282,
+        "max_bytes": 13621
+      },
+      "result_sha256": "8efd751266e1b4a219d99fff7bcb72d4641807a84663177aaa7f3739e573f6c6"
+    },
+    "call_341940d4bcc142e8aa1cdd2c473f79f5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json, asyncio\nP=256\ncases=0\nfor L in range(1,1025):\n for N in (1,4,100,256):\n  for heal in (0,1):\n   context=(L-1)//P\n   total=(L+N+heal+P-1)//P\n   unique=total-context\n   assert total*P>=L+N+heal and (total-1)*P<L+N+heal\n   assert unique>=1 and context*P<=L-1\n   cases+=1\nrows=[]\nfor chunk in (128,255,256,2048):\n end=min(((0+chunk)//P)*P,599)\n rows.append({'prompt_length':600,'chunk':chunk,'first_prefill_end':end,'progress':max(end,0)})\n# Transcription of prepare_for_queue versus current_new_pages_required for two short sequences.\nunique_per_sequence=[(100+100+P-1)//P]*2\ncapacity={'cache_pages':1,'enqueue_total_pages':unique_per_sequence[-1], 'scheduler_pages_required':sum(unique_per_sequence)}\n# No stop token/string, no healing: first new_tokens satisfying receive_sample's cutoff.\ncutoffs=[{'max_new_tokens':n,'draft_tokens':d,'first_termination_count':next(k for k in range(1,n+1) if k>=n-d)} for n,d in ((100,0),(100,4),(4,4))]\n# Minimal transcription of AsyncJob's queue wait and cancellation flag: not repository execution.\nasync def check_wait():\n q=asyncio.Queue(); state={'cancelled':False}\n async def consumer():\n  while True:\n   if state['cancelled']: break\n   result=await q.get()\n   if result['eos']: break\n t=asyncio.create_task(consumer()); await asyncio.sleep(0)\n state['cancelled']=True\n await asyncio.sleep(0)\n pending=not t.done()\n t.cancel()\n try: await t\n except asyncio.CancelledError: pass\n return {'cancelled_flag':True,'waiting_consumer_still_pending':pending}\nprint(json.dumps({'page_arithmetic_cases':cases,'prefill_rounding':rows,'multi_sequence_capacity':capacity,'termination_cutoffs':cutoffs,'async_wait_model':asyncio.run(check_wait())},sort_keys=True))"
+        ]
+      },
+      "result_sha256": "b690b911542f07dc11cb05b7d9913c315aa473ccaf1c4acb7a30778ac9cd3cf1"
+    }
+  }
+}

@@ -65,7 +65,8 @@ def prepare(plan, bundle, destination):
     for chapter in plan['chapters']:
         packet=destination/chapter['id']
         shutil.copytree(base,packet)
-        scoped=dict(manifest,authoring_task=task_for(chapter,manifest),graphs={},ancestor_context_complete=True)
+        scoped=dict(manifest,authoring_task=task_for(chapter,manifest),graphs={},ancestor_context_complete=True,
+                    editorial_schema_version=3)
         scoped['authoring_task']['chapter_catalog']=[{'id':c['id'],'focus':c['focus']} for c in plan['chapters']]
         validate_task(scoped)
         (packet/'manifest.json').write_text(json.dumps(scoped,indent=2)+'\n')

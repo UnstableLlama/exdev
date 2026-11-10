@@ -1,0 +1,330 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The initial implementation needs to turn model logits into token IDs while supporting greedy selection, stochastic sampling, distribution truncation and token restrictions.",
+        "basis": "inference",
+        "evidence": [
+          "call_4538a78c98b145f4986006ae8cc7b68a",
+          "call_8d8a770164d94ecebcb305734e6b053b",
+          "call_be4c5c0b1a314625aa01e9738baf1048"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Sampling is organized as composable Python transformations, with native CUDA noise generation and separately exposed fused sampling primitives. This permits several sampling policies to share distribution handling rather than duplicating complete implementations.",
+        "basis": "inference",
+        "evidence": [
+          "call_8d8a770164d94ecebcb305734e6b053b",
+          "call_06541e8d34a44a78b9ca1cb120295f87"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The public sampler package supplies default, greedy/argmax, categorical/Gumbel, top-k and top-p presets alongside custom sampling steps.",
+        "basis": "source",
+        "evidence": [
+          "call_f2ecbd58ab334258a8527258c5e906d5",
+          "call_be4c5c0b1a314625aa01e9738baf1048"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Native declarations and bindings expose argmax_sample, gumbel_sample, three Gumbel-noise variants, partial_strings_match and count_match_tensor. Exposure does not imply that CustomSampler uses the fused sampling functions: its inspected implementation calls noise functions followed by torch.argmax.",
+        "basis": "source",
+        "evidence": [
+          "call_dd49543062ce4728bbd361518b9e8f4a",
+          "call_8edcb443c4f04b468c70febbeb264304",
+          "call_f460cc3cfe2f418698aaf2b326774b5b",
+          "call_06541e8d34a44a78b9ca1cb120295f87",
+          "call_8d8a770164d94ecebcb305734e6b053b"
+        ]
+      }
+    ],
+    "limitations": [
+      "The executed checks are standard-library scalar translations, not executions of PyTorch, CUDA kernels, cuRAND or native string functions. Floating-point calculations use Python binary64 rather than CUDA float intrinsics and FP16 rounding.",
+      "No sampling-frequency, performance or end-to-end generation measurements were made. The Gumbel arithmetic check establishes agreement on selected inputs, not distributional correctness.",
+      "CustomSampler does not validate positive temperatures or ensure that token restrictions leave a valid candidate. Its generic composition also contains a sorted-argmax assignment defect.",
+      "Native half2 paths lack odd-length tail handling. The fused sampling boundary predicate and shared per-row noise require caution; their effects were inspected and scalar-emulated, not tested on a GPU.",
+      "String helpers assume suitable buffers, nonempty patterns and host-readable tensor storage without enforcing those contracts locally. Generator-side handling of their return values was not inspected."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Composable sampling, Gumbel noise and native matching",
+        "claims": [
+          {
+            "text": "CustomSampler.forward accepts logits, optional sequence IDs, a 32-bit seed, a tokenizer and blocked/allowed token lists. It flattens all leading logit dimensions into rows, runs the sampling steps and reshapes the selected IDs back to the original leading shape. sequence_ids is accepted but unused here. This is the local interface to generation; tokenizer.actual_vocab_size supplies the boundary for masking padded vocabulary entries.",
+            "basis": "source",
+            "evidence": [
+              "call_4538a78c98b145f4986006ae8cc7b68a",
+              "call_8d8a770164d94ecebcb305734e6b053b"
+            ]
+          },
+          {
+            "text": "SamplingState distinguishes input logits, working logits, weights, normalized probabilities and sorted variants carrying token-index mappings. SS_Normalize uses softmax for logits and division by row sums for weights; SS_Sort sorts descending and records original token indices. SS_Sample maps a selected sorted position back through indices[row, position]. These distinctions allow truncation to discard probability mass without requiring immediate renormalization.",
+            "basis": "source",
+            "evidence": [
+              "call_8d8a770164d94ecebcb305734e6b053b"
+            ]
+          },
+          {
+            "text": "Steps can substitute an alternative and request prerequisites: temperature 1 becomes SS_NoOp, top-k requests sorting, and top-p requests normalized sorted probabilities. However, CustomSampler.__init__ never advances its local state beyond INIT while constructing the list. Prerequisites are therefore chosen conservatively from INIT rather than from the preceding step's output. Runtime normalization and sorting often absorb the redundancy as no-ops; this is not a complete static state-transition planner.",
+            "basis": "source",
+            "evidence": [
+              "call_8d8a770164d94ecebcb305734e6b053b"
+            ]
+          },
+          {
+            "text": "SS_Temperature divides logits by T, or raises probability weights to 1/T and marks them unnormalized. For positive T these describe the same relative distribution. TopPSampler can apply temperature before truncation, changing which candidates survive, or afterward, changing weights within the retained set. DefaultSampler chooses T=0.75 and top_p=0.75; these are preset choices, with no derivation supplied here. CategoricalSampler maps T=0 to greedy selection; TopKSampler also does so for k=1, and TopPSampler for p=0.",
+            "basis": "source",
+            "evidence": [
+              "call_8d8a770164d94ecebcb305734e6b053b",
+              "call_be4c5c0b1a314625aa01e9738baf1048"
+            ]
+          },
+          {
+            "text": "Top-k keeps the first k sorted entries, replacing the rest with zero weights or negative-infinity logits; it uses a full sort rather than a partial top-k operation. Top-p computes inclusive cumulative probabilities and keeps entries whose cumulative sum is at most p, except that the first entry is always preserved. Thus it excludes the entry that first crosses the threshold, rather than retaining the smallest prefix reaching p. Top-k requires k>=1; SS_TopP requires 0<p<=1.",
+            "basis": "source",
+            "evidence": [
+              "call_8d8a770164d94ecebcb305734e6b053b"
+            ]
+          },
+          {
+            "text": "A scalar translation confirmed this top-p boundary: weights [0.5, 0.3125, 0.1875] at p=0.75 become [0.5, 0, 0]. The second entry would cross to 0.8125 and is removed. The example uses exactly representable binary fractions, avoiding ambiguity from a cumulative-sum rounding boundary.",
+            "basis": "execution",
+            "evidence": [
+              "call_6b5b9ed714b54dc7b3c5d05c99388907"
+            ]
+          },
+          {
+            "text": "Token restrictions precede the sampling chain. Vocabulary padding is masked in the caller's logits in place; blocked/allowed filtering subsequently clones the tensor. Blocked IDs receive negative infinity, while an allowed list masks every ID outside that list. Applying both therefore retains allowed IDs minus blocked IDs. No local check prevents an empty candidate set. If no seed is supplied, Python chooses an integer in [0, 2^32-1]; an explicit seed also resets the global Python and Torch random generators.",
+            "basis": "source",
+            "evidence": [
+              "call_8d8a770164d94ecebcb305734e6b053b"
+            ]
+          },
+          {
+            "text": "SS_Sample implements perturb-and-argmax: input logits use gumbel_noise_f16, working logits use gumbel_noise_f32, and probability weights use gumbel_noise_log, which takes their logarithm before adding noise. The latter two overwrite their working buffers. In ideal arithmetic, argmax(log(w_i)+G_i), with independent standard Gumbel noise, samples proportionally to positive weights w_i. Normalizing weights only adds a common offset to those scores, explaining why sampling can follow truncation without another normalization pass; zero weights become negative infinity.",
+            "basis": "inference",
+            "evidence": [
+              "call_8d8a770164d94ecebcb305734e6b053b",
+              "call_194a4230e264440da50efe62b5ee9ba6"
+            ]
+          },
+          {
+            "text": "The CUDA Gumbel transform is -log(max(-log(max(u, 1e-20)), 1e-20)). The two 1e-20 guards prevent logarithms of zero at either endpoint; they are numerical guards, not filtering thresholds. Noise kernels initialize Philox using the supplied seed and flattened element index. FP32 kernels process one value per thread; FP16 processes half2 pairs, adds noise in float, then rounds back to half. Consequently, the unmodified-temperature FP16 route is not numerically identical to the FP32 working-logit route.",
+            "basis": "source",
+            "evidence": [
+              "call_194a4230e264440da50efe62b5ee9ba6",
+              "call_8d8a770164d94ecebcb305734e6b053b"
+            ]
+          },
+          {
+            "text": "Binary64 evaluation of the guarded transform gives approximately -3.82976472 at u=0 and 46.05170186 at u=1. For logits [1,0,-1] and T=0.75, all 125 combinations of uniforms from {0.1,0.3,0.5,0.7,0.9} produced the same argmax using scaled logits, log normalized weights or log unnormalized weights. This checks the normalization identity on bounded inputs, not cuRAND output or native sampling frequencies.",
+            "basis": "execution",
+            "evidence": [
+              "call_6b5b9ed714b54dc7b3c5d05c99388907"
+            ]
+          },
+          {
+            "text": "Separate argmax_sample and gumbel_sample kernels fuse selection into one CUDA block per row, with 1024 threads scanning pairs of FP16 logits and reducing maxima. Their wrappers require two-dimensional half logits and long output tensors, and clamp max_logit to the stored width; zero means the full width. They run on the current CUDA stream. In contrast, CustomSampler materializes noisy values and delegates selection to torch.argmax. Fusion avoids that intermediate noise-output pass, but no speed advantage was measured.",
+            "basis": "source",
+            "evidence": [
+              "call_3552dc40e6a64b049b6a42c3e9e9a42b",
+              "call_8d8a770164d94ecebcb305734e6b053b"
+            ]
+          },
+          {
+            "text": "The fused Gumbel kernel seeds Philox with threadIdx.x but not blockIdx.x, so rows reuse the same per-thread noise streams for a given seed. It also differs from the standalone noise kernels' per-element initialization. Its read2f boundary checks are reversed for an odd max_logit: the low lane tests idx<max_logit-1, while the high lane tests idx<max_logit. Neither this reader nor the FP16 noise kernel guards the second lane of an odd-sized half2 tail.",
+            "basis": "source",
+            "evidence": [
+              "call_3552dc40e6a64b049b6a42c3e9e9a42b",
+              "call_194a4230e264440da50efe62b5ee9ba6"
+            ]
+          },
+          {
+            "text": "Scalar evaluation of read2f's masks with six stored logits and max_logit=5 admitted indices [0,1,2,3,5], excluding valid index 4 and admitting padded index 5. This demonstrates the predicate issue without executing a native memory access.",
+            "basis": "execution",
+            "evidence": [
+              "call_6b5b9ed714b54dc7b3c5d05c99388907"
+            ]
+          },
+          {
+            "text": "Generic greedy composition has a separate defect: SS_Argmax's sorted branches assign the indexed result to state.state instead of state.sample, then overwrite state.state with DONE. They also omit the row-wise indexing used by SS_Sample. A chain reaching these branches cannot correctly return its sample. Plain ArgmaxSampler starts at INIT and does not exercise those branches.",
+            "basis": "source",
+            "evidence": [
+              "call_8d8a770164d94ecebcb305734e6b053b",
+              "call_be4c5c0b1a314625aa01e9738baf1048"
+            ]
+          },
+          {
+            "text": "partial_strings_match consumes byte buffers containing UTF-32 query text, packed patterns and byte offsets; dividing by four yields codepoint lengths and offsets. It scans patterns in list order, returning a full-match start index, -2 for a query suffix matching a pattern prefix, or -1 for no match. These are immediate returns, not a global earliest-match search. count_match_tensor compares raw 64-bit elements until the first mismatch, bounded by min(max_a, b.size(1)); it performs no local dtype, device or a-length validation.",
+            "basis": "source",
+            "evidence": [
+              "call_3e95264c92d84568b2eff54ceea70db8"
+            ]
+          },
+          {
+            "text": "A codepoint-level scalar translation showed the string-order consequence: query 'abc' with patterns ['abcd','bc'] returns -2, whereas reversing the patterns returns 1. Thus an earlier partial match can hide a later full match. The helper's result is suitable for a caller to distinguish incomplete suffixes from completed matches, but it does not itself implement buffering, banning or termination policy.",
+            "basis": "execution",
+            "evidence": [
+              "call_6b5b9ed714b54dc7b3c5d05c99388907"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "generation",
+          "loading-tokenization",
+          "runtime",
+          "usage-evaluation"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_194a4230e264440da50efe62b5ee9ba6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5794122,
+        "max_bytes": 4324
+      },
+      "result_sha256": "5eec60063ac1fcf75ecb7e50e4055e1a04df6f34fe535bfdace031fc566dc4f9"
+    },
+    "call_dd49543062ce4728bbd361518b9e8f4a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5798446,
+        "max_bytes": 699
+      },
+      "result_sha256": "e48dfefefac6a491d5adbf58164a60327a3491de9b4dd09924bdff047da3a62e"
+    },
+    "call_3552dc40e6a64b049b6a42c3e9e9a42b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5799145,
+        "max_bytes": 5258
+      },
+      "result_sha256": "a99007d307ef8e30679c56ca2a891ce13ee459558b720a90a4a3541ea4f52055"
+    },
+    "call_8edcb443c4f04b468c70febbeb264304": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5804403,
+        "max_bytes": 615
+      },
+      "result_sha256": "422408499d7f17579f214b00bb44f87bf06e8537cc239698f2165e546b562ec1"
+    },
+    "call_3e95264c92d84568b2eff54ceea70db8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5805018,
+        "max_bytes": 2033
+      },
+      "result_sha256": "03a2cc30a8a6ff29904dccfa6e5ade92d3ede654129eb10a26c9b64ba51bb93e"
+    },
+    "call_f460cc3cfe2f418698aaf2b326774b5b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5807051,
+        "max_bytes": 661
+      },
+      "result_sha256": "9dd48900640be5340cc917d2625e217b5b5ec7ea8481dc44895d843ac3feaa6e"
+    },
+    "call_f2ecbd58ab334258a8527258c5e906d5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6017141,
+        "max_bytes": 699
+      },
+      "result_sha256": "ab9bfeb2a6a4f957eaea1311dbaec917a792001ef2b756af050dee36bddd232b"
+    },
+    "call_8d8a770164d94ecebcb305734e6b053b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6017840,
+        "max_bytes": 10980
+      },
+      "result_sha256": "7000df7f95d3dc28a7caf98fc30051204ac111ef35be0f959f57e150e45f3d6f"
+    },
+    "call_be4c5c0b1a314625aa01e9738baf1048": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6028820,
+        "max_bytes": 2489
+      },
+      "result_sha256": "fed61d902f9c5a4c60f82254ef13f5cd7b0be8c5e93913bfdd90b3811c800011"
+    },
+    "call_4538a78c98b145f4986006ae8cc7b68a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6031309,
+        "max_bytes": 804
+      },
+      "result_sha256": "84e123e87ac8de6f7c4db511ff3bf0465c8d09c078959ca4f3cf31e0cb272009"
+    },
+    "call_06541e8d34a44a78b9ca1cb120295f87": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5790643,
+        "max_bytes": 2541
+      },
+      "result_sha256": "e38e2b849ecb145c2aa452f762af371f7150cc50d98d3a7fdfbb30f15a6a8cb7"
+    },
+    "call_bfa3f24bc1854c018348d48ab090293c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import math,json,itertools\n# Scalar translations of SS_TopP, gumbel, and read2f predicates.\np=[0.5,0.3125,0.1875]; threshold=0.75\nc=0; retained=[]\nfor i,x in enumerate(p):\n c+=x\n retained.append(x if i==0 or c<=threshold else 0.0)\nassert retained==[0.5,0.0,0.0]\ndef g(u): return -math.log(max(-math.log(max(u,1e-20)),1e-20))\n# Check ideal real-arithmetic identities using binary64, interior uniforms only.\nz=[1.0,0.0,-1.0]; t=0.75\nw=[math.exp(x/t) for x in z]; probs=[x/sum(w) for x in w]\nargmax=lambda xs:max(range(len(xs)),key=xs.__getitem__)\nchecks=0\nfor us in itertools.product([0.1,0.3,0.5,0.7,0.9],repeat=3):\n noise=[g(u) for u in us]\n a=argmax([x/t+n for x,n in zip(z,noise)])\n b=argmax([math.log(x)+n for x,n in zip(probs,noise)])\n d=argmax([math.log(x)+n for x,n in zip(w,noise)])\n assert a==b==d\n checks+=1\n# Even padded storage, odd actual vocabulary: mimic native half2 masking.\ndef valid_slots(n,max_logit):\n out=[]\n for idx in range(0,n,2):\n  if idx<max_logit-1: out.append(idx)\n  if idx<max_logit: out.append(idx+1)\n return out\nassert valid_slots(6,5)==[0,1,2,3,5]\n# Nonempty ASCII/codepoint translation of native string scan, respecting early returns.\ndef match(q,strings):\n for s in strings:\n  for a0 in range(len(q)):\n   a=a0;b=0\n   while q[a]==s[b]:\n    a+=1;b+=1\n    if b==len(s): return a0\n    if a==len(q): return -2\n return -1\nassert match('abc',['abcd','bc'])==-2\nassert match('abc',['bc','abcd'])==1\nprint(json.dumps({'top_p_input':p,'threshold':threshold,'retained_weights':retained,'gumbel_clamp_endpoints':[g(0.0),g(1.0)],'logit_normalized_unnormalized_argmax_agreements':checks,'native_slots_num_logits_6_max_logit_5':valid_slots(6,5),'string_order_results':[match('abc',['abcd','bc']),match('abc',['bc','abcd'])]},sort_keys=True))"
+        ],
+        "timeout_seconds": 30
+      },
+      "result_sha256": "cd20a06305fc6f6a2f6e07a189a67d5ae71ee9b90d71356823247556bc8afd1b"
+    },
+    "call_eab4e9dede5842ac84cd81ca08a3a7f8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import math,json,itertools\n# Scalar translations of SS_TopP, gumbel, and read2f predicates.\np=[0.5,0.3125,0.1875]; threshold=0.75\nc=0; retained=[]\nfor i,x in enumerate(p):\n c+=x\n retained.append(x if i==0 or c<=threshold else 0.0)\nassert retained==[0.5,0.0,0.0]\ndef g(u): return -math.log(max(-math.log(max(u,1e-20)),1e-20))\nz=[1.0,0.0,-1.0]; t=0.75\nw=[math.exp(x/t) for x in z]; probs=[x/sum(w) for x in w]\nargmax=lambda xs:max(range(len(xs)),key=xs.__getitem__)\nchecks=0\nfor us in itertools.product([0.1,0.3,0.5,0.7,0.9],repeat=3):\n noise=[g(u) for u in us]\n a=argmax([x/t+n for x,n in zip(z,noise)])\n b=argmax([math.log(x)+n for x,n in zip(probs,noise)])\n d=argmax([math.log(x)+n for x,n in zip(w,noise)])\n assert a==b==d\n checks+=1\ndef valid_slots(n,max_logit):\n out=[]\n for idx in range(0,n,2):\n  if idx<max_logit-1: out.append(idx)\n  if idx<max_logit: out.append(idx+1)\n return out\nassert valid_slots(6,5)==[0,1,2,3,5]\ndef match(q,strings):\n for s in strings:\n  for a0 in range(len(q)):\n   a=a0;b=0\n   while q[a]==s[b]:\n    a+=1;b+=1\n    if b==len(s): return a0\n    if a==len(q): return -2\n return -1\nassert match('abc',['abcd','bc'])==-2\nassert match('abc',['bc','abcd'])==1\nprint(json.dumps({'top_p_input':p,'threshold':threshold,'retained_weights':retained,'gumbel_clamp_endpoints':[g(0.0),g(1.0)],'logit_normalized_unnormalized_argmax_agreements':checks,'native_slots_num_logits_6_max_logit_5':valid_slots(6,5),'string_order_results':[match('abc',['abcd','bc']),match('abc',['bc','abcd'])]},sort_keys=True))"
+        ]
+      },
+      "result_sha256": "f53913b736825165fba3a8a2e603bae5fd17ef5d4fde36b79a98574def533f1d"
+    },
+    "call_6b5b9ed714b54dc7b3c5d05c99388907": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,json,itertools\np=[0.5,0.3125,0.1875]; threshold=0.75\nc=0; retained=[]\nfor i,x in enumerate(p):\n c+=x\n retained.append(x if i==0 or c<=threshold else 0.0)\nassert retained==[0.5,0.0,0.0]\ndef g(u): return -math.log(max(-math.log(max(u,1e-20)),1e-20))\nz=[1.0,0.0,-1.0]; t=0.75\nw=[math.exp(x/t) for x in z]; probs=[x/sum(w) for x in w]\nargmax=lambda xs:max(range(len(xs)),key=xs.__getitem__)\nchecks=0\nfor us in itertools.product([0.1,0.3,0.5,0.7,0.9],repeat=3):\n noise=[g(u) for u in us]\n a=argmax([x/t+n for x,n in zip(z,noise)])\n b=argmax([math.log(x)+n for x,n in zip(probs,noise)])\n d=argmax([math.log(x)+n for x,n in zip(w,noise)])\n assert a==b==d\n checks+=1\ndef valid_slots(n,max_logit):\n out=[]\n for idx in range(0,n,2):\n  if idx<max_logit-1: out.append(idx)\n  if idx<max_logit: out.append(idx+1)\n return out\nassert valid_slots(6,5)==[0,1,2,3,5]\ndef match(q,strings):\n for s in strings:\n  for a0 in range(len(q)):\n   a=a0;b=0\n   while q[a]==s[b]:\n    a+=1;b+=1\n    if b==len(s): return a0\n    if a==len(q): return -2\n return -1\nassert match('abc',['abcd','bc'])==-2\nassert match('abc',['bc','abcd'])==1\nprint(json.dumps({'top_p_input':p,'threshold':threshold,'retained_weights':retained,'gumbel_clamp_endpoints':[g(0.0),g(1.0)],'logit_normalized_unnormalized_argmax_agreements':checks,'native_slots_num_logits_6_max_logit_5':valid_slots(6,5),'string_order_results':[match('abc',['abcd','bc']),match('abc',['bc','abcd'])]},sort_keys=True))"
+        ]
+      },
+      "result_sha256": "85d98886b119abedb0c2fac14e4ea0d810efb0bda0a53ac0e0556b467f7ffa01"
+    }
+  }
+}

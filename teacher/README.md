@@ -20,7 +20,7 @@ python3 -m teacher.graph_packet --packet .teacher/000010
 python3 -m teacher.audit_boundary
 ```
 
-Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eight sandbox tests unless the environment flag is set. The host-enabled suite passed all 102 tests.
+Recovery requires authenticated `gh` and network access. `--reuse` reprocesses existing raw retrievals. Packet destinations must be new. The runner requires Linux amd64, system Python, libseccomp and Bubblewrap with user namespaces enabled. Nested execution sandboxes may block namespace creation; run integration checks in the host environment. Ordinary test discovery skips eight sandbox tests unless the environment flag is set. The host-enabled suite passed all 122 tests.
 
 `python3 -m teacher.runner --packet .teacher/000009` reads one JSON request from stdin: `{"tool":"repo_list","arguments":{"commit":"ANCESTOR_SHA"}}`. Packet selection and cutoff are trusted configuration, never model arguments. Consult the schema for complete arguments.
 
@@ -89,3 +89,54 @@ python3 -m teacher.author --packet .teacher/restart/root-chapters-001/quantizer 
 Destinations must be new directories. The prepared manifest carries assigned source-section indices, required external source IDs and the chapter focus. The validator checks complete byte-range coverage, including unread tails and gaps; tensor headers use complete tensor-index pagination. `git_show.truncated` now refers to the current section; `commit_truncated` separately describes the enclosing commit. A validated draft gets a separate `coverage.json` report. Reading evidence is a necessary condition, not proof of a sound explanation: design reasoning and paper mappings still need editorial review.
 
 The quantizer task requires the Python/CUDA quantizers, EXL3 documentation, packing/codebook and transform implementations, both pinned papers and QTIP reference code. All chapters remain components of one future canonical root entry. Chapter synthesis, editorial approval and canonical promotion remain separate unfinished steps. Neither rejected old candidate is supplied as authoring context.
+
+## Fresh chapter batch 002
+
+All ten fresh Astra/high chapters completed sequentially, with the quantizer last. Complete assigned coverage, annotation validation, packet and implementation hashes, and chapter-reference targets were checked. All drafts remain pending editorial review and are not training eligible. See the [batch verification report](../reports/root-chapter-batch-002.json).
+
+| Chapter | Draft | Evidence transcript |
+| --- | --- | --- |
+| quantized-inference | [Draft](../.teacher/runs/root-quantized-inference-002/draft.md) | [Transcript](../.teacher/runs/root-quantized-inference-002/raw-transcript.json) |
+| conversion | [Draft](../.teacher/runs/root-conversion-002/draft.md) | [Transcript](../.teacher/runs/root-conversion-002/raw-transcript.json) |
+| models | [Draft](../.teacher/runs/root-models-002/draft.md) | [Transcript](../.teacher/runs/root-models-002/raw-transcript.json) |
+| modules | [Draft](../.teacher/runs/root-modules-002/draft.md) | [Transcript](../.teacher/runs/root-modules-002/raw-transcript.json) |
+| generation | [Draft](../.teacher/runs/root-generation-002/draft.md) | [Transcript](../.teacher/runs/root-generation-002/raw-transcript.json) |
+| sampling | [Draft](../.teacher/runs/root-sampling-002/draft.md) | [Transcript](../.teacher/runs/root-sampling-002/raw-transcript.json) |
+| loading-tokenization | [Draft](../.teacher/runs/root-loading-tokenization-002/draft.md) | [Transcript](../.teacher/runs/root-loading-tokenization-002/raw-transcript.json) |
+| runtime | [Draft](../.teacher/runs/root-runtime-002/draft.md) | [Transcript](../.teacher/runs/root-runtime-002/raw-transcript.json) |
+| usage-evaluation | [Draft](../.teacher/runs/root-usage-evaluation-002/draft.md) | [Transcript](../.teacher/runs/root-usage-evaluation-002/raw-transcript.json) |
+| quantizer | [Draft](../.teacher/runs/root-quantizer-002/draft.md) | [Transcript](../.teacher/runs/root-quantizer-002/raw-transcript.json) |
+
+## Structured findings and generation revision
+
+The user-supplied Fable review accepts the batch as chapter material and requests a fresh generation revision. [The review record](../reports/root-chapter-review-002.json) binds that decision to the original draft hashes without changing immutable run artifacts or granting canonical/ancestor approval.
+
+New packet CLI outputs and root chapter packets select editorial v3, adding source-cited `findings`. Legacy packets remain v2 unless explicitly versioned before authoring. See [the findings contract](../docs/defect-retrospectives.md#implemented-authoring-time-findings-editorial-v3). The new generation attempt uses a fresh packet and receives general standing instructions, not the prior draft, review prose, or expected defect answers.
+
+Verification distinguishes source inspection, scalar transcription and repository execution. A successful scalar check supports only its modeled computation; reviewers must verify source claims and execution scope. The run tool description now specifies `python3 -c` and the 1–20 second timeout range.
+
+The [generation 004 draft](../.teacher/runs/root-generation-004/draft.md) and [transcript](../.teacher/runs/root-generation-004/raw-transcript.json) are ready for independent review. It contains seven structured findings and explicitly covers optional output fields, banned-string rollback and multi-sequence capacity. Attempt 003 is preserved; it passed mechanical validation but omitted the optional output contract. See the [revision verification report](../reports/generation-revision-004.json). No replacement is canonically promoted.
+
+Generation 004 is now accepted as the replacement chapter by the user-supplied Fable review. The [accepted chapter selection](../reports/root-chapter-selection-001.json) binds the selected ten chapters to artifact hashes. Authored run review files remain unchanged; this administrative selection does not approve a complete ancestor entry or training sample. The [generation findings inventory](../reports/generation-findings-inventory-001.json) preserves observations from both 003 and 004, including the draft-token cutoff finding unique to 003. Administrative extraction of the other nine v2 chapters is complete; the extracted records await review.
+
+## Administrative extraction of accepted v2 chapters
+
+The [legacy findings inventory](../reports/findings/root-legacy-extraction-001.json) covers all nine selected v2 chapters without editing their prose or starting new teacher sessions. It records 76 observations: 27 potential defects, 23 unchecked contracts, 15 semantic differences, eight diagnostic caveats, two unsupported features and one unverified source warning. These categories are extraction decisions, not independent confirmation.
+
+Each record retains exact prose excerpts and JSON pointers, run/artifact hashes and original transcript evidence. Six observations originally confined to uncited limitations now have source snippets recovered from those same transcripts; their administrative associations are explicitly labeled. Paragraph-level citations are not falsely presented as precise proof of every extracted mechanism. No repository execution is claimed.
+
+| Chapter | Records |
+| --- | ---: |
+| quantizer | 6 |
+| quantized-inference | 5 |
+| conversion | 10 |
+| models | 3 |
+| modules | 8 |
+| sampling | 11 |
+| loading-tokenization | 14 |
+| runtime | 9 |
+| usage-evaluation | 10 |
+
+[Provenance validation](../reports/findings/root-legacy-extraction-001-validation.json) passed: 220 prose paragraphs accounted for, 119 exact excerpt checks, 206 evidence-reference checks, six recovered source-quote checks, and unchanged original run hashes. This does not prove exhaustive discovery or confirm each finding. The separate generation inventory is linked from the report; cross-chapter overlap remains available for review rather than silently merged. Findings extraction is complete; extraction review, root-entry assembly and canonical approval remain separate work.
+
+Fable has [accepted the administrative extraction](../reports/findings/root-legacy-extraction-001-review.json) for fidelity and provenance. This supersedes its pending extraction-review state administratively, without rewriting the inventory. [The normalization policy](../schema/finding-taxonomy-v1.json) separates classification, unsupported configurations and coarse impact for future ledger ingestion. Individual finding confirmation and impact assessment remain separate.

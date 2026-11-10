@@ -1,0 +1,555 @@
+{
+  "status": "administrative_candidate_inventory",
+  "scope": "Union of structured observations from attempts 003 and 004; not a retrospective ledger or teacher input",
+  "raw_observations": 12,
+  "distinct_structured_findings": 8,
+  "deduplication": "Manual grouping by same trigger and mechanism, preserving complete per-attempt records and run-scoped evidence IDs",
+  "count_note": "Structured arrays contain 12 observations grouped into eight mechanisms. The review mentions nine; a ninth observation in prose is possible but not identified here. No ninth structured finding was invented.",
+  "findings": [
+    {
+      "inventory_id": "small-prefill-chunk",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-003",
+          "draft_sha256": "50339c4861fb1d462a2fe2931b4d6112ef37e0346c379713b3231814447ce06b",
+          "transcript_sha256": "3202a673b80f7c8b0a90810d90a6e7f211dc626678f4628b09c8220bdbacce22",
+          "finding": {
+            "id": "generation-prefill-small-chunk",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "A positive max_chunk_size below one page can leave a fresh job permanently unable to prefill.",
+            "trigger": "Use max_chunk_size=128 with an uncached 600-token prompt and initial kv_position=0.",
+            "expected_behavior": "Reject an unusable chunk size or ingest a positive number of prompt tokens.",
+            "actual_behavior": "The endpoint rounds down to zero; prefill continues without inference or progress, and the job remains ineligible for decoding on subsequent iterations.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.prefill"
+              }
+            ],
+            "source_evidence": [
+              "call_b4190e936a8a416e8c642a65f7825580",
+              "call_0e9349feb2f24f3ab46de6c954e338e4"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Evaluated the inspected endpoint formula for a 600-token prompt. Chunk sizes 128 and 255 produced endpoint zero; 256 produced 256 and 2048 produced 599.",
+                "evidence": [
+                  "call_341940d4bcc142e8aa1cdd2c473f79f5"
+                ],
+                "limits": "Integer arithmetic only; no Job or model implementation executed."
+              }
+            ]
+          },
+          "review_disposition": "retained observation; individual confirmation not inferred",
+          "review_directed_assignment": false
+        },
+        {
+          "run": ".teacher/runs/root-generation-004",
+          "draft_sha256": "19d5f509a61e90dbea324bdc5aefd165de968bc187bcc701b7f8fdda2d7891d4",
+          "transcript_sha256": "3dd55918208f87cf081e8286de2e979e202ef1c29da666f945833e721cc88fb8",
+          "finding": {
+            "id": "generation-small-prefill-chunk",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Sub-page chunk sizes can stall prompt ingestion.",
+            "trigger": "max_chunk_size is between 1 and 255, a sequence has uncached prompt tokens to ingest, and its KV position starts at zero.",
+            "expected_behavior": "Either validate a page-sized minimum or ingest a positive number of prompt tokens.",
+            "actual_behavior": "Prefill rounds the endpoint down to zero and continues because prefill_end <= prefill_start. The sequence remains unready and subsequent iterations repeat without progress.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.prefill"
+              }
+            ],
+            "source_evidence": [
+              "call_98b25069b15546378633bd3a9addb24a",
+              "call_d9672fa51a404f818950034df076227f"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "For a 300-token prompt at position zero, chunk 255 produced endpoint zero; chunks 256 and 2048 produced endpoints 256 and 299 respectively.",
+                "evidence": [
+                  "call_e36f63c9a36045e9a223f564c73c3bf6"
+                ],
+                "limits": "Endpoint arithmetic only; no prefill model call."
+              }
+            ]
+          },
+          "review_disposition": "source-confirmed by user-supplied Fable review",
+          "review_directed_assignment": true
+        }
+      ]
+    },
+    {
+      "inventory_id": "capacity",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-003",
+          "draft_sha256": "50339c4861fb1d462a2fe2931b4d6112ef37e0346c379713b3231814447ce06b",
+          "transcript_sha256": "3202a673b80f7c8b0a90810d90a6e7f211dc626678f4628b09c8220bdbacce22",
+          "finding": {
+            "id": "generation-multisequence-capacity",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Enqueue-time capacity validation omits private pages for all but the last sequence.",
+            "trigger": "Enqueue a two-sequence job with 100 prompt tokens and max_new_tokens=100 per sequence into a one-page cache, with max_batch_size at least two.",
+            "expected_behavior": "Reject the impossible two-page request during preparation.",
+            "actual_behavior": "prepare_for_queue() accumulates all_unique_pages but calculates total_pages using only the last seq.new_unique_pages. It accepts the one-page estimate; current_new_pages_required() later correctly requests two pages, preventing admission indefinitely.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.prepare_for_queue"
+              },
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.current_new_pages_required"
+              }
+            ],
+            "source_evidence": [
+              "call_b4190e936a8a416e8c642a65f7825580",
+              "call_a150891a785743f5af384d25e3d1a08a",
+              "call_5bf8bd9c08d3461b8f387ec9bc465690"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Modeled the two inspected capacity formulas: enqueue estimate one page, scheduler requirement two pages, cache capacity one page.",
+                "evidence": [
+                  "call_341940d4bcc142e8aa1cdd2c473f79f5"
+                ],
+                "limits": "No actual enqueue or scheduler loop was executed."
+              }
+            ]
+          },
+          "review_disposition": "retained observation; individual confirmation not inferred",
+          "review_directed_assignment": false
+        },
+        {
+          "run": ".teacher/runs/root-generation-004",
+          "draft_sha256": "19d5f509a61e90dbea324bdc5aefd165de968bc187bcc701b7f8fdda2d7891d4",
+          "transcript_sha256": "3dd55918208f87cf081e8286de2e979e202ef1c29da666f945833e721cc88fb8",
+          "finding": {
+            "id": "generation-capacity",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Enqueue validation omits private pages from all but the last sequence.",
+            "trigger": "A multi-sequence job's total private-page requirement exceeds cache capacity, while its shared context hashes plus the last sequence's private pages fit. For example, two one-token sequences requesting 100 output tokens each with a one-page cache.",
+            "expected_behavior": "Reject the impossible request during preparation using the union of context hashes plus every sequence's private-page count.",
+            "actual_behavior": "prepare_for_queue accumulates all_unique_pages but calculates total_pages using only seq.new_unique_pages from the last loop iteration. Admission later sums every sequence correctly, so the example is enqueued with a reported requirement of one page but permanently needs two; repeated iteration cannot start it.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.prepare_for_queue"
+              },
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.current_new_pages_required"
+              }
+            ],
+            "source_evidence": [
+              "call_98b25069b15546378633bd3a9addb24a",
+              "call_2407345feaf749438898ed7cbaad37b9",
+              "call_2721ad5dc7b74911b25c06844d765f3e"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Computed the inspected page formulas for the two-sequence example: private pages [1,1], enqueue total 1, admission requirement 2, capacity 1.",
+                "evidence": [
+                  "call_e36f63c9a36045e9a223f564c73c3bf6"
+                ],
+                "limits": "Exact small-integer arithmetic, not execution of the scheduler."
+              }
+            ]
+          },
+          "review_disposition": "source-confirmed by user-supplied Fable review",
+          "review_directed_assignment": true
+        }
+      ]
+    },
+    {
+      "inventory_id": "async-cancel",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-003",
+          "draft_sha256": "50339c4861fb1d462a2fe2931b4d6112ef37e0346c379713b3231814447ce06b",
+          "transcript_sha256": "3202a673b80f7c8b0a90810d90a6e7f211dc626678f4628b09c8220bdbacce22",
+          "finding": {
+            "id": "generation-async-cancel-waiter",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Cancelling an AsyncJob does not wake a consumer already waiting on its empty result queue.",
+            "trigger": "A consumer is suspended at await self.queue.get() when another coroutine calls AsyncJob.cancel().",
+            "expected_behavior": "The cancelled job's asynchronous iterator terminates without needing another result.",
+            "actual_behavior": "Cancellation removes the job from the generator and sets cancelled=True, but supplies no queue sentinel or waiter cancellation. The flag is checked only before the pending queue.get(), so that consumer can remain suspended.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/async_generator.py",
+                "symbol": "AsyncJob.__aiter__"
+              },
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/async_generator.py",
+                "symbol": "AsyncJob.cancel"
+              }
+            ],
+            "source_evidence": [
+              "call_8e8de27ede304d75b60b89e5245c9227"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Ran a minimal asyncio model of the flag check and empty-queue wait. After setting the cancellation flag and yielding to the loop, the consumer task was still pending.",
+                "evidence": [
+                  "call_341940d4bcc142e8aa1cdd2c473f79f5"
+                ],
+                "limits": "This modeled the wait mechanism, not the repository wrapper or inference."
+              }
+            ]
+          },
+          "review_disposition": "retained observation; individual confirmation not inferred",
+          "review_directed_assignment": false
+        },
+        {
+          "run": ".teacher/runs/root-generation-004",
+          "draft_sha256": "19d5f509a61e90dbea324bdc5aefd165de968bc187bcc701b7f8fdda2d7891d4",
+          "transcript_sha256": "3dd55918208f87cf081e8286de2e979e202ef1c29da666f945833e721cc88fb8",
+          "finding": {
+            "id": "generation-async-cancel-wakeup",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Cancelling a job does not wake an already waiting async iterator.",
+            "trigger": "An AsyncJob consumer is suspended on queue.get with an empty queue when another coroutine calls AsyncJob.cancel.",
+            "expected_behavior": "The waiting consumer should terminate or receive a cancellation signal.",
+            "actual_behavior": "Cancellation removes the underlying job and sets cancelled=True, but provides no queue sentinel and does not cancel the waiting consumer. The flag is checked only before queue.get, leaving the existing wait suspended.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/async_generator.py",
+                "symbol": "AsyncJob.__aiter__"
+              },
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/async_generator.py",
+                "symbol": "AsyncJob.cancel"
+              }
+            ],
+            "source_evidence": [
+              "call_b0a7466e39c2408baccea85cf352c66a"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Ran a minimal asyncio consumer with the inspected flag-check/queue-get ordering. After setting the cancellation flag and yielding, consumer_done_without_queue_signal remained false; the harness then explicitly cancelled it.",
+                "evidence": [
+                  "call_a4d625ee919d4f82aebf6fd49ffc7737"
+                ],
+                "limits": "Exercises asyncio queue behavior in a transcription, not AsyncJob or inference."
+              }
+            ]
+          },
+          "review_disposition": "source-confirmed by user-supplied Fable review",
+          "review_directed_assignment": true
+        }
+      ]
+    },
+    {
+      "inventory_id": "draft-output-cutoff",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-003",
+          "draft_sha256": "50339c4861fb1d462a2fe2931b4d6112ef37e0346c379713b3231814447ce06b",
+          "transcript_sha256": "3202a673b80f7c8b0a90810d90a6e7f211dc626678f4628b09c8220bdbacce22",
+          "finding": {
+            "id": "generation-draft-output-cutoff",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Enabling draft decoding reduces the terminal output-token threshold by the configured draft length.",
+            "trigger": "Generate without healing or other stop conditions using max_new_tokens=100 and num_draft_tokens=4.",
+            "expected_behavior": "Draft lookahead should not itself terminate the response before the requested 100-token budget.",
+            "actual_behavior": "receive_sample() terminates when new_tokens reaches 96 because it compares against max_new_tokens\u2212num_draft_tokens. With both values equal to four, the first generated token already satisfies the cutoff.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.receive_sample"
+              }
+            ],
+            "source_evidence": [
+              "call_e7c011c8ff494e6da381e80f46df8ee9",
+              "call_5bf8bd9c08d3461b8f387ec9bc465690"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Computed the first positive counter satisfying the source predicate: 100 for budget/draft 100/0, 96 for 100/4 and one for 4/4.",
+                "evidence": [
+                  "call_341940d4bcc142e8aa1cdd2c473f79f5"
+                ],
+                "limits": "Only the stopping predicate was evaluated; no draft acceptance or model execution was tested."
+              }
+            ]
+          },
+          "review_disposition": "retained observation; individual confirmation not inferred",
+          "review_directed_assignment": false
+        }
+      ]
+    },
+    {
+      "inventory_id": "banned-token-rewind",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-003",
+          "draft_sha256": "50339c4861fb1d462a2fe2931b4d6112ef37e0346c379713b3231814447ce06b",
+          "transcript_sha256": "3202a673b80f7c8b0a90810d90a6e7f211dc626678f4628b09c8220bdbacce22",
+          "finding": {
+            "id": "generation-banned-string-token-rewind",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Banned-string rewind restores a differently named attribute instead of the token buffer used for emission.",
+            "trigger": "A banned-string match reaches rewind_checkpoint() before the max-token termination branch.",
+            "expected_behavior": "Restore held_tokens to the checkpoint alongside held_text and the other held buffers, keeping rejected tokens out of ordinary token_ids output.",
+            "actual_behavior": "The code assigns self.held_token, singular. emit() still reads self.held_tokens, plural, which retains the rejected suffix and can emit it as token_ids despite rewinding the sequence and text.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.receive_sample.rewind_checkpoint"
+              }
+            ],
+            "source_evidence": [
+              "call_b4190e936a8a416e8c642a65f7825580",
+              "call_e7c011c8ff494e6da381e80f46df8ee9"
+            ],
+            "verification": [
+              {
+                "method": "source_inspection",
+                "description": "Compared the checkpoint assignment with the held_tokens buffer initialized by prepare_for_queue() and consumed by emit().",
+                "evidence": [
+                  "call_b4190e936a8a416e8c642a65f7825580",
+                  "call_e7c011c8ff494e6da381e80f46df8ee9"
+                ],
+                "limits": "No banned-string generation or native string matcher was executed."
+              }
+            ]
+          },
+          "review_disposition": "retained observation; individual confirmation not inferred",
+          "review_directed_assignment": false
+        },
+        {
+          "run": ".teacher/runs/root-generation-004",
+          "draft_sha256": "19d5f509a61e90dbea324bdc5aefd165de968bc187bcc701b7f8fdda2d7891d4",
+          "transcript_sha256": "3dd55918208f87cf081e8286de2e979e202ef1c29da666f945833e721cc88fb8",
+          "finding": {
+            "id": "generation-banned-checkpoint-tokens",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Banned-string rewind restores the wrong token-buffer attribute.",
+            "trigger": "A full banned-string match reaches rewind_checkpoint before a terminal branch, including a one-token match such as 'bad' with a larger output budget.",
+            "expected_behavior": "Restore held_tokens to the checkpoint and report rejected IDs only as suppressed_tokens, keeping emitted tokens consistent with rewound sequence state.",
+            "actual_behavior": "rewind_checkpoint assigns checkpoint['held_tokens'] to self.held_token. The actual self.held_tokens buffer retains rejected IDs; emit_held subsequently emits and clears that stale buffer while also reporting the IDs as suppressed.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.receive_sample.rewind_checkpoint"
+              }
+            ],
+            "source_evidence": [
+              "call_98b25069b15546378633bd3a9addb24a",
+              "call_5f647097e9fa4eb894e215f9065d472a"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Modeled the inspected attribute assignments with a rejected ID 7 and an empty saved buffer. The sequence rewound, but both emitted_token_ids and suppressed_tokens remained [7].",
+                "evidence": [
+                  "call_e36f63c9a36045e9a223f564c73c3bf6"
+                ],
+                "limits": "List/attribute model; SeqTensor copying and KV invalidation were inspected, not executed."
+              }
+            ]
+          },
+          "review_disposition": "source-confirmed by user-supplied Fable review",
+          "review_directed_assignment": true
+        }
+      ]
+    },
+    {
+      "inventory_id": "optional-outputs",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-004",
+          "draft_sha256": "19d5f509a61e90dbea324bdc5aefd165de968bc187bcc701b7f8fdda2d7891d4",
+          "transcript_sha256": "3dd55918208f87cf081e8286de2e979e202ef1c29da666f945833e721cc88fb8",
+          "finding": {
+            "id": "generation-optional-probability-outputs",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Requested chosen-token probabilities and top-token outputs do not reach their prepared streaming buffers.",
+            "trigger": "A job reaches receive_logits with return_probs=True or return_top_tokens greater than zero.",
+            "expected_behavior": "Return the requested final sampling probabilities and top-token arrays alongside the sampled token, allowing receive_sample to buffer and emit them.",
+            "actual_behavior": "The enabled branches execute only pass. return_probs=True leaves next_prob unassigned; return_top_tokens>0 leaves next_k_tokens and next_k_probs unassigned. The return tuple therefore raises UnboundLocalError. CustomSampler.forward supplies only token IDs and receives no request for these additional outputs.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.receive_logits"
+              },
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/sampler/custom.py",
+                "symbol": "CustomSampler.forward"
+              }
+            ],
+            "source_evidence": [
+              "call_5f647097e9fa4eb894e215f9065d472a",
+              "call_a03cde1d538c4c7899988772344b6d5c",
+              "call_98b25069b15546378633bd3a9addb24a"
+            ],
+            "verification": [
+              {
+                "method": "source_inspection",
+                "description": "Traced flags through sampling, tuple unpacking, held buffers and emitted field names.",
+                "evidence": [
+                  "call_2721ad5dc7b74911b25c06844d765f3e",
+                  "call_5f647097e9fa4eb894e215f9065d472a"
+                ],
+                "limits": "No model or sampler execution."
+              },
+              {
+                "method": "scalar_transcription",
+                "description": "Executed the same conditional assignments with a scalar token: disabled flags returned four values; each enabled option raised the corresponding unbound-local error.",
+                "evidence": [
+                  "call_e36f63c9a36045e9a223f564c73c3bf6"
+                ],
+                "limits": "Checks Python control flow, not distribution computation or tensor shapes."
+              }
+            ]
+          },
+          "review_disposition": "source-confirmed by user-supplied Fable review",
+          "review_directed_assignment": true
+        }
+      ]
+    },
+    {
+      "inventory_id": "draft-rows",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-004",
+          "draft_sha256": "19d5f509a61e90dbea324bdc5aefd165de968bc187bcc701b7f8fdda2d7891d4",
+          "transcript_sha256": "3dd55918208f87cf081e8286de2e979e202ef1c29da666f945833e721cc88fb8",
+          "finding": {
+            "id": "generation-draft-rows",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "Draft decoding sizes its batch by jobs while populating it by sequences.",
+            "trigger": "Draft decoding is enabled and a ready job contains multiple sequences.",
+            "expected_behavior": "Allocate and index one draft row per sequence, or reject multi-sequence drafting explicitly.",
+            "actual_behavior": "iterate_draftmodel_gen increments batch_size once per ready job, then increments batch for every sequence when writing block_index and cache_seqlens. One two-sequence job allocates one row but attempts to populate two, before collective sampling can occur.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/generator.py",
+                "symbol": "Generator.iterate_draftmodel_gen"
+              }
+            ],
+            "source_evidence": [
+              "call_d9672fa51a404f818950034df076227f"
+            ],
+            "verification": [
+              {
+                "method": "source_inspection",
+                "description": "Compared the job-count sizing loop with the nested sequence-writing loop and ordinary iterate_gen's sequence-count sizing.",
+                "evidence": [
+                  "call_d9672fa51a404f818950034df076227f"
+                ],
+                "limits": "The exact first PyTorch exception was not measured."
+              }
+            ]
+          },
+          "review_disposition": "source-confirmed by user-supplied Fable review",
+          "review_directed_assignment": true
+        }
+      ]
+    },
+    {
+      "inventory_id": "terminal-banned-bypass",
+      "observations": [
+        {
+          "run": ".teacher/runs/root-generation-004",
+          "draft_sha256": "19d5f509a61e90dbea324bdc5aefd165de968bc187bcc701b7f8fdda2d7891d4",
+          "transcript_sha256": "3dd55918208f87cf081e8286de2e979e202ef1c29da666f945833e721cc88fb8",
+          "finding": {
+            "id": "generation-terminal-banned-bypass",
+            "origin": "authoring_observation",
+            "status": "suspected",
+            "classification": "defect",
+            "description": "The output-budget branch can emit a banned string without checking it.",
+            "trigger": "A non-stop token completes a banned string exactly when the token-budget condition becomes true; for example, a single token decoding to 'bad', banned_strings=['bad'], max_new_tokens=1 and no draft model.",
+            "expected_behavior": "Apply banned-string suppression before flushing terminal held output.",
+            "actual_behavior": "receive_sample returns through the max_new_tokens branch with emit_held=True before reaching banned-string matching, emitting the banned text and token IDs.",
+            "locations": [
+              {
+                "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+                "path": "exllamav3/generator/job.py",
+                "symbol": "Job.receive_sample"
+              }
+            ],
+            "source_evidence": [
+              "call_5f647097e9fa4eb894e215f9065d472a",
+              "call_98b25069b15546378633bd3a9addb24a"
+            ],
+            "verification": [
+              {
+                "method": "scalar_transcription",
+                "description": "Checked the inspected terminal predicate for the one-token example: 1 >= 1-0 is true, selecting the flush branch before matching.",
+                "evidence": [
+                  "call_e36f63c9a36045e9a223f564c73c3bf6"
+                ],
+                "limits": "Branch-order model assumes the stated token decoding; no tokenizer or native matcher execution."
+              }
+            ]
+          },
+          "review_disposition": "source-confirmed by user-supplied Fable review",
+          "review_directed_assignment": true
+        }
+      ]
+    }
+  ],
+  "completeness": "Non-exhaustive. Empty findings means none noticed, not defect-free.",
+  "legacy_chapters_pending_extraction": [
+    "quantized-inference",
+    "conversion",
+    "models",
+    "modules",
+    "sampling",
+    "loading-tokenization",
+    "runtime",
+    "usage-evaluation",
+    "quantizer"
+  ],
+  "teacher_input": false,
+  "training_eligible": false
+}

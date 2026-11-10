@@ -1,0 +1,467 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The runtime foundation connects the Python model and generation APIs to native tensor operations, extension compilation, device bookkeeping and reusable storage utilities.",
+        "basis": "inference",
+        "evidence": [
+          "call_5868e458da17467b9c89a1d6ef7fe34f",
+          "call_5061701038f648dea98ebf72a83c4e31",
+          "call_7ecf7947cf1c47efb88ef22779246239"
+        ]
+      }
+    ],
+    "reasoning": [],
+    "impact": [],
+    "source_notes": [],
+    "limitations": [
+      "No extension build, package import, CUDA kernel execution or performance benchmark was performed. The successful computation checks scalar indexing and capacity arithmetic, not GPU execution.",
+      "The scalar checks use small Python integers without overflow and do not reproduce cuBLAS accumulation, CUDA half arithmetic, approximate transcendental instructions, stream ordering or memory alignment.",
+      "The inspected wrappers do not uniformly validate device, contiguity, dtype and vector-width requirements. Odd-length activation and softcap indexing problems are demonstrated by scalar emulation; whether application call sites admit those shapes remains unverified.",
+      "HIP-specific flags and compatibility branches do not establish working ROCm support: the shared primitives also contain NVIDIA-specific PTX.",
+      "The sources do not establish why the 256-element growth quantum, kernel thread counts or GELU cubic coefficient were selected, nor whether alternative values perform better."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "runtime",
+        "title": "Runtime initialization, native interfaces and storage utilities",
+        "claims": [
+          {
+            "text": "The package initializer re-exports Config, Model, Tokenizer, cache classes, synchronous/asynchronous generation classes and samplers. The version is 0.0.1. This is a direct import-based public facade, not a lazy attribute loader; util similarly re-exports misc helpers.",
+            "basis": "source",
+            "evidence": [
+              "call_5868e458da17467b9c89a1d6ef7fe34f",
+              "call_966f36d0b4e9417db0d5cfdbaee6064c",
+              "call_76cafc9bf36d40acb27b90efaf4effaa"
+            ]
+          },
+          {
+            "text": "There are two extension-build paths. setup.py normally constructs a PyTorch CUDAExtension when Torch is installed; the presence of EXLLAMA_NOCOMPILE suppresses that step. At runtime, ext.py first imports exllamav3_ext and invokes torch.utils.cpp_extension.load only after ModuleNotFoundError. Both discover .c, .cpp and .cu files recursively. JIT compilation uses host -Ofast on non-Windows systems, versus setup.py's -O3; both use CUDA -O3 and -lineinfo. Windows JIT handling searches for MSVC when cl is absent and adds cuBLAS and virtual-environment library paths. Thus precompilation and deferred compilation are supported alternatives, but their host optimization settings are not identical.",
+            "basis": "source",
+            "evidence": [
+              "call_5ca51a5440454da0a8aebddaf70ed7de",
+              "call_7ecf7947cf1c47efb88ef22779246239"
+            ]
+          },
+          {
+            "text": "maybe_set_arch_list_env preserves an explicit TORCH_CUDA_ARCH_LIST. Otherwise, on CUDA builds it collects visible-device capabilities, clamps each to the highest SM capability advertised by Torch, deduplicates and sorts the targets, and appends +PTX to the last target. It runs when arch_list is imported and again before JIT loading. The source explicitly assumes the user's NVCC matches Torch's build toolchain; this clamp is a compatibility heuristic, not independent compiler detection.",
+            "basis": "source",
+            "evidence": [
+              "call_1f6a408c9f964ff0b24d8f0fc2c8f7b9",
+              "call_7ecf7947cf1c47efb88ef22779246239"
+            ]
+          },
+          {
+            "text": "bindings.cpp exposes ordinary pybind functions for safetensors I/O, normalization, softcapping, Hadamard construction/transforms, trellis quantization and packing, reconstruction, EXL3 GEMM, FP16 GEMM, rotary embeddings, gated activations, sampling and string matching. This is the local interface to the loading, quantizer, quantized-inference, modules and sampling subsystems. The inspected activation, normalization, softcap and hgemm wrappers select the input tensor's device with OptionalCUDAGuard and use Torch's current CUDA stream; their outputs are supplied by the caller rather than allocated by these wrappers.",
+            "basis": "source",
+            "evidence": [
+              "call_5061701038f648dea98ebf72a83c4e31",
+              "call_05a03abedb9e4a0790e7191a29d22045",
+              "call_1f5dec05d9a8471a8faaa72c7c695c79",
+              "call_0c674e87bc0648f29ec5b93ce185f80b",
+              "call_e4837517c0694e618ab22484f0ccc242"
+            ]
+          },
+          {
+            "text": "DeviceContext is lightweight bookkeeping: a global dictionary keys contexts by configuration UUID and device string. Acquisition creates or reuses a context and increments its reference count; release decrements it and removes the entry at zero. The context stores the configuration and device, but does not itself allocate GPU buffers or implement a cache scheduler.",
+            "basis": "source",
+            "evidence": [
+              "call_a88226c9aeba42faa5f91e05557beaa9"
+            ]
+          },
+          {
+            "text": "Memory budgeting adjusts Torch's per-process allocator fraction rather than allocating a reservation buffer. After a small 32\u00d732 device computation, set_memory_fraction_reserve uses (free \u2212 reserve)/total; set_memory_fraction_use uses min((already_allocated + use)/total, 1). The reserve path does not clamp invalid budgets. unset_memory_fraction restores 1.0, while free_mem combines Python garbage collection with empty_cache. list_gpu_tensors is a diagnostic traversal of globals, thread frames and reachable containers, reporting tensor-object sizes in integer MiB; it is not a storage-deduplicated allocator accounting system.",
+            "basis": "source",
+            "evidence": [
+              "call_ee048f7e478044fcaf047cba0fc3bea0"
+            ]
+          },
+          {
+            "text": "SeqTensor separates logical sequence length from allocated capacity. Its own PAGE_SIZE is 256, matching the separately declared shared constant numerically. Appending grows storage with torch.cat when end_pos >= capacity, selecting (end_pos // 256 + 1) \u00d7 256, then copies into a narrow view. Consequently an exact page boundary still gets another page. clear and truncate retain storage; torch and torch_slice return views, whereas slice and clone construct copied SeqTensors. get_for_device separately caches device copies inside a dictionary and explicitly requires tensors to remain read-only; buffered_arange extends that caching to reusable ranges.",
+            "basis": "source",
+            "evidence": [
+              "call_13cd868864824b78a2c5a846ec16b211",
+              "call_43be88fe24cb4a2e8164c36d29ec747b"
+            ]
+          },
+          {
+            "text": "A standard-library simulation of 4,096 single-element appends preserved a positive spare capacity of at most 256 elements, performed 16 growth operations and ended at capacity 4,352. This verifies the capacity arithmetic, not tensor copying. Fixed-size growth bounds unused sequence slots, but unlike geometric growth it repeatedly copies the accumulated allocation as a sequence becomes longer.",
+            "basis": "execution",
+            "evidence": [
+              "call_2e71821ca4054a44b3cfc56737cee611",
+              "call_13cd868864824b78a2c5a846ec16b211"
+            ]
+          },
+          {
+            "text": "hgemm implements row-major C = A @ B through column-major cuBLAS by reversing the operands and calling with dimensions (N, M, K), leading dimensions (N, K, N), alpha = 1 and beta = 0. This represents C\u1d40 = B\u1d40A\u1d40 without an explicit transpose buffer. It validates half dtype, rank two and compatible dimensions, but does not check contiguity or matching devices.",
+            "basis": "source",
+            "evidence": [
+              "call_e4837517c0694e618ab22484f0ccc242"
+            ]
+          },
+          {
+            "text": "Scalar address emulation matched ordinary row-major multiplication for all 512 combinations of M, K and N from 1 through 8. This checks the hgemm operand reversal and leading-dimension identity, not cuBLAS numerical accuracy or speed.",
+            "basis": "execution",
+            "evidence": [
+              "call_2e71821ca4054a44b3cfc56737cee611"
+            ]
+          },
+          {
+            "text": "The shared elementwise kernels emphasize vectorized caller-owned buffers. silu_mul and gelu_mul process two half elements per thread with 256-thread blocks and fuse activation with multiplication by the second input. SiLU uses half arithmetic; GELU converts to float for 0.5x[1+tanh(c(x+0.044715x\u00b3))], with c documented as sqrt(2/\u03c0). tanh_opt uses an exponential identity under USE_ROCM or older CUDA architecture/runtime conditions, otherwise tanh.approx.f32. softcap computes scale \u00d7 tanh(x/scale), using scalar float or paired half loads with float intermediates and 1,024-thread blocks.",
+            "basis": "source",
+            "evidence": [
+              "call_05a03abedb9e4a0790e7191a29d22045",
+              "call_1a2e972b238a4e02be31687c7b982ad1",
+              "call_0c674e87bc0648f29ec5b93ce185f80b"
+            ]
+          },
+          {
+            "text": "The bounded computation gives sqrt(2/\u03c0) = 0.7978845608028654, consistent with GELU's literal. It also exposes vector-tail constraints: activation indexing leaves the last element unwritten for tested odd lengths 1, 3 and 513. Emulating half-softcap launch/index arithmetic gives an access beyond length 3, while lengths 1 and 2,049 leave their last element unprocessed. These are indexing results, not observed GPU memory faults.",
+            "basis": "execution",
+            "evidence": [
+              "call_2e71821ca4054a44b3cfc56737cee611",
+              "call_05a03abedb9e4a0790e7191a29d22045",
+              "call_0c674e87bc0648f29ec5b93ce185f80b"
+            ]
+          },
+          {
+            "text": "rms_norm launches one 1,024-thread block per row, loads groups of four elements, accumulates squares in float and reduces first across lanes and then across warps. It computes x \u00d7 (w + constant_bias) / sqrt(mean(x\u00b2) + epsilon), supporting half/float input-output combinations with half weights. Width must be divisible by four. Half inputs are clamped to \u00b165,504 before normalization; float inputs are not. The wrapper checks weights and shapes, but classifies every non-float input/output as half, so its final invalid-dtype branch does not protect against arbitrary other dtypes.",
+            "basis": "source",
+            "evidence": [
+              "call_1f5dec05d9a8471a8faaa72c7c695c79",
+              "call_79cc01bdbd9e4adc8148a73f8bb31e00"
+            ]
+          },
+          {
+            "text": "The clamp value 65,504 is exactly the largest finite binary16 number: (2 \u2212 2\u207b\u00b9\u2070) \u00d7 2\u00b9\u2075. A standard-library binary16 decode of bit pattern 0x7bff confirmed that value. This explains the numeric boundary without establishing how the GPU clamp handles every exceptional input.",
+            "basis": "execution",
+            "evidence": [
+              "call_2e71821ca4054a44b3cfc56737cee611",
+              "call_79cc01bdbd9e4adc8148a73f8bb31e00"
+            ]
+          },
+          {
+            "text": "The low-level utility layer supplies aligned half4/half8 aggregates, 64/128-bit vector transfers, bit reinterpretation/XOR helpers and shape/dtype assertion macros. static_for_pack turns a list of integer constants into compile-time callback instances for specialized kernel dispatch. reduction.cuh supplies 32-lane shuffle reductions and shared-memory aggregation for argmax, half maximum and float sum. Unlike the sum/max helpers, block_reduce_argmax reads all 32 shared warp slots without a num_threads guard, so its use requires all those slots to have been populated.",
+            "basis": "source",
+            "evidence": [
+              "call_79cc01bdbd9e4adc8148a73f8bb31e00",
+              "call_d1987f5839214d918f7762652785b145",
+              "call_503d104d964246f0a1ef0083d4e58b56"
+            ]
+          },
+          {
+            "text": "ptx.cuh exposes m16n8k16 tensor-core operations with either float or half accumulators, shared-memory matrix-fragment loads, 16-byte asynchronous global-to-shared copies, commit/wait groups and GPU-scope barrier operations. These form the local native machinery relevant to quantized inference: data can move into shared memory and then tensor-core fragments without an ordinary scalar matrix representation. Additional helpers provide low/high unsigned multiplication and extraction from a combined 64-bit word. The source warns against its older m8n8k4 helper and records a suspected Blackwell issue with explicitly predicated asynchronous copies; those comments are not measurements reproduced here.",
+            "basis": "source",
+            "evidence": [
+              "call_53bdd4630bb64252aae60fdfe7359d81"
+            ]
+          },
+          {
+            "text": "The remaining Python utilities support configuration and diagnostics. read_dict tries ordered alternative keys, including nested '->' paths, checks types and permits integer/float conversions when appropriate; None is treated as missing. disk_lru_cache persists JSON-keyed results through shelve beside the launching script, but implements no eviction despite its name. synchronized uses one shared reentrant lock. Timer measures wall-clock intervals without GPU synchronization; cuda_sync_active synchronizes only devices reporting allocated Torch memory. ProgressBar wraps Rich, becomes inactive for empty text and marks non-transient progress complete on context exit.",
+            "basis": "source",
+            "evidence": [
+              "call_0b9030c8ef084af5bc530b650f5f6d52",
+              "call_6fe1cdea0ba343b1bc0aec90d3bb50f4",
+              "call_599c243890574eb2973685b9ab5982a3"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "quantizer",
+          "quantized-inference",
+          "modules",
+          "generation",
+          "sampling",
+          "loading-tokenization",
+          "usage-evaluation"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_5868e458da17467b9c89a1d6ef7fe34f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2363499,
+        "max_bytes": 499
+      },
+      "result_sha256": "9b9a56990015ca1c3845c86c195fcede97da3a82744fef5d1fc4d19a1f75db74"
+    },
+    "call_43be88fe24cb4a2e8164c36d29ec747b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2370557,
+        "max_bytes": 245
+      },
+      "result_sha256": "7ff4c71e9340f53127831ffcb5e414c7863b18d6cbc2116ce4e274676946e883"
+    },
+    "call_a88226c9aeba42faa5f91e05557beaa9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5785574,
+        "max_bytes": 1292
+      },
+      "result_sha256": "7d4d9646b570c84d4c5fc519e75e14b8e9148c0f6e50eb07ce3639d7aa4da7cb"
+    },
+    "call_05a03abedb9e4a0790e7191a29d22045": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5786866,
+        "max_bytes": 3238
+      },
+      "result_sha256": "f58770f1af9ac7f95e718464f0038afc760a719c7ccd6ce1ee9d67dfe792dbb1"
+    },
+    "call_c0b952a539a54b4f9f1b3167824f8593": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5790104,
+        "max_bytes": 539
+      },
+      "result_sha256": "9f86224becb83e68ca01665eefce9fc9711fe848f318ba02e2367519e873600d"
+    },
+    "call_5061701038f648dea98ebf72a83c4e31": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5790643,
+        "max_bytes": 2541
+      },
+      "result_sha256": "e38e2b849ecb145c2aa452f762af371f7150cc50d98d3a7fdfbb30f15a6a8cb7"
+    },
+    "call_1a2e972b238a4e02be31687c7b982ad1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5793184,
+        "max_bytes": 938
+      },
+      "result_sha256": "88c0adc7b6e547e02088c56d4395d6e019ed6c4ea15b801aad578875cd1991f6"
+    },
+    "call_e4837517c0694e618ab22484f0ccc242": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5810895,
+        "max_bytes": 1675
+      },
+      "result_sha256": "c62a500e616263dcd6a713903baed7e31371b11fb1b5fe1b8917c59d8326c47b"
+    },
+    "call_d4164de7399c4c8f8249776425594fb6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5812570,
+        "max_bytes": 411
+      },
+      "result_sha256": "6411f58b81e8e85469de62e777106fd5d960d1c989c3edc83e10c9ea02699ae9"
+    },
+    "call_1f5dec05d9a8471a8faaa72c7c695c79": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5812981,
+        "max_bytes": 7278
+      },
+      "result_sha256": "3fdc83b9a7e2a763b30187e56acc5f5f847adf6d2542291505bd2b7903f97327"
+    },
+    "call_2984e1a340ce4145a87284c392e28b45": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5820259,
+        "max_bytes": 429
+      },
+      "result_sha256": "d9c9981ec498e7b9356c3a83cde44a6f1117e2b2b921be7b0cb9b3546512bb90"
+    },
+    "call_53bdd4630bb64252aae60fdfe7359d81": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5820688,
+        "max_bytes": 7305
+      },
+      "result_sha256": "f7a3b41dc971b7236ef4094eab2810e39481cedc8ae2d1b8b96a100983a0eda0"
+    },
+    "call_503d104d964246f0a1ef0083d4e58b56": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5901694,
+        "max_bytes": 2650
+      },
+      "result_sha256": "1c028bc439f14be15df28bfa1a220138500f38c4ef068d3a0c9c84c134e1a3e1"
+    },
+    "call_0c674e87bc0648f29ec5b93ce185f80b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5911883,
+        "max_bytes": 2416
+      },
+      "result_sha256": "af707687b996f54b9e015522da790104b9132b7ea56a689c3ccafbf0176443af"
+    },
+    "call_54ccf87dc00f49a3a3a90a70f6e3009d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5914299,
+        "max_bytes": 399
+      },
+      "result_sha256": "8bb83af76464915d7d6f8c8d13cb431a8a4debf7134167ef5bb06a6bef5d44ff"
+    },
+    "call_79cc01bdbd9e4adc8148a73f8bb31e00": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5920620,
+        "max_bytes": 3105
+      },
+      "result_sha256": "b50a5ec67c31d3ae479b4c89d1a17dcb8cd88f09fea8709fcdd119ee1f50c91e"
+    },
+    "call_d1987f5839214d918f7762652785b145": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5923725,
+        "max_bytes": 7841
+      },
+      "result_sha256": "795f3aec6716f204ed5eb6978ea29841db4026bab2efbda6e3eb0a623a48056c"
+    },
+    "call_7ecf7947cf1c47efb88ef22779246239": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5931566,
+        "max_bytes": 4048
+      },
+      "result_sha256": "cb7cba65f664048883bca7122a15484c04aba6da7f98e65972a664ec443b04e1"
+    },
+    "call_76cafc9bf36d40acb27b90efaf4effaa": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6176444,
+        "max_bytes": 289
+      },
+      "result_sha256": "7d7b79aeabf2217606d2d708e415c163dae0817e26d8afb0424426e143eb9089"
+    },
+    "call_1f6a408c9f964ff0b24d8f0fc2c8f7b9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6176733,
+        "max_bytes": 1781
+      },
+      "result_sha256": "2e9219245ea8635db9339d96dec0d1730a5f019dd6e41a85daad85f02f658bb0"
+    },
+    "call_0b9030c8ef084af5bc530b650f5f6d52": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6178514,
+        "max_bytes": 4203
+      },
+      "result_sha256": "4e7c0a298e599349e0045011c17b8fb117f025ab520893ea8e083bfef7b84d05"
+    },
+    "call_ee048f7e478044fcaf047cba0fc3bea0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6685723,
+        "max_bytes": 5210
+      },
+      "result_sha256": "26226c6a7f0248241820858ebc675e326ec08c7b08d0a11892079212b1d44624"
+    },
+    "call_6fe1cdea0ba343b1bc0aec90d3bb50f4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6690933,
+        "max_bytes": 1408
+      },
+      "result_sha256": "f1a5d94fcebe272177a94002d67268f2cca37860040fffa29b2f0117195eb4d5"
+    },
+    "call_599c243890574eb2973685b9ab5982a3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6692341,
+        "max_bytes": 1513
+      },
+      "result_sha256": "ffe6e7614905b97734212325f4bc18ecfab64d82762e33d93f3be431c17c57ba"
+    },
+    "call_13cd868864824b78a2c5a846ec16b211": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6705454,
+        "max_bytes": 4951
+      },
+      "result_sha256": "897dfa95750342c35d51747dca73dd981a7377bf370132b2fac3f4b66262b1fb"
+    },
+    "call_966f36d0b4e9417db0d5cfdbaee6064c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6710405,
+        "max_bytes": 273
+      },
+      "result_sha256": "31ec52bc83a65adeb75c8c6c05be3aa99b45dcc6567817edcd1e936b5d29c9aa"
+    },
+    "call_5ca51a5440454da0a8aebddaf70ed7de": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6720241,
+        "max_bytes": 3004
+      },
+      "result_sha256": "8da25c1aff430115a49e332764500eac2c6234d130e71f747601c116d90bc4b9"
+    },
+    "call_4c0783672fe34aa79fd995ebe8d1c802": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import struct, math, json\n# Scalar address interpretation of hgemm's swapped column-major operands.\ncases=0\nfor m in range(1,9):\n for k in range(1,9):\n  for n in range(1,9):\n   a=[(i%7)-3 for i in range(m*k)]; b=[(i%5)-2 for i in range(k*n)]\n   row=[sum(a[i*k+t]*b[t*n+j] for t in range(k)) for i in range(m) for j in range(n)]\n   col=[0]*(m*n)\n   for i in range(n):\n    for j in range(m): col[i+j*n]=sum(b[i+t*n]*a[t+j*k] for t in range(k))\n   assert row==col\n   cases+=1\n# SeqTensor capacity rule, including exact-page boundaries.\ncap=256; reallocs=0\nfor end in range(1,4097):\n if end>=cap: cap=(end//256+1)*256; reallocs+=1\n assert cap%256==0 and 0<cap-end<=256\nhalfmax=struct.unpack('<e',bytes.fromhex('ff7b'))[0]\nassert halfmax==(2-2**-10)*2**15==65504\nactivation={str(n):list(range(2*(n//2),n)) for n in [1,3,512,513]}\nsoftcap={}\nfor n in [1,3,2049]:\n blocks=((n//2)+1023)//1024\n accesses=[j for t in range(blocks*1024) if 2*t<n for j in (2*t,2*t+1)]\n softcap[str(n)]={'missed':sorted(set(range(n))-set(accesses)), 'out_of_bounds': [j for j in accesses if j>=n]}\nprint(json.dumps({'hgemm_layout_cases':cases,'seq_append_steps':4096,'seq_reallocations':reallocs,'seq_final_capacity':cap,'half_max':halfmax,'sqrt_2_over_pi':math.sqrt(2/math.pi),'activation_unwritten_indices':activation,'softcap_half_indexing':softcap}))"
+        ],
+        "timeout_seconds": 30
+      },
+      "result_sha256": "cd20a06305fc6f6a2f6e07a189a67d5ae71ee9b90d71356823247556bc8afd1b"
+    },
+    "call_3592b8ce56544b2883342fc492dbb18c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import struct, math, json\ncases=0\nfor m in range(1,9):\n for k in range(1,9):\n  for n in range(1,9):\n   a=[(i%7)-3 for i in range(m*k)]; b=[(i%5)-2 for i in range(k*n)]\n   row=[sum(a[i*k+t]*b[t*n+j] for t in range(k)) for i in range(m) for j in range(n)]\n   col=[0]*(m*n)\n   for i in range(n):\n    for j in range(m): col[i+j*n]=sum(b[i+t*n]*a[t+j*k] for t in range(k))\n   assert row==col\n   cases+=1\ncap=256; reallocs=0\nfor end in range(1,4097):\n if end>=cap: cap=(end//256+1)*256; reallocs+=1\n assert cap%256==0 and 0<cap-end<=256\nhalfmax=struct.unpack('<e',bytes.fromhex('ff7b'))[0]\nassert halfmax==(2-2**-10)*2**15==65504\nactivation={str(n):list(range(2*(n//2),n)) for n in [1,3,512,513]}\nsoftcap={}\nfor n in [1,3,2049]:\n blocks=((n//2)+1023)//1024\n accesses=[j for t in range(blocks*1024) if 2*t<n for j in (2*t,2*t+1)]\n softcap[str(n)]={'missed':sorted(set(range(n))-set(accesses)), 'out_of_bounds': [j for j in accesses if j>=n]}\nprint(json.dumps({'hgemm_layout_cases':cases,'seq_append_steps':4096,'seq_reallocations':reallocs,'seq_final_capacity':cap,'half_max':halfmax,'sqrt_2_over_pi':math.sqrt(2/math.pi),'activation_unwritten_indices':activation,'softcap_half_indexing':softcap}))"
+        ]
+      },
+      "result_sha256": "f53913b736825165fba3a8a2e603bae5fd17ef5d4fde36b79a98574def533f1d"
+    },
+    "call_2e71821ca4054a44b3cfc56737cee611": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct, math, json\ncases=0\nfor m in range(1,9):\n for k in range(1,9):\n  for n in range(1,9):\n   a=[(i%7)-3 for i in range(m*k)]; b=[(i%5)-2 for i in range(k*n)]\n   row=[sum(a[i*k+t]*b[t*n+j] for t in range(k)) for i in range(m) for j in range(n)]\n   col=[0]*(m*n)\n   for i in range(n):\n    for j in range(m): col[i+j*n]=sum(b[i+t*n]*a[t+j*k] for t in range(k))\n   assert row==col\n   cases+=1\ncap=256; reallocs=0\nfor end in range(1,4097):\n if end>=cap: cap=(end//256+1)*256; reallocs+=1\n assert cap%256==0 and 0<cap-end<=256\nhalfmax=struct.unpack('<e',bytes.fromhex('ff7b'))[0]\nassert halfmax==(2-2**-10)*2**15==65504\nactivation={str(n):list(range(2*(n//2),n)) for n in [1,3,512,513]}\nsoftcap={}\nfor n in [1,3,2049]:\n blocks=((n//2)+1023)//1024\n accesses=[j for t in range(blocks*1024) if 2*t<n for j in (2*t,2*t+1)]\n softcap[str(n)]={'missed':sorted(set(range(n))-set(accesses)), 'out_of_bounds': [j for j in accesses if j>=n]}\nprint(json.dumps({'hgemm_layout_cases':cases,'seq_append_steps':4096,'seq_reallocations':reallocs,'seq_final_capacity':cap,'half_max':halfmax,'sqrt_2_over_pi':math.sqrt(2/math.pi),'activation_unwritten_indices':activation,'softcap_half_indexing':softcap}))"
+        ]
+      },
+      "result_sha256": "2aeeb5c2d1c8e9e83e5a3325d3a1f86a23c95a59ec393a8ede5a26a66a20e1d8"
+    }
+  }
+}

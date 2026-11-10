@@ -1,0 +1,449 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The root change introduces the boundary between model artifacts and execution: named safetensors become device tensors, while tokenizer files and control-token configuration become token IDs, padded batches and decoded text.",
+        "basis": "source",
+        "evidence": [
+          "call_20390b8ede7a43feb5fdae8e5e4eebd9",
+          "call_3b88e5159896417e992145b5a4d7bc3d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Both interfaces separate metadata interpretation from bulk processing. Python resolves tensor names, shapes and offsets before native reads; the tokenizer wrapper resolves control tokens and batching around a tokenizer.json-backed engine. This keeps model-specific metadata outside the native loader, but does not reproduce every Transformers tokenizer configuration behavior.",
+        "basis": "inference",
+        "evidence": [
+          "call_20390b8ede7a43feb5fdae8e5e4eebd9",
+          "call_88bb22ff3573455583cabaafa18bf654",
+          "call_3b88e5159896417e992145b5a4d7bc3d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Callers gain selectable native/Python tensor loading, prefix-routed model variants, explicit BOS/EOS insertion and special-token rendering. The inspected implementation also leaves important compatibility boundaries around padding, EOS filtering, added-token handling and native I/O failure cleanup.",
+        "basis": "source",
+        "evidence": [
+          "call_20390b8ede7a43feb5fdae8e5e4eebd9",
+          "call_88bb22ff3573455583cabaafa18bf654",
+          "call_3b88e5159896417e992145b5a4d7bc3d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Gemma tokenizer evidence comes from unsloth/gemma-2-2b at revision 25319945f7fd83b8b903e12081777b7eef2ba993, an authorized public mirror of gated google/gemma-2-2b. Byte identity with upstream is unverified.",
+        "basis": "source",
+        "evidence": [
+          "call_3c27009bec224393b56292aaf8b1f634",
+          "call_bd4b9851d3254e2c9f64b4c87f3c6d09",
+          "call_9320811537584c6eb3b54c9005efd81d",
+          "call_9fc0be27787443e7a683227f71bb0efd"
+        ]
+      }
+    ],
+    "limitations": [
+      "No real tensor payload loading, CUDA transfers, tokenizer round trips or throughput measurements were executed. The successful run checks only bounded standard-library emulations of inspected arithmetic and filtering.",
+      "The tokenizer configuration files were read completely; the large tokenizer vocabularies, merges and tokenizer.model files were not. Backend special-token matching and architecture-wide tokenization equivalence remain unverified.",
+      "The scalar checks use small Python integers without native overflow and inspect binary16 representation without executing PyTorch's half conversion. They do not test native threading, buffer ownership or CUDA synchronization.",
+      "Native loader failure-path risks are source-derived, not reproduced failures. Gemma mirror equivalence to the gated upstream remains unverified."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Loading tensors and translating text",
+        "claims": [
+          {
+            "text": "SafetensorsCollection scans *.safetensors directly rather than consulting an index JSON. read_header reads an eight-byte NumPy int64 header length, parses the following UTF-8 JSON and records the payload start. Metadata entries are excluded from the key-to-file map; later scanned files replace duplicate keys. get_tensor translates payload-relative data_offsets into absolute file offsets and asserts that shape product \u00d7 element size equals the requested byte count.",
+            "basis": "source",
+            "evidence": [
+              "call_20390b8ede7a43feb5fdae8e5e4eebd9"
+            ]
+          },
+          {
+            "text": "The loader accepts I32, I16, F16, BF16 and F32. Missing required tensors raise an error; optional reads return None. BF16 is initially loaded as BF16, then converted to FP16 unless allow_bf16 is true. Prefix reads include an exact key or descendants separated by a dot. VariantSafetensorsCollection instead routes each read using the longest matching raw string prefix, allowing different tensor groups to come from different directories; its existence checks search all retained collections rather than validating that routing choice.",
+            "basis": "source",
+            "evidence": [
+              "call_20390b8ede7a43feb5fdae8e5e4eebd9"
+            ]
+          },
+          {
+            "text": "The default mt_fread path allocates a contiguous destination tensor and lazily caches five FILE handles per file. Pybind exposes stloader_open_file, stloader_read and stloader_close_file. Readers process 512 KiB blocks in stripes: worker i starts at i \u00d7 block_size and advances by five blocks. Linux uses pread; the other branch uses a separate handle's _fseeki64/fread. Completed ranges enter a mutex-protected queue, and the GPU copy worker combines adjacent queued ranges before submitting cudaMemcpyAsync.",
+            "basis": "source",
+            "evidence": [
+              "call_20390b8ede7a43feb5fdae8e5e4eebd9",
+              "call_88bb22ff3573455583cabaafa18bf654",
+              "call_ae55c5d675ed42a9af559dc163468a53",
+              "call_bb315f713e53464896a859a3d406e8b8"
+            ]
+          },
+          {
+            "text": "Ownership differs by destination. CPU reads write directly into the tensor's storage. GPU reads allocate an ordinary malloc buffer for the entire tensor, populate it from disk, and copy completed chunks into the separately allocated GPU tensor on the captured current stream. The successful path joins workers, synchronizes the device and frees the staging buffer before returning. This is chunked scheduling, not bounded-size staging or direct disk-to-GPU I/O. Cached file handles remain open until close(), which resets them so later reads can reopen them.",
+            "basis": "source",
+            "evidence": [
+              "call_88bb22ff3573455583cabaafa18bf654",
+              "call_20390b8ede7a43feb5fdae8e5e4eebd9"
+            ]
+          },
+          {
+            "text": "The supported Python alternative seeks and reads into a bytearray, wraps it with torch.frombuffer, reshapes and calls .to(device); it does not use the imported mmap module. Compared with the native queue, this is a simpler whole-read path. Neither implementation establishes a speed advantage here. Loader metrics count source bytes and timed loading, report GiB/s using 1024\u00b3, and exclude the subsequent optional BF16-to-FP16 conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_20390b8ede7a43feb5fdae8e5e4eebd9"
+            ]
+          },
+          {
+            "text": "A standard-library emulation checked nine sizes spanning empty input, block boundaries, the five-worker stride and a partial thirteenth block. Every size was partitioned into contiguous, nonoverlapping ranges with ceil(size / 524288) blocks and the expected worker assignment. The stride was 2621440 bytes. This verifies the small-case partition arithmetic, not concurrent I/O or transfer behavior; the source provides no measured rationale for choosing five readers or 512 KiB blocks.",
+            "basis": "execution",
+            "evidence": [
+              "call_f06c193b5e1b4f86883235ef942c472a",
+              "call_ae55c5d675ed42a9af559dc163468a53",
+              "call_88bb22ff3573455583cabaafa18bf654"
+            ]
+          },
+          {
+            "text": "The native failure path needs caution: the copy worker waits only for a nonempty queue, while a failed reader merely sets load_failed without notifying that condition variable. A read failure can therefore leave the copier asleep. load_failed is volatile rather than atomic, and TORCH_CHECK precedes staging-buffer cleanup. These are potential synchronization and resource-cleanup defects, not observed failures. The Python header parser also performs only limited validation, including no explicit file-bound or overlapping-range validation.",
+            "basis": "inference",
+            "evidence": [
+              "call_88bb22ff3573455583cabaafa18bf654",
+              "call_20390b8ede7a43feb5fdae8e5e4eebd9"
+            ]
+          },
+          {
+            "text": "Tokenizer always constructs the Hugging Face tokenizers engine from tokenizer.json. It additionally reads tokenizer_config.json and added_tokens.json, but not special_tokens_map.json or tokenizer.model. Config supplies BOS/EOS/PAD IDs from model config.json; a list-valued EOS retains its list in Config while its first entry becomes the scalar used by Tokenizer. Non-None model IDs take precedence over tokenizer-config strings or content objects. If those fields are absent, BOS/EOS default to IDs 1/2. Missing padding falls back to a truthy lookup of <pad>, then EOS when distinct from BOS, otherwise -1\u2014not BOS as the nearby comment suggests.",
+            "basis": "source",
+            "evidence": [
+              "call_3b88e5159896417e992145b5a4d7bc3d",
+              "call_b605efe605f94c61858b8ac445a508da"
+            ]
+          },
+          {
+            "text": "Extended token mappings merge every added_tokens.json entry as special, followed by tokenizer_config added_tokens_decoder entries marked special. Non-special decoder entries are skipped; the initialized unspecial dictionaries are never populated here. encode_special uses escaped regex alternatives to insert mapped IDs between ordinary backend-encoded text segments. This manual path uses token content and IDs, not AddedToken lstrip/rstrip/normalized/single_word rules. With special handling disabled, encoding delegates to the backend with add_special_tokens=False; the wrapper itself does not force registered special spellings to become literal text.",
+            "basis": "source",
+            "evidence": [
+              "call_3b88e5159896417e992145b5a4d7bc3d"
+            ]
+          },
+          {
+            "text": "The pinned TinyLlama and Mistral configurations both map <unk>/<s>/</s> to 0/1/2. TinyLlama declares </s> as padding and requests right padding; Mistral declares no padding token and requests automatic BOS insertion. The wrapper instead always left-pads batches and defaults add_bos/add_eos to false. Thus these files supply token identities, not an automatically reproduced Transformers encoding policy. special_tokens_map.json corroborates the spellings but is not read by this implementation.",
+            "basis": "source",
+            "evidence": [
+              "call_67e0041d2fd14d058cce35a6a2d24da1",
+              "call_44600a56a231473a9423b3f7b2d4dfda",
+              "call_c2f754dce73d4cda9456acad54b7bee9",
+              "call_634410ed286b48dfae41548888d8ba65",
+              "call_3b88e5159896417e992145b5a4d7bc3d"
+            ]
+          },
+          {
+            "text": "Qwen2.5's pinned tokenizer configuration declares no BOS or unknown token, and uses <|endoftext|> at 151643 for EOS and padding. Special entries include <|im_start|>/<|im_end|> at 151644/151645, whereas tool-call and fill-in-middle entries are marked non-special and therefore skipped by the wrapper's added-token import. Phi-3 supplies an additional map covering 32000\u201332010, including <|endoftext|>, role markers and <|end|>; its EOS/padding is <|endoftext|>, while </s> at ID 2 is explicitly non-special. Phi's many rstrip=true entries highlight the difference between backend AddedToken behavior and the wrapper's literal regex split.",
+            "basis": "source",
+            "evidence": [
+              "call_d56f4a87d068425b8e22e158b11f0bbc",
+              "call_52638cb20ad640a39d0c734bd9fbdda8",
+              "call_08561785b803475aa31ae33c291b04de",
+              "call_76a7be60da044a7cb79b4e581080bca9",
+              "call_3b88e5159896417e992145b5a4d7bc3d"
+            ]
+          },
+          {
+            "text": "The Gemma mirror declares PAD/EOS/BOS/UNK as 0/1/2/3 and turn markers at 106/107. Its numerous non-special decoder entries, including whitespace and markup tokens, are not added to the wrapper's extended map and must be handled by tokenizer.json. The file requests left padding and automatic BOS insertion, but only left padding is inherent in this wrapper. Likewise, chat_template fields in TinyLlama, Qwen and Phi are stored in the loaded dictionary but never rendered by Tokenizer; callers must provide formatted text.",
+            "basis": "source",
+            "evidence": [
+              "call_3c27009bec224393b56292aaf8b1f634",
+              "call_bd4b9851d3254e2c9f64b4c87f3c6d09",
+              "call_9320811537584c6eb3b54c9005efd81d",
+              "call_9fc0be27787443e7a683227f71bb0efd",
+              "call_44600a56a231473a9423b3f7b2d4dfda",
+              "call_d56f4a87d068425b8e22e158b11f0bbc",
+              "call_76a7be60da044a7cb79b4e581080bca9",
+              "call_3b88e5159896417e992145b5a4d7bc3d"
+            ]
+          },
+          {
+            "text": "encode adds caller-requested BOS/EOS, left-pads to the longest sequence and optionally returns negative padding lengths. A scalar input produces shape (1, length). padding_mask compares IDs with pad_token_id, multiplies an integer mask by -65505 \u00d7 2, then casts to half. This targets a zero/unmasked versus negative-infinity/masked additive bias; sharing PAD with EOS also makes EOS positions match that mask. No tokenizer-config maximum length is enforced in encode.",
+            "basis": "source",
+            "evidence": [
+              "call_3b88e5159896417e992145b5a4d7bc3d"
+            ]
+          },
+          {
+            "text": "The bounded calculation reproduced left padding [[11], [12,13,14]] as [[0,0,11], [12,13,14]] with offsets [-2,0]. It also decoded binary16's maximum finite value as 65504 and calculated the mask's integer bias as -131010, confirming that the magnitude exceeds half's finite range. It did not execute PyTorch's conversion to infinity.",
+            "basis": "execution",
+            "evidence": [
+              "call_f06c193b5e1b4f86883235ef942c472a"
+            ]
+          },
+          {
+            "text": "decode_ without special rendering removes PAD, out-of-backend-vocabulary IDs and every EOS before its attempted EOS truncation, so the truncation branch cannot find EOS. Special rendering still removes PAD and IDs beyond the backend vocabulary, then renders mapped special pieces explicitly. Consequently, extended IDs can be represented in lookup tables yet be discarded by decode_. Also, decode returns a list for any rank-two tensor, including a one-row tensor, rather than following its documented batch-size-one string rule.",
+            "basis": "source",
+            "evidence": [
+              "call_3b88e5159896417e992145b5a4d7bc3d"
+            ]
+          },
+          {
+            "text": "A literal emulation of the ordinary decode filter transformed [11,2,12,0,99], with EOS=2, PAD=0 and vocabulary size 50, into [11,12]. The token after EOS survived. This checks the filtering order only; it neither invokes the backend decoder nor tests generation stopping.",
+            "basis": "execution",
+            "evidence": [
+              "call_f06c193b5e1b4f86883235ef942c472a"
+            ]
+          },
+          {
+            "text": "Tokenizer eagerly builds decoded-piece tables, a reverse piece map and an ordinal table. Piece enumeration probes ' t' to decide whether a space prefix is needed to preserve leading whitespace during single-token decoding; prefix queries then scan the piece table and cache up to 1000 results. These are local interfaces for token/text consumers, not a complete byte decoder: get_id_to_ord_list stores token_to_id results for backend-vocabulary entries, applying its byte-ordinal conversion only to appended entries. num_tokens also calls backend encode with defaults, unlike encode's explicit add_special_tokens=False calls.",
+            "basis": "source",
+            "evidence": [
+              "call_3b88e5159896417e992145b5a4d7bc3d"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "models",
+          "quantized-inference",
+          "generation",
+          "sampling",
+          "runtime",
+          "usage-evaluation"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_88bb22ff3573455583cabaafa18bf654": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5914698,
+        "max_bytes": 5270
+      },
+      "result_sha256": "cf33de2490019e05e963a606cad0d2a878f17f4f94609dc12b14f1bfcc455edc"
+    },
+    "call_ae55c5d675ed42a9af559dc163468a53": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5919968,
+        "max_bytes": 652
+      },
+      "result_sha256": "f306dd87c69e28ebe9e84214e436c502d5ed1258aa9f3a67863b7dd59d7034ed"
+    },
+    "call_11f729050ec74d91986d0363fc17b99b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6032113,
+        "max_bytes": 352
+      },
+      "result_sha256": "7374978df57754a36cf563632dab902da7ac5d9c081ab46421fdcc3297c12009"
+    },
+    "call_20390b8ede7a43feb5fdae8e5e4eebd9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6032465,
+        "max_bytes": 9992
+      },
+      "result_sha256": "bfc4deb2ff60d14ed2d8ade4615cdd6807cc1fa11c1f8eba2ccfa01b819a4b80"
+    },
+    "call_4dcd6950df5848c1b673fa1184f85796": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6153550,
+        "max_bytes": 317
+      },
+      "result_sha256": "af0491bc67a1e4fd01a08f25c446c43bddb821120159d71b658e59441cb70708"
+    },
+    "call_3b88e5159896417e992145b5a4d7bc3d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6153867,
+        "max_bytes": 22577
+      },
+      "result_sha256": "068ddd9e9795933f9cbf6a6a57434969229f27643d136050757625264c6b6f61"
+    },
+    "call_67e0041d2fd14d058cce35a6a2d24da1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+        "path": "special_tokens_map.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "b44f59add7ec5ba4d48237e78822192725528b6dc1b7f9d10cc939b4c9a12db3"
+    },
+    "call_44600a56a231473a9423b3f7b2d4dfda": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+        "path": "tokenizer_config.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "c2cdf93c3ef8a5bbc1f738b433672cedca2d93fcebc2eee1aa567742a8e3dcd9"
+    },
+    "call_c2f754dce73d4cda9456acad54b7bee9": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-7B-v0.1",
+        "revision": "7231864981174d9bee8c7687c24c8344414eae6b",
+        "path": "special_tokens_map.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "0edd8a58ad36974e0dd558bbea214cbfe43768722320e3d81ade3812739a0f61"
+    },
+    "call_634410ed286b48dfae41548888d8ba65": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-7B-v0.1",
+        "revision": "7231864981174d9bee8c7687c24c8344414eae6b",
+        "path": "tokenizer_config.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "4dc5859718aa7f8622c00fe094f30d98e3bbd9cf0c78a061dc15caba151ff3a1"
+    },
+    "call_d56f4a87d068425b8e22e158b11f0bbc": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "path": "tokenizer_config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "59f4824c7e7257c389d2b20eab6169f04360477e5f1143e4beb89ad4d8e82f63"
+    },
+    "call_52638cb20ad640a39d0c734bd9fbdda8": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+        "revision": "0a67737cc96d2554230f90338b163bc6380a2a85",
+        "path": "added_tokens.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "02adf9e821b85c5d8a3d300d7c7544a4e9ef4f7c23ddb98456323a51df14cb33"
+    },
+    "call_08561785b803475aa31ae33c291b04de": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+        "revision": "0a67737cc96d2554230f90338b163bc6380a2a85",
+        "path": "special_tokens_map.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "28414dad6c6e1b89524518fc91a49e1792adf76644ebe54957d1cceab9683de9"
+    },
+    "call_76a7be60da044a7cb79b4e581080bca9": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+        "revision": "0a67737cc96d2554230f90338b163bc6380a2a85",
+        "path": "tokenizer_config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "121176060f38ac67347c810e73a129d45f92677f249ca7f9860bac3abe370700"
+    },
+    "call_3c27009bec224393b56292aaf8b1f634": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "unsloth/gemma-2-2b",
+        "revision": "25319945f7fd83b8b903e12081777b7eef2ba993",
+        "path": "special_tokens_map.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "f11594ad22cbb4738f2b66fac81312772b5730b68f5bb7a7da33114e3b41fadc"
+    },
+    "call_bd4b9851d3254e2c9f64b4c87f3c6d09": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "unsloth/gemma-2-2b",
+        "revision": "25319945f7fd83b8b903e12081777b7eef2ba993",
+        "path": "tokenizer_config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f1a911b237804f8f883d5a1c899a242d4c1397d6318348447c7b4c9956efe1e8"
+    },
+    "call_9320811537584c6eb3b54c9005efd81d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "unsloth/gemma-2-2b",
+        "revision": "25319945f7fd83b8b903e12081777b7eef2ba993",
+        "path": "tokenizer_config.json",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "20d08ffb8f60a271d7a3891a3c1a77c3178cd7660f8239978692a303fd0f0512"
+    },
+    "call_9fc0be27787443e7a683227f71bb0efd": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "unsloth/gemma-2-2b",
+        "revision": "25319945f7fd83b8b903e12081777b7eef2ba993",
+        "path": "tokenizer_config.json",
+        "offset": 32000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "3e789b7e7d093b778892d2fa00d0bba36f45542971c3cb9c6e9f5a851fdb8cea"
+    },
+    "call_b605efe605f94c61858b8ac445a508da": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6047346,
+        "max_bytes": 6630
+      },
+      "result_sha256": "fcc530c9e5a3bcb8ebe9125ae6c5efcd3b5f9ca78a20d22b6dfd88e86e1881d3"
+    },
+    "call_bb315f713e53464896a859a3d406e8b8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5790643,
+        "max_bytes": 2541
+      },
+      "result_sha256": "e38e2b849ecb145c2aa452f762af371f7150cc50d98d3a7fdfbb30f15a6a8cb7"
+    },
+    "call_7ac9566dd6014d3da1d1e68dcd33761b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import json, struct\nB=512*1024; T=5\nsizes=[0,1,B-1,B,B+1,5*B-1,5*B,5*B+1,12*B+37]\nresults=[]\nfor n in sizes:\n    spans=sorted((p,min(p+B,n),i) for i in range(T) for p in range(i*B,n,T*B))\n    end=0\n    for a,b,i in spans:\n        assert a==end and b>a and (a//B)%T==i\n        end=b\n    assert end==n and len(spans)==(n+B-1)//B\n    results.append([n,len(spans)])\n# Literal decode_ filtering, no backend tokenizer execution.\nseq=[11,2,12,0,99]; pad=0; eos=2; vocab=50\nfiltered=[t for t in seq if (t != pad and t < vocab and t != eos)]\nif eos in filtered: filtered=filtered[:filtered.index(eos)]\nassert filtered==[11,12]\n# Encode's left-padding offset convention on already-tokenized IDs.\nrows=[[11],[12,13,14]]; m=max(map(len,rows))\npadded=[[0]*(m-len(r))+r for r in rows]; offsets=[-(m-len(r)) for r in rows]\nassert padded==[[0,0,11],[12,13,14]] and offsets==[-2,0]\nf16_max=struct.unpack('<e',bytes.fromhex('ff7b'))[0]\nmask_value=-65505*2\nassert f16_max==65504 and abs(mask_value)>f16_max\nprint(json.dumps({'block_bytes':B,'thread_stride':T*B,'partition_cases_size_blocks':results,'decode_filter_input':seq,'decode_filter_output':filtered,'left_padded':padded,'offsets':offsets,'binary16_max_finite':f16_max,'integer_padding_bias':mask_value}))"
+        ],
+        "timeout_seconds": 30
+      },
+      "result_sha256": "cd20a06305fc6f6a2f6e07a189a67d5ae71ee9b90d71356823247556bc8afd1b"
+    },
+    "call_04ccc0b9b72b4cc4ae6f5b1a54c57f6c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import json, struct\nB=512*1024; T=5\nsizes=[0,1,B-1,B,B+1,5*B-1,5*B,5*B+1,12*B+37]\nresults=[]\nfor n in sizes:\n    spans=sorted((p,min(p+B,n),i) for i in range(T) for p in range(i*B,n,T*B))\n    end=0\n    for a,b,i in spans:\n        assert a==end and b>a and (a//B)%T==i\n        end=b\n    assert end==n and len(spans)==(n+B-1)//B\n    results.append([n,len(spans)])\nseq=[11,2,12,0,99]; pad=0; eos=2; vocab=50\nfiltered=[t for t in seq if (t != pad and t < vocab and t != eos)]\nif eos in filtered: filtered=filtered[:filtered.index(eos)]\nassert filtered==[11,12]\nrows=[[11],[12,13,14]]; m=max(map(len,rows))\npadded=[[0]*(m-len(r))+r for r in rows]; offsets=[-(m-len(r)) for r in rows]\nassert padded==[[0,0,11],[12,13,14]] and offsets==[-2,0]\nf16_max=struct.unpack('<e',bytes.fromhex('ff7b'))[0]; mask_value=-65505*2\nassert f16_max==65504 and abs(mask_value)>f16_max\nprint(json.dumps({'block_bytes':B,'thread_stride':T*B,'partition_cases_size_blocks':results,'decode_filter_input':seq,'decode_filter_output':filtered,'left_padded':padded,'offsets':offsets,'binary16_max_finite':f16_max,'integer_padding_bias':mask_value}))"
+        ]
+      },
+      "result_sha256": "f53913b736825165fba3a8a2e603bae5fd17ef5d4fde36b79a98574def533f1d"
+    },
+    "call_f06c193b5e1b4f86883235ef942c472a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json, struct\nB=512*1024; T=5\nsizes=[0,1,B-1,B,B+1,5*B-1,5*B,5*B+1,12*B+37]\nresults=[]\nfor n in sizes:\n    spans=sorted((p,min(p+B,n),i) for i in range(T) for p in range(i*B,n,T*B))\n    end=0\n    for a,b,i in spans:\n        assert a==end and b>a and (a//B)%T==i\n        end=b\n    assert end==n and len(spans)==(n+B-1)//B\n    results.append([n,len(spans)])\nseq=[11,2,12,0,99]; pad=0; eos=2; vocab=50\nfiltered=[t for t in seq if (t != pad and t < vocab and t != eos)]\nif eos in filtered: filtered=filtered[:filtered.index(eos)]\nassert filtered==[11,12]\nrows=[[11],[12,13,14]]; m=max(map(len,rows))\npadded=[[0]*(m-len(r))+r for r in rows]; offsets=[-(m-len(r)) for r in rows]\nassert padded==[[0,0,11],[12,13,14]] and offsets==[-2,0]\nf16_max=struct.unpack('<e',bytes.fromhex('ff7b'))[0]; mask_value=-65505*2\nassert f16_max==65504 and abs(mask_value)>f16_max\nprint(json.dumps({'block_bytes':B,'thread_stride':T*B,'partition_cases_size_blocks':results,'decode_filter_input':seq,'decode_filter_output':filtered,'left_padded':padded,'offsets':offsets,'binary16_max_finite':f16_max,'integer_padding_bias':mask_value}))"
+        ]
+      },
+      "result_sha256": "0ac2c1711d3a31f173ce675c6191e7fa30db3a97b3ebb8920f1db59b8afb1261"
+    }
+  }
+}

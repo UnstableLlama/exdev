@@ -1,6 +1,6 @@
 # Defect records and retrospective annotations
 
-Status: agreed design for the later sample-generation stage; the defect ledger and sample-policy engine are not implemented yet. Historical authoring and original commit diffs remain unchanged.
+Status: structured authoring-time findings are implemented in editorial v3. The retrospective ledger and sample-policy engine remain agreed designs, not implemented features. Historical authoring and original commit diffs remain unchanged.
 
 ## Two views, one source history
 
@@ -64,3 +64,21 @@ Excluding a hunk is an optional future refinement, not a default shortcut: prove
 - Merge inheritance, partial fixes and regressions yield correct affected-revision sets.
 - Missing introduction or fix identity remains unknown; a `bugfix` tag or blame result alone never confirms a defect.
 - Reconstruction targets with eligible confirmed defects are excluded or explicitly validated as derived partial patches; review targets identify the defect without producing the buggy implementation as the desired answer.
+
+## Implemented authoring-time findings (editorial v3)
+
+New CLI-prepared packets select editorial schema v3. Old packets without an explicit version retain v2 validation; their immutable drafts and transcripts are not upgraded. The low-level packet builder retains its legacy default; callers must explicitly select v3 before authoring if they bypass the CLI.
+
+The top-level `findings` array records local IDs, suspected status, classification, concrete description/trigger/expected/actual behavior, historical commit/path/symbol locations, inspected-source evidence and verification records. No observations is represented by an empty array. Teachers cannot mark findings confirmed or fix-derived. These observations are not the later retrospective ledger, and do not automatically filter training examples.
+
+Verification methods distinguish `source_inspection`, `scalar_transcription` (including numerical models and hand-transcribed algorithm fragments), and `repository_execution`. Computations require successful non-timeout run evidence; source evidence is independently required. Locations are restricted to the task or allowed ancestors. All evidence IDs must identify successful calls in the current session.
+
+The validator cannot prove that a cited read supports the prose, that a source location is accurate, that an execution used the actual implementation, or that every defect was extracted from free text. Review must check those facts. A root task has an empty first-parent checkout: a scalar model of a kernel is not repository execution. Existing v2 observations remain in their original prose. The nine accepted legacy chapters now have a separate administrative extraction in `reports/findings/root-legacy-extraction-001.json`; this does not backfill their authored schema or hand-repair any draft.
+
+The renderer displays findings with their evidence and verification limits. Review status and training eligibility remain administrative. See `reports/root-chapter-review-002.json` for the user-supplied Fable chapter review; the requested generation replacement is a separate fresh attempt.
+
+## Normalization and impact before ledger ingestion
+
+The administrative extraction is accepted for fidelity and provenance in `reports/findings/root-legacy-extraction-001-review.json`; this does not confirm every defect. `schema/finding-taxonomy-v1.json` defines a common normalization policy for later ledger ingestion. Preserve original categories and teacher classifications alongside normalized values. Potential defects map to suspected defect candidates; unchecked contracts, semantic differences, unsupported features and caveats remain unresolved until their contract is adjudicated. Unsupported configuration is an observation kind, not automatically a defect or a new requirement. Mistral/Phi3 window observations are explicitly flagged for that interpretation.
+
+Impact is separate from classification and confidence: high, medium, low or unknown, with a domain, trigger, supported-input reachability, scope, rationale and evidence. Unknown is the default. A help-text error and a numerical algorithm error can both be defects without receiving the same impact assessment. The policy is specified; ledger ingestion and per-record impact assessments are not implemented. Existing authored schemas and reviewed records remain unchanged.

@@ -7,11 +7,17 @@ from pathlib import Path
 import re
 
 SCHEMA = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v2.json').read_text())
+SCHEMA_V3 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v3.json').read_text())
 
 
 def output_schema(manifest):
     """Constrain generation as well as post-validation to the actual supplied prose."""
-    schema=deepcopy(SCHEMA)
+    version=manifest.get('editorial_schema_version',2)
+    if type(version) is not int or version not in (2,3):
+        raise ValueError('Unsupported editorial schema version')
+    schema=deepcopy(SCHEMA if version==2 else SCHEMA_V3)
+    if version==3:
+        schema['properties']['findings']['items']['properties']['locations']['items']['properties']['commit']['enum']=sorted(set(manifest['commits'])|{manifest['task_sha']})
     allowed=sorted({e['sha'] for e in manifest.get('ancestor_entries',[])} & set(manifest['commits']))
     if allowed:
         schema['properties']['links']['items']['enum']=allowed
@@ -49,8 +55,8 @@ def validate_shape(value, schema, path='annotation'):
         for key, item in value.items():
             validate_shape(item,schema['properties'][key],path+'.'+key)
     elif kind == 'array':
-        if len(value)>schema['maxItems']:
-            raise ValueError(path+': too many items')
+        if not schema.get('minItems',0)<=len(value)<=schema['maxItems']:
+            raise ValueError(path+': invalid number of items')
         for item in value:
             validate_shape(item,schema['items'],path+'[]')
     elif kind == 'string':
@@ -79,7 +85,7 @@ def evidence_ledger(transcript):
 
 
 def validate_annotation(annotation, manifest, transcript):
-    validate_shape(annotation,output_schema(manifest) if 'chapter_catalog' in manifest.get('authoring_task',{}) else SCHEMA)
+    validate_shape(annotation,output_schema(manifest))
     from .coverage import require_coverage
     require_coverage(manifest,transcript)
     task=manifest.get('authoring_task')
@@ -111,6 +117,32 @@ def validate_annotation(annotation, manifest, transcript):
             if not any(r['result'].get('result',{}).get('returncode')==0 and
                        not r['result']['result'].get('timed_out',False) for r in runs):
                 raise ValueError('Execution claims require successful run evidence')
+    finding_ids=set()
+    source_tools={'repo_read','git_show','git_diff','web_fetch','hf_fetch','safetensors_header'}
+    def checked_refs(refs):
+        if len(refs)!=len(set(refs)):
+            raise ValueError('Duplicate finding evidence')
+        if any(ref not in ledger or ledger[ref]['result'].get('ok') is not True for ref in refs):
+            raise ValueError('Findings require successful current-session evidence')
+        return [ledger[ref] for ref in refs]
+    for finding in annotation.get('findings',[]):
+        if finding['id'] in finding_ids:raise ValueError('Duplicate finding ID')
+        finding_ids.add(finding['id'])
+        sources=checked_refs(finding['source_evidence'])
+        if not any(s['tool'] in source_tools for s in sources):
+            raise ValueError('Findings require inspected source evidence')
+        for location in finding['locations']:
+            path=location['path']
+            if path.startswith('/') or '\\' in path or any(p in ('','..','.') for p in path.split('/')):
+                raise ValueError('Finding locations require repository-relative paths')
+        for check in finding['verification']:
+            evidence=checked_refs(check['evidence'])
+            if check['method']=='source_inspection':
+                if not any(e['tool'] in source_tools for e in evidence):
+                    raise ValueError('Source inspection requires source evidence')
+            elif not any(e['tool']=='run' and e['result'].get('result',{}).get('returncode')==0 and
+                         not e['result']['result'].get('timed_out',False) for e in evidence):
+                raise ValueError('Computational verification requires successful run evidence')
     approved={e['sha'] for e in manifest.get('ancestor_entries',[])}
     if len(set(annotation['links']))!=len(annotation['links']):
         raise ValueError('Duplicate ancestor link')
@@ -121,7 +153,7 @@ def validate_annotation(annotation, manifest, transcript):
 
 def assemble_draft(annotation, manifest, transcript):
     ledger=validate_annotation(annotation,manifest,transcript)
-    entry={'schema_version':2,'sha':manifest['task_sha'],'parent_shas':manifest['task_parents'],
+    entry={'schema_version':annotation['schema_version'],'sha':manifest['task_sha'],'parent_shas':manifest['task_parents'],
            'cutoff_date':manifest['cutoff_date'],'annotation':deepcopy(annotation),
            'evidence':{key:{k:v for k,v in value.items() if k!='result'} for key,value in ledger.items()}}
     review={'schema_version':1,'sha':manifest['task_sha'],'status':'pending',
@@ -147,6 +179,16 @@ def render(entry):
         refs=chapter.get('related_chapters',[])
         if refs:
             parts.append('Related chapters: '+', '.join(f'[{titles[r]}](#{r})' if r in titles else r+' (assembly link pending)' for r in refs))
+    if annotation.get('findings'):
+        parts.append('## Authoring-time findings — pending review')
+        for finding in annotation['findings']:
+            parts.append('### '+finding['id']+' ('+finding['status']+'; '+finding['classification']+')')
+            parts.extend([finding['description'],'Trigger: '+finding['trigger'],
+                          'Expected: '+finding['expected_behavior'],'Actual: '+finding['actual_behavior'],
+                          'Locations: '+', '.join(loc['commit']+':'+loc['path']+' — '+loc['symbol'] for loc in finding['locations']),
+                          'Source evidence: '+', '.join(finding['source_evidence'])])
+            for check in finding['verification']:
+                parts.append(check['method']+': '+check['description']+' ['+', '.join(check['evidence'])+']. Limits: '+check['limits'])
     if annotation['limitations']:
         parts.extend(['## Uncertainty and limits',*annotation['limitations']])
     return '\n\n'.join(parts)+'\n'

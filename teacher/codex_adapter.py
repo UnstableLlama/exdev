@@ -42,6 +42,18 @@ from that catalog. It is a navigation plan, not evidence about another chapter's
 Explain the local side of each interface from source; do not claim to have read
 other chapter drafts. Do not use position-dependent wording such as "described below"
 in limitations; name the relevant function or mechanism instead.
+Every defect observation must state the concrete trigger, expected versus actual
+behavior, source location and source evidence. Do not hide unsupported bug claims
+in limitations or say features have defects without explaining each one. Keep
+limitations for uncertainty and execution scope. In schema v3 put each observation
+in findings, as suspected authoring_observation; do not invent a later fix or
+introduction. Use source_inspection for source reasoning, scalar_transcription for
+checks that reimplement or model inspected code, and repository_execution only
+when the repository implementation itself actually ran. A buffer-swap model does
+not execute the kernel. Cite inspected source separately from the computation,
+describe what ran and its limits, and keep confirmation for administrative review.
+The run tool accepts argv ["python3", "-c", "CODE"] and an integer timeout_seconds
+from 1 through 20 (default 10). A root task's first-parent checkout is empty.
 The links field contains ONLY supplied ancestor commit SHAs, never chapter IDs.
 For a root commit links must be []. Chapters are local sections linked by the renderer. Do not invent
 ancestor entries or mark an annotation reviewed or training eligible.'''

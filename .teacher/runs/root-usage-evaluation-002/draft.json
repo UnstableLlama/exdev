@@ -1,0 +1,768 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The early preview needs installation instructions, runnable usage examples, and ways to inspect numerical correctness and model quality; the README explicitly invites testing rather than presenting a production-ready replacement for ExLlamaV2.",
+        "basis": "source",
+        "evidence": [
+          "call_5ba43b65301a41e3b392317aa6259629"
+        ]
+      }
+    ],
+    "reasoning": [],
+    "impact": [],
+    "source_notes": [],
+    "limitations": [
+      "No installation, model inference, CUDA test, HumanEval evaluation, or performance benchmark was run. The successful execution checks only window-index arithmetic and an illustrative statistical formula using standard-library Python.",
+      "Example and evaluation paths refer to local model artifacts without pinned weight revisions. Several scripts hardcode cuda:1, cuda:2, or cuda:3; reproducing them requires editing paths and device selection.",
+      "The inspected dependency lists do not establish a reproducible environment: setup.py and requirements.txt differ, llama_cpp is imported but absent from requirements_eval.txt, and pytest plus its benchmark fixture are used without being listed in the inspected requirements.",
+      "Numerical tolerances and statistical cutoffs are authored acceptance criteria, not established error guarantees. Their empirical justification is not supplied by these files.",
+      "Cross-backend tokenizer equivalence, total runtime VRAM, model-quality rankings, and speedups remain unverified. Included model specifications and README performance assertions are not new measurements."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Installation, examples, and evaluation boundaries",
+        "claims": [
+          {
+            "text": "Installation offers two paths: install requirements.txt followed by pip install ., or set EXLLAMA_NOCOMPILE for a JIT-mode installation. setup.py uses the presence of that environment variable\u2014not its value\u2014to disable precompilation. Otherwise, when Torch is already available, it gathers C/C++/CUDA sources into a CUDAExtension built through PyTorch. The README also permits running scripts directly from the checkout. It requires FlashAttention-2, reports no release builds or ROCm support, and identifies cache quantization and tensor parallelism as missing; a HIP compiler flag in setup.py does not establish working ROCm support.",
+            "basis": "source",
+            "evidence": [
+              "call_5ba43b65301a41e3b392317aa6259629",
+              "call_eab125d8f4e6444f961f305b67a1a3bf"
+            ]
+          },
+          {
+            "text": "Dependency installation is not interchangeable across the two lists: requirements.txt specifies Torch >=2.6.0, flash_attn >=2.7.4.post1, tokenizers >=0.21.1, and NumPy >=2.1.0, while setup.py permits Torch >=2.2.0 and omits flash_attn and tokenizers from install_requires. Evaluation dependencies are separated into requirements_eval.txt, including HumanEval 1.0.3 and several comparison backends; requirements_examples.txt adds blessed for the terminal display. MANIFEST.in explicitly includes Hadamard data files.",
+            "basis": "source",
+            "evidence": [
+              "call_29178b6ca290458d8a8f78edc16b2604",
+              "call_eab125d8f4e6444f961f305b67a1a3bf",
+              "call_a7ba86a0a81d4f8283f00898026f4564",
+              "call_257188d350ae46ab8c823584dac0347f",
+              "call_bbda9840f39443a696c08ad4f99e191a"
+            ]
+          },
+          {
+            "text": "The documented conversion interface is python convert.py -i <input_dir> -o <output_dir> -w <working_dir> -b <bitrate>. The working directory holds checkpoints and quantized tensors pending compilation and should fit an output-model copy. Resumption requires an explicit -r/--resume, unlike the documented EXL2 default. These instructions connect users to conversion; they do not demonstrate conversion speed or successful recovery.",
+            "basis": "source",
+            "evidence": [
+              "call_5ba43b65301a41e3b392317aa6259629"
+            ]
+          },
+          {
+            "text": "examples/generation_loop.py exposes the low-level inference contract: construct Config, Model, and Cache before model.load(); tokenize the prompt; prefill all but its final token; then forward that final token with past_len equal to context length minus one. Each sampled token is appended and becomes the next input. The example supplies flash_attn, cache, and a rectangular batch_shape of (1, 2048), checks token stop conditions, and streams vocabulary pieces. examples/generator.py offers the higher-level alternative: generate() for complete single/batched outputs, or enqueue Job objects and route iterate() result chunks by identifier. Its temperature sweep demonstrates a sampler option, not a quality evaluation.",
+            "basis": "source",
+            "evidence": [
+              "call_c3116b3fe85645bdb4972833dec8beee",
+              "call_286847ff6d4843ee92854aadfd7f95ac"
+            ]
+          },
+          {
+            "text": "The interactive entrypoint is python examples/chat.py -m <model_dir> -mode <mode>. It formats and retokenizes conversation history, reserves room for the response, removes oldest turns when necessary, and streams a Job's text updates. chat_templates.py supplies raw, llama3, chatml, phi, mistral, and gemma formats with explicit BOS and stop-token policies; these are application-side templates, not architecture validation. The separate common.py helper labels its templates approximate, contains an extra literal 'n' in the Mistral prompt, and has no Mistral branch in get_stop_conditions.",
+            "basis": "source",
+            "evidence": [
+              "call_5ba43b65301a41e3b392317aa6259629",
+              "call_6e4782a2547d422a9ed04355d8e03698",
+              "call_c3954153f80047d0a343ef129e4c1cec",
+              "call_c72d5456515447baace33fcf5addea2a"
+            ]
+          },
+          {
+            "text": "dynamic_gen.py demonstrates queueing many prompts against a shared 32768-token cache, a batch limit of 16, and 2048-token prefill chunks. Its comment states the tradeoff: smaller chunks reduce pauses when jobs start but sacrifice prompt-ingestion throughput. async_generator.py instead wraps jobs as async iterators gathered concurrently, explicitly cancels one early-exited job, and closes the generator. banned_strings.py contrasts jobs with and without phrase suppression and displays suppressed_text separately; it also changes min_new_tokens between those conditions, so it is a feature demonstration rather than a controlled comparison.",
+            "basis": "source",
+            "evidence": [
+              "call_b26d0c0066c545de9a3937345fcc8a8b",
+              "call_a17f1195bae7453d93d26775c14a1880",
+              "call_dd22cd22e9fd4d388f594dc1a262ea84"
+            ]
+          },
+          {
+            "text": "eval/ppl.py measures next-token likelihood on Wikitext-2 raw test text joined with double newlines. It tokenizes with the loaded model's tokenizer, makes 2048-token windows at stride 512, defaults to 100 rows, and forwards each window without a KV cache using flash_attn_nc. It slices logits to the actual vocabulary, applies float32 log_softmax, gathers the following token's log probability, and reports exp(-sum(log probability)/target count). Every window contributes all 2047 next-token targets; overlapping targets are not masked away.",
+            "basis": "source",
+            "evidence": [
+              "call_18a766598ce94204a10329e055e71cb6"
+            ]
+          },
+          {
+            "text": "eval/compare_q.py separates dataset preparation from backend loading and forwarding through named function tables. Dataset and perplexity functions use disk-cache decorators; --clear_cache invalidates selected test_ppl entries. Model specifications are JSON arrays, despite the CLI help saying JSONL, and wildcard filenames can combine them. The runner emits JSON results and optionally plots perplexity against decoder bits per weight or decoder-plus-head storage. Unlike ppl.py, it does not slice the logits vocabulary before softmax. The supplied Wikitext specifications use length 2048 and stride 512, capped at 20 or 100 windows.",
+            "basis": "source",
+            "evidence": [
+              "call_2daf930a08484ddd86794564f60f9d70",
+              "call_3d36342c31f649b6bd61a360d92a9fe4",
+              "call_618c2d9afbf840db981f5b9c4fbe8431",
+              "call_bb74ed980c314a41ac907b2269ae4d6a"
+            ]
+          },
+          {
+            "text": "A bounded Python check reproduced the window-target indexing. Assuming enough source tokens, 20 windows score 40,940 target occurrences but only 11,775 distinct target positions; 100 windows score 204,700 occurrences over 52,735 distinct positions. Maximum multiplicity is four. Thus the configured statistic weights overlapping predictions, including predictions with different available context, rather than scoring each corpus position once. This checks indexing only, not tokenization or perplexity values.",
+            "basis": "execution",
+            "evidence": [
+              "call_6993685a93164d89bf14c7050229fd61"
+            ]
+          },
+          {
+            "text": "Backend adapters normalize their outputs to logits but retain different execution paths. ExLlamaV2 uses autosplit with a cache required for loading but not used by its evaluation forward. ExLlamaV3 loads for 2048-token output and forwards in flash_attn_nc mode; it can also overlay tensor files supplied alongside a model directory. llama.cpp resets state for each sequence, requests all logits with a 2048 context, and transfers scores to CUDA. Transformers loads in half precision on cuda:0 or device_map='auto' and receives the common token IDs. Sharing IDs controls one input variable but does not itself establish vocabulary compatibility across artifacts.",
+            "basis": "source",
+            "evidence": [
+              "call_2a11de57e9d7487f88ca83a38aaa3389",
+              "call_3da8b9e429ec4bf6bc0367db53118a02",
+              "call_5c3cf9f4c40e455e94a35b68c8771d57",
+              "call_322572cabc7f499da0eb4ea38eee3fa7"
+            ]
+          },
+          {
+            "text": "The comparison plot's 'VRAM' is calculated tensor storage, not measured peak GPU allocation. Adapters count decoder linear weights/quantization tensors and the output head, then convert bits to bytes and divide by 1024^3. This excludes runtime caches and workspaces. Accounting is backend-specific: GGUF recognizes projection names and falls back to token embeddings for a tied head; Transformers recognizes several quantized module classes and uses out_features >= 0.9*vocab_size as a head-identification heuristic. That 90% cutoff is an implementation heuristic, not a verified architecture invariant.",
+            "basis": "source",
+            "evidence": [
+              "call_2daf930a08484ddd86794564f60f9d70",
+              "call_2a11de57e9d7487f88ca83a38aaa3389",
+              "call_3da8b9e429ec4bf6bc0367db53118a02",
+              "call_5c3cf9f4c40e455e94a35b68c8771d57",
+              "call_322572cabc7f499da0eb4ea38eee3fa7"
+            ]
+          },
+          {
+            "text": "The model specifications configure comparisons for Llama-3.1 70B/8B Instruct, Llama-3.2 1B Instruct, and Mistral-7B-Instruct-v0.3. They include EXL2/EXL3 bitrate sweeps and alternatives such as GGUF, AQLM, AWQ, VPTQ, BNB, and an HF FP16 baseline. These files contain local paths, dispatch names, and labels\u2014not scores. Even labels need care: the 70B EXL3 specification assigns the same 'EXL3 1.6bpw H3' label to two different paths.",
+            "basis": "source",
+            "evidence": [
+              "call_061ab7db673c47b88599a3920f90a44c",
+              "call_ced792c6e0b6411382ad1f1e74553538",
+              "call_f7a0d5772c1242a38500fefd099fd517",
+              "call_f62eaa3ce53440aeb28af1dd87f9e249",
+              "call_17573d466fde476eb9705f757618c598",
+              "call_0e984eaddae548b2968dfa6ddb4696cf",
+              "call_4cbeb21284504b02bdf66aee33e764c9",
+              "call_6b2586982ee241a49b64a705af7c0524",
+              "call_916436e158a7423fb3d046fbc7898df9",
+              "call_59194335c63a49708737968a58d32890",
+              "call_1da4c7b906244756876109d6d4e03c06"
+            ]
+          },
+          {
+            "text": "eval/model_diff.py is a layerwise divergence diagnostic, not a language-quality score. It tokenizes Wikitext with model A's tokenizer, advances independent hidden states through zipped top-level module lists, and loads/unloads one module at a time to limit residency. It prints mean per-row Frobenius-relative error and maximum absolute difference divided by model B's row norm. Differences therefore accumulate through earlier modules; the script does not isolate each layer using identical incoming activations or assert that the two module lists match.",
+            "basis": "source",
+            "evidence": [
+              "call_bc183882bd294050b710f3773cb3e4d6"
+            ]
+          },
+          {
+            "text": "eval/humaneval.py generates code-completion samples and optionally delegates functional checking to evaluate_functional_correctness. Defaults are 200 samples per task, top_p=0.6, temperature=0.6, and a 768-token cap; jobs use token healing, a six-token minimum, EOS stopping, and a generator batch limit of 256. The collector additionally ends a sample at a non-indented final line, cancels unfinished jobs, and writes task_id/completion records to JSONL. Prompt formatting and this extraction heuristic are part of the evaluation protocol. Merely generating the file does not establish functional correctness or a pass rate.",
+            "basis": "source",
+            "evidence": [
+              "call_6d844bdcbb4445019d0e34c5689a03a2"
+            ]
+          },
+          {
+            "text": "The science scripts probe narrower mechanisms. codebook_eval.py decodes all 65,536 16-bit states, prints RMS, plots a 256-bin histogram, and draws 20,000 transition pairs for each K=1..8 using ((state<<K)|new_bits)&0xFFFF. gumbel_eval.py compares GumbelSampler with softmax-plus-multinomial on one synthetic 128,256-logit distribution, using 250,000 samples and diagnostics every 10,000. Its 1e-5 floor clamps both empirical and reference probabilities; despite comments about ignoring small probabilities, those entries are not removed.",
+            "basis": "source",
+            "evidence": [
+              "call_bb6c5266aa4e40fa94e40eaadb5dfce4",
+              "call_e118ac7813bd4326a5d1089682613765"
+            ]
+          },
+          {
+            "text": "science/qgemm_benchmark.py times kernel variants rather than checking correctness. It sets K=8, tries several matrix and batch shapes on three hardcoded devices, queries the preferred kernel, skips incompatible variants, performs ten warmups, and averages 200 calls. It cycles cloned buffers whose nominal combined size exceeds an assumed 512 MiB cache budget to reduce L2-residency bias; that number is an assumption, not detected hardware capacity. Scalar .item() reads bracket timing to wait for GPU results. The table marks the preferred kernel 'OK' when its relative latency gap from the fastest tested variant is at most 1%; no resulting timings are supplied here.",
+            "basis": "source",
+            "evidence": [
+              "call_bff2d2ca24ad41f7b7c5eb406d361bb9"
+            ]
+          },
+          {
+            "text": "The numerical tests compare specific paths rather than proving end-to-end correctness. test_ext_norm.py checks RMS normalization against float32 reference arithmetic across input/output dtypes and shapes, including in-place operation, with rtol=atol=1e-3; it separately exposes synchronized benchmark cases. test_rope.py compares native and Torch application for scalar offsets, batched offsets, and explicit position IDs at 1e-6 tolerance, but enables only NEOX style with theta=1, full rotation, and no scaling. test_qgemm.py compares direct quantized forwarding with reconstructed forwarding for eight selected projections/head and ten batch sizes, accepting rtol=atol=0.05. Both GEMM paths use the same quantized model, so this is not a comparison to original unquantized weights.",
+            "basis": "source",
+            "evidence": [
+              "call_5d03729f7e7b42d5829a2702b8d5e715",
+              "call_35a486c39bf44f24b002f98fec246302",
+              "call_57d8965abcfb44639e0b6594116633fb"
+            ]
+          },
+          {
+            "text": "test_quant_fn.py checks three distinct properties: tail-biting and normalized MSE for random tiles (currently parametrized only at K=1), near-lossless re-encoding of synthetically valid decoded sequences for K=1..8, and layer conversion/reconstruction using Hessians captured from random activations. Conversion checks use explicit K-dependent proxy-error and weight-tolerance tables. assert_close_mr permits a specified fraction of elements outside torch.isclose: 1% for original-versus-quantized weights and 0.1% for quantizer output versus reconstruction. The latter uses 1e-3 relative/absolute tolerances, with a source comment attributing necessary tolerance to float32 quantization versus float16 reversal of regularization. These tests do not evaluate representative calibration data or full-model quality.",
+            "basis": "source",
+            "evidence": [
+              "call_65ca26b5fbc14ea39e50a5b35f6d2646",
+              "call_6b0bbddd462c44feb90157cd3ad3f343"
+            ]
+          },
+          {
+            "text": "test_sampler.py constructs reference top-k and top-p distributions from synthetic logits and compares sampled frequencies using sum((observed-expected)^2/expected), after flooring probabilities at 1e-5. Its top-p reference retains entries whose cumulative probability is <=p and always retains the first entry. Thresholds are 0.01 for top-k and 0.02 for top-p, with sample-count caps of 10,000 and 20,000. This probability discrepancy, also used by gumbel_eval.py, is not directly a count-based Pearson chi-square test with a reported significance level.",
+            "basis": "source",
+            "evidence": [
+              "call_c5a0422ba38d4db8ad44e042058123d8",
+              "call_e118ac7813bd4326a5d1089682613765"
+            ]
+          },
+          {
+            "text": "A scalar illustrative check with reference probabilities [0.7, 0.2, 0.1] and observed frequencies [0.68, 0.22, 0.1] produced probability discrepancy 0.00257143. For 10,000 samples the corresponding count-based Pearson statistic was 25.7143, a factor of 10,000 larger. This confirms the normalization distinction without testing any sampler. The computation uses Python double precision; the inspected GPU diagnostics use float tensors, and flooring can further change the statistic.",
+            "basis": "execution",
+            "evidence": [
+              "call_6993685a93164d89bf14c7050229fd61"
+            ]
+          },
+          {
+            "text": "generator_stresstest.py repeatedly changes queue depth and checks whether generated number lists remain consecutive, printing cached-page/token counts and 'OK!' or 'Sus!'. It exercises model generation under cache reuse, but failures are printed rather than asserted and model counting errors can confound cache diagnosis. There is also a source-visible empty-queue edge: a selected target depth of zero can leave the final randint call with bounds (0, -1). Thus the script is a useful manual stress probe, not an established exhaustive paging test.",
+            "basis": "inference",
+            "evidence": [
+              "call_c18497bcc93b4b4f89a821b3b7f16483"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "runtime",
+          "conversion",
+          "generation",
+          "loading-tokenization",
+          "quantized-inference",
+          "quantizer",
+          "modules",
+          "sampling"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_bbda9840f39443a696c08ad4f99e191a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 108,
+        "max_bytes": 263
+      },
+      "result_sha256": "d5d49624b32d3a84f9ee3438b03b0c1d48420dc644e6cd116ef132cd00b36c77"
+    },
+    "call_5ba43b65301a41e3b392317aa6259629": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 371,
+        "max_bytes": 7179
+      },
+      "result_sha256": "863350b62a8ed872d3a0ea9ec82f52213d4090c2fcd2e546f4764cbd9b47bdc2"
+    },
+    "call_2daf930a08484ddd86794564f60f9d70": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2253984,
+        "max_bytes": 8221
+      },
+      "result_sha256": "f9443bdc14fae5e278478e9f251f70bb77f12f925310879e8c51543574629d75"
+    },
+    "call_2a11de57e9d7487f88ca83a38aaa3389": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2262205,
+        "max_bytes": 1614
+      },
+      "result_sha256": "dd5e51bf81e1bd0dd7aaf831db92329f245b320537f15c84c7294ac6cdbf5001"
+    },
+    "call_3da8b9e429ec4bf6bc0367db53118a02": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2263819,
+        "max_bytes": 1763
+      },
+      "result_sha256": "b4d1e9b7a21d33d73abe7b191881d340d90d9311b02cec59353a5ef6a813de2f"
+    },
+    "call_5c3cf9f4c40e455e94a35b68c8771d57": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2265582,
+        "max_bytes": 2186
+      },
+      "result_sha256": "8b3c7060350e2d3fcf1fce79b69bd24f508d13a11238912141bcf93f5dc780c1"
+    },
+    "call_322572cabc7f499da0eb4ea38eee3fa7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2267768,
+        "max_bytes": 4536
+      },
+      "result_sha256": "60e05930be9720e85f8cfa144788a666c8e52b1c40f4f8a23b5b04d387cf43cd"
+    },
+    "call_6d844bdcbb4445019d0e34c5689a03a2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2272304,
+        "max_bytes": 7482
+      },
+      "result_sha256": "ed8c391a4bcfa927048485a7f3cd52cd06303adfcd6a3a0ffe19fed974da9d1d"
+    },
+    "call_bc183882bd294050b710f3773cb3e4d6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2279786,
+        "max_bytes": 3692
+      },
+      "result_sha256": "43947271adf58301e74d51234a5b4c4f1544e9b886e2e87f534170b32ac3a1e2"
+    },
+    "call_18a766598ce94204a10329e055e71cb6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2283478,
+        "max_bytes": 3509
+      },
+      "result_sha256": "a4a2f8903e64ec291136a04b5a9e3c3634e7a686ebeaead06bc95a6959ccc5be"
+    },
+    "call_4cbeb21284504b02bdf66aee33e764c9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2286987,
+        "max_bytes": 534
+      },
+      "result_sha256": "9346e4d7326b4538561546f772389fcdb7d0a176c021f9baba68fbe2e3b956b7"
+    },
+    "call_6b2586982ee241a49b64a705af7c0524": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2287521,
+        "max_bytes": 486
+      },
+      "result_sha256": "883cf7ec6df8998fa77a1db6cafd39f8b7d08c7cd6995d13faaeb4ab819b3813"
+    },
+    "call_17573d466fde476eb9705f757618c598": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2288007,
+        "max_bytes": 1693
+      },
+      "result_sha256": "37513ab0b0af6118886c70aae357849149755d1177e57104c1c4c94d569771cb"
+    },
+    "call_061ab7db673c47b88599a3920f90a44c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2289700,
+        "max_bytes": 2659
+      },
+      "result_sha256": "889ad8afd7875f4714765211aaba9b4b1266ba63b70d0477c16f051c01699cb7"
+    },
+    "call_0e984eaddae548b2968dfa6ddb4696cf": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2292359,
+        "max_bytes": 2573
+      },
+      "result_sha256": "7e28b558e26f4fa18f98fb3372d842cba284cddffd081d501d2930cee5a3867d"
+    },
+    "call_916436e158a7423fb3d046fbc7898df9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2294932,
+        "max_bytes": 749
+      },
+      "result_sha256": "7e99928dbdad0e6eec5245529c7a6474c6cb7360f4f0012130ea39116f16c19c"
+    },
+    "call_3bfa97e1e2964c91b8c17c396a664d5b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2295681,
+        "max_bytes": 955
+      },
+      "result_sha256": "cef58375a418e07964df428aaf95c346617586337ac91c09c624c448c626bc07"
+    },
+    "call_a4d7ab4fed9743558e1c69aabe21ba54": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2296636,
+        "max_bytes": 1683
+      },
+      "result_sha256": "16ce493d2b51a2cb31a7f05b7d4bf70918ac59c78dd83d0fb298183442a39a98"
+    },
+    "call_ced792c6e0b6411382ad1f1e74553538": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2298319,
+        "max_bytes": 2673
+      },
+      "result_sha256": "313c1d1418e2da04f5c82b97a16045cbff045c15fd83251abb8bf583139f3f13"
+    },
+    "call_80217dc2ad924d0f904d63e0c6213da6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2300992,
+        "max_bytes": 3054
+      },
+      "result_sha256": "870db0bf0eb92fbe398e73c01b1201a12cc55ddfc0719db7777023eaa62f1c69"
+    },
+    "call_1da4c7b906244756876109d6d4e03c06": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2304046,
+        "max_bytes": 495
+      },
+      "result_sha256": "3d3247fb8df2bd7b082debd63a7b44134ec46e2ce25f632bb853c8d586c245e0"
+    },
+    "call_b2575f9eef4d47f09ed98195911aaa67": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2304541,
+        "max_bytes": 1212
+      },
+      "result_sha256": "96c58fea6d783ecaff5cd1bf829402822e12a1a4fda7bea80147e8951c4b5627"
+    },
+    "call_5ae66a9abe0f4ee1ab8022f683c30a3f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2305753,
+        "max_bytes": 530
+      },
+      "result_sha256": "22d88fe4f581604bfdd389efac547d5f791861988cd0ac510353f90feae19fd4"
+    },
+    "call_59d3ab467fcc4cf6aa5047a16e830a90": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2306283,
+        "max_bytes": 506
+      },
+      "result_sha256": "1ef91588e5ff837136b692e3131b4d871e115b8932be5d3b241ee6502976c6e9"
+    },
+    "call_59194335c63a49708737968a58d32890": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2306789,
+        "max_bytes": 511
+      },
+      "result_sha256": "75cf40395e3a6d0db1db2672d7b3bef0450721d523b546ca9eeb4b57e1305d1d"
+    },
+    "call_386f660b181144c0a140aa798012243b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2307300,
+        "max_bytes": 1878
+      },
+      "result_sha256": "4377024673014ffce7c467947f816d7bc194441486a4366e3506653751db7fcd"
+    },
+    "call_f7a0d5772c1242a38500fefd099fd517": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2309178,
+        "max_bytes": 2273
+      },
+      "result_sha256": "c533770bb6b591b3ec9756019f34576c6bb778713ef9bcd39676d00b6cafd3c8"
+    },
+    "call_f1aad81655884e389cc475581ad677eb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2311451,
+        "max_bytes": 2082
+      },
+      "result_sha256": "4bce01ec6d5d6192975e4611905c3e61bbd0e2f60631fb17eb81e0bded0a6519"
+    },
+    "call_583615eb35a5424fbe34cb17f1bfc521": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2313533,
+        "max_bytes": 499
+      },
+      "result_sha256": "1e08384e882b3d25cc3672ac698a6aa0dbf69583c56de57b22794f27d15818e4"
+    },
+    "call_bce43398563f40899b6d95dc2afc8383": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2314032,
+        "max_bytes": 1524
+      },
+      "result_sha256": "c882cd5e866863a4e4224f632717d621f9132b45566784c6f3c027080a6b1499"
+    },
+    "call_f62eaa3ce53440aeb28af1dd87f9e249": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2315556,
+        "max_bytes": 2127
+      },
+      "result_sha256": "5e026b2d1b60674b2fa37aed732a9ec5a3b17096e9023022bc007c1abad9fcee"
+    },
+    "call_cd91a6d416f547178cbf29adaf46aa5f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2317683,
+        "max_bytes": 2170
+      },
+      "result_sha256": "f2203adb6d67b6f9e150d2070f84a49b9bc17d5565ef5910f52b000a59e1789b"
+    },
+    "call_3d36342c31f649b6bd61a360d92a9fe4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2319853,
+        "max_bytes": 470
+      },
+      "result_sha256": "d364308ed17d5973e949a105224185bfdf5dd4329a761690ae0a26a6868b50d3"
+    },
+    "call_618c2d9afbf840db981f5b9c4fbe8431": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2320323,
+        "max_bytes": 489
+      },
+      "result_sha256": "c568669f2c476deeb8d50e63cd1c84f6d2e6fe2c27bf9672d377916060568b22"
+    },
+    "call_bb74ed980c314a41ac907b2269ae4d6a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2320812,
+        "max_bytes": 505
+      },
+      "result_sha256": "c822e474e08463e7fa217bbec2441bf00de07893118af1333e337ffb880fff9b"
+    },
+    "call_a17f1195bae7453d93d26775c14a1880": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2321317,
+        "max_bytes": 3611
+      },
+      "result_sha256": "2a832b6130ce553c93907f5a325b6ac54c3552f458532b7dcb20b4143799f2fa"
+    },
+    "call_dd22cd22e9fd4d388f594dc1a262ea84": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2324928,
+        "max_bytes": 3946
+      },
+      "result_sha256": "b1828274a9bdc1a7d1f9ae86f747139046d7ac47f6b6fdaaca11ce44b4a9d3e5"
+    },
+    "call_6e4782a2547d422a9ed04355d8e03698": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2328874,
+        "max_bytes": 4590
+      },
+      "result_sha256": "113fa4f1b4446faf846c43467df047a4c823c872d2d7314334c0ea885bbf8916"
+    },
+    "call_c3954153f80047d0a343ef129e4c1cec": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2333464,
+        "max_bytes": 6682
+      },
+      "result_sha256": "d17762556e21ec9dcf7cb3bdcb9b7463a0e5ee8260f83111e62b519b04cb4840"
+    },
+    "call_c72d5456515447baace33fcf5addea2a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2340146,
+        "max_bytes": 2138
+      },
+      "result_sha256": "2c856bc66059b2d25cbb049af804633493347528114b990e322bba5ac906708d"
+    },
+    "call_b26d0c0066c545de9a3937345fcc8a8b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2342284,
+        "max_bytes": 11388
+      },
+      "result_sha256": "f00afdea7e0eda364a36515811e59b3766b2348579a8b277ee1a14f723a50d9c"
+    },
+    "call_c3116b3fe85645bdb4972833dec8beee": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2353672,
+        "max_bytes": 3156
+      },
+      "result_sha256": "53ecde91d0cc55a52b01c621e128eca54e09c8530b9c4d55595e3384916254c0"
+    },
+    "call_286847ff6d4843ee92854aadfd7f95ac": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2356828,
+        "max_bytes": 6671
+      },
+      "result_sha256": "96385bf3857d6ef5a151720c9a3da0a5338db4add9edaf295605a895389478d7"
+    },
+    "call_29178b6ca290458d8a8f78edc16b2604": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6710678,
+        "max_bytes": 348
+      },
+      "result_sha256": "2e75a6d6c2da157077fd4ac0bf9b74cfbc6956ccafb7b2ed9863c86e78d402ab"
+    },
+    "call_a7ba86a0a81d4f8283f00898026f4564": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6711026,
+        "max_bytes": 424
+      },
+      "result_sha256": "a967edad49953fc7cc6a06388fff769c34f996f897a04959ca9dffb4c1784931"
+    },
+    "call_257188d350ae46ab8c823584dac0347f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6711450,
+        "max_bytes": 246
+      },
+      "result_sha256": "849477c4b16369fe2060a0cacc6632e50033de7e9f421f753a7494eb36a22cf0"
+    },
+    "call_bb6c5266aa4e40fa94e40eaadb5dfce4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6711696,
+        "max_bytes": 1673
+      },
+      "result_sha256": "6519ce965754c4810a2c2cee0679f595f5bb2ac88e10ce735da21961c74318ae"
+    },
+    "call_e118ac7813bd4326a5d1089682613765": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6713369,
+        "max_bytes": 2349
+      },
+      "result_sha256": "fa943a09ed94fb6f7bfa8d0685e7d27a2c199620923e6a024b778f0498e2ee16"
+    },
+    "call_bff2d2ca24ad41f7b7c5eb406d361bb9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6715718,
+        "max_bytes": 4523
+      },
+      "result_sha256": "60367bd10bce0eda9dc205d97aec69fe39b3454f713e70525c13f8788e81ac92"
+    },
+    "call_eab125d8f4e6444f961f305b67a1a3bf": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6720241,
+        "max_bytes": 3004
+      },
+      "result_sha256": "8da25c1aff430115a49e332764500eac2c6234d130e71f747601c116d90bc4b9"
+    },
+    "call_c18497bcc93b4b4f89a821b3b7f16483": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6723245,
+        "max_bytes": 4309
+      },
+      "result_sha256": "1a4e43741aa096cf4edb18de430d25abcbbfdcfd047fa3b703eba56636ee6b51"
+    },
+    "call_5d03729f7e7b42d5829a2702b8d5e715": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6727554,
+        "max_bytes": 2769
+      },
+      "result_sha256": "9543aaa20652277960dff25e1f181628d77273eaab3f8cef1129d3747510959d"
+    },
+    "call_57d8965abcfb44639e0b6594116633fb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6730323,
+        "max_bytes": 2165
+      },
+      "result_sha256": "d7f20a6f8ad3be2f15e5c7e99a93f8934a55618c755322dd912fca5f797812f0"
+    },
+    "call_65ca26b5fbc14ea39e50a5b35f6d2646": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6732488,
+        "max_bytes": 5071
+      },
+      "result_sha256": "ac778f32a339738db30c05475e5f415d3927a7efccaf20da27d4d60034259627"
+    },
+    "call_35a486c39bf44f24b002f98fec246302": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6737559,
+        "max_bytes": 2820
+      },
+      "result_sha256": "c6ff233c1e563b5feb1c9e33aad30428403a9ddab901385f898c207244b18b95"
+    },
+    "call_c5a0422ba38d4db8ad44e042058123d8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6740379,
+        "max_bytes": 3653
+      },
+      "result_sha256": "b2760f63b67614692e67f0361ba35efbf1acd49660cd465517adeeb4a72460a7"
+    },
+    "call_6b0bbddd462c44feb90157cd3ad3f343": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6744032,
+        "max_bytes": 2036
+      },
+      "result_sha256": "c7b901fcc31ef94fbb66b87391f2a06e07236c3bcea38b4f5d146d7bac3349b2"
+    },
+    "call_55759039469146939686d564a3b02616": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "from collections import Counter\nimport json\nL,S=2048,512\nout={}\nfor rows in (20,100):\n c=Counter(t for a in range(0,rows*S,S) for t in range(a+1,a+L))\n out[str(rows)]={'scored_positions_with_repeats':sum(c.values()),'unique_target_positions':len(c),'max_multiplicity':max(c.values()),'input_span_tokens':(rows-1)*S+L}\np=[0.7,0.2,0.1]; q=[0.68,0.22,0.10]; n=10000\nmetric=sum((a-b)**2/b for a,b in zip(q,p))\npearson=sum((n*a-n*b)**2/(n*b) for a,b in zip(q,p))\nout['histogram_metric_example']={'probability_metric':metric,'count_Pearson_statistic':pearson,'ratio':pearson/metric}\nprint(json.dumps(out,sort_keys=True))"
+        ]
+      },
+      "result_sha256": "f53913b736825165fba3a8a2e603bae5fd17ef5d4fde36b79a98574def533f1d"
+    },
+    "call_6993685a93164d89bf14c7050229fd61": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from collections import Counter\nimport json\nL,S=2048,512\nout={}\nfor rows in (20,100):\n c=Counter(t for a in range(0,rows*S,S) for t in range(a+1,a+L))\n out[str(rows)]={'scored_positions_with_repeats':sum(c.values()),'unique_target_positions':len(c),'max_multiplicity':max(c.values()),'input_span_tokens':(rows-1)*S+L}\np=[0.7,0.2,0.1]; q=[0.68,0.22,0.10]; n=10000\nmetric=sum((a-b)**2/b for a,b in zip(q,p))\npearson=sum((n*a-n*b)**2/(n*b) for a,b in zip(q,p))\nout['histogram_metric_example']={'probability_metric':metric,'count_Pearson_statistic':pearson,'ratio':pearson/metric}\nprint(json.dumps(out,sort_keys=True))"
+        ]
+      },
+      "result_sha256": "6f78c7df901fc55f4c9f915bdf35859369f43265f3586e98dba8fbe2e7dfffe9"
+    }
+  }
+}

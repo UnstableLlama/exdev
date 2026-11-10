@@ -1,0 +1,393 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "EXL3 inference must turn packed trellis states into linear-layer products while preserving channel scales, Hadamard transforms and the quantizer\u2019s tensor-core ordering. This implementation provides both direct quantized multiplication and reconstruction followed by dense multiplication.",
+        "basis": "source",
+        "evidence": [
+          "call_1e16a410475a42dead5424a8d77841a1",
+          "call_ffb15fe60cf441e19e9c2ecbba79a9f4",
+          "call_57a5c46a53b249c38bd373e2b9bc1821"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The two execution paths expose a memory-versus-computation tradeoff: direct GEMM decodes compressed tiles into registers, whereas reconstruction allocates a full FP16 inner-weight matrix for cuBLAS. The default crossover at 32 flattened input rows is an implementation heuristic, not a demonstrated performance boundary.",
+        "basis": "inference",
+        "evidence": [
+          "call_1e16a410475a42dead5424a8d77841a1",
+          "call_fb6ec8eba7ff48bdb332a4e05a6df917",
+          "call_da2c89e6fad24f08bbbaa5f04ec4f478"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Linear layers can load EXL3 tensors preferentially, retain an FP16 alternative, and override reconstruction through the forward parameters. Both EXL3 paths share the packed-state decoder, but their accumulation and intermediate rounding differ.",
+        "basis": "source",
+        "evidence": [
+          "call_d1ce61dc203e499d9692ad5c7e9414e6",
+          "call_1e16a410475a42dead5424a8d77841a1",
+          "call_4946713eee294bd7974f23d5c5a4c9fa",
+          "call_2fd635db46594ee192abc9f3fc5294d8"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No CUDA kernel, cuBLAS comparison, model inference or performance benchmark was executed. The successful run was a standard-library CPU check of integer packing, indexing and resource arithmetic; it did not test decoder floating-point values, GPU synchronization or numerical agreement between execution paths.",
+      "Packed-input-sign support is incomplete in the inspected Python path: LinearEXL3 accepts su, but forward passes only suh to had_r_128. get_weight_tensor also uses tensor truth tests for su and sv rather than explicit None checks. These paths were not exercised.",
+      "The wrappers do not fully validate their storage contracts. In particular, reconstruct uses cols // 8 without checking the output-width remainder; direct GEMM does not provide an automatic fallback after an incompatible launch selection; and its slice-count heuristic can produce a zero-sized launch grid for small matrices.",
+      "Kernel thresholds and architecture categories are inspected dispatch policy, not evidence of optimality or validated hardware support. FP16 intermediate storage also prevents assuming bitwise equivalence between direct GEMM, reconstructed GEMM and full-weight reconstruction."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "EXL3 loading, reconstruction and direct quantized GEMM",
+        "claims": [
+          {
+            "text": "Loading establishes the representation contract. Linear.load tries EXL3 under the primary and alternate keys before trying dense weights. load_exl3 requires trellis plus an input-side su/suh alternative and an output-side sv/svh alternative, loads them onto the selected device, and includes optional bias. LinearEXL3 requires an int16, three-dimensional trellis; packed signs are int16, while unpacked scales and bias are FP16. It derives the bitrate b from trellis.shape[-1] // 16. Although loading still requests an optional .scale tensor, the constructor rejects a non-None scale. The current quantizer instead emits suh, svh and trellis, with scaling incorporated into the channel vectors.",
+            "basis": "source",
+            "evidence": [
+              "call_d1ce61dc203e499d9692ad5c7e9414e6",
+              "call_1e16a410475a42dead5424a8d77841a1",
+              "call_df8fb28b8d134d7bb21de020c91c2ed0"
+            ]
+          },
+          {
+            "text": "The transform order explains how compressed inner weights become a normal linear layer. For inner matrix Q of shape (k,n), the unpacked-scale path implements the algebraic weight D(suh) Hk Q Hn D(svh), where Hk and Hn are blockwise normalized 128-point Hadamards. forward flattens the leading input dimensions, computes xh = (x multiplied by suh) Hk, multiplies xh by Q, applies the output Hadamard and then svh, restores the output shape and adds bias. A packed sv selects sign flips instead of general output scaling. This is an algebraic description; the implementation introduces FP16 rounding between stages.",
+            "basis": "inference",
+            "evidence": [
+              "call_1e16a410475a42dead5424a8d77841a1",
+              "call_2612d7d72682438db41c567bd6f65485",
+              "call_ffb15fe60cf441e19e9c2ecbba79a9f4"
+            ]
+          },
+          {
+            "text": "LinearEXL3.forward defaults to reconstruction when the flattened row count m is at least 32; params['reconstruct'] overrides that choice. Despite the variable name torch_mode, this branch calls get_inner_weight_tensor, ext.reconstruct and ext.hgemm\u2014not torch.matmul. It allocates a fresh zero-filled FP16 (k,n) matrix on each call, then applies the output Hadamard separately. The direct branch calls exl3_gemm on the packed trellis. With packed sv, that kernel also performs the output Hadamard and signs; with the currently emitted svh, Python invokes a separate Hadamard and multiplies by svh afterward.",
+            "basis": "source",
+            "evidence": [
+              "call_1e16a410475a42dead5424a8d77841a1",
+              "call_df8fb28b8d134d7bb21de020c91c2ed0",
+              "call_2fd635db46594ee192abc9f3fc5294d8"
+            ]
+          },
+          {
+            "text": "Packing stores transitions rather than independent 16-bit indices. Each 16\u00d716 tile contains 256 positions and occupies 16b int16 words, giving trellis shape (k/16,n/16,16b) for b=1\u20268. pack_trellis_kernel keeps each state's low b bits, writes them in stream order and swaps the 16-bit halves of each 32-bit storage word. Dequantization recovers a 16-bit trailing window ending at position (t+1)b; adjacent windows overlap by 16\u2212b bits, and modulo addressing wraps within the tile. The +256b offset keeps the beginning-of-tile window arithmetic nonnegative while implementing that wrap.",
+            "basis": "source",
+            "evidence": [
+              "call_166d63c7be614d809427ceb0c5fedebb",
+              "call_0c07ccdb4dde4b589c0a3e291cbeaac6",
+              "call_ffb15fe60cf441e19e9c2ecbba79a9f4"
+            ]
+          },
+          {
+            "text": "dq_dispatch converts eight consecutive states into two FragB register fragments. Bitrates 1 and 2 use dq8 with four-state shift reuse, bitrate 3 uses two-state reuse, and bitrate 4 has a dedicated aligned extractor. Bitrates 5, 6 and 8 use two dq4 calls; bitrate 7 uses paired dq2x2 calls. These specializations exploit the lane-aligned windows rather than repeatedly extracting every state independently. decode_3inst_2 then performs unsigned 32-bit affine mixing, mask/XOR construction of half values, and a half2 addition. This is procedural decoding, not a table lookup or ordinary integer-times-scale dequantization. The alternative 2MAD decoder exists but is not selected by this inference path.",
+            "basis": "source",
+            "evidence": [
+              "call_0c07ccdb4dde4b589c0a3e291cbeaac6",
+              "call_45b4ff4daf3541c2a90c7fe83cd7df78",
+              "call_6bbe069e223b44bbb29c1c3372856a40"
+            ]
+          },
+          {
+            "text": "Tensor-core order is retained to make those eight decoded values immediately usable. tensor_core_perm assigns lane t the rows 2(t mod 4), that row plus 1, plus 8 and plus 9, at columns floor(t/4) and floor(t/4)+8. ldlq applies this permutation before quantization, undoes it only for reconstructed values, and leaves encoded states permuted. In GEMM, load_frags requests offset floor(t/2)\u00d716+(t mod 2)\u00d78 = 8t and decodes directly into the two B fragments consumed by m16n8k16 MMA instructions. Thus the direct path avoids a decoded-weight rearrangement through shared memory. The quantizer chapter covers how these encoded states are produced.",
+            "basis": "source",
+            "evidence": [
+              "call_ffb15fe60cf441e19e9c2ecbba79a9f4",
+              "call_fb6ec8eba7ff48bdb332a4e05a6df917",
+              "call_6bbe069e223b44bbb29c1c3372856a40"
+            ]
+          },
+          {
+            "text": "Reconstruction pays the layout-conversion cost explicitly. reconstruct_kernel processes a 16\u00d7128 region using 256 threads: eight warps decode eight packed 16\u00d716 tiles with the same dq_dispatch used by GEMM. Each warp shuffles values from the lane four positions ahead, interleaves half values into a shared row-major tile, and writes contiguous output vectors. get_inner_weight_tensor returns only this decoded Q. get_weight_tensor additionally applies the left/right Hadamards and channel factors, making full weight reconstruction a distinct operation from the reconstruction used during forward.",
+            "basis": "source",
+            "evidence": [
+              "call_4946713eee294bd7974f23d5c5a4c9fa",
+              "call_1e16a410475a42dead5424a8d77841a1",
+              "call_2cac34182a2e48348b4877ec99b08221"
+            ]
+          },
+          {
+            "text": "A bounded CPU check verified all 256 permutation positions form a bijection, the argsort inverse restores row-major order, and the reconstruction shuffle/store mapping restores all 256 labeled positions. It also compared scalar emulations of packing and the selected dq_dispatch extraction paths against circular bit-string windows: 32,768 windows matched across 16 deterministic random tiles at each bitrate 1\u20268. The emulation explicitly masked 32-bit packing arithmetic and modeled the swapped half-word storage. These results validate the checked indexing identities, not CUDA execution or the floating-point decoder.",
+            "basis": "execution",
+            "evidence": [
+              "call_4cebfc52595947b8b6b29939b74b4476"
+            ]
+          },
+          {
+            "text": "Direct GEMM pipelines compressed data rather than materializing Q. exl3_gemm_kernel asynchronously copies row-major A and packed B tiles into shared-memory stages, loads A with ldmatrix, decodes B into register fragments, and invokes FP16-input/FP32-accumulator m16n8k16 instructions. All but variant 1 use two fragment stages; the source explains that alternating explicit iterations helps interleave dequantization without spilling fragment arrays to local memory. Work is sliced across the k\u00d7n tile space. Partial k sums are reduced within a block, then ordered across blocks by per-output-tile locks. Cross-block intermediate sums are stored in FP16 C, so FP32 MMA accumulation does not imply an entirely FP32 reduction.",
+            "basis": "source",
+            "evidence": [
+              "call_fb6ec8eba7ff48bdb332a4e05a6df917",
+              "call_2fd635db46594ee192abc9f3fc5294d8",
+              "call_6bbe069e223b44bbb29c1c3372856a40"
+            ]
+          },
+          {
+            "text": "The optional fused output transform runs only after the final reduction. It reloads FP16 C, combines a four-element transform with 32-lane XOR-shuffle stages, normalizes, applies packed signs and writes FP16 output. The separate had_r_128 uses the same 128-point structure, with FP16 input prescaling and floating-point transform arithmetic. Its 0.088388347648 normalization represents 1/\u221a128; the scalar calculation returned 0.08838834764831843. Fusion here removes a separate transform launch, but does not eliminate the intermediate global-memory C write/read.",
+            "basis": "source",
+            "evidence": [
+              "call_2fd635db46594ee192abc9f3fc5294d8",
+              "call_2612d7d72682438db41c567bd6f65485",
+              "call_4cebfc52595947b8b6b29939b74b4476"
+            ]
+          },
+          {
+            "text": "Six native variants are available, expressed as (tile m,k,n; shared stages; fragment stages): 1=(16,16,128;3;1), 2=(16,32,256;4;2), 3=(16,32,128;4;2), 4=(32,32,128;4;2), 5=(64,16,128;4;2), and 6=(16,16,512;4;2). launch rejects k or n not divisible by the selected tile dimensions; partial m tiles are supported. The public EXL3 forward also requires FP16 input and k divisible by 128 through had_r_128, while output transform/reconstruction paths require n in complete 128-channel groups. The native comments are not a complete validation contract: actual launch checks and transform indexing determine these constraints.",
+            "basis": "source",
+            "evidence": [
+              "call_57a5c46a53b249c38bd373e2b9bc1821",
+              "call_a664fafe103341b685b362989843904a",
+              "call_fb6ec8eba7ff48bdb332a4e05a6df917",
+              "call_2612d7d72682438db41c567bd6f65485",
+              "call_4946713eee294bd7974f23d5c5a4c9fa"
+            ]
+          },
+          {
+            "text": "select_kernel is a fixed shape/device heuristic. OLD and Ampere categories use variant 4 above 16 rows, otherwise variant 3 for n<2048 or variant 2 when n is divisible by 256. Ada uses a 50-million-weight threshold for small-m selection and an 8-million-weight threshold for larger m. Hopper/Blackwell additionally select variant 6 for m\u226416 when n\u226565536 or k\u00d7n\u2265200 million, provided n is divisible by 512; above 32 rows they choose variant 5 for matrices of at least 8 million weights. These numbers classify matrix size, not quantization accuracy. A positive force_kernel_idx bypasses selection; otherwise the Python caller passes \u22121. An incompatible selected variant returns zero, which LinearEXL3.forward does not inspect or replace with reconstruction.",
+            "basis": "source",
+            "evidence": [
+              "call_57a5c46a53b249c38bd373e2b9bc1821",
+              "call_1e16a410475a42dead5424a8d77841a1"
+            ]
+          },
+          {
+            "text": "Launch sizing contains additional resource assumptions. Every variant requests 90 KiB dynamic shared memory, identified in the source as the compute-capability-8.6 maximum. The slice count is min(SM count, floor(number of k\u00d7n tiles/12)); the source labels 12 experimental. Scalar arithmetic confirmed that the declared shared arrays fit the budget for all six variants at the maximum bitrate, requiring 11,776 to 40,960 bytes. It also showed that k=n=128 with a 32\u00d7128 k\u00d7n tile yields zero slices. Thus valid transform dimensions alone do not guarantee a nonzero launch grid.",
+            "basis": "execution",
+            "evidence": [
+              "call_4cebfc52595947b8b6b29939b74b4476",
+              "call_57a5c46a53b249c38bd373e2b9bc1821",
+              "call_fb6ec8eba7ff48bdb332a4e05a6df917"
+            ]
+          },
+          {
+            "text": "The dense alternative shares the same linear-layer interface without the EXL3 transforms. LinearFP16 transposes loaded (out,in) weights into contiguous (in,out) storage, converts float32 weights to FP16, and invokes hgemm before bias and output reshaping. hgemm implements row-major multiplication through cublasHgemm by reversing operand order and m/n arguments, with alpha=1 and beta=0. LinearFP16_torch is also exported and wraps nn.Linear, but the inspected loader chooses LinearFP16, not that torch alternative. Reconstruction therefore reuses the dense cuBLAS backend while retaining quantized storage between calls.",
+            "basis": "source",
+            "evidence": [
+              "call_1932d59907964723b84ed037dfe3f6c7",
+              "call_da2c89e6fad24f08bbbaa5f04ec4f478",
+              "call_41c2e2a053604343b62e97916e7992d6",
+              "call_d1ce61dc203e499d9692ad5c7e9414e6",
+              "call_1e16a410475a42dead5424a8d77841a1"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "quantizer",
+          "conversion",
+          "modules",
+          "loading-tokenization",
+          "runtime",
+          "usage-evaluation"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_0c07ccdb4dde4b589c0a3e291cbeaac6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5830799,
+        "max_bytes": 9554
+      },
+      "result_sha256": "ca6a16c72bf834139ae9f3203fbcfa7ea456bebec759bb5e4d0aa8c2b4a0add6"
+    },
+    "call_57a5c46a53b249c38bd373e2b9bc1821": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5840353,
+        "max_bytes": 9203
+      },
+      "result_sha256": "d27c15d1e145bf6fc739968a035bd3ca9d151f4997667609f14bc98ae34194e9"
+    },
+    "call_a664fafe103341b685b362989843904a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5849556,
+        "max_bytes": 568
+      },
+      "result_sha256": "3186ec0c1d2767c8a190669d49e4102f4c3067e55d620dbf4e466a73deca5c52"
+    },
+    "call_fb6ec8eba7ff48bdb332a4e05a6df917": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5850124,
+        "max_bytes": 12000
+      },
+      "result_sha256": "cc20a15a9c9c12f8fb146a6f3183a3b5243e491f60c7b88ddf9b85f4a673bf05"
+    },
+    "call_2fd635db46594ee192abc9f3fc5294d8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5862124,
+        "max_bytes": 10044
+      },
+      "result_sha256": "3f40554dcbbb6415acf4d57572c60f485081e2d63cd62f732c19e660c5efa93e"
+    },
+    "call_4946713eee294bd7974f23d5c5a4c9fa": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5897025,
+        "max_bytes": 4239
+      },
+      "result_sha256": "f1e1e4c243b442bd96f8668550bceed063e94c8496afdf595f18462c58321f30"
+    },
+    "call_2cac34182a2e48348b4877ec99b08221": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5901264,
+        "max_bytes": 430
+      },
+      "result_sha256": "a12b9b9da1767d168f0969e37e288ecf0b302fa485a3678fc87a1a8ca97c4097"
+    },
+    "call_41c2e2a053604343b62e97916e7992d6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6117624,
+        "max_bytes": 349
+      },
+      "result_sha256": "e6ece5fb3e8c3aafdba887a14e9617aeae79ff5b4885673a59c9f51308c0432e"
+    },
+    "call_1e16a410475a42dead5424a8d77841a1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6117973,
+        "max_bytes": 5585
+      },
+      "result_sha256": "e80621f9c29fa222737e846a4997792b14598aa5db79836968c3a2b6e9b3eaa0"
+    },
+    "call_1932d59907964723b84ed037dfe3f6c7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6144186,
+        "max_bytes": 3841
+      },
+      "result_sha256": "97df104ac6e3413bbe8ab48c2043df09007b0f00ba291a75fd967d78c5442afa"
+    },
+    "call_d1ce61dc203e499d9692ad5c7e9414e6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6104285,
+        "max_bytes": 7168
+      },
+      "result_sha256": "dca4d1df3dd04a1adca67bdb6e5dd714619ba8bff78b32bc6f330876b292fd32"
+    },
+    "call_ffb15fe60cf441e19e9c2ecbba79a9f4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6123917,
+        "max_bytes": 11000
+      },
+      "result_sha256": "a0e1d44cbeb988ea147b66d0b869ee9b2ad590576fb9b53e07d5ec16978f3700"
+    },
+    "call_df8fb28b8d134d7bb21de020c91c2ed0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6134917,
+        "max_bytes": 9269
+      },
+      "result_sha256": "e65ef241dd65103a783fa90a4d503b3dcabc13a7f2ff15ce3373d96167e7c2c8"
+    },
+    "call_2612d7d72682438db41c567bd6f65485": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5872168,
+        "max_bytes": 6278
+      },
+      "result_sha256": "56122bdc393731302a06a78899d707f85fed84e5c625dba1ab3b6866ad8eb82e"
+    },
+    "call_166d63c7be614d809427ceb0c5fedebb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5878979,
+        "max_bytes": 6377
+      },
+      "result_sha256": "f6e9c13f13f4e7af47d0fb4b73d7929b3ab12b94996fd3487017c5328e3bb4bc"
+    },
+    "call_45b4ff4daf3541c2a90c7fe83cd7df78": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5827993,
+        "max_bytes": 2806
+      },
+      "result_sha256": "67c84deeb369d20fa1bd27c5f02995da5ee74972a0e210c5966f4c5ec610da32"
+    },
+    "call_da2c89e6fad24f08bbbaa5f04ec4f478": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5810895,
+        "max_bytes": 1675
+      },
+      "result_sha256": "c62a500e616263dcd6a713903baed7e31371b11fb1b5fe1b8917c59d8326c47b"
+    },
+    "call_6bbe069e223b44bbb29c1c3372856a40": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5820688,
+        "max_bytes": 7305
+      },
+      "result_sha256": "f7a3b41dc971b7236ef4094eab2810e39481cedc8ae2d1b8b96a100983a0eda0"
+    },
+    "call_12054be3b9864f35b32f9128408d12cc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import random, math, json\nmask32=(1<<32)-1\np=[]\nfor t in range(32):\n r=(t%4)*2; c=t//4\n p.extend([r*16+c,(r+1)*16+c,(r+8)*16+c,(r+9)*16+c,r*16+c+8,(r+1)*16+c+8,(r+8)*16+c+8,(r+9)*16+c+8])\nassert sorted(p)==list(range(256))\ninv=sorted(range(256),key=p.__getitem__)\nassert [p[i] for i in inv]==list(range(256))\nrestored={}\nfor t in range(32):\n assert (t//2)*16+(t%2)*8==t*8\n if t&4: continue\n r=(t%4)*2; c=t//8\n for j in range(8):\n  row=[r,r+1,r+8,r+9][j%4]; col=2*(c+(4 if j>=4 else 0))\n  restored[row*16+col]=p[t*8+j]\n  restored[row*16+col+1]=p[(t+4)*8+j]\nassert restored==dict(enumerate(range(256)))\nrng=random.Random(123)\ndef pack(values,bits):\n packed=[0]*(16*bits)\n for t in range(16):\n  j=bits*t; k=32; buf=0\n  for v in values[t*16:t*16+16]:\n   k-=bits; buf|=(v&((1<<bits)-1))<<k; buf&=mask32\n   if k<=16:\n    packed[j]=(buf>>16)&65535; buf=(buf<<16)&mask32; k+=16; j+=1\n # SWAP16 on little-endian pairs makes earlier 16-bit word the high half.\n return [(packed[i]<<16)|packed[i+1] for i in range(0,len(packed),2)]\ndef fs(b,a,s):\n return ((((a<<32)|b)>>(s%32))&mask32) if s<32 else (a>>(s-32))\ndef chunk(ptr,bits,t,n,align=1):\n b0=(t+257)*bits-16; b2=b0+(n-1)*bits+16\n i0=b0//32; i2=(b2-1)//32; s=(i2+1)*32-b2\n a=ptr[i0%len(ptr)]; b=ptr[i2%len(ptr)]\n w=[0]*n\n for j in range(n-1,-1,-1):\n  w[j]=fs(b,a,s+(n-1-j)*bits) if (n-1-j)%align==0 else w[j+1]>>bits\n return [x&65535 for x in w]\ndef dispatch(ptr,bits,t):\n if bits in (1,2,3): return chunk(ptr,bits,t,8,4 if bits<3 else 2)\n if bits==4:\n  i=t//8; a=ptr[(i+31)%32]; b=ptr[i]; w2=fs(b,a,20)\n  return [w2>>8&65535,w2>>4&65535,w2&65535,b>>16&65535,b>>12&65535,b>>8&65535,b>>4&65535,b&65535]\n n=2 if bits==7 else 4\n return sum([chunk(ptr,bits,t+i,n) for i in range(0,8,n)],[])\ncount=0\nfor bits in range(1,9):\n for trial in range(16):\n  vals=[rng.randrange(1<<bits) for _ in range(256)]\n  stream=''.join(format(x,'0%db'%bits) for x in vals)\n  ptr=pack(vals,bits)\n  assert ptr==[int(stream[i:i+32],2) for i in range(0,len(stream),32)]\n  expected=[int(''.join(stream[j%len(stream)] for j in range((t+1)*bits-16,(t+1)*bits)),2) for t in range(256)]\n  for t in range(0,256,8):\n   assert dispatch(ptr,bits,t)==expected[t:t+8],(bits,t)\n   count+=8\nvariants=[(16,16,128,3,1),(16,32,256,4,2),(16,32,128,4,2),(32,32,128,4,2),(64,16,128,4,2),(16,16,512,4,2)]\nshared=[]\nfor m,k,n,s,f in variants:\n required=s*(2*m*k+2*(k//16)*(n//16)*16*8)+4*4*256\n assert required<=90*1024\n shared.append(required)\nprint(json.dumps({'permutation_bijection_and_inverse':256,'reconstruction_label_roundtrip':len(restored),'packed_windows_checked':count,'bitrates':list(range(1,9)),'max_bitrate_shared_bytes_variants_1_to_6':shared,'had_128_normalization':1/math.sqrt(128),'small_shape_example_max_slices':(128//32)*(128//128)//12},sort_keys=True))"
+        ],
+        "timeout_seconds": 30
+      },
+      "result_sha256": "cd20a06305fc6f6a2f6e07a189a67d5ae71ee9b90d71356823247556bc8afd1b"
+    },
+    "call_472b9f00ba5c4c44a45dc15b791d9e8f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import random, math, json\nmask32=(1<<32)-1\np=[]\nfor t in range(32):\n r=(t%4)*2; c=t//4\n p.extend([r*16+c,(r+1)*16+c,(r+8)*16+c,(r+9)*16+c,r*16+c+8,(r+1)*16+c+8,(r+8)*16+c+8,(r+9)*16+c+8])\nassert sorted(p)==list(range(256))\ninv=sorted(range(256),key=p.__getitem__)\nassert [p[i] for i in inv]==list(range(256))\nrestored={}\nfor t in range(32):\n assert (t//2)*16+(t%2)*8==t*8\n if t&4: continue\n r=(t%4)*2; c=t//8\n for j in range(8):\n  row=[r,r+1,r+8,r+9][j%4]; col=2*(c+(4 if j>=4 else 0))\n  restored[row*16+col]=p[t*8+j]\n  restored[row*16+col+1]=p[(t+4)*8+j]\nassert restored==dict(enumerate(range(256)))\nrng=random.Random(123)\ndef pack(values,bits):\n packed=[0]*(16*bits)\n for t in range(16):\n  j=bits*t; k=32; buf=0\n  for v in values[t*16:t*16+16]:\n   k-=bits; buf|=(v&((1<<bits)-1))<<k; buf&=mask32\n   if k<=16:\n    packed[j]=(buf>>16)&65535; buf=(buf<<16)&mask32; k+=16; j+=1\n return [(packed[i]<<16)|packed[i+1] for i in range(0,len(packed),2)]\ndef fs(b,a,s):\n return ((((a<<32)|b)>>(s%32))&mask32) if s<32 else (a>>(s-32))\ndef chunk(ptr,bits,t,n,align=1):\n b0=(t+257)*bits-16; b2=b0+(n-1)*bits+16\n i0=b0//32; i2=(b2-1)//32; s=(i2+1)*32-b2\n a=ptr[i0%len(ptr)]; b=ptr[i2%len(ptr)]\n w=[0]*n\n for j in range(n-1,-1,-1):\n  w[j]=fs(b,a,s+(n-1-j)*bits) if (n-1-j)%align==0 else w[j+1]>>bits\n return [x&65535 for x in w]\ndef dispatch(ptr,bits,t):\n if bits in (1,2,3): return chunk(ptr,bits,t,8,4 if bits<3 else 2)\n if bits==4:\n  i=t//8; a=ptr[(i+31)%32]; b=ptr[i]; w2=fs(b,a,20)\n  return [w2>>8&65535,w2>>4&65535,w2&65535,b>>16&65535,b>>12&65535,b>>8&65535,b>>4&65535,b&65535]\n n=2 if bits==7 else 4\n return sum([chunk(ptr,bits,t+i,n) for i in range(0,8,n)],[])\ncount=0\nfor bits in range(1,9):\n for trial in range(16):\n  vals=[rng.randrange(1<<bits) for _ in range(256)]\n  stream=''.join(format(x,'0%db'%bits) for x in vals)\n  ptr=pack(vals,bits)\n  assert ptr==[int(stream[i:i+32],2) for i in range(0,len(stream),32)]\n  expected=[int(''.join(stream[j%len(stream)] for j in range((t+1)*bits-16,(t+1)*bits)),2) for t in range(256)]\n  for t in range(0,256,8):\n   assert dispatch(ptr,bits,t)==expected[t:t+8],(bits,t)\n   count+=8\nvariants=[(16,16,128,3,1),(16,32,256,4,2),(16,32,128,4,2),(32,32,128,4,2),(64,16,128,4,2),(16,16,512,4,2)]\nshared=[]\nfor m,k,n,s,f in variants:\n required=s*(2*m*k+2*(k//16)*(n//16)*16*8)+4*4*256\n assert required<=90*1024\n shared.append(required)\nprint(json.dumps({'permutation_bijection_and_inverse':256,'reconstruction_label_roundtrip':len(restored),'packed_windows_checked':count,'bitrates':list(range(1,9)),'max_bitrate_shared_bytes_variants_1_to_6':shared,'had_128_normalization':1/math.sqrt(128),'small_shape_example_max_slices':(128//32)*(128//128)//12},sort_keys=True))"
+        ]
+      },
+      "result_sha256": "f53913b736825165fba3a8a2e603bae5fd17ef5d4fde36b79a98574def533f1d"
+    },
+    "call_4cebfc52595947b8b6b29939b74b4476": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import random, math, json\nmask32=(1<<32)-1\np=[]\nfor t in range(32):\n r=(t%4)*2; c=t//4\n p.extend([r*16+c,(r+1)*16+c,(r+8)*16+c,(r+9)*16+c,r*16+c+8,(r+1)*16+c+8,(r+8)*16+c+8,(r+9)*16+c+8])\nassert sorted(p)==list(range(256))\ninv=sorted(range(256),key=p.__getitem__)\nassert [p[i] for i in inv]==list(range(256))\nrestored={}\nfor t in range(32):\n assert (t//2)*16+(t%2)*8==t*8\n if t&4: continue\n r=(t%4)*2; c=t//8\n for j in range(8):\n  row=[r,r+1,r+8,r+9][j%4]; col=2*(c+(4 if j>=4 else 0))\n  restored[row*16+col]=p[t*8+j]\n  restored[row*16+col+1]=p[(t+4)*8+j]\nassert restored==dict(enumerate(range(256)))\nrng=random.Random(123)\ndef pack(values,bits):\n packed=[0]*(16*bits)\n for t in range(16):\n  j=bits*t; k=32; buf=0\n  for v in values[t*16:t*16+16]:\n   k-=bits; buf|=(v&((1<<bits)-1))<<k; buf&=mask32\n   if k<=16:\n    packed[j]=(buf>>16)&65535; buf=(buf<<16)&mask32; k+=16; j+=1\n return [(packed[i]<<16)|packed[i+1] for i in range(0,len(packed),2)]\ndef fs(b,a,s):\n return ((((a<<32)|b)>>(s%32))&mask32) if s<32 else (a>>(s-32))\ndef chunk(ptr,bits,t,n,align=1):\n b0=(t+257)*bits-16; b2=b0+(n-1)*bits+16\n i0=b0//32; i2=(b2-1)//32; s=(i2+1)*32-b2\n a=ptr[i0%len(ptr)]; b=ptr[i2%len(ptr)]\n w=[0]*n\n for j in range(n-1,-1,-1):\n  w[j]=fs(b,a,s+(n-1-j)*bits) if (n-1-j)%align==0 else w[j+1]>>bits\n return [x&65535 for x in w]\ndef dispatch(ptr,bits,t):\n if bits in (1,2,3): return chunk(ptr,bits,t,8,4 if bits<3 else 2)\n if bits==4:\n  i=t//8; a=ptr[(i+31)%32]; b=ptr[i]; w2=fs(b,a,20)\n  return [w2>>8&65535,w2>>4&65535,w2&65535,b>>16&65535,b>>12&65535,b>>8&65535,b>>4&65535,b&65535]\n n=2 if bits==7 else 4\n return sum([chunk(ptr,bits,t+i,n) for i in range(0,8,n)],[])\ncount=0\nfor bits in range(1,9):\n for trial in range(16):\n  vals=[rng.randrange(1<<bits) for _ in range(256)]\n  stream=''.join(format(x,'0%db'%bits) for x in vals)\n  ptr=pack(vals,bits)\n  assert ptr==[int(stream[i:i+32],2) for i in range(0,len(stream),32)]\n  expected=[int(''.join(stream[j%len(stream)] for j in range((t+1)*bits-16,(t+1)*bits)),2) for t in range(256)]\n  for t in range(0,256,8):\n   assert dispatch(ptr,bits,t)==expected[t:t+8],(bits,t)\n   count+=8\nvariants=[(16,16,128,3,1),(16,32,256,4,2),(16,32,128,4,2),(32,32,128,4,2),(64,16,128,4,2),(16,16,512,4,2)]\nshared=[]\nfor m,k,n,s,f in variants:\n required=s*(2*m*k+2*(k//16)*(n//16)*16*8)+4*4*256\n assert required<=90*1024\n shared.append(required)\nprint(json.dumps({'permutation_bijection_and_inverse':256,'reconstruction_label_roundtrip':len(restored),'packed_windows_checked':count,'bitrates':list(range(1,9)),'max_bitrate_shared_bytes_variants_1_to_6':shared,'had_128_normalization':1/math.sqrt(128),'small_shape_example_max_slices':(128//32)*(128//128)//12},sort_keys=True))"
+        ]
+      },
+      "result_sha256": "1d6e4572300787c0b881a637a02670f919571f3b08cb9292adfd7de3bb2dd476"
+    }
+  }
+}

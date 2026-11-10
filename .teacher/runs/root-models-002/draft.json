@@ -1,0 +1,570 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The model layer must translate architecture-specific configuration and checkpoint names into shared attention, MLP, normalization and output modules.",
+        "basis": "source",
+        "evidence": [
+          "call_4e573b2a1bff4d1596a849083842f3fb",
+          "call_2bf97cffb54c404db531d664bc197d62",
+          "call_9d20ee4c565847cabb6c03320692f7de",
+          "call_4887351d9a60417a885bfddf6d6a5753"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation shares Llama construction with Mistral and Qwen2, while explicitly adapting Phi3's fused checkpoint projections and Gemma2's normalization, scaling and softcapping.",
+        "basis": "source",
+        "evidence": [
+          "call_1d4523c7820144c2b2d2ca2288906842",
+          "call_547713695a844166803065afbd7898b5",
+          "call_9d20ee4c565847cabb6c03320692f7de",
+          "call_4887351d9a60417a885bfddf6d6a5753"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Five architecture names are registered, but registration and matching tensor dimensions do not establish full reference-model equivalence: sliding-window configuration has concrete mapping gaps.",
+        "basis": "inference",
+        "evidence": [
+          "call_4e573b2a1bff4d1596a849083842f3fb",
+          "call_01763895acc1474281f6e06d62047559",
+          "call_1e2940c5974e456483b2f31163df6f8b",
+          "call_d20039afd5964f91bbe3229fbc2f6f7c",
+          "call_2bf97cffb54c404db531d664bc197d62",
+          "call_9d20ee4c565847cabb6c03320692f7de",
+          "call_4887351d9a60417a885bfddf6d6a5753"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Reference configs and complete tensor headers were inspected at these pins: TinyLlama/TinyLlama-1.1B-Chat-v1.0@fe8a4ea1ffedaf415f4da2f062534de366a451e6; mistralai/Mistral-7B-v0.1@7231864981174d9bee8c7687c24c8344414eae6b; Qwen/Qwen2.5-0.5B@060db6499f32faf8b98477b0a26969ef7d8b9987; microsoft/Phi-3-mini-4k-instruct@0a67737cc96d2554230f90338b163bc6380a2a85. Both shards were inspected for Mistral and Phi3.",
+        "basis": "source",
+        "evidence": [
+          "call_3d439fb0c082421ba62000aa360d8048",
+          "call_1dd1bb7012a448d0bda2128a910a3c64",
+          "call_01763895acc1474281f6e06d62047559",
+          "call_520039ff856744319aa2926d9386ffd9",
+          "call_8c1d2ace022a449c8f2528f28a4e0f4b",
+          "call_2be10d0a65f64354b457a45535cfa865",
+          "call_e094c1de1e71473cb3d47001b36d664b",
+          "call_1e2940c5974e456483b2f31163df6f8b",
+          "call_0b1cc4fc0abf46c785334a9865bad356",
+          "call_7b6567aea2d74222bbed97a2a36f4788"
+        ]
+      },
+      {
+        "text": "Gemma evidence is unsloth/gemma-2-2b@25319945f7fd83b8b903e12081777b7eef2ba993, an authorized public mirror used because google/gemma-2-2b requires access. Its config and complete header are mirror evidence, not verified byte-identical upstream artifacts.",
+        "basis": "source",
+        "evidence": [
+          "call_d20039afd5964f91bbe3229fbc2f6f7c",
+          "call_db291d1f84594376a6f5af18e14423c8"
+        ]
+      }
+    ],
+    "limitations": [
+      "No checkpoint payloads, GPU model execution, output-equivalence tests or performance measurements were examined. The successful Python check validates metadata arithmetic and row-range coverage only.",
+      "Tensor headers establish names, shapes and stored dtypes, not the semantic ordering of Phi3's fused weight rows or numerical equivalence to reference implementations.",
+      "Mistral and Phi3 do not propagate their pinned sliding_window values; Gemma2 reads sliding_window_size rather than the mirror's sliding_window. The effect on generated outputs is unmeasured.",
+      "Gemma mirror equivalence to gated upstream google/gemma-2-2b remains unverified. These five checkpoint examples do not establish compatibility with every variant bearing the registered architecture names."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Architecture dispatch and checkpoint-to-module mapping",
+        "claims": [
+          {
+            "text": "Dispatch uses config.json's single architectures entry, not model_type or remote auto_map code. Config.from_directory rejects missing, multiple or unknown architecture declarations and selects one of LlamaConfig, MistralConfig, Qwen2Config, Phi3Config or Gemma2Config. Model.from_config then instantiates config.model_class. A subtle distinction is that MistralConfig and Qwen2Config inherit LlamaConfig's assignment of LlamaModel: their registered model subclasses are thin wrappers, but the normal factory actually constructs LlamaModel for both.",
+            "basis": "source",
+            "evidence": [
+              "call_4e573b2a1bff4d1596a849083842f3fb",
+              "call_3ac63e7f2f9b47a19663bc5481cec4f4",
+              "call_c095ad5e75eb4035965bed75cef0f534",
+              "call_2bf97cffb54c404db531d664bc197d62",
+              "call_1d4523c7820144c2b2d2ca2288906842",
+              "call_547713695a844166803065afbd7898b5"
+            ]
+          },
+          {
+            "text": "Configuration loading establishes the tensor collection, vocabulary and special-token IDs before architecture construction. EOS may be an integer or list; the list is retained while its first element becomes eos_token_id. Architecture configs map hidden_size, intermediate_size, layer count, query/KV head counts and RMS epsilon; missing KV-head count defaults to query-head count, and absent head_dim falls back to hidden_size // num_attention_heads. read_dict accepts integer-to-float conversion, so Gemma's integer query_pre_attn_scalar is accepted. Shared RoPE settings carry theta, scaling, partial-rotary factor and context limits with NEOX style. Phi3 alone overrides override_dynamic_seq_len to update the RoPE override before model construction.",
+            "basis": "source",
+            "evidence": [
+              "call_3ac63e7f2f9b47a19663bc5481cec4f4",
+              "call_dd3f328daecd496386cfbd605b64d41b",
+              "call_2bf97cffb54c404db531d664bc197d62",
+              "call_9d20ee4c565847cabb6c03320692f7de",
+              "call_4887351d9a60417a885bfddf6d6a5753",
+              "call_c6430d9a6ea0416c9da7e20dc569d6b8"
+            ]
+          },
+          {
+            "text": "The common model sequence is model.embed_tokens, one TransformerBlock per model.layers.i, model.norm, then lm_head. Llama-style blocks apply input_layernorm before attention and post_attention_layernorm before the gated MLP, with a residual addition after each branch. Attention maps q_proj/k_proj/v_proj/o_proj; the MLP maps gate_proj/up_proj/down_proj. With hidden width H, head width D, query heads Q, KV heads K and intermediate width I, checkpoint matrix shapes are [QD,H], [KD,H], [KD,H], [H,QD], [I,H], [I,H], [H,I]. This permits attention width QD to differ from residual width H, as Gemma requires.",
+            "basis": "source",
+            "evidence": [
+              "call_2bf97cffb54c404db531d664bc197d62",
+              "call_c021c68c16074c79924f51bc562dbd04",
+              "call_dca98a08d5d946fc90014a026ac2cfee",
+              "call_e7afe3958bcb45a5b7b0a50fc903c63e",
+              "call_db291d1f84594376a6f5af18e14423c8"
+            ]
+          },
+          {
+            "text": "TinyLlama supplies the straightforward Llama example: 22 layers, H=2048, I=5632, 32 query heads and four KV heads. Its BF16 header contains separate [2048,2048] Q/O matrices, [256,2048] K/V matrices, [5632,2048] gate/up matrices and [2048,5632] down matrices. Both embedding and untied output weights are [32000,2048]; layer norms and final norm have width 2048. The config selects SiLU, RMS epsilon 1e-5, theta 10000 and a 2048-position limit, matching the fields consumed by LlamaConfig.",
+            "basis": "source",
+            "evidence": [
+              "call_3d439fb0c082421ba62000aa360d8048",
+              "call_1dd1bb7012a448d0bda2128a910a3c64",
+              "call_2bf97cffb54c404db531d664bc197d62"
+            ]
+          },
+          {
+            "text": "Mistral reuses the same construction and naming. The pinned 7B checkpoint has 32 layers, H=4096, I=14336, 32 query heads and eight KV heads; its headers contain Q/O [4096,4096], K/V [1024,4096], gate/up [14336,4096], down [4096,14336], and separate [32000,4096] embedding/head weights. Sharding is not a layer boundary: layer 22's attention tensors are in shard one while its norms and MLP are in shard two. SafetensorsCollection indexes individual tensor names across all files, so constructors need no shard-specific logic.",
+            "basis": "source",
+            "evidence": [
+              "call_1d4523c7820144c2b2d2ca2288906842",
+              "call_01763895acc1474281f6e06d62047559",
+              "call_520039ff856744319aa2926d9386ffd9",
+              "call_8c1d2ace022a449c8f2528f28a4e0f4b",
+              "call_554416c16d104a6ca72e3abb669fff86"
+            ]
+          },
+          {
+            "text": "Qwen2.5-0.5B declares Qwen2ForCausalLM and fits the shared Llama layout with 24 layers, H=896, I=4864, 14 query heads and two KV heads. Its header additionally contains q_proj.bias [896] and k_proj.bias/v_proj.bias [128], but no O or MLP biases. Linear.load_fp16 retrieves each optional .bias rather than requiring a separate Qwen attention implementation. The config supplies theta 1000000, RMS epsilon 1e-6 and tied embeddings; the header contains model.embed_tokens.weight [151936,896] and no lm_head.weight. LlamaModel provides an embedding fallback for the output layer when tying is enabled. This is a loading fallback, not proof of shared runtime storage.",
+            "basis": "source",
+            "evidence": [
+              "call_547713695a844166803065afbd7898b5",
+              "call_2be10d0a65f64354b457a45535cfa865",
+              "call_e094c1de1e71473cb3d47001b36d664b",
+              "call_2bf97cffb54c404db531d664bc197d62",
+              "call_bb207cd3479145ecbc9812227a226b51"
+            ]
+          },
+          {
+            "text": "Phi3 retains separate logical Q/K/V and gate/up modules while accepting fused source tensors. Its pinned checkpoint has 32 layers, H=3072, I=8192 and 32 query/KV heads. Attention.__init__ assigns consecutive Q, K and V row ranges within self_attn.qkv_proj.weight [9216,3072]; GatedMLP.__init__ assigns gate then up ranges within mlp.gate_up_proj.weight [16384,3072]. Linear.load_fp16 first tries the separate logical weight, then slices the fused weight along its first axis and makes the slice contiguous. O remains [3072,3072], down [3072,8192], and embedding/head [32064,3072]. This adaptation preserves common execution and conversion interfaces rather than adding a fused-projection execution path.",
+            "basis": "source",
+            "evidence": [
+              "call_9d20ee4c565847cabb6c03320692f7de",
+              "call_1e2940c5974e456483b2f31163df6f8b",
+              "call_0b1cc4fc0abf46c785334a9865bad356",
+              "call_7b6567aea2d74222bbed97a2a36f4788",
+              "call_c021c68c16074c79924f51bc562dbd04",
+              "call_dca98a08d5d946fc90014a026ac2cfee",
+              "call_bb207cd3479145ecbc9812227a226b51"
+            ]
+          },
+          {
+            "text": "Gemma2 requires more than renamed tensors. The mirror has 26 layers, H=2304, I=9216, eight query heads, four KV heads and explicit D=256. Accordingly Q is [2048,2304], K/V [1024,2304] and O [2304,2048]; deriving D from H/Q would be wrong. Each layer has four norm vectors: input_layernorm, post_attention_layernorm, pre_feedforward_layernorm and post_feedforward_layernorm. Gemma2Model places post-norms before the branch residual additions, requests float outputs from those post-norms, and passes constant_bias=1 to every RMSNorm. RMSNorm's reference expression multiplies normalized activations by weight+1 rather than weight. Embedding normalization multiplies by sqrt(H), and the MLP selects the GELU multiplication kernel.",
+            "basis": "source",
+            "evidence": [
+              "call_d20039afd5964f91bbe3229fbc2f6f7c",
+              "call_db291d1f84594376a6f5af18e14423c8",
+              "call_4887351d9a60417a885bfddf6d6a5753",
+              "call_b5211fb2ddef4eaea50ef4dc9f502f74",
+              "call_76f73b70e78a4f67a77364d0475a299c",
+              "call_e7afe3958bcb45a5b7b0a50fc903c63e",
+              "call_dca98a08d5d946fc90014a026ac2cfee"
+            ]
+          },
+          {
+            "text": "Gemma's attention scale is query_pre_attn_scalar**(-0.5), using the mirror's 256 rather than the implementation's fallback 224. Attention softcap 50 is passed to FlashAttention; output softcap 30 is applied by Linear through the native transformation c*tanh(x/c), a smooth saturation rather than hard clipping. Gemma2Model always offers model.embed_tokens as the head's alternate key, consistent with the mirror header's sole [256000,2304] vocabulary matrix and absent lm_head. The SDPA alternative explicitly rejects nonzero attention softcapping, so it is not an interchangeable Gemma execution path.",
+            "basis": "source",
+            "evidence": [
+              "call_d20039afd5964f91bbe3229fbc2f6f7c",
+              "call_db291d1f84594376a6f5af18e14423c8",
+              "call_4887351d9a60417a885bfddf6d6a5753",
+              "call_c021c68c16074c79924f51bc562dbd04",
+              "call_bb207cd3479145ecbc9812227a226b51",
+              "call_e1036111cba245d6ba179bfe10ee33b8"
+            ]
+          },
+          {
+            "text": "Window configuration limits the apparent architectural correspondence. Mistral's pinned sliding_window=4096 and Phi3's sliding_window=2047 are neither read nor passed by their constructors, leaving Attention's default -1. Gemma2Model contains an even-layer window/odd-layer unrestricted pattern, but Gemma2Config reads sliding_window_size; the mirror supplies sliding_window=4096, so both parities receive -1. FlashAttention receives that value as window_size. Qwen's pinned use_sliding_window=false makes its unwindowed construction consistent on this particular setting, not evidence of support for windowed Qwen variants.",
+            "basis": "source",
+            "evidence": [
+              "call_01763895acc1474281f6e06d62047559",
+              "call_1e2940c5974e456483b2f31163df6f8b",
+              "call_d20039afd5964f91bbe3229fbc2f6f7c",
+              "call_2be10d0a65f64354b457a45535cfa865",
+              "call_2bf97cffb54c404db531d664bc197d62",
+              "call_9d20ee4c565847cabb6c03320692f7de",
+              "call_4887351d9a60417a885bfddf6d6a5753",
+              "call_c021c68c16074c79924f51bc562dbd04"
+            ]
+          },
+          {
+            "text": "A successful standard-library Python check reconstructed projection dimensions from transcribed config/header metadata. Head dimensions were 64, 128, 64, 96 and 256 for TinyLlama, Mistral, Qwen, Phi3 and Gemma respectively; query-heads-per-KV-head were 8, 4, 7, 1 and 2. Structural tensor counts matched 201, 291, 290, 195 and 288. Phi3 ranges [0,3072), [3072,6144), [6144,9216) and [0,8192), [8192,16384) covered their fused row axes exactly without overlap. Gemma's embedding multiplier evaluated to 48 and attention scale to 0.0625. These checks use Python integers and scalar floating point, not GPU tensors or BF16/FP16 arithmetic.",
+            "basis": "execution",
+            "evidence": [
+              "call_69797b953d3d410fa3df7abadbf457b6"
+            ]
+          },
+          {
+            "text": "Architecture definitions expose the same logical matrices to conversion and inference. Their qmap prefixes become shared Q/K/V capture groups and gate/up capture groups, while output projections have separate groups; Linear.capture_H accumulates X\u1d40X only for the group's first logical key. The head uses head_bits independently of ordinary bits. Linear.load chooses EXL3 tensor groups before ordinary weights, and Phi3's fused fallback exists in the ordinary-weight path. All inspected reference headers store BF16, but SafetensorsCollection.get_tensor defaults to converting BF16 to FP16, so checkpoint dtype is not a claim about runtime arithmetic.",
+            "basis": "source",
+            "evidence": [
+              "call_2bf97cffb54c404db531d664bc197d62",
+              "call_9d20ee4c565847cabb6c03320692f7de",
+              "call_4887351d9a60417a885bfddf6d6a5753",
+              "call_c021c68c16074c79924f51bc562dbd04",
+              "call_dca98a08d5d946fc90014a026ac2cfee",
+              "call_bb207cd3479145ecbc9812227a226b51",
+              "call_554416c16d104a6ca72e3abb669fff86",
+              "call_1dd1bb7012a448d0bda2128a910a3c64",
+              "call_520039ff856744319aa2926d9386ffd9",
+              "call_e094c1de1e71473cb3d47001b36d664b",
+              "call_0b1cc4fc0abf46c785334a9865bad356",
+              "call_db291d1f84594376a6f5af18e14423c8"
+            ]
+          },
+          {
+            "text": "The model boundary also supplies execution and cache lifecycle hooks. Architecture prepare_inputs methods retain input_ids in params and invoke prepare_for_attn. Model.forward moves state through each module's device preparation and forward method; Model.prefill stops at last_kv_module_idx, with the final block skipping its remaining residual/MLP work after attention. model_init.init constructs config, model and optional cache before loading, then optionally creates the tokenizer. Model.load supports a single device or sequential module autosplitting with dummy forwards and out-of-memory retry; tensor parallel loading explicitly remains unimplemented.",
+            "basis": "source",
+            "evidence": [
+              "call_2bf97cffb54c404db531d664bc197d62",
+              "call_9d20ee4c565847cabb6c03320692f7de",
+              "call_4887351d9a60417a885bfddf6d6a5753",
+              "call_c095ad5e75eb4035965bed75cef0f534",
+              "call_e7afe3958bcb45a5b7b0a50fc903c63e",
+              "call_c6430d9a6ea0416c9da7e20dc569d6b8"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "modules",
+          "loading-tokenization",
+          "conversion",
+          "quantized-inference",
+          "generation",
+          "runtime"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_c6430d9a6ea0416c9da7e20dc569d6b8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6042457,
+        "max_bytes": 3176
+      },
+      "result_sha256": "f7d1a97938ce0ab1f201afd008009d12a92602d3fc2dfece6e785d6fae12e430"
+    },
+    "call_821da87dea5746c4be206d41b5130ba5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6045633,
+        "max_bytes": 338
+      },
+      "result_sha256": "fe9f39d4e9ba6c271287a099b1f5e0bf939756b8c74902f537b4b9603d88bc52"
+    },
+    "call_4e573b2a1bff4d1596a849083842f3fb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6045971,
+        "max_bytes": 1375
+      },
+      "result_sha256": "d1d25b47a30549df7f6a5f241f87ea1e5bb93b0701cd509ae68ab72f03bb7dc5"
+    },
+    "call_3ac63e7f2f9b47a19663bc5481cec4f4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6047346,
+        "max_bytes": 6630
+      },
+      "result_sha256": "fcc530c9e5a3bcb8ebe9125ae6c5efcd3b5f9ca78a20d22b6dfd88e86e1881d3"
+    },
+    "call_4887351d9a60417a885bfddf6d6a5753": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6053976,
+        "max_bytes": 6582
+      },
+      "result_sha256": "2b88a9b19947fac56762842edaad46f3a858684ccc8bc4138e4da19519064cb6"
+    },
+    "call_2bf97cffb54c404db531d664bc197d62": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6060558,
+        "max_bytes": 5240
+      },
+      "result_sha256": "adb34ee22fecd7976e5fe416f33dd4f693b828fee83f24bb8df18d6300d51980"
+    },
+    "call_1d4523c7820144c2b2d2ca2288906842": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6065798,
+        "max_bytes": 760
+      },
+      "result_sha256": "293586241d9436444d395de75c972f10cea0584e0ad62ed9d48f8360dd91fd3e"
+    },
+    "call_c095ad5e75eb4035965bed75cef0f534": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6066558,
+        "max_bytes": 14889
+      },
+      "result_sha256": "380273d2a3981f7a3e4d9cb72be6b3b0c185273c4e9a23d1b7f497e72963883c"
+    },
+    "call_9d20ee4c565847cabb6c03320692f7de": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6081447,
+        "max_bytes": 5516
+      },
+      "result_sha256": "59e42691dc9adbb2d72e08913e8b2a368e244d0efcaae8beaf12bb96a0e4d3ee"
+    },
+    "call_547713695a844166803065afbd7898b5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6086963,
+        "max_bytes": 844
+      },
+      "result_sha256": "19d4646fdb3430f532c2c70f5b1075d1a4512d69c7357de73b0bd9cb445dddfb"
+    },
+    "call_3d439fb0c082421ba62000aa360d8048": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+        "path": "config.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "5c7b5fdff9cb7205e5b9937d304c4a91fee785210de6b071114e1c0cded3afe1"
+    },
+    "call_01763895acc1474281f6e06d62047559": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-7B-v0.1",
+        "revision": "7231864981174d9bee8c7687c24c8344414eae6b",
+        "path": "config.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "94ea607d2f234c9711aab61be3024d715e4cebc5c8659e2a285e37239f2902f0"
+    },
+    "call_2be10d0a65f64354b457a45535cfa865": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "path": "config.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "0cc3f260d3ed69ce669cad9ca11a2c422ab9735c2d01030c35bab8fc3473c1f6"
+    },
+    "call_1e2940c5974e456483b2f31163df6f8b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+        "revision": "0a67737cc96d2554230f90338b163bc6380a2a85",
+        "path": "config.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "2ba46cd9a5f1f589e39dd22aedaee206cf151c61937cdf447bf677f335334785"
+    },
+    "call_d20039afd5964f91bbe3229fbc2f6f7c": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "unsloth/gemma-2-2b",
+        "revision": "25319945f7fd83b8b903e12081777b7eef2ba993",
+        "path": "config.json",
+        "max_bytes": 2000
+      },
+      "result_sha256": "9301154ceda1c1314b576344a6684487b7cd951b0e4707963618c6da02f990fe"
+    },
+    "call_1dd1bb7012a448d0bda2128a910a3c64": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+        "path": "model.safetensors",
+        "limit": 250
+      },
+      "result_sha256": "6ac1c9a14a0feaeadb533af61dcd74b3827ba23d9e7123620c00e88e11923617"
+    },
+    "call_520039ff856744319aa2926d9386ffd9": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-7B-v0.1",
+        "revision": "7231864981174d9bee8c7687c24c8344414eae6b",
+        "path": "model-00001-of-00002.safetensors",
+        "limit": 250
+      },
+      "result_sha256": "dd5a3fffb414cb2f3e7f34579bbfbb607edaacf2a0fd3601b4e79bed03dba4f1"
+    },
+    "call_8c1d2ace022a449c8f2528f28a4e0f4b": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-7B-v0.1",
+        "revision": "7231864981174d9bee8c7687c24c8344414eae6b",
+        "path": "model-00002-of-00002.safetensors",
+        "limit": 250
+      },
+      "result_sha256": "def74b87d39a6b146dd26a5ce619af965c3c3bfb60c449b6ca526616a2952f33"
+    },
+    "call_e094c1de1e71473cb3d47001b36d664b": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "path": "model.safetensors",
+        "limit": 300
+      },
+      "result_sha256": "729c5c2da76f8a6380d4312d1dd81a5274dd327e53c36ee939819c98b81c8dae"
+    },
+    "call_0b1cc4fc0abf46c785334a9865bad356": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+        "revision": "0a67737cc96d2554230f90338b163bc6380a2a85",
+        "path": "model-00001-of-00002.safetensors",
+        "limit": 200
+      },
+      "result_sha256": "d2e9c0c94e73cb426863afdd1dc66b9e5f471b74152b43aafd17e8b18eecb373"
+    },
+    "call_7b6567aea2d74222bbed97a2a36f4788": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+        "revision": "0a67737cc96d2554230f90338b163bc6380a2a85",
+        "path": "model-00002-of-00002.safetensors",
+        "limit": 200
+      },
+      "result_sha256": "5bf025631e8b2c8b6bb1b0dd55c56e131acf6ec902a51ccf1f7e4192a9a6ea65"
+    },
+    "call_db291d1f84594376a6f5af18e14423c8": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "unsloth/gemma-2-2b",
+        "revision": "25319945f7fd83b8b903e12081777b7eef2ba993",
+        "path": "model.safetensors",
+        "limit": 300
+      },
+      "result_sha256": "7a9b43836ccb4340937f7dc5da8e26e6cf4afcf5ebe1677b147e58e60dafb5d9"
+    },
+    "call_c021c68c16074c79924f51bc562dbd04": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6088282,
+        "max_bytes": 13621
+      },
+      "result_sha256": "8efd751266e1b4a219d99fff7bcb72d4641807a84663177aaa7f3739e573f6c6"
+    },
+    "call_bb207cd3479145ecbc9812227a226b51": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6104285,
+        "max_bytes": 7168
+      },
+      "result_sha256": "dca4d1df3dd04a1adca67bdb6e5dd714619ba8bff78b32bc6f330876b292fd32"
+    },
+    "call_dca98a08d5d946fc90014a026ac2cfee": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6111453,
+        "max_bytes": 3569
+      },
+      "result_sha256": "c1280c11a5a5f7f655aaa8e632bafaa68131239d17a6a1e4135d273e32df428a"
+    },
+    "call_76f73b70e78a4f67a77364d0475a299c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6101903,
+        "max_bytes": 2382
+      },
+      "result_sha256": "ebf7ecbc8c2d60ab3e79fd7814878ae6a106788ae0b8c9795fa7ca16f3f46ba6"
+    },
+    "call_b5211fb2ddef4eaea50ef4dc9f502f74": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6148027,
+        "max_bytes": 2660
+      },
+      "result_sha256": "b491f5812f88fc865a055561659ccf145b6ad59ab899aa230d138aebbe704bcf"
+    },
+    "call_e7afe3958bcb45a5b7b0a50fc903c63e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6150687,
+        "max_bytes": 2863
+      },
+      "result_sha256": "80dd8bca9751692745086100abc910ec95781f8d24f949bff3b4818926cbfdd4"
+    },
+    "call_dd3f328daecd496386cfbd605b64d41b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6178514,
+        "max_bytes": 4203
+      },
+      "result_sha256": "4e7c0a298e599349e0045011c17b8fb117f025ab520893ea8e083bfef7b84d05"
+    },
+    "call_3f20ba1110704aad885aad68a5b7e85f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python",
+          "-c",
+          "import json, math\n# Integers transcribed from the inspected pinned configs and headers; no tensor payloads.\ncases = [('TinyLlama',2048,32,4,None,5632,22,9,3,201,(2048,256)),('Mistral',4096,32,8,None,14336,32,9,3,203+88,(4096,1024)),('Qwen2.5',896,14,2,None,4864,24,12,2,290,(896,128)),('Phi3',3072,32,32,None,8192,32,6,3,128+67,(3072,3072)),('Gemma2 mirror',2304,8,4,256,9216,26,11,2,288,(2048,1024))]\nfor name,h,nq,nkv,d,i,l,per,other,count,expected in cases:\n d = d or h//nq\n q,k = nq*d,nkv*d\n assert (q,k)==expected\n assert l*per+other==count\n print(json.dumps(dict(model=name,head_dim=d,q_shape=[q,h],kv_shape=[k,h],o_shape=[h,q],gate_up_each=[i,h],down=[h,i],q_per_kv=nq//nkv,tensor_count=l*per+other)))\nq,k=3072,3072\nranges=[(0,q),(q,q+k),(q+k,q+2*k)]\nassert [r for a,b in ranges for r in range(a,b)]==list(range(9216))\ngate_up=[(0,8192),(8192,16384)]\nassert [r for a,b in gate_up for r in range(a,b)]==list(range(16384))\nprint('Phi3 fused row ranges:',ranges,gate_up)\nprint('Gemma2 embedding multiplier:',math.sqrt(2304),'attention scale:',float(256)**(-0.5))\nprint('Gemma2 configured sliding_window=4096, lookup sliding_window_size:',{'sliding_window':4096}.get('sliding_window_size',-1))"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "f53913b736825165fba3a8a2e603bae5fd17ef5d4fde36b79a98574def533f1d"
+    },
+    "call_69797b953d3d410fa3df7abadbf457b6": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json, math\n# Metadata transcribed from inspected configs and headers, not tensor payloads.\ncases = [('TinyLlama',2048,32,4,None,5632,22,9,3,201,(2048,256)),('Mistral',4096,32,8,None,14336,32,9,3,203+88,(4096,1024)),('Qwen2.5',896,14,2,None,4864,24,12,2,290,(896,128)),('Phi3',3072,32,32,None,8192,32,6,3,128+67,(3072,3072)),('Gemma2 mirror',2304,8,4,256,9216,26,11,2,288,(2048,1024))]\nfor name,h,nq,nkv,d,i,l,per,other,count,expected in cases:\n d = d or h//nq\n q,k = nq*d,nkv*d\n assert (q,k)==expected\n assert l*per+other==count\n print(json.dumps(dict(model=name,head_dim=d,q_shape=[q,h],kv_shape=[k,h],o_shape=[h,q],gate_up_each=[i,h],down=[h,i],q_per_kv=nq//nkv,tensor_count=l*per+other)))\nranges=[(0,3072),(3072,6144),(6144,9216)]\nassert [r for a,b in ranges for r in range(a,b)]==list(range(9216))\ngate_up=[(0,8192),(8192,16384)]\nassert [r for a,b in gate_up for r in range(a,b)]==list(range(16384))\nprint('Phi3 fused row ranges:',ranges,gate_up)\nprint('Gemma2 embedding multiplier:',math.sqrt(2304),'attention scale:',float(256)**(-0.5))\nprint('Gemma2 configured sliding_window=4096, lookup sliding_window_size:',{'sliding_window':4096}.get('sliding_window_size',-1))"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "72ea61017460f00491e55cc40e637c37979245f54a60801d3fdb28b18ed53e10"
+    },
+    "call_e1036111cba245d6ba179bfe10ee33b8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5911883,
+        "max_bytes": 2416
+      },
+      "result_sha256": "af707687b996f54b9e015522da790104b9132b7ea56a689c3ccafbf0176443af"
+    },
+    "call_554416c16d104a6ca72e3abb669fff86": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6032465,
+        "max_bytes": 9992
+      },
+      "result_sha256": "bfc4deb2ff60d14ed2d8ade4615cdd6807cc1fa11c1f8eba2ccfa01b819a4b80"
+    }
+  }
+}

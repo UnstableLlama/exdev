@@ -1,0 +1,629 @@
+{
+  "schema_version": 3,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 3,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "This root change introduces a generation layer that coordinates queued requests, bounded KV-cache capacity, prompt ingestion, sampling and streamed completion events.",
+        "basis": "source",
+        "evidence": [
+          "call_d9672fa51a404f818950034df076227f",
+          "call_2721ad5dc7b74911b25c06844d765f3e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The central separation is between jobs owning logical sequences, a page table managing reusable physical cache slots, and model calls receiving explicit block tables and cache lengths. Reserving output capacity before starting a job simplifies subsequent decoding, but reduces concurrency when requested output budgets substantially exceed actual completions.",
+        "basis": "inference",
+        "evidence": [
+          "call_2407345feaf749438898ed7cbaad37b9",
+          "call_98b25069b15546378633bd3a9addb24a",
+          "call_2721ad5dc7b74911b25c06844d765f3e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The implementation supports dynamic admission, prefix-cache reuse, streaming and an asyncio wrapper. Optional probability/top-token reporting, banned-string restoration and multi-sequence handling have concrete suspected failure paths recorded in findings.",
+        "basis": "source",
+        "evidence": [
+          "call_b0a7466e39c2408baccea85cf352c66a",
+          "call_5f647097e9fa4eb894e215f9065d472a",
+          "call_98b25069b15546378633bd3a9addb24a",
+          "call_d9672fa51a404f818950034df076227f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The public exports expose Generator, Job, AsyncGenerator and AsyncJob, alongside Cache, CacheLayer and CacheLayer_fp16.",
+        "basis": "source",
+        "evidence": [
+          "call_827afa45aa7c4b7d8be1e865b7e00122",
+          "call_e6534554abee49d9b92824d5506beec8"
+        ]
+      },
+      {
+        "text": "Bounded standard-library checks exercised transcribed optional-return branches, capacity arithmetic, checkpoint attribute assignment, prefill rounding and terminal branch ordering. A separate asyncio model checked cancellation of a consumer already waiting on an empty queue. These were not executions of repository classes.",
+        "basis": "execution",
+        "evidence": [
+          "call_e36f63c9a36045e9a223f564c73c3bf6",
+          "call_a4d625ee919d4f82aebf6fd49ffc7737"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model generation, CUDA execution, cache-copy test or repository test suite was run. Scalar/list models do not verify tensor operations, device synchronization or numerical sampling behavior.",
+      "Cache registration and generator-side model-call parameters were inspected; attention-kernel consumption and model-driven allocation/freeing were not independently traced in this chapter.",
+      "Multi-sequence inputs are accepted structurally, but collective CFG sampling is not established by the inspected sampler: CustomSampler returns a sample per input row, while receive_sample expects a scalar token.",
+      "The 256-token page size, replacement-character hold threshold and partial-prefix copy threshold are implementation choices; no measured tuning rationale was supplied."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Dynamic generation, paged KV ownership and streaming contracts",
+        "claims": [
+          {
+            "text": "Job accepts one CPU token tensor of shape (1, n), or a list of such sequences sampled collectively. It keeps original prompt IDs separately from mutable sequence IDs, per-job RNG state, output buffers and stop conditions. Token healing removes the final prompt token when every sequence has more than one token, restricts the first sample by its prefix and excludes the healed prefix from emitted text. max_new_tokens defaults through `max_new_tokens or 100`; stop tokens are populated only from supplied stop_conditions.",
+            "basis": "source",
+            "evidence": [
+              "call_e0b7a9d48e8b4a2d8af4f2563372f0e3",
+              "call_5f647097e9fa4eb894e215f9065d472a"
+            ]
+          },
+          {
+            "text": "enqueue prepares page requirements, assigns a serial and appends to pending_jobs. iterate first admits jobs, then performs one prefill round for each active job, then decodes ready jobs. Admission counts sequences rather than jobs against max_batch_size, and compares current page demand with unreferenced slots. Smaller jobs may bypass a non-fitting job, but its skip count increases for each admitted bypass; the default maximum of four eventually stops further bypasses. This fairness policy assumes each queued job can eventually fit, an assumption violated by the multi-sequence enqueue calculation in finding generation-capacity.",
+            "basis": "source",
+            "evidence": [
+              "call_d9672fa51a404f818950034df076227f",
+              "call_2721ad5dc7b74911b25c06844d765f3e",
+              "call_98b25069b15546378633bd3a9addb24a"
+            ]
+          },
+          {
+            "text": "Cache creates one layer object per hidden layer and registers these objects with model modules advertising kv_cache capability. The default FP16 layer requires capacity divisible by PAGE_SIZE=256 and allocates separate zero-initialized K and V tensors shaped (capacity/256, 256, num_kv_heads, head_dim). free drops both tensors; detach_from_model removes registration. Partial-page copying copies only the requested token prefix in every layer. The generation path uses same-cache copies, so it does not depend on the cross-cache interpretation of Cache.copy_page's target argument.",
+            "basis": "source",
+            "evidence": [
+              "call_f2e94d17685c459e8942c7d0b9171aca",
+              "call_5b2fb7d813604dcc901188dc2316dfd4",
+              "call_166a40db4d66423d85716e2ddf799269",
+              "call_98b25069b15546378633bd3a9addb24a"
+            ]
+          },
+          {
+            "text": "Sequence.prepare hashes only complete context pages preceding the final input token: context_pages=(length-1)//256. It reserves ceil((length+max_new_tokens+healing_adjustment)/256) total pages, with the remainder private to that sequence. Context keys are 16-byte BLAKE2b digests incorporating the preceding page's digest, so identical local tokens under different prefixes are not intentionally shared. Mutable pages receive monotonically generated 16-byte placeholder keys, despite the random_hash name.",
+            "basis": "source",
+            "evidence": [
+              "call_2407345feaf749438898ed7cbaad37b9",
+              "call_166a40db4d66423d85716e2ddf799269"
+            ]
+          },
+          {
+            "text": "PageTable first shares a matching referenced context page, otherwise reclaims a matching unreferenced page, otherwise replaces the oldest unreferenced slot by access_serial. Reference counts move pages between referenced and unreferenced dictionaries. Reserving a private page backs up its old metadata; releasing an untouched reservation can restore that metadata because no KV data was overwritten. Actual writes disable restoration. Finished or cancelled active jobs release references without necessarily erasing cached contents. defrag is a no-op.",
+            "basis": "source",
+            "evidence": [
+              "call_2407345feaf749438898ed7cbaad37b9",
+              "call_98b25069b15546378633bd3a9addb24a",
+              "call_2721ad5dc7b74911b25c06844d765f3e"
+            ]
+          },
+          {
+            "text": "Prefill leaves the last prompt token unevaluated for the first decode step. Its endpoint rounds kv_position+max_chunk_size down to a page boundary, then caps at sequence length minus one. The default 2048-token chunk spans eight pages; smaller chunks trade prompt throughput for shorter interruptions, but a positive chunk below 256 can make no progress. Existing complete pages advance the starting position. At a page boundary, prefill also searches pages with the same previous hash for a matching token prefix; a match longer than one token is copied in both main and draft caches when drafting is enabled.",
+            "basis": "source",
+            "evidence": [
+              "call_d9672fa51a404f818950034df076227f",
+              "call_98b25069b15546378633bd3a9addb24a",
+              "call_71675f5f32384b999bc3e24fb0965675"
+            ]
+          },
+          {
+            "text": "Ready sequences satisfy kv_position == len(sequence_ids)-1. iterate_gen flattens them into a batch, builds an int32 physical block table and per-sequence cache lengths, and calls model.forward with attn_mode='flash_attn' and the cache. A logit mapping restores job boundaries afterward. get_input_ids_list records evaluated input IDs into private page metadata; receive_sample appends the sampled token and advances logical KV position. Completed pages gain chained hashes and can switch to an already referenced identical page, rebuilding the sequence's block table.",
+            "basis": "source",
+            "evidence": [
+              "call_d9672fa51a404f818950034df076227f",
+              "call_2721ad5dc7b74911b25c06844d765f3e",
+              "call_e0b7a9d48e8b4a2d8af4f2563372f0e3",
+              "call_5f647097e9fa4eb894e215f9065d472a"
+            ]
+          },
+          {
+            "text": "Draft decoding requires an equal-capacity draft cache. The draft model greedily generates num_draft_tokens, default four, then performs one extra prefill; the main model evaluates the current token plus proposals. Main-model samples are accepted until a proposal differs, after which remaining speculative page positions are rolled back and rejection counts increase. max_q_size defaults to eight and is used here to validate the requested draft count, not as a stored general generation limit. The draft batch construction counts jobs but writes one row per sequence, unlike ordinary decoding; finding generation-draft-rows records that mismatch.",
+            "basis": "source",
+            "evidence": [
+              "call_d9672fa51a404f818950034df076227f",
+              "call_2721ad5dc7b74911b25c06844d765f3e"
+            ]
+          },
+          {
+            "text": "The optional output contract is wired through several layers but is incomplete at sampling. Job stores return_probs and return_top_tokens; receive_logits passes logits, the first sequence's history, a 32-bit RNG value, tokenizer and token constraints to sampler.forward. CustomSampler returns only a token tensor, not probabilities or top-token arrays. receive_logits nevertheless promises the four-item tuple consumed by iterate_gen: token, top tokens, top probabilities and chosen probability. Its enabled optional branches are TODO/pass and leave local variables unbound.",
+            "basis": "source",
+            "evidence": [
+              "call_e0b7a9d48e8b4a2d8af4f2563372f0e3",
+              "call_5f647097e9fa4eb894e215f9065d472a",
+              "call_2721ad5dc7b74911b25c06844d765f3e",
+              "call_a03cde1d538c4c7899988772344b6d5c",
+              "call_cd9a8b253a4d41c3b244972d91fbdaf0"
+            ]
+          },
+          {
+            "text": "Downstream buffers are already present: token IDs and chosen probabilities use (1,n), top-token IDs/probabilities use (1,n,k), and logits use (1,n,padded_vocab_size), with vocabulary width rounded up to a multiple of 32. receive_sample conditionally appends optional values; emit clones nonempty buffers into token_ids, token_probs, top_k_tokens, top_k_probs and logits, then clears their logical lengths. Unemitted terminal content is placed under held. Consequently enabling the missing sampling branches fails before these otherwise prepared output fields can be populated. return_logits separately records only the first logit row after the sampler call.",
+            "basis": "source",
+            "evidence": [
+              "call_d9672fa51a404f818950034df076227f",
+              "call_5f647097e9fa4eb894e215f9065d472a",
+              "call_98b25069b15546378633bd3a9addb24a",
+              "call_b5a476dcfb0f457fb11266ea0f736158"
+            ]
+          },
+          {
+            "text": "Streaming can emit metadata-only events while text is held. A stop token terminates without flushing held output. The token-budget test follows and flushes at new_tokens >= max_new_tokens-num_draft_tokens. Incomplete decoded characters are held while the replacement-character count is between one and four; a tokenizer re-decode may resolve them. Stop-string matching uses UTF-32 buffers: -2 means a possible trailing prefix, -1 no match, and a nonnegative result locates a full match. A full stop string truncates emitted text before the match, but token buffers remain token-granular rather than being split at that character boundary.",
+            "basis": "source",
+            "evidence": [
+              "call_5f647097e9fa4eb894e215f9065d472a",
+              "call_98b25069b15546378633bd3a9addb24a",
+              "call_71675f5f32384b999bc3e24fb0965675"
+            ]
+          },
+          {
+            "text": "Banned strings are lowercased before matching. A possible prefix creates a checkpoint of held output before the current token, plus an offset and explored first-token IDs. A full match rewinds generated-token counts, sequence IDs and page validity, resets the checkpoint offset to zero and blocks explored first tokens on retry. This is logical invalidation, not restoration of saved KV tensors or RNG state. The held-token restoration uses the singular held_token attribute rather than held_tokens, allowing rejected IDs to escape in the emission; additionally the earlier token-budget branch can bypass banned-string checking entirely.",
+            "basis": "source",
+            "evidence": [
+              "call_e0b7a9d48e8b4a2d8af4f2563372f0e3",
+              "call_5f647097e9fa4eb894e215f9065d472a",
+              "call_98b25069b15546378633bd3a9addb24a"
+            ]
+          },
+          {
+            "text": "AsyncGenerator is a cooperative wrapper, not a separate inference worker: its background task calls synchronous Generator.iterate, routes events into per-job asyncio queues, removes jobs on eos and yields with sleep(0). Exceptions are delivered to all currently registered jobs and end that iteration task. AsyncJob's iterator yields queued results until eos or a cancellation check. cancel releases/removes the underlying job, but does not wake an iterator already blocked in queue.get; close cancels the iteration task without explicitly clearing underlying generator jobs.",
+            "basis": "source",
+            "evidence": [
+              "call_b0a7466e39c2408baccea85cf352c66a",
+              "call_d9672fa51a404f818950034df076227f"
+            ]
+          },
+          {
+            "text": "The blocking generate helper tokenizes prompts, creates jobs, orders streamed text by serial and optionally returns terminal result dictionaries. Its abort event is checked after iterate returns, where it clears the queue, rather than being forwarded into the inspected prefill calls. Terminal streaming results include completion text, token counts, timing and cache-reuse counters; speculative counts are included when drafting. These counters describe recorded activity, not independently measured performance evidence.",
+            "basis": "source",
+            "evidence": [
+              "call_2721ad5dc7b74911b25c06844d765f3e",
+              "call_5f647097e9fa4eb894e215f9065d472a",
+              "call_98b25069b15546378633bd3a9addb24a"
+            ]
+          },
+          {
+            "text": "The bounded transcription produced unbound-local errors for each enabled optional-output flag. It also showed a two-sequence request counted as one page at enqueue but two at admission, stale rejected token IDs after checkpoint restoration, and a zero prefill endpoint for chunk size 255. The asyncio model remained pending after its cancellation flag changed because no queue item woke the blocked consumer.",
+            "basis": "execution",
+            "evidence": [
+              "call_e36f63c9a36045e9a223f564c73c3bf6",
+              "call_a4d625ee919d4f82aebf6fd49ffc7737"
+            ]
+          }
+        ],
+        "related_chapters": [
+          "modules",
+          "sampling",
+          "loading-tokenization",
+          "runtime",
+          "usage-evaluation"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "generation-optional-probability-outputs",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Requested chosen-token probabilities and top-token outputs do not reach their prepared streaming buffers.",
+        "trigger": "A job reaches receive_logits with return_probs=True or return_top_tokens greater than zero.",
+        "expected_behavior": "Return the requested final sampling probabilities and top-token arrays alongside the sampled token, allowing receive_sample to buffer and emit them.",
+        "actual_behavior": "The enabled branches execute only pass. return_probs=True leaves next_prob unassigned; return_top_tokens>0 leaves next_k_tokens and next_k_probs unassigned. The return tuple therefore raises UnboundLocalError. CustomSampler.forward supplies only token IDs and receives no request for these additional outputs.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_logits"
+          },
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "CustomSampler.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_5f647097e9fa4eb894e215f9065d472a",
+          "call_a03cde1d538c4c7899988772344b6d5c",
+          "call_98b25069b15546378633bd3a9addb24a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced flags through sampling, tuple unpacking, held buffers and emitted field names.",
+            "evidence": [
+              "call_2721ad5dc7b74911b25c06844d765f3e",
+              "call_5f647097e9fa4eb894e215f9065d472a"
+            ],
+            "limits": "No model or sampler execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Executed the same conditional assignments with a scalar token: disabled flags returned four values; each enabled option raised the corresponding unbound-local error.",
+            "evidence": [
+              "call_e36f63c9a36045e9a223f564c73c3bf6"
+            ],
+            "limits": "Checks Python control flow, not distribution computation or tensor shapes."
+          }
+        ]
+      },
+      {
+        "id": "generation-banned-checkpoint-tokens",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Banned-string rewind restores the wrong token-buffer attribute.",
+        "trigger": "A full banned-string match reaches rewind_checkpoint before a terminal branch, including a one-token match such as 'bad' with a larger output budget.",
+        "expected_behavior": "Restore held_tokens to the checkpoint and report rejected IDs only as suppressed_tokens, keeping emitted tokens consistent with rewound sequence state.",
+        "actual_behavior": "rewind_checkpoint assigns checkpoint['held_tokens'] to self.held_token. The actual self.held_tokens buffer retains rejected IDs; emit_held subsequently emits and clears that stale buffer while also reporting the IDs as suppressed.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample.rewind_checkpoint"
+          }
+        ],
+        "source_evidence": [
+          "call_98b25069b15546378633bd3a9addb24a",
+          "call_5f647097e9fa4eb894e215f9065d472a"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the inspected attribute assignments with a rejected ID 7 and an empty saved buffer. The sequence rewound, but both emitted_token_ids and suppressed_tokens remained [7].",
+            "evidence": [
+              "call_e36f63c9a36045e9a223f564c73c3bf6"
+            ],
+            "limits": "List/attribute model; SeqTensor copying and KV invalidation were inspected, not executed."
+          }
+        ]
+      },
+      {
+        "id": "generation-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Enqueue validation omits private pages from all but the last sequence.",
+        "trigger": "A multi-sequence job's total private-page requirement exceeds cache capacity, while its shared context hashes plus the last sequence's private pages fit. For example, two one-token sequences requesting 100 output tokens each with a one-page cache.",
+        "expected_behavior": "Reject the impossible request during preparation using the union of context hashes plus every sequence's private-page count.",
+        "actual_behavior": "prepare_for_queue accumulates all_unique_pages but calculates total_pages using only seq.new_unique_pages from the last loop iteration. Admission later sums every sequence correctly, so the example is enqueued with a reported requirement of one page but permanently needs two; repeated iteration cannot start it.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.prepare_for_queue"
+          },
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.current_new_pages_required"
+          }
+        ],
+        "source_evidence": [
+          "call_98b25069b15546378633bd3a9addb24a",
+          "call_2407345feaf749438898ed7cbaad37b9",
+          "call_2721ad5dc7b74911b25c06844d765f3e"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the inspected page formulas for the two-sequence example: private pages [1,1], enqueue total 1, admission requirement 2, capacity 1.",
+            "evidence": [
+              "call_e36f63c9a36045e9a223f564c73c3bf6"
+            ],
+            "limits": "Exact small-integer arithmetic, not execution of the scheduler."
+          }
+        ]
+      },
+      {
+        "id": "generation-draft-rows",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Draft decoding sizes its batch by jobs while populating it by sequences.",
+        "trigger": "Draft decoding is enabled and a ready job contains multiple sequences.",
+        "expected_behavior": "Allocate and index one draft row per sequence, or reject multi-sequence drafting explicitly.",
+        "actual_behavior": "iterate_draftmodel_gen increments batch_size once per ready job, then increments batch for every sequence when writing block_index and cache_seqlens. One two-sequence job allocates one row but attempts to populate two, before collective sampling can occur.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/generator.py",
+            "symbol": "Generator.iterate_draftmodel_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_d9672fa51a404f818950034df076227f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the job-count sizing loop with the nested sequence-writing loop and ordinary iterate_gen's sequence-count sizing.",
+            "evidence": [
+              "call_d9672fa51a404f818950034df076227f"
+            ],
+            "limits": "The exact first PyTorch exception was not measured."
+          }
+        ]
+      },
+      {
+        "id": "generation-small-prefill-chunk",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Sub-page chunk sizes can stall prompt ingestion.",
+        "trigger": "max_chunk_size is between 1 and 255, a sequence has uncached prompt tokens to ingest, and its KV position starts at zero.",
+        "expected_behavior": "Either validate a page-sized minimum or ingest a positive number of prompt tokens.",
+        "actual_behavior": "Prefill rounds the endpoint down to zero and continues because prefill_end <= prefill_start. The sequence remains unready and subsequent iterations repeat without progress.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.prefill"
+          }
+        ],
+        "source_evidence": [
+          "call_98b25069b15546378633bd3a9addb24a",
+          "call_d9672fa51a404f818950034df076227f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "For a 300-token prompt at position zero, chunk 255 produced endpoint zero; chunks 256 and 2048 produced endpoints 256 and 299 respectively.",
+            "evidence": [
+              "call_e36f63c9a36045e9a223f564c73c3bf6"
+            ],
+            "limits": "Endpoint arithmetic only; no prefill model call."
+          }
+        ]
+      },
+      {
+        "id": "generation-terminal-banned-bypass",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The output-budget branch can emit a banned string without checking it.",
+        "trigger": "A non-stop token completes a banned string exactly when the token-budget condition becomes true; for example, a single token decoding to 'bad', banned_strings=['bad'], max_new_tokens=1 and no draft model.",
+        "expected_behavior": "Apply banned-string suppression before flushing terminal held output.",
+        "actual_behavior": "receive_sample returns through the max_new_tokens branch with emit_held=True before reaching banned-string matching, emitting the banned text and token IDs.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample"
+          }
+        ],
+        "source_evidence": [
+          "call_5f647097e9fa4eb894e215f9065d472a",
+          "call_98b25069b15546378633bd3a9addb24a"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Checked the inspected terminal predicate for the one-token example: 1 >= 1-0 is true, selecting the flush branch before matching.",
+            "evidence": [
+              "call_e36f63c9a36045e9a223f564c73c3bf6"
+            ],
+            "limits": "Branch-order model assumes the stated token decoding; no tokenizer or native matcher execution."
+          }
+        ]
+      },
+      {
+        "id": "generation-async-cancel-wakeup",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Cancelling a job does not wake an already waiting async iterator.",
+        "trigger": "An AsyncJob consumer is suspended on queue.get with an empty queue when another coroutine calls AsyncJob.cancel.",
+        "expected_behavior": "The waiting consumer should terminate or receive a cancellation signal.",
+        "actual_behavior": "Cancellation removes the underlying job and sets cancelled=True, but provides no queue sentinel and does not cancel the waiting consumer. The flag is checked only before queue.get, leaving the existing wait suspended.",
+        "locations": [
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/async_generator.py",
+            "symbol": "AsyncJob.__aiter__"
+          },
+          {
+            "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+            "path": "exllamav3/generator/async_generator.py",
+            "symbol": "AsyncJob.cancel"
+          }
+        ],
+        "source_evidence": [
+          "call_b0a7466e39c2408baccea85cf352c66a"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Ran a minimal asyncio consumer with the inspected flag-check/queue-get ordering. After setting the cancellation flag and yielding, consumer_done_without_queue_signal remained false; the harness then explicitly cancelled it.",
+            "evidence": [
+              "call_a4d625ee919d4f82aebf6fd49ffc7737"
+            ],
+            "limits": "Exercises asyncio queue behavior in a transcription, not AsyncJob or inference."
+          }
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_e6534554abee49d9b92824d5506beec8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2363998,
+        "max_bytes": 346
+      },
+      "result_sha256": "550728fbdbc3167e1c57ec4ca6d4ffca0832e96b886166351048482dbd18fc39"
+    },
+    "call_f2e94d17685c459e8942c7d0b9171aca": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2364344,
+        "max_bytes": 4376
+      },
+      "result_sha256": "2d01d7886a5676fa774959511a6c67b44abe50a0ae1c302f63f80bf236dcb00b"
+    },
+    "call_5b2fb7d813604dcc901188dc2316dfd4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2368720,
+        "max_bytes": 1837
+      },
+      "result_sha256": "463018e13560fefe7ec02f65b82b69c7185bc59009f457cb9f826c9f853d0a0c"
+    },
+    "call_827afa45aa7c4b7d8be1e865b7e00122": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5935614,
+        "max_bytes": 396
+      },
+      "result_sha256": "1de899298fc337eb4c3f5c640828f4463bcd320bb06df4932f515cb08a14a096"
+    },
+    "call_b0a7466e39c2408baccea85cf352c66a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5936010,
+        "max_bytes": 3499
+      },
+      "result_sha256": "8c47ffa36be6674028efaf6dca0ab74a9cb8d4ac99ab82bdd958345a4b7bdba1"
+    },
+    "call_d9672fa51a404f818950034df076227f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5939509,
+        "max_bytes": 14000
+      },
+      "result_sha256": "79a24e0b59589d0c8f12d55636cb20de5cff6f9dc3e5a72a448bb1bb1317afbb"
+    },
+    "call_2721ad5dc7b74911b25c06844d765f3e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5953509,
+        "max_bytes": 13462
+      },
+      "result_sha256": "2c48998a5e4d21705196afa847d0a19a881a300c3a5453f440f0cb1f719f665d"
+    },
+    "call_e0b7a9d48e8b4a2d8af4f2563372f0e3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5966971,
+        "max_bytes": 12500
+      },
+      "result_sha256": "f49bf6bba66c312c112c415170ac56e27f2c3005675ec052145adb6cb8fd4eb0"
+    },
+    "call_5f647097e9fa4eb894e215f9065d472a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5979471,
+        "max_bytes": 12500
+      },
+      "result_sha256": "e4de1e3e53176ef7b7355a608c9a6d94aec0954704725fc8dcb20c42a8e2f8e2"
+    },
+    "call_98b25069b15546378633bd3a9addb24a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5991971,
+        "max_bytes": 12456
+      },
+      "result_sha256": "2068bfb715ce0909161283523d6e12c34a027753392486b2961ca38685939771"
+    },
+    "call_2407345feaf749438898ed7cbaad37b9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6004427,
+        "max_bytes": 12714
+      },
+      "result_sha256": "2ec829f454723b0c26ce43681bd69869d18357d89008105f9b035e7773f91674"
+    },
+    "call_a03cde1d538c4c7899988772344b6d5c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6017840,
+        "max_bytes": 10980
+      },
+      "result_sha256": "7000df7f95d3dc28a7caf98fc30051204ac111ef35be0f959f57e150e45f3d6f"
+    },
+    "call_cd9a8b253a4d41c3b244972d91fbdaf0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6028820,
+        "max_bytes": 2489
+      },
+      "result_sha256": "fed61d902f9c5a4c60f82254ef13f5cd7b0be8c5e93913bfdd90b3811c800011"
+    },
+    "call_b5a476dcfb0f457fb11266ea0f736158": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6705454,
+        "max_bytes": 4951
+      },
+      "result_sha256": "897dfa95750342c35d51747dca73dd981a7377bf370132b2fac3f4b66262b1fb"
+    },
+    "call_166a40db4d66423d85716e2ddf799269": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2370557,
+        "max_bytes": 245
+      },
+      "result_sha256": "7ff4c71e9340f53127831ffcb5e414c7863b18d6cbc2116ce4e274676946e883"
+    },
+    "call_71675f5f32384b999bc3e24fb0965675": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5805018,
+        "max_bytes": 2033
+      },
+      "result_sha256": "03a2cc30a8a6ff29904dccfa6e5ade92d3ede654129eb10a26c9b64ba51bb93e"
+    },
+    "call_e36f63c9a36045e9a223f564c73c3bf6": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nfrom types import SimpleNamespace\nout={}\ndef optional(probs,top):\n    next_token=7\n    if probs: pass\n    else: next_prob=None\n    if top: pass\n    else: next_k_tokens,next_k_probs=None,None\n    return next_token,next_k_tokens,next_k_probs,next_prob\nout['optional']={}\nfor p,k in [(False,0),(True,0),(False,3)]:\n    try: out['optional'][str((p,k))]=optional(p,k)\n    except UnboundLocalError as e: out['optional'][str((p,k))]=str(e)\nP=256\nlengths=[1,1]; budget=100\ncontext=[(n-1)//P for n in lengths]\nprivate=[(n+budget+P-1)//P-c for n,c in zip(lengths,context)]\nout['capacity']={'private_pages':private,'enqueue_total':private[-1],'start_required':sum(private),'cache_pages':1}\ns=SimpleNamespace(held_tokens=[7],held_text='bad',new_tokens=1,sequence=[11,7],kv_position=1)\ncheckpoint={'offset':1,'held_tokens':[],'held_text':''}\ns.new_tokens-=checkpoint['offset']; s.sequence=s.sequence[:-1]; s.kv_position-=1\nsuppressed=s.held_tokens[len(checkpoint['held_tokens']):]\ns.held_text=checkpoint['held_text']; s.held_token=checkpoint['held_tokens']\nout['rewind']={'emitted_token_ids':s.held_tokens[:],'suppressed_tokens':suppressed,'sequence_after':s.sequence,'new_tokens':s.new_tokens}\nout['draft_rows']={'jobs':1,'sequences':2,'allocated_rows':1,'rows_written':2}\nout['prefill']=[{'chunk':chunk,'position':0,'end':min((chunk//P)*P,299)} for chunk in [255,256,2048]]\nout['terminal_banned']={'new_tokens':1,'max_new_tokens':1,'draft_tokens':0,'max_branch_before_banned_match':1>=1-0,'emitted_held_text':'bad'}\nprint(json.dumps(out,sort_keys=True))"
+        ]
+      },
+      "result_sha256": "ca84bcc074e91744895c9605f2af80954508c38bc60e5a04f2009cc0de6a57e5"
+    },
+    "call_a4d625ee919d4f82aebf6fd49ffc7737": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import asyncio,json\nasync def main():\n    queue=asyncio.Queue(); cancelled=False\n    async def consumer():\n        while True:\n            if cancelled: break\n            result=await queue.get()\n            if result['eos']: break\n    task=asyncio.create_task(consumer())\n    await asyncio.sleep(0)\n    cancelled=True\n    await asyncio.sleep(0)\n    print(json.dumps({'cancelled_flag':cancelled,'consumer_done_without_queue_signal':task.done()}))\n    task.cancel()\n    try: await task\n    except asyncio.CancelledError: pass\nasyncio.run(main())"
+        ]
+      },
+      "result_sha256": "d87c9977ab64517c3ee9e08a585358730c7e5a0738cb7132707a9a7e7bc1b011"
+    }
+  }
+}
