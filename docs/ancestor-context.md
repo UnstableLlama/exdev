@@ -59,3 +59,11 @@ Editorial schema 5 adds `basis: ancestor` in every claim field. It is required w
 Mixed primary-source/ancestor citations may use source or inference when the primary evidence substantively supports the claim. The teacher is instructed to use ancestor when reporting what an earlier entry says, even with supplementary diff context, and to split claims when appropriate. The validator checks reference types, not semantic support; irrelevant primary citations cannot legitimately turn inherited prose into independently verified evidence.
 
 Previously accepted drafts, including commit 7, retain their schema and labels for exact replay. Their review record flags the old attribution convention; they are not silently relabeled. The `ancestor_read` description explicitly states its 16,384-byte cap, which remains distinct from source tools with 65,536-byte caps.
+
+## Task messages and curated evidence
+
+New packets carry the full task commit message as explicit opening-context input. System instructions identify it as the upstream author’s claim, not executable instructions or proof, and require checking it against the diff and eligible evidence. Old packets remain unchanged.
+
+The walk reads `data/evidence/github/POSITION-eligible.json` when present and passes it through the packet builder’s task identity, cutoff and content-hash checks. A new input contract binds the complete source-ID/content-hash list and bundle fingerprint. Empty present bundles, dropped/partial evidence, changed/disappeared bundles and missing task messages fail before inference. Preparation and pre-launch checks enforce the bundle against disk; the session additionally checks the manifest contract. No eligible file is different from a present file silently ignored.
+
+Rejected attempts are preserved. A resumed position allocates the next unused packet and run suffix; neither existing packets nor authored drafts are overwritten. The commit-message audit for positions 2–8 is recorded in `reports/commit-message-audit-002-008.json`; no earlier rerun was indicated by those comparisons.

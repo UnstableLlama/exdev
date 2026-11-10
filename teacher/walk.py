@@ -4,7 +4,8 @@ import argparse
 import json
 from pathlib import Path
 from .author import author, write_json
-from .packet import build_packet, git
+from .packet import git
+from .walk_inputs import prepare, validate_bundle
 from .graph_packet import attach_graphs
 from .ancestor_context import attach_entries
 from .approval_policy import assess, approve_mechanical
@@ -19,15 +20,19 @@ def resume(state_path, auth_file):
     order=git(repo,'rev-list','--reverse','--topo-order',state['history_tip']).decode().split()
     while state['next_position']<=len(order):
         position=state['next_position'];sha=order[position-1]
-        packet=ROOT/f'.teacher/retrieval/{position:06d}-001'
-        run=ROOT/f'.teacher/runs/commit-{position:06d}-001'
+        attempt=1
+        while True:
+            packet=ROOT/f'.teacher/retrieval/{position:06d}-{attempt:03d}'
+            run=ROOT/f'.teacher/runs/commit-{position:06d}-{attempt:03d}'
+            if not packet.exists() and not run.exists():break
+            attempt+=1
         record={'position':position,'sha':sha,'run':str(run.relative_to(ROOT)),
                 'packet':str(packet.relative_to(ROOT)),'status':'preparing'}
         state['runs'].append(record);state['status']='running';write_json(state_path,state)
         try:
-            m=build_packet(repo,sha,packet)
-            m.update(editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1)
-            write_json(packet/'manifest.json',m);attach_graphs(packet,ROOT/'store')
+            evidence_directory=ROOT/'data/evidence/github'
+            m=prepare(repo,sha,position,packet,evidence_directory)
+            attach_graphs(packet,ROOT/'store')
             sources=[ROOT/p for p in state['approved_entries']]
             # Merge ancestry may exclude entries on another branch. Filter by packet allowlist.
             selected=[]
@@ -36,6 +41,7 @@ def resume(state_path, auth_file):
                 if json.loads((source/filename).read_text())['sha'] in m['commits']:selected.append(source)
             attach_entries(packet,selected)
             record['status']='authoring';write_json(state_path,state)
+            validate_bundle(packet,evidence_directory/f'{position:06d}-eligible.json')
             author(packet,run,auth_file)
             decision=assess(run,packet,repo);record.update(decision)
             if decision['tier']=='full_review':
