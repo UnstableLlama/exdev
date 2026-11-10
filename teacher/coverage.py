@@ -82,3 +82,33 @@ def require_coverage(manifest, transcript):
         if not successful:raise ValueError('Assigned computation requires a successful run')
         report['successful_required_runs']=successful
     return report
+
+
+def run_coverage(packet, manifest, transcript):
+    """Validation coverage plus administrative metrics, never added to model instructions."""
+    from pathlib import Path
+    from .worker import load_blob
+    assigned=require_coverage(manifest,transcript)
+    reads=observed_reads(transcript)
+    ranges=[(start,end) for tool,args,start,end in reads
+            if tool=='git_show' and args.get('commit')==manifest['task_sha']]
+    sections=manifest.get('task_change_sections',[])
+    complete=[i for i,s in enumerate(sections) if covered(ranges,s['offset'],s['offset']+s['bytes'])]
+    files=set(manifest.get('task_changed_files',[]))
+    rows=json.loads(load_blob(Path(packet),manifest['ancestor_search_blob'])) if 'ancestor_search_blob' in manifest else []
+    targets=sorted({(r['sha'],r['chapter']) for r in rows if r['file'] in files})
+    calls={c['id']:c for m in transcript for c in m.get('calls',[])}
+    prose=[]
+    for m in transcript:
+        if m['role']!='tool':continue
+        c=calls.get(m['call_id'],{});args=c.get('arguments',{})
+        if c.get('tool')!='ancestor_read' or args.get('mode')!='content':continue
+        response=json.loads(m['content'])
+        prose.append({'call_id':m['call_id'],'sha':args.get('commit'),'chapter':args.get('chapter',''),
+                      'successful':response.get('ok') is True})
+    return {'assigned_coverage':assigned,'task_sections_total':len(sections),
+            'fully_read_task_sections':complete,'task_read_complete':len(complete)==len(sections),
+            'retrieval_usage':{'report_only':True,'index_available':'ancestor_search_blob' in manifest,
+                'task_files_available':'task_changed_files' in manifest,
+                'matching_target_count':len(targets),'matching_targets':[{'sha':s,'chapter':c} for s,c in targets],
+                'ancestor_prose_read_count':len(prose),'ancestor_prose_reads':prose}}

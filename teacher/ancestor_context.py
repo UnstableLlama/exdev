@@ -48,7 +48,8 @@ def approve_run(run, packet, reviewer, note):
         raise ValueError('Draft identity or evidence differs from its recorded inputs')
     if artifact_hashes(run)!=hashes:
         raise ValueError('Artifacts changed during review validation')
-    review.update(status='approved',training_eligible=False,approved_artifacts=hashes,
+    review.update(status='approved',training_eligible=False,canonical_approved=False,
+                  ancestor_context_approved=True,approval_kind='reviewed',approved_artifacts=hashes,
                   packet_manifest_sha256=provenance['packet_manifest_sha256'],
                   reviewer=reviewer,reviewed_at=datetime.now(timezone.utc).isoformat())
     review['review_log']=[*review.get('review_log',[]),note]

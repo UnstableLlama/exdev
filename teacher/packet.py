@@ -46,6 +46,7 @@ def build_packet(repo, task, destination, evidence=None):
         show = f'Commit: {sha}\nParents: {" ".join(ps)}\nDate: {date}\n\n{message}\n\n'.encode() + patch
         manifest['shows'][sha] = store(show)
         if sha == task:
+            manifest['task_changed_files']=git(repo,'diff','--no-renames','--name-only','-z',base,sha,'--').decode().strip('\0').split('\0') if patch else []
             boundaries=list(re.finditer(rb'^diff --git .*$',show,re.MULTILINE))
             manifest['task_change_sections']=[]
             for i,match in enumerate(boundaries):

@@ -41,8 +41,8 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
             raise ValueError('Packet changed during authoring')
         write_json(output/'draft.json',result['draft'])
         write_json(output/'review.json',result['review'])
-        from .coverage import require_coverage
-        write_json(output/'coverage.json',require_coverage(json.loads(manifest),result['transcript']))
+        from .coverage import run_coverage
+        write_json(output/'coverage.json',run_coverage(packet,json.loads(manifest),result['transcript']))
         (output/'draft.md').write_text(render(result['draft']))
         write_json(output/'status.json',{'status':'draft','published':False})
         return output
