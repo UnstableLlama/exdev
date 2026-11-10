@@ -1,0 +1,133 @@
+{
+  "schema_version": 5,
+  "sha": "5567364846845473185e60bb7c4dd0aea786574a",
+  "parent_shas": [
+    "f579de4923ac13ce05ae4cabe45c276e4558b768"
+  ],
+  "cutoff_date": "2025-04-06T22:44:41-04:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Issue #2 reports wheel-building failure because setup.py supplies absolute native-source paths. The reported environment used Python 3.12 and PyTorch 2.6; the error explicitly requires paths relative to the setup.py directory.",
+        "basis": "source",
+        "evidence": [
+          "call_b27f5de4d8d3458aa7815d70b4651da5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replace abspath with relpath anchored at dirname(__file__), satisfying the reported relative-path requirement while retaining each recursively discovered file's root directory.",
+        "basis": "source",
+        "evidence": [
+          "call_032110b696ba4a1f8133fd915f343333"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change affects the source list passed to CUDAExtension when precompilation is enabled and PyTorch is available; source suffix filtering, compiler arguments and extension registration remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_032110b696ba4a1f8133fd915f343333",
+          "call_5cbd4ed385954cce928aa891decb1d0c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The issue's final edit reports successful wheel building with the same expression after removing build metadata and purging pip's cache. This is reporter-provided evidence, not an independently executed installation test.",
+        "basis": "source",
+        "evidence": [
+          "call_b27f5de4d8d3458aa7815d70b4651da5"
+        ]
+      }
+    ],
+    "limitations": [
+      "No wheel build or native compilation was run. The standard-library check models path construction with the checkout root as the setup directory; it does not validate setuptools behavior, Windows path handling or invocation from another working directory."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "packaging",
+        "title": "Setup-relative native source paths",
+        "claims": [
+          {
+            "text": "setup.py recursively walks exllamav3/exllamav3_ext and selects .c, .cpp and .cu files. Its sources list feeds CUDAExtension, which reaches setuptools through setup_kwargs alongside BuildExtension. The patch changes path representation rather than which files are selected.",
+            "basis": "source",
+            "evidence": [
+              "call_5cbd4ed385954cce928aa891decb1d0c",
+              "call_032110b696ba4a1f8133fd915f343333"
+            ]
+          },
+          {
+            "text": "Keeping os.path.join(root, file) preserves nested generator and quant directories. The issue's preliminary alternative used sources_dir instead of root, discarding those subdirectories; the committed expression instead makes the complete discovered path relative to setup.py.",
+            "basis": "source",
+            "evidence": [
+              "call_b27f5de4d8d3458aa7815d70b4651da5",
+              "call_032110b696ba4a1f8133fd915f343333"
+            ]
+          },
+          {
+            "text": "A standard-library transcription over the ancestor checkout found 16 matching sources, including 8 nested sources. With the checkout root as the setup directory, all replacement paths were relative and resolved to the same targets as the original absolute paths, including quant/exl3_gemm.cu.",
+            "basis": "execution",
+            "evidence": [
+              "call_e590d155296b49358d1d4c2fa0b5dbc0"
+            ]
+          },
+          {
+            "text": "The patch addresses the path-format rejection without changing compilation itself. It does not remove existing build artifacts, so the reporter's cache-cleanup step remains separate from the code change.",
+            "basis": "source",
+            "evidence": [
+              "call_032110b696ba4a1f8133fd915f343333",
+              "call_b27f5de4d8d3458aa7815d70b4651da5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Changes native extension source paths from absolute to setup-relative, addressing the wheel-build rejection reported in issue #2 while preserving nested source locations."
+  },
+  "evidence": {
+    "call_032110b696ba4a1f8133fd915f343333": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "5567364846845473185e60bb7c4dd0aea786574a",
+        "offset": 194,
+        "max_bytes": 540
+      },
+      "result_sha256": "cda0c9222da4de98ac30a68a41185efb085a6bb2b05e7e612b8692452cbe24b6"
+    },
+    "call_b27f5de4d8d3458aa7815d70b4651da5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/2",
+        "max_bytes": 6000
+      },
+      "result_sha256": "7b341240bc8602570faf6eee2dde60568b78e3c06aab578d451b10c9f4a9ed4f"
+    },
+    "call_5cbd4ed385954cce928aa891decb1d0c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f579de4923ac13ce05ae4cabe45c276e4558b768",
+        "path": "setup.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "eaf52d1e03ec777985c1834b0c4a7174801724c9815c858bd973ef88201489c0"
+    },
+    "call_e590d155296b49358d1d4c2fa0b5dbc0": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import os\nbase=os.getcwd()\nsources_dir=os.path.join('exllamav3','exllamav3_ext')\npairs=[(os.path.abspath(os.path.join(root,f)),os.path.relpath(os.path.join(root,f),start=base)) for root,_,files in os.walk(sources_dir) for f in files if f.endswith(('.c','.cpp','.cu'))]\nassert pairs\nassert all(not os.path.isabs(new) and os.path.abspath(os.path.join(base,new))==old for old,new in pairs)\nnested=[new for _,new in pairs if os.path.dirname(new)!=sources_dir]\nprint({'source_count':len(pairs),'nested_count':len(nested),'all_relative_and_same_targets':True,'nested_example':next(x for x in nested if x.endswith('exl3_gemm.cu'))})"
+        ]
+      },
+      "result_sha256": "3dce5f683017a849aac20ab559cdde951d22347ebcf870a505c2c9413a4f7edb"
+    }
+  }
+}
