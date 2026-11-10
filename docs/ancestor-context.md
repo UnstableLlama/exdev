@@ -49,3 +49,5 @@ The author rejects incomplete ancestor context before inference. All source, evi
 Commit 2 is approved for ancestor context by the user-supplied Fable review, recorded in `reports/commit-000002-review-001.json`. Its authored draft remains unchanged. Commit 3 uses the standing authoring instructions and a fresh packet with the compact catalog; no review-directed task focus was added.
 
 The [two-tier approval and sampling policy](ancestor-approval-policy.md) governs new runs starting at commit 4. Retrieval usage is reported in coverage.json without becoming an authoring or approval requirement.
+
+New packets select `ancestor_matches_version: 1`. Their opening context includes up to 12 matching entry/chapter targets for the task’s exact changed paths, newest-first, sharing the coverage metric’s mechanical index calculation. The target list is byte-bounded (4 KiB), explicitly navigation-only, and reports truncation; file search remains available for the rest. It introduces no retrieval requirement or task-specific advice. Older packet versions retain their original opening context. Retrospective records and administrative known-limit companions are never exported.

@@ -108,6 +108,7 @@ def main():
     manifest = build_packet(ROOT/'.sources/exllamav3.git', a.task, a.destination, evidence)
     manifest['editorial_schema_version']=a.editorial_schema_version
     manifest['ancestor_context_mode']='retrieval_v1'
+    manifest['ancestor_matches_version']=1
     (a.destination/'manifest.json').write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n')
     print(json.dumps({'task_sha': manifest['task_sha'], 'ancestor_commits': len(manifest['commits']),
                       'eligible_evidence': len(manifest['evidence'])}))

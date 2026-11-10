@@ -94,9 +94,8 @@ def run_coverage(packet, manifest, transcript):
             if tool=='git_show' and args.get('commit')==manifest['task_sha']]
     sections=manifest.get('task_change_sections',[])
     complete=[i for i,s in enumerate(sections) if covered(ranges,s['offset'],s['offset']+s['bytes'])]
-    files=set(manifest.get('task_changed_files',[]))
-    rows=json.loads(load_blob(Path(packet),manifest['ancestor_search_blob'])) if 'ancestor_search_blob' in manifest else []
-    targets=sorted({(r['sha'],r['chapter']) for r in rows if r['file'] in files})
+    from .ancestor_matches import matching_targets
+    targets=matching_targets(packet,manifest)
     calls={c['id']:c for m in transcript for c in m.get('calls',[])}
     prose=[]
     for m in transcript:

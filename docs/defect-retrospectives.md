@@ -1,6 +1,6 @@
 # Defect records and retrospective annotations
 
-Status: structured authoring-time findings are implemented in editorial v3. The retrospective ledger and sample-policy engine remain agreed designs, not implemented features. Historical authoring and original commit diffs remain unchanged.
+Status: structured authoring-time findings are implemented; new packets use editorial v4. An administrative append-only ledger and evidence-eligibility selector now have their first fix-derived record. The training sample-policy engine remains a design, not an implemented feature. Historical authoring and original commit diffs remain unchanged.
 
 ## Two views, one source history
 
@@ -67,7 +67,7 @@ Excluding a hunk is an optional future refinement, not a default shortcut: prove
 
 ## Implemented authoring-time findings (editorial v3)
 
-New CLI-prepared packets select editorial schema v3. Old packets without an explicit version retain v2 validation; their immutable drafts and transcripts are not upgraded. The low-level packet builder retains its legacy default; callers must explicitly select v3 before authoring if they bypass the CLI.
+New CLI-prepared packets select editorial schema v4, retaining v3 findings and adding the summary. Old packets without an explicit version retain v2 validation; their immutable drafts and transcripts are not upgraded. The low-level packet builder retains its legacy default; callers must explicitly select v3 before authoring if they bypass the CLI.
 
 The top-level `findings` array records local IDs, suspected status, classification, concrete description/trigger/expected/actual behavior, historical commit/path/symbol locations, inspected-source evidence and verification records. No observations is represented by an empty array. Teachers cannot mark findings confirmed or fix-derived. These observations are not the later retrospective ledger, and do not automatically filter training examples.
 
@@ -81,4 +81,12 @@ The renderer displays findings with their evidence and verification limits. Revi
 
 The administrative extraction is accepted for fidelity and provenance in `reports/findings/root-legacy-extraction-001-review.json`; this does not confirm every defect. `schema/finding-taxonomy-v1.json` defines a common normalization policy for later ledger ingestion. Preserve original categories and teacher classifications alongside normalized values. Potential defects map to suspected defect candidates; unchecked contracts, semantic differences, unsupported features and caveats remain unresolved until their contract is adjudicated. Unsupported configuration is an observation kind, not automatically a defect or a new requirement. Mistral/Phi3 window observations are explicitly flagged for that interpretation.
 
-Impact is separate from classification and confidence: high, medium, low or unknown, with a domain, trigger, supported-input reachability, scope, rationale and evidence. Unknown is the default. A help-text error and a numerical algorithm error can both be defects without receiving the same impact assessment. The policy is specified; ledger ingestion and per-record impact assessments are not implemented. Existing authored schemas and reviewed records remain unchanged.
+Impact is separate from classification and confidence: high, medium, low or unknown, with a domain, trigger, supported-input reachability, scope, rationale and evidence. Unknown is the default. A help-text error and a numerical algorithm error can both be defects without receiving the same impact assessment. The normalization policy remains specified for bulk ingestion; the first fix-derived ledger record has an explicit build-impact assessment. The older extracted inventory has not been bulk-ingested. Existing authored schemas and reviewed records remain unchanged.
+
+## First fix-derived ledger record
+
+`reports/defect-ledger/exllamav3-missing-exl3-gemv-header--r001.json` records the missing header introduced in the root and removed by commit 6. It is extracted administratively from the accepted fix explanation, with source/tree snapshots, diff, original transcript and approval hashes. The affected revisions are the five individually checked ancestors of the fix, not an inferred interval. Confirmation is by source inspection and user-supplied Fable review; no native build was run.
+
+`ledger.retrospectives.append` requires evidence hashes and creates a new revision file exclusively. Corrections supersede the existing leaf. `eligible_revisions` checks every dependency against both a timezone-aware cutoff and an explicit repository/SHA allowlist before resolving supersession. It is not connected to teacher packet building or training selection. The first-record tests cover future fixes, held-out branches, evidence tampering and correction visibility; general merge/regression analysis and the training policy engine remain unimplemented.
+
+The root cross-chapter consistency limitation is in `.teacher/assemblies/root-002/known-limits.md`, an administrative companion excluded from ancestor export. Original root artifacts and existing packet hashes are unchanged.

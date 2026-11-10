@@ -27,6 +27,9 @@ class FreshSession:
                 'evidence_catalog': [{k:v for k,v in e.items() if k!='blob'} for e in manifest['evidence']]}
         if manifest.get('ancestor_context_mode') == 'retrieval_v1':
             task['ancestor_catalog'] = task.pop('ancestor_entries')
+            if manifest.get('ancestor_matches_version') == 1:
+                from .ancestor_matches import opening_matches
+                task['ancestor_file_matches']=opening_matches(self.runner.packet,manifest)
         self.reasoning_effort = 'high' if not manifest['task_parents'] or manifest.get('authoring_task') else 'medium'
         if manifest.get('authoring_task'):task['authoring_task']=manifest['authoring_task']
         self.initial = [{'role':'system','content':SYSTEM},

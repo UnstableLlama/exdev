@@ -38,7 +38,7 @@ Validation is complete at commit positions **1, 755, 1,509 and 2,264**:
 - Selected Python call-trace checks pass with test code included.
 - At the pinned tip, the diagnostic probe finds 2,902 of 3,000 simple Python call candidates. This is a narrow coverage check, not an overall accuracy score.
 - All 1,106 uniquely resolved Python-to-native call sites at the tip need supplemental edges; 80 files have partial parsing diagnostics.
-- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 147 tests with host sandbox tests enabled. No GPU execution or training has been performed.
+- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 151 tests with host sandbox tests enabled. No GPU execution or training has been performed.
 
 Read the [validation report](reports/graph-validation.md) for evidence and limitations, and the [validation setup](graph/README.md) to reproduce the probe. Raw backend responses and snapshot databases remain local. These validation worktrees share full Git history and are not teacher-facing artifacts.
 
@@ -95,3 +95,5 @@ The rejected [root-entry draft](.teacher/runs/root-candidate-002/draft.md), [evi
 The [root chapter assignments](schema/root-chapters-v1.json) cover all source and documentation files. [Pinned external evidence](reports/root-evidence-recovery.json) is recovered for QTIP, QuIP#, QTIP reference code and five model architectures, including the public Unsloth Gemma 2 mirror. The first [quantizer chapter](.teacher/runs/root-quantizer-001/draft.md) passed full-read validation for 13 source files and five external references in a fresh Astra/high session. Fable accepted it as the template for the other chapters, with instruction improvements and a later fresh rerun requested; the later accepted chapter assembly is linked above. See the [run report](reports/root-quantizer-candidate.json).
 
 [Retrospective defect records](docs/defect-retrospectives.md) are planned as a separate layer for human browsing and cutoff-safe sample selection, preserving historical explanations. [Chapter revision rules](docs/chapter-revisions.md) define immutable attempts, fresh reruns, useful execution checks and cross-chapter navigation. These documents do not mean the defect ledger or sample-policy engine is implemented.
+
+The root entry has an [administrative known-limits companion](.teacher/assemblies/root-002/known-limits.md). Later defect findings are kept in the [separate retrospective ledger](reports/defect-ledger/exllamav3-missing-exl3-gemv-header--r001.json), outside historical ancestor context.

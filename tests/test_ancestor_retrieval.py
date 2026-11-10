@@ -108,6 +108,27 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(next_page['matches'][0]['sha'],self.first)
 
 
+    def test_opening_matches_are_navigation_bounded_and_versioned(self):
+        from teacher.ancestor_matches import opening_matches
+        from teacher.coverage import run_coverage
+        _,m=self.prepare()
+        self.assertNotIn('ancestor_file_matches',json.loads(FreshSession(self.packet).initial[1]['content']))
+        m['ancestor_matches_version']=1
+        (self.packet/'manifest.json').write_text(json.dumps(m))
+        task=json.loads(FreshSession(self.packet).initial[1]['content'])
+        matches=task['ancestor_file_matches']
+        self.assertEqual(matches['kind'],'navigation_only')
+        self.assertEqual(matches['matching_target_count'],run_coverage(self.packet,m,[])['retrieval_usage']['matching_target_count'])
+        self.assertEqual(matches['targets'],[{'sha':self.first,'chapter':''}])
+        rows=[{'sha':self.first,'chapter':f'chapter-{i}','file':'a.py'} for i in range(30)]
+        raw=json.dumps(rows).encode();digest=hashlib.sha256(raw).hexdigest();(self.packet/'blobs'/digest).write_bytes(raw)
+        m['ancestor_search_blob']=digest;m['ancestor_entries'][0]['chapters']={r['chapter']:'unused' for r in rows}
+        result=opening_matches(self.packet,m)
+        self.assertEqual(len(result['targets']),12);self.assertTrue(result['truncated'])
+        self.assertLess(len(json.dumps(result).encode()),4500)
+        m['ancestor_entries']=[]
+        with self.assertRaises(ValueError):opening_matches(self.packet,m)
+
     def test_large_file_list_stays_searchable_outside_catalog(self):
         run,source=self.run_fixture();approve_run(run,source,'reviewer','fixture')
         path=self.packet/'manifest.json';m=json.loads(path.read_text())
@@ -179,6 +200,7 @@ class AssemblyApprovalTests(unittest.TestCase):
         with self.assertRaises(ValueError):approve_assembly(out,*paths,'reviewer','note',root=self.root)
         md.write_bytes(old)
         review=approve_assembly(out,*paths,'reviewer','ADMIN_REVIEW_SECRET',root=self.root)
+        (out/'known-limits.md').write_text('RETROSPECTIVE_OVERLAY_SECRET')
         self.assertTrue(review['ancestor_context_approved']);self.assertFalse(review['training_eligible'])
         packet=self.root/'retrieval';(packet/'blobs').mkdir(parents=True)
         patch=b'diff --git a/one.py b/one.py';digest=hashlib.sha256(patch).hexdigest();(packet/'blobs'/digest).write_bytes(patch)
@@ -188,6 +210,7 @@ class AssemblyApprovalTests(unittest.TestCase):
         raw=json.dumps(snapshot).encode();digest=hashlib.sha256(raw).hexdigest();(packet/'blobs'/digest).write_bytes(raw)
         m['graphs']={self.sha:{'snapshot':digest}}
         self.write(packet/'manifest.json',m);attach_entries(packet,[out])
+        self.assertNotIn(b'RETROSPECTIVE_OVERLAY_SECRET',b''.join(p.read_bytes() for p in packet.rglob('*') if p.is_file()))
         hits=dispatch(packet,'ancestor_read',{'mode':'search','file':'two.py'})['matches']
         self.assertTrue(hits);self.assertTrue(all(h['chapter']=='two' for h in hits))
         symbol=dispatch(packet,'ancestor_read',{'mode':'search','symbol':'TEST.Symbol'})['matches']
