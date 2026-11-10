@@ -4,7 +4,7 @@ This is a boundary-review candidate, not a completed authoring service. Initial 
 
 The trusted curator builds one packet per task. `packet.py` exports strict ancestors of all task parents as content-addressed blobs, ancestor diffs, the explicit task diff and approved external evidence. It does not export `.git`, source mirrors, existing Encyclopedia drafts, `astra-review.md`, administrative reports or conversation history. `entry_analysis` mode deliberately reveals the task diff: it must not be reused as a code-prediction student's input packet.
 
-`evidence.py` uses content-edit timestamps, not general update timestamps. `recover_github.py` paginates GitHub edit histories, comments and reviews. GitHub describes `UserContentEdit.diff` as a summary of changes; eligible historical text is therefore labeled `edit_event_text`, never asserted to be a reconstructed full body. Raw responses and prepared packets remain ignored local artifacts. The committed recovery report contains provenance and hashes rather than source bodies.
+`evidence.py` uses content-edit timestamps, not general update timestamps. `recover_github.py` paginates GitHub edit histories, comments and reviews. GitHub describes `UserContentEdit.diff` as a summary of changes; eligible historical text is therefore labeled `edit_event_text`, never asserted to be a reconstructed full body. Raw external retrievals and prepared source packets remain ignored local artifacts. Teacher run outputs under `.teacher/runs/` are tracked for review. The committed recovery report contains provenance and hashes rather than source bodies.
 
 ## Prepare and verify
 
@@ -70,3 +70,7 @@ The startup [report](../reports/codex-preflight.json) and [wire-test report](../
 ## Earlier explanations
 
 Use the [approved ancestor-context workflow](../docs/ancestor-context.md) to review replacement drafts and attach their content before authoring later commits. The author CLI and session APIs fail before inference if a non-root packet lacks complete approved ancestor prose. Review comments and original conversations are not included. The current full-prose context budget is 256 KiB; exceeding it requires implementing bounded retrieval rather than silently truncating history.
+
+## Tracked review artifacts
+
+Teacher run directories under `.teacher/runs/` are tracked, including rejected attempts, raw transcripts, draft JSON/Markdown, provenance, status and review records. The [root candidate](../.teacher/runs/root-candidate-002/draft.md) and its [transcript](../.teacher/runs/root-candidate-002/raw-transcript.json) can be reviewed directly in GitHub. `published: false` means the run has not been promoted into the canonical corpus; it does not mean the files are private. Prepared source/graph packets, mirrors, databases and downloaded binaries remain ignored because of their size and reproducibility.

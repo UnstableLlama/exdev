@@ -87,3 +87,5 @@ Eligible issue/PR evidence for entries 9 and 10 has been recovered with content-
 The [Codex adapter and editorial schema](docs/editorial-v2.md) are ready for review. A real app-server startup check and local fake-provider round trip pass; the latter verifies the exact 14-tool allowlist. The first fresh root-entry candidate has passed schema and evidence-reference validation and awaits review. See the [live-run report](reports/root-authoring-candidate.json). No training trace has been generated.
 
 [Approved ancestor context](docs/ancestor-context.md) now verifies exact reviewed artifacts and supplies only strict-ancestor explanations to each new teacher session. Existing drafts remain unchanged while the first fresh root-entry candidate is evaluated separately.
+
+The fresh [root-entry draft](.teacher/runs/root-candidate-002/draft.md), [evidence transcript](.teacher/runs/root-candidate-002/raw-transcript.json) and [review record](.teacher/runs/root-candidate-002/review.json) are tracked for review. The rejected first attempt is preserved alongside them. Prepared source packets and graph databases remain local.

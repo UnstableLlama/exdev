@@ -1,0 +1,298 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The initial ExLlamaV3 release addresses architectural rigidity and parallel-inference obstacles described for ExLlamaV2, while introducing EXL3 quantization.",
+        "basis": "source",
+        "evidence": [
+          "call_8b5b8202dbbb42bcb4e86b91d846c9f0"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The design separates architecture definitions, reusable model modules, quantized linear operations, conversion and generation rather than presenting this as an incremental fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_4049a2eaeec945cbb088641fde728c94",
+          "call_79804882cb0646d9b0bb09be2189566e",
+          "call_f2bf061148a2407c87dd6fde1a419cbe",
+          "call_5142e6b865f04f06a231eef9429cfa26"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Provides an early-preview workflow for converting models to EXL3 and generating text; the README explicitly says it is not yet a viable ExLlamaV2 replacement.",
+        "basis": "source",
+        "evidence": [
+          "call_8b5b8202dbbb42bcb4e86b91d846c9f0"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Performance and quantization-quality statements in the README are release claims, not measurements established by this inspection.",
+        "basis": "source",
+        "evidence": [
+          "call_8b5b8202dbbb42bcb4e86b91d846c9f0"
+        ]
+      }
+    ],
+    "limitations": [
+      "No builds, tests, conversions or inference benchmarks were run.",
+      "Inspection covered representative implementations, not every architecture, attention path, sampler, generator job path or CUDA kernel. Binary benchmark plots, calibration corpora and Hadamard tables were not evaluated.",
+      "The preview documents required FlashAttention-2 and missing ROCm, tensor parallelism, cache quantization and multimodal support."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Modular model definitions",
+        "claims": [
+          {
+            "text": "The architecture registry maps Llama, Mistral, Qwen2, Phi3 and Gemma2 causal-LM names to configuration and model classes.",
+            "basis": "source",
+            "evidence": [
+              "call_efd8188d7bd7455d906075faf880f2d1"
+            ]
+          },
+          {
+            "text": "The representative Llama implementation composes embeddings, RMSNorm, attention, gated MLPs and an output linear layer, with a tied-embedding fallback for the output head.",
+            "basis": "source",
+            "evidence": [
+              "call_4049a2eaeec945cbb088641fde728c94"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "conversion",
+        "title": "Checkpointed EXL3 conversion",
+        "claims": [
+          {
+            "text": "Conversion processes modules sequentially, captures calibration statistics, allocates bitrates, quantizes linear layers and saves their tensors before compiling the output model.",
+            "basis": "source",
+            "evidence": [
+              "call_f2bf061148a2407c87dd6fde1a419cbe"
+            ]
+          },
+          {
+            "text": "Explicit resume restores saved arguments, module position and activation state; bitrate and calibration settings cannot be changed when resuming.",
+            "basis": "source",
+            "evidence": [
+              "call_f2bf061148a2407c87dd6fde1a419cbe"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "quantized-runtime",
+        "title": "Quantized linear runtime and CUDA",
+        "claims": [
+          {
+            "text": "LinearEXL3 stores trellis data and scaling/sign tensors, applies Hadamard transforms, and selects either direct EXL3 GEMM or reconstructed-weight half-precision GEMM. Reconstruction is the default at 32 or more flattened input rows.",
+            "basis": "source",
+            "evidence": [
+              "call_79804882cb0646d9b0bb09be2189566e"
+            ]
+          },
+          {
+            "text": "The native GEMM wrapper maintains per-device CUDA properties and synchronization locks and checks tile divisibility before launching specialized kernels.",
+            "basis": "source",
+            "evidence": [
+              "call_ef0da702bae84980876d6ec16cece247"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "generation",
+        "title": "Queued generation and paged cache",
+        "claims": [
+          {
+            "text": "The generator manages pending and active jobs, cancellation, prefill and streaming iterations, with optional draft-model decoding and matching main/draft cache capacities.",
+            "basis": "source",
+            "evidence": [
+              "call_5142e6b865f04f06a231eef9429cfa26"
+            ]
+          },
+          {
+            "text": "Cache objects attach per-layer storage to model modules. The default implementation allocates paged FP16 key/value tensors and supports copying page contents.",
+            "basis": "source",
+            "evidence": [
+              "call_ceb05ee81fa74d42b7ef41f870b264f5"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "loading-packaging",
+        "title": "Model assets and installation",
+        "claims": [
+          {
+            "text": "SafetensorsCollection indexes tensor names across model-directory files. Tokenizer initialization reads tokenizer.json through Hugging Face tokenizers and merges special-token metadata.",
+            "basis": "source",
+            "evidence": [
+              "call_948240dc33f9406eba6e0469909c2d52",
+              "call_c19a9826ee5744898106a44108cca339"
+            ]
+          },
+          {
+            "text": "Packaging builds a PyTorch CUDA extension by default when Torch is available; EXLLAMA_NOCOMPILE disables precompilation for the documented JIT installation mode.",
+            "basis": "source",
+            "evidence": [
+              "call_c54cf4a6a99b442289fc18e19b381dc8",
+              "call_8b5b8202dbbb42bcb4e86b91d846c9f0"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "evaluation",
+        "title": "Evaluation and numerical checks",
+        "claims": [
+          {
+            "text": "The comparison harness computes WikiText-2 perplexity through selectable backend adapters and plots results against decoder bits per weight or reported weight VRAM.",
+            "basis": "source",
+            "evidence": [
+              "call_4af31fe7accb48babf1e434004b71e8d"
+            ]
+          },
+          {
+            "text": "The GEMM test compares direct quantized and reconstructed execution across multiple batch sizes with 0.05 absolute and relative tolerances, but requires a hardcoded model path and CUDA device.",
+            "basis": "source",
+            "evidence": [
+              "call_77a01772873f4a01b3025b5eb4df5402"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_8b5b8202dbbb42bcb4e86b91d846c9f0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 371,
+        "max_bytes": 7179
+      },
+      "result_sha256": "0ecf85a06cd94da226e581c0dcf733257143ee9cac6206a40cdd7a2d93c16ae9"
+    },
+    "call_f2bf061148a2407c87dd6fde1a419cbe": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2381826,
+        "max_bytes": 14282
+      },
+      "result_sha256": "1bcf1b798d0e76e044e51c37d3faab21c4e3385f139a8e2965c994447f74839e"
+    },
+    "call_79804882cb0646d9b0bb09be2189566e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6117973,
+        "max_bytes": 5585
+      },
+      "result_sha256": "07d47c14cc9aeb4c5371b336a561facc6d8cc27de8a65a209bfc159b12c49afe"
+    },
+    "call_efd8188d7bd7455d906075faf880f2d1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6045971,
+        "max_bytes": 1375
+      },
+      "result_sha256": "83244b0bb53a364a08d8a722110ca211de1348fe8c90f03871c1ce267ab65042"
+    },
+    "call_4049a2eaeec945cbb088641fde728c94": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6060558,
+        "max_bytes": 5240
+      },
+      "result_sha256": "eab1314daba0478307eaa03c21102abf413416bef3923c28f665027ec425017f"
+    },
+    "call_5142e6b865f04f06a231eef9429cfa26": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5939509,
+        "max_bytes": 11000
+      },
+      "result_sha256": "ce92d37e7354378456a15ce367a9a7d058baae8c76f4cb7e5df1a1998ac25ae6"
+    },
+    "call_ceb05ee81fa74d42b7ef41f870b264f5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2364344,
+        "max_bytes": 6213
+      },
+      "result_sha256": "e7fabfaa77f8716d57ec625d7162522f47e41856a114e1cfa7f42dd1432b67b2"
+    },
+    "call_948240dc33f9406eba6e0469909c2d52": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6032465,
+        "max_bytes": 4000
+      },
+      "result_sha256": "211368b0c9e65d2e3b83a35d2baef9648d122a8a4adc7d41aead2e9d9abd3a65"
+    },
+    "call_c19a9826ee5744898106a44108cca339": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6153867,
+        "max_bytes": 4300
+      },
+      "result_sha256": "ec6b7790cd5bf8ffe3aaa1ec477a00e80540459467e5418d3178800240add4aa"
+    },
+    "call_c54cf4a6a99b442289fc18e19b381dc8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6720241,
+        "max_bytes": 3004
+      },
+      "result_sha256": "b78fc2f2b78bc542737b02f120f0e44401ea07424510163bd239ceb73f2ab0dc"
+    },
+    "call_4af31fe7accb48babf1e434004b71e8d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 2253984,
+        "max_bytes": 8221
+      },
+      "result_sha256": "9f4909b462c2c5857ef3fb01448a1b90c23a3b211ecd0fc63e5819f0ba225a1c"
+    },
+    "call_ef0da702bae84980876d6ec16cece247": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5840353,
+        "max_bytes": 3600
+      },
+      "result_sha256": "797412c25d623e44c93db33dd2b37ca255d96c1cc827bc73f1d72ee37ca4b7e6"
+    },
+    "call_77a01772873f4a01b3025b5eb4df5402": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6730323,
+        "max_bytes": 2165
+      },
+      "result_sha256": "25ffd12ac6a4d4d69d5a08f4a3808b6c583e842cd6ee5d2b73d645d8066b880d"
+    }
+  }
+}

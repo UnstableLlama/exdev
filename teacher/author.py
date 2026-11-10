@@ -52,7 +52,7 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--packet',type=Path,required=True)
-    parser.add_argument('--output',type=Path,required=True,help='New draft directory, preferably under ignored .teacher/runs/')
+    parser.add_argument('--output',type=Path,required=True,help='New draft directory, preferably under tracked .teacher/runs/')
     parser.add_argument('--auth-file',type=Path,default=Path.home()/'.codex/auth.json')
     args=parser.parse_args()
     print(author(args.packet,args.output,args.auth_file))
