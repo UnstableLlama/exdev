@@ -150,7 +150,9 @@ def attach(packet, runs, manifest):
                                  'focus_source':'authored_claim_excerpt' if focus else 'unavailable',
                                  'focus_truncated':len(focus)>400})
         catalog.append({'sha':sha,'title':source.get('message','').split('\n')[0],
-                        'summary':summary,'chapters':chapter_info,'files_touched':files})
+                        'summary':summary,'chapters':chapter_info,
+                        'files_touched_count':len(files),'file_examples':files[:3],
+                        'file_examples_truncated':len(files)>3})
     manifest.update(ancestor_entries=refs, ancestor_catalog_blob=store(list(reversed(catalog))),
                     ancestor_search_blob=store(search), ancestor_search_graph_commits=graph_coverage,
                     ancestor_context_complete=True)

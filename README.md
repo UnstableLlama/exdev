@@ -38,7 +38,7 @@ Validation is complete at commit positions **1, 755, 1,509 and 2,264**:
 - Selected Python call-trace checks pass with test code included.
 - At the pinned tip, the diagnostic probe finds 2,902 of 3,000 simple Python call candidates. This is a narrow coverage check, not an overall accuracy score.
 - All 1,106 uniquely resolved Python-to-native call sites at the tip need supplemental edges; 80 files have partial parsing diagnostics.
-- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 140 tests with host sandbox tests enabled. No GPU execution or training has been performed.
+- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 141 tests with host sandbox tests enabled. No GPU execution or training has been performed.
 
 Read the [validation report](reports/graph-validation.md) for evidence and limitations, and the [validation setup](graph/README.md) to reproduce the probe. Raw backend responses and snapshot databases remain local. These validation worktrees share full Git history and are not teacher-facing artifacts.
 

@@ -108,6 +108,21 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(next_page['matches'][0]['sha'],self.first)
 
 
+    def test_large_file_list_stays_searchable_outside_catalog(self):
+        run,source=self.run_fixture();approve_run(run,source,'reviewer','fixture')
+        path=self.packet/'manifest.json';m=json.loads(path.read_text())
+        m['ancestor_context_mode']='retrieval_v1'
+        m['commits'][self.first]['files']=[f'fixture/file-{i}.py' for i in range(5000)]
+        path.write_text(json.dumps(m));attach_entries(self.packet,[run])
+        result=dispatch(self.packet,'ancestor_read',{'mode':'catalog'})
+        self.assertFalse(result['truncated']);self.assertLess(result['content_bytes'],1000)
+        entry=json.loads(result['text'])[0]
+        self.assertEqual(entry['files_touched_count'],5000)
+        self.assertEqual(len(entry['file_examples']),3);self.assertTrue(entry['file_examples_truncated'])
+        self.assertNotIn('files_touched',entry)
+        hit=dispatch(self.packet,'ancestor_read',{'mode':'search','file':'fixture/file-4999.py'})
+        self.assertEqual(hit['matches'][0]['sha'],self.first)
+
     def test_links_require_successful_nonempty_content_read(self):
         run,m=self.prepare();a=json.loads((run/'draft.json').read_text())['annotation']
         a['problem']=[];a['links']=[self.first]
