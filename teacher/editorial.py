@@ -17,6 +17,10 @@ def output_schema(manifest):
         schema['properties']['links']['items']['enum']=allowed
     else:
         schema['properties']['links']['maxItems']=0
+    if manifest.get('authoring_task',{}).get('kind')=='chapter':
+        schema['properties']['chapters']['minItems']=1
+        schema['properties']['chapters']['maxItems']=1
+        schema['properties']['chapters']['items']['properties']['id']['enum']=[manifest['authoring_task']['id']]
     return schema
 
 
@@ -68,6 +72,12 @@ def evidence_ledger(transcript):
 
 def validate_annotation(annotation, manifest, transcript):
     validate_shape(annotation,SCHEMA)
+    from .coverage import require_coverage
+    require_coverage(manifest,transcript)
+    task=manifest.get('authoring_task')
+    if task and task['kind']=='chapter':
+        if len(annotation['chapters'])!=1 or annotation['chapters'][0]['id']!=task['id']:
+            raise ValueError('Chapter output does not match assigned subsystem')
     ledger=evidence_ledger(transcript)
     context={'ancestor:'+e['sha']:{'kind':'approved_ancestor_context','sha':e['sha'],'content_sha256':e['blob']}
              for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits']}

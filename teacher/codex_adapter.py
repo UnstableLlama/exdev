@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Fresh Codex app-server authoring session, pinned to Astra with medium reasoning."""
+"""Fresh Codex app-server authoring session, pinned to Astra with task-specific reasoning."""
 from copy import deepcopy
 import json
 from .editorial import output_schema, assemble_draft
@@ -18,9 +18,17 @@ returned by tools, or ancestor:<sha> for supplied approved ancestor prose. Use b
 result supported by a successful run, and inference for interpretations. Keep
 substantive uncertainty in limitations; do not repeat pipeline bookkeeping.
 Use the supplied task_change_sections offsets with git_show to inspect individual
-files without paging through binary payloads. Explain the main subsystems in the
-canonical root entry using linked chapters; inspect representative implementations
-for each major subsystem before summarizing it, and state any coverage gaps.
+files without paging through binary payloads. For an authoring_task, write exactly one chapter with its assigned id. Fully read
+EVERY required_sections byte range and EVERY required_evidence item before writing.
+Page until each assigned section or evidence item is complete; repeated prefixes do
+not count. git_show.truncated is relative to its section, commit_truncated to the
+whole change. Source offsets are bytes; tensor-header offsets are tensor counts.
+Coverage validation rejects unread tails. Follow the task focus. Explain mechanisms,
+data flow, design tradeoffs and supported alternatives, not just the file layout.
+Function-level paper mappings must identify actual functions and distinguish exact
+correspondence from analogy. Do not claim source inspection proves measured behavior.
+The chapter is a component of one eventual canonical root entry, not the whole root.
+State substantive gaps honestly; do not summarize uninspected files as inspected.
 The links field contains ONLY supplied ancestor commit SHAs, never chapter IDs.
 For a root commit links must be []. Chapters are local sections linked by the renderer. Do not invent
 ancestor entries or mark an annotation reviewed or training eligible.'''
@@ -32,7 +40,7 @@ def thread_parameters(session, cwd):
             'environments':[],'selectedCapabilityRoots':[], 'approvalPolicy':'never',
             'sandbox':'read-only','baseInstructions':session.initial[0]['content'],
             'developerInstructions':INSTRUCTIONS,
-            'config':{'model_reasoning_effort':EFFORT, 'web_search':'disabled',
+            'config':{'model_reasoning_effort':session.reasoning_effort, 'web_search':'disabled',
                       'project_doc_max_bytes':0,
                       'features':{**{name:False for name in DISABLED_FEATURES},
                                   'skip_host_skill_discovery':True,'omit_skill_descriptions':True}},
@@ -56,12 +64,12 @@ class CodexTeacher:
                                        'capabilities':{'experimentalApi':True}})
         transport.notify('initialized',{})
         started=transport.request('thread/start',thread_parameters(session,transport.cwd))
-        if started['model']!=MODEL or started.get('reasoningEffort')!=EFFORT:
+        if started['model']!=MODEL or started.get('reasoningEffort')!=session.reasoning_effort:
             raise ValueError('Codex changed the selected model or reasoning effort')
         if started.get('instructionSources'):
             raise ValueError('Unexpected inherited instruction sources')
         thread=started['thread']['id']
-        turn=transport.request('turn/start',{'threadId':thread,'model':MODEL,'effort':EFFORT,
+        turn=transport.request('turn/start',{'threadId':thread,'model':MODEL,'effort':session.reasoning_effort,
             'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
             'input':[{'type':'text','text':session.initial[1]['content']}]})['turn']['id']
         allowed={tool['name'] for tool in session.tools}
@@ -113,4 +121,4 @@ class CodexTeacher:
         annotation=json.loads(final)
         entry, review=assemble_draft(annotation,manifest,transcript)
         return {'draft':entry,'review':review,'transcript':transcript,'published':False,
-                'model':MODEL,'reasoning_effort':EFFORT}
+                'model':MODEL,'reasoning_effort':session.reasoning_effort}

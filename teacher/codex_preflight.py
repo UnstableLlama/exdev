@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from .codex_adapter import MODEL, EFFORT, thread_parameters
+from .codex_adapter import MODEL, thread_parameters
 from .codex_transport import CodexTransport, SUPPORTED_VERSION
 from .session import FreshSession
 
@@ -20,9 +20,9 @@ def main():
                           'capabilities':{'experimentalApi':True}})
         transport.notify('initialized',{})
         started=transport.request('thread/start',thread_parameters(session,transport.cwd))
-        if started['model']!=MODEL or started.get('reasoningEffort')!=EFFORT or started.get('instructionSources'):
+        if started['model']!=MODEL or started.get('reasoningEffort')!=session.reasoning_effort or started.get('instructionSources'):
             raise ValueError('Provider startup did not preserve the selected boundary')
-        report={'status':'passed','codex_version':SUPPORTED_VERSION,'model':MODEL,'reasoning_effort':EFFORT,
+        report={'status':'passed','codex_version':SUPPORTED_VERSION,'model':MODEL,'reasoning_effort':session.reasoning_effort,
                 'ephemeral':True,'instruction_sources':started.get('instructionSources',[]),
                 'dynamic_tools':len(session.tools),'model_turn_started':False,
                 'packet_manifest_sha256':hashlib.sha256((args.packet/'manifest.json').read_bytes()).hexdigest(),

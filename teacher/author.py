@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from .codex_adapter import CodexTeacher, MODEL, EFFORT
+from .codex_adapter import CodexTeacher, MODEL
 from .codex_transport import CodexTransport, SUPPORTED_VERSION
 from .editorial import render
 from .session import FreshSession
@@ -26,7 +26,7 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
     session.require_authoring_context()
     output.mkdir(parents=True,exist_ok=False)
     manifest=(packet/'manifest.json').read_bytes()
-    provenance={'model':MODEL,'reasoning_effort':EFFORT,'codex_version':SUPPORTED_VERSION,
+    provenance={'model':MODEL,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
         'packet_manifest_sha256':hashlib.sha256(manifest).hexdigest(),
         'input_mode':'entry_analysis','published':False,
         'implementation_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
@@ -41,6 +41,8 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
             raise ValueError('Packet changed during authoring')
         write_json(output/'draft.json',result['draft'])
         write_json(output/'review.json',result['review'])
+        from .coverage import require_coverage
+        write_json(output/'coverage.json',require_coverage(json.loads(manifest),result['transcript']))
         (output/'draft.md').write_text(render(result['draft']))
         write_json(output/'status.json',{'status':'draft','published':False})
         return output

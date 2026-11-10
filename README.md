@@ -10,7 +10,7 @@ Original tooling and commentary: [MIT](LICENSE). Upstream code and diffs: retain
 
 ## Current status
 
-The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) describes the historical extraction and teacher workflow. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; the isolated runner has produced a separate, validated root-entry candidate that is pending review. No training traces have been generated.
+The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) describes the historical extraction and teacher workflow. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; the second isolated root-entry candidate was rejected for insufficient coverage, and the restart now uses assigned subsystem chapters. No training traces have been generated.
 
 ```sh
 python3 -m unittest discover -s tests
@@ -84,8 +84,10 @@ source audit and resume check. The graph walk continues in the background.
 
 Eligible issue/PR evidence for entries 9 and 10 has been recovered with content-edit cutoffs. Entry 9 receives historical edit-event text, not a claimed reconstruction of the complete issue body. See the [recovery report](reports/github-evidence-recovery.json). No drafts were rewritten by this administrative session.
 
-The [Codex adapter and editorial schema](docs/editorial-v2.md) are ready for review. A real app-server startup check and local fake-provider round trip pass; the latter verifies the exact 14-tool allowlist. The first fresh root-entry candidate has passed schema and evidence-reference validation and awaits review. See the [live-run report](reports/root-authoring-candidate.json). No training trace has been generated.
+The [Codex adapter and editorial schema](docs/editorial-v2.md) are ready for review. A real app-server startup check and local fake-provider round trip pass; the latter verifies the exact 14-tool allowlist. Candidate 002 passed schema validation but was rejected for insufficient source coverage. Its replacement uses ten independently authored subsystem chapters with mandatory full reads and Astra/high reasoning. See the [live-run report](reports/root-authoring-candidate.json). No training trace has been generated.
 
-[Approved ancestor context](docs/ancestor-context.md) now verifies exact reviewed artifacts and supplies only strict-ancestor explanations to each new teacher session. Existing drafts remain unchanged while the first fresh root-entry candidate is evaluated separately.
+[Approved ancestor context](docs/ancestor-context.md) now verifies exact reviewed artifacts and supplies only strict-ancestor explanations to each new teacher session. Existing drafts remain unchanged while the rejected root candidates are preserved separately.
 
-The fresh [root-entry draft](.teacher/runs/root-candidate-002/draft.md), [evidence transcript](.teacher/runs/root-candidate-002/raw-transcript.json) and [review record](.teacher/runs/root-candidate-002/review.json) are tracked for review. The rejected first attempt is preserved alongside them. Prepared source packets and graph databases remain local.
+The rejected [root-entry draft](.teacher/runs/root-candidate-002/draft.md), [evidence transcript](.teacher/runs/root-candidate-002/raw-transcript.json) and [review record](.teacher/runs/root-candidate-002/review.json) are tracked for audit. The rejected first attempt is preserved alongside them. Prepared source packets and graph databases remain local.
+
+The [root chapter assignments](schema/root-chapters-v1.json) cover all source and documentation files. [Pinned external evidence](reports/root-evidence-recovery.json) is recovered for QTIP, QuIP#, QTIP reference code and five model architectures, including the public Unsloth Gemma 2 mirror. The first [quantizer chapter](.teacher/runs/root-quantizer-001/draft.md) passed full-read validation for 13 source files and five external references in a fresh Astra/high session. It awaits independent editorial review; a complete replacement root entry is not yet available. See the [run report](reports/root-quantizer-candidate.json).

@@ -29,3 +29,9 @@ A redistribution bundle should include this notice, the upstream license, source
 ## Graph backend
 
 The validation tooling uses [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp), copyright (c) 2025 DeusData, under [MIT](LICENSES/codebase-memory-mcp-MIT.txt). The exact release and checksums are recorded in `graph/backend.lock.json`. The downloaded binary remains ignored under `.tools/`; its release also includes `THIRD_PARTY_NOTICES.md`, which must accompany any redistribution of that binary. This backend attribution is separate from Turboderp's ownership of the indexed source.
+
+## QTIP reference evidence
+
+Root authoring evidence includes source excerpts from [Cornell-RelaxML/QTIP](https://github.com/Cornell-RelaxML/qtip/tree/bd5fa8a9b7c9b2af080a2fe0c0acd60dcd7c15a1), pinned to `bd5fa8a9b7c9b2af080a2fe0c0acd60dcd7c15a1`. The original repository's [GPL v3 license](LICENSES/qtip-GPL-3.0.txt) is retained for that reference code, including excerpts in recorded tool transcripts. exdev's MIT license does not relicense those excerpts. Paper and model evidence retains its source URLs and revision metadata; those materials retain their own licenses.
+
+The Gemma 2 reference metadata comes from [Unsloth's public mirror](https://huggingface.co/unsloth/gemma-2-2b/tree/25319945f7fd83b8b903e12081777b7eef2ba993), pinned before the root cutoff. It is identified as mirror evidence, without asserting byte identity with Google's gated repository.

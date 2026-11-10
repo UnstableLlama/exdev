@@ -101,3 +101,13 @@ class AncestorContextTests(unittest.TestCase):
         transport=Mock()
         with self.assertRaises(ValueError):author(self.packet,self.root/'out',self.root/'unused',transport)
         transport.assert_not_called()
+
+    def test_chapter_cannot_be_approved_as_complete_root(self):
+        run,source=self.run_fixture()
+        path=source/'manifest.json';manifest=json.loads(path.read_text())
+        manifest['authoring_task']={'kind':'chapter'};path.write_text(json.dumps(manifest))
+        provenance=json.loads((run/'provenance.json').read_text())
+        provenance['packet_manifest_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
+        (run/'provenance.json').write_text(json.dumps(provenance))
+        with self.assertRaisesRegex(ValueError,'chapter'):
+            approve_run(run,source,'reviewer','Partial chapter only')

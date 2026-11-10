@@ -86,9 +86,11 @@ def build_packet(repo, task, destination, evidence=None):
             if hashlib.sha256(data).hexdigest() != item['content_sha256']:
                 raise ValueError('Evidence checksum mismatch')
             allowed_keys = ('url', 'source_id', 'created_at', 'revision_at', 'retrieved_at', 'representation',
-                            'content_sha256', 'kind', 'repo_id', 'revision', 'path', 'artifact_role')
+                            'content_sha256', 'kind', 'repo_id', 'revision', 'path', 'artifact_role', 'mirror_provenance')
             exported = {k:item[k] for k in allowed_keys if k in item}
-            exported.update(blob=store(data), kind=item.get('kind', 'web'))
+            exported.update(blob=store(data), kind=item.get('kind', 'web'),content_bytes=len(data))
+            if exported['kind']=='safetensors_header':
+                exported['tensor_count']=len([k for k in json.loads(data) if k!='__metadata__'])
             manifest['evidence'].append(exported)
     (destination/'manifest.json').write_text(json.dumps(manifest, sort_keys=True, indent=2)+'\n')
     return manifest

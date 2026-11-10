@@ -1,0 +1,429 @@
+{
+  "schema_version": 2,
+  "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+  "parent_shas": [],
+  "cutoff_date": "2025-04-06T14:42:49+02:00",
+  "annotation": {
+    "schema_version": 2,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "EXL3 addresses the tension between high-dimensional low-bit quantization and inexpensive decoding: ordinary vector codebooks grow exponentially, while generic trellises require sequential decoding and stored lookup structures.",
+        "basis": "source",
+        "evidence": [
+          "call_38474e81eb4d4902be34086a198ff1d9",
+          "call_0662d87f7f1149108a96331477e4c822"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The quantizer combines Hessian-derived block error feedback with QTIP-style trellis coding, but adapts the preprocessing, numerical representation and packing rather than reproducing the complete QTIP pipeline.",
+        "basis": "source",
+        "evidence": [
+          "call_3343ffc4a9c343db8269a3934053917f",
+          "call_67dfb342f2d34e3a8f06fc97652bf622",
+          "call_493042135bd6483b8f08d7a295a0a622",
+          "call_38474e81eb4d4902be34086a198ff1d9"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "For an aligned k-by-n matrix, the emitted tensors require K bits per weight for the trellis plus 16(k+n) bits for signed channel scales, excluding bias and container metadata. No learned codebook is stored.",
+        "basis": "inference",
+        "evidence": [
+          "call_3343ffc4a9c343db8269a3934053917f",
+          "call_0fddf6c696c64c2eaf9aa5eaea70422d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The relevant QTIP comparison is its lookup-free 3INST variant. The pinned reference also supports LUT and HYB codebooks; its README describes optimized inference kernels for HYB with V=2, not the V=1 procedural format used here.",
+        "basis": "source",
+        "evidence": [
+          "call_e5636fe740ac4f7292b4a7a1cdc3fa95",
+          "call_e78405b9364340c38c850efda04f759d",
+          "call_0fddf6c696c64c2eaf9aa5eaea70422d"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA execution, packing round-trip test, numerical comparison or model evaluation was performed; source correspondence does not establish measured accuracy or throughput.",
+      "The two-pass tail-biting procedure is an approximation, not a search over every possible cyclic boundary. The CUDA cost-buffer discrepancy described below also prevents claiming exact equivalence to the reference implementation.",
+      "Full-matrix incoherence guarantees and original-coordinate proxy-loss invariance cannot be transferred directly to EXL3's block-local transforms and separately computed channel scales.",
+      "The path assumes usable calibration statistics, successful Cholesky factorization, aligned dimensions and finite representable scales. Its small FP32 epsilon additions do not establish robustness after FP16 scale storage."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "EXL3: Hessian feedback, procedural trellises and packed transforms",
+        "claims": [
+          {
+            "text": "Pipeline and data flow. Linear.capture_H flattens calibration activations and accumulates X\u1d40X in FP32, counting activation rows. Layers sharing a qmap reuse the capture, with only its first layer accumulating samples. Linear.convert_exl3 passes FP32 weights to quantize_exl3, preserves bias, and replaces the original layer with LinearEXL3. The quantizer works in (input_features, output_features) orientation, prepares H and scales, searches a global scale, runs LDLQ and trellis quantization, optionally reverses the transforms, and emits suh, svh and trellis.",
+            "basis": "source",
+            "evidence": [
+              "call_1e67ee7b44e046f09d8c86b46c549388",
+              "call_3343ffc4a9c343db8269a3934053917f"
+            ]
+          },
+          {
+            "text": "Hessian preparation. finalize_capture_H divides the accumulated Gram matrix by the sample count and adds sigma_reg \u00d7 mean(diag(H)) to its diagonal, defaulting to 0.025. It samples input signs, applies them on both sides of H, and applies normalized 128-element Hadamard blocks. block_ldl then constructs H = LDL\u1d40 from a Cholesky factor: each 16-by-16 diagonal factor defines a D block, and its inverse normalizes the corresponding block column of L. Diagonal blocks are explicitly replaced by identities; finalize_capture_H removes their diagonal ones to obtain the strictly block-lower feedback matrix. D is discarded.",
+            "basis": "source",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f"
+            ]
+          },
+          {
+            "text": "BlockLDLQ mapping. block_ldl and ldlq implement the decomposition-and-feedback mechanism of QuIP# v2 \u00a74.1, using the reverse traversal and H=LDL\u1d40 convention made explicit in QTIP v3 Algorithm 5. For a current input-row block I, ldlq quantizes W[I] + L[J,I]\u1d40(W[J]\u2212Wq[J]) over already processed rows J. The implementation splits that correction between an inner-buffer product and prod_cache, then updates the cache with b_L\u1d40(b_weight\u2212b_weight_q). This is the same algebraic recurrence as the pinned lib/algo/ldlq.py::LDLQ after accounting for weight orientation, but with different storage, permutation and device handling\u2014not a claim of identical numerical output.",
+            "basis": "source",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_f43984cb75a74414ba04a7332a2c6d1e",
+              "call_5683abc31c09459e992b5c791d4e87a3",
+              "call_577f9a82aa3a409ea5146d4f3afe446a"
+            ]
+          },
+          {
+            "text": "Why two levels of quantization are needed. The Hessian proxy includes interactions between input channels and is not an additive sequence distortion that Viterbi can minimize directly. EXL3 therefore uses 16 input channels for each feedback step, but joins them with 16 output channels into a 256-weight trellis sequence. This matches QTIP Algorithm 5's Tx=Ty=16 construction: high-dimensional rounding without making the LDL block size 256. The local trellis minimizes squared reconstruction error after compensation; it does not globally minimize the original layer loss.",
+            "basis": "source",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_67dfb342f2d34e3a8f06fc97652bf622",
+              "call_3b1aa5f9599c4f70a36d9b2f3374c7c7",
+              "call_577f9a82aa3a409ea5146d4f3afe446a"
+            ]
+          },
+          {
+            "text": "Transform mapping and adaptation. preapply_had_l and preapply_had_r supply the normalized Hadamard operations underlying QuIP# Algorithm 3, IP-RHT, and QTIP \u00a72.1. EXL3 fixes both transform widths at 128 rather than mixing each entire matrix dimension. quantize_exl3 also adds signed RMS rescaling: normalize output-channel RMS values to mean approximately one, divide weights by these signed scales, transform the output axis, then compute input-channel RMS values and divide by signed input scales before transforming the input axis. The input scale includes the constant \u22121.24371088. This is an adaptation of incoherence processing, not an exact implementation of sign-only IP-RHT or QuIP#'s learned-scale fine-tuning.",
+            "basis": "source",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_12f7ed73997c4f4eac17b518e817407e",
+              "call_5683abc31c09459e992b5c791d4e87a3",
+              "call_0662d87f7f1149108a96331477e4c822"
+            ]
+          },
+          {
+            "text": "Scale selection trades conversion work for codebook coverage. g_scale_mse_gridsearch runs the actual tile quantizer on sampled tiles, first across 12 scales from 0.25 to 1.075 and then across 16 nearby scales. It compares MSE after undoing each trial scale. The chosen factor multiplies the transformed weights and is absorbed inversely into su, so it needs no separate stored scalar. g_scale_outliers_binsearch is an implemented but inactive alternative targeting an outlier fraction above magnitude 3.9. The active sampler's inner loop uses width rather than its loop variable w, so it repeats each selected tile instead of sampling distinct neighboring offsets.",
+            "basis": "source",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f"
+            ]
+          },
+          {
+            "text": "Interpretation of the numerical objective. H and L are finalized using input signs and Hadamard transforms before the per-weight-matrix RMS scales are computed. They are not subsequently conjugated by those scale magnitudes, and output scaling is not included in the reported proxy. Consequently, sum(H \u00d7 EE\u1d40)/sum(H \u00d7 WW\u1d40), as computed here in transformed coordinates, should be treated as a relative surrogate rather than an exactly invariant original-layer output error. Reusing one factorization across related projections avoids additional factorizations, but is not the same mathematical setup as the papers' loss-preserving orthogonal transform.",
+            "basis": "inference",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_12f7ed73997c4f4eac17b518e817407e"
+            ]
+          },
+          {
+            "text": "Trellis search mapping. Python quantize_tiles delegates to CUDA quantize_tiles_kernel, specialized for K=1\u20268, L=16 and V=1. For each position it keeps costs for 2^(16\u2212K) overlap states, enumerates 2^K candidate full codewords, adds the squared error from decode_pcb_f_diff, and records the cheapest predecessor. Backtracking reconstructs each 16-bit codeword as (previous_overlap << K) | current_overlap. This is a reduced-overlap-state formulation of the Viterbi recurrence in QTIP \u00a72.3 and the pinned bitshift_codebook.update/viterbi methods. EXL3 computes procedural values during search and keeps FP32 costs; the reference precomputes reconstruction values and quantize converts its input sequence to FP16.",
+            "basis": "source",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_67dfb342f2d34e3a8f06fc97652bf622",
+              "call_e5636fe740ac4f7292b4a7a1cdc3fa95",
+              "call_0662d87f7f1149108a96331477e4c822"
+            ]
+          },
+          {
+            "text": "Tail-biting mapping and qualification. The kernel's forward/backward lambdas follow QTIP v3 Algorithm 4 and bitshift_codebook.quantize: solve a sequence rotated by 128 positions, extract an overlap near its middle, then solve the unrotated sequence with that overlap fixed at both boundaries. This removes the extra initial-state bits without exhaustively searching cyclic boundaries. There is, however, a source-level discrepancy: forward writes the latest costs to temp_costs, while argmin_cost reads temp_costs_inc. The first-pass terminal selection therefore reads the preceding-position buffer. The two-pass structure corresponds to the paper, but exact reference-equivalent path selection is not established.",
+            "basis": "source",
+            "evidence": [
+              "call_67dfb342f2d34e3a8f06fc97652bf622",
+              "call_e5636fe740ac4f7292b4a7a1cdc3fa95",
+              "call_3b1aa5f9599c4f70a36d9b2f3374c7c7"
+            ]
+          },
+          {
+            "text": "Exact procedural-code correspondence. decode_3inst implements QTIP v3 Algorithm 2 and the pinned decode_3inst formula: multiply by 89226354, add 64248484 with uint32 wraparound, mask with 0x8fff8fff, XOR with 0x3b603b60, reinterpret the two halves as FP16 and add them. decode_pcb selects this implementation; decode_3inst_2 evaluates two codes with half2 arithmetic. This is exact correspondence of constants and operations, not an executed bitwise-equivalence result. The values are deterministic, approximately Gaussian code values\u2014not independent Gaussian samples. decode_2mad is present but disabled; its scaling and integer intermediate handling differ from the pinned decode_2mad, so it should not be described as an exact port.",
+            "basis": "source",
+            "evidence": [
+              "call_0fddf6c696c64c2eaf9aa5eaea70422d",
+              "call_e5636fe740ac4f7292b4a7a1cdc3fa95",
+              "call_0662d87f7f1149108a96331477e4c822",
+              "call_3b1aa5f9599c4f70a36d9b2f3374c7c7"
+            ]
+          },
+          {
+            "text": "Packing is a format adaptation. ldlq applies tensor_core_perm before search, then undoes it only for reconstructed floating-point weights; indices remain in tensor-core order. Python pack_trellis allocates 16K int16 words per 256-weight tile. CUDA pack_trellis_kernel stores only each codeword's low K bits, using 16 aligned spans and swapping paired 16-bit words. unpack_trellis_kernel recovers overlapping 16-bit windows through cyclic addressing and funnel shifts. This uses QTIP's bitshift/tail-biting principle, but differs from reference bitshift_codebook.pack_trellis, which starts with a full initial codeword and removes the repeated tail. Shared principles do not imply compatible serialized bytes.",
+            "basis": "source",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_493042135bd6483b8f08d7a295a0a622",
+              "call_e5636fe740ac4f7292b4a7a1cdc3fa95",
+              "call_3b1aa5f9599c4f70a36d9b2f3374c7c7"
+            ]
+          },
+          {
+            "text": "Transform construction versus execution. get_hadamard/get_hadamard_dt cache matrices obtained from stored constants, Sylvester doubling, or the paley/paley2 wrappers around C++ had_paley/had_paley2. These are matrix-construction utilities, not trellis algorithms. The active conversion path requests normalized 128-by-128 matrices and multiplies in FP32. Runtime had_r_128 instead launches hadf_r_128_kernel: a four-element butterfly followed by five warp-shuffle stages, normalization by 1/\u221a128, and conversion back to FP16. Its optional pre_scale is multiplied in half2 before conversion to float. The separate all-half hadh_r_128_kernel is not the kernel selected by this wrapper.",
+            "basis": "source",
+            "evidence": [
+              "call_c51233f913904848aeb2f50897e99962",
+              "call_f908905bfc464d7987303f980907a948",
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_334f8e0108544c358b6b804e3ac5dde5"
+            ]
+          },
+          {
+            "text": "Reconstruction closes the transform chain. Writing Bk and Bn for the block Hadamard matrices, the stored representation reconstructs W approximately as diag(su) Bk Q Bn diag(sv). LinearEXL3.forward correspondingly scales and transforms input activations, multiplies by the inner quantized matrix, transforms outputs and applies svh before bias. This is the transformed-multiply structure of QuIP# Algorithm 2 and QTIP BitshiftLinear.forward, adapted to EXL3 scales and block transforms. The runtime defaults to reconstructing the inner matrix for batches of at least 32 rows; smaller batches use exl3_gemm. Scale normalization explicitly aims to reduce GEMM/output-transform overflow, but half-precision scales and prescaling remain numerical constraints.",
+            "basis": "source",
+            "evidence": [
+              "call_9daa6ed7e921450f87c971bfbff2e5a3",
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_334f8e0108544c358b6b804e3ac5dde5",
+              "call_12f7ed73997c4f4eac17b518e817407e",
+              "call_e5636fe740ac4f7292b4a7a1cdc3fa95"
+            ]
+          },
+          {
+            "text": "Principal tradeoffs. Procedural 3INST avoids a lookup table and its cache traffic, whereas QTIP's HYB alternative offers tunable codebook entries at the cost of table storage. EXL3's search still evaluates 2^16 candidates per sequence position: changing K trades overlap-state count against candidate fan-in, while predecessor storage scales with 256 \u00d7 2^(16\u2212K) per tile. The Python wrapper reserves scratch for 128 tiles. For matrices above 5\u00d710^8 elements, conversion moves weights and collected outputs to CPU, trading transfers and synchronization for lower GPU storage, but retains a full GPU prod_cache. Fixed 128-wide transforms simplify execution while mixing fewer coordinates than full-dimensional RHT; neither the papers' quality results nor their speed measurements establish EXL3's resulting tradeoff.",
+            "basis": "inference",
+            "evidence": [
+              "call_3343ffc4a9c343db8269a3934053917f",
+              "call_67dfb342f2d34e3a8f06fc97652bf622",
+              "call_0fddf6c696c64c2eaf9aa5eaea70422d",
+              "call_3b1aa5f9599c4f70a36d9b2f3374c7c7"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "call_38474e81eb4d4902be34086a198ff1d9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 30656,
+        "max_bytes": 4469
+      },
+      "result_sha256": "17c0126f98af760fcd562bc0af7f776618247a9dc3d5a03e557c2fe93ae91c9e"
+    },
+    "call_3343ffc4a9c343db8269a3934053917f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6123917,
+        "max_bytes": 24000
+      },
+      "result_sha256": "d825b0be9b8a59b6a50af447f047009942055b9287e42ec0d109637f5486a793"
+    },
+    "call_f908905bfc464d7987303f980907a948": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5807712,
+        "max_bytes": 2759
+      },
+      "result_sha256": "ebbb25cc6849e77302d86ae40f663be30a73e9e71839b4215deb0cb2323d3816"
+    },
+    "call_90e192c6cca94ea0a997a7ca9d7fe9d4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5810471,
+        "max_bytes": 424
+      },
+      "result_sha256": "465a9a9195f592ef11997703bb6cc89d2ae181a440106bf3bc83b22dd546d87e"
+    },
+    "call_0fddf6c696c64c2eaf9aa5eaea70422d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5827993,
+        "max_bytes": 2806
+      },
+      "result_sha256": "67c84deeb369d20fa1bd27c5f02995da5ee74972a0e210c5966f4c5ec610da32"
+    },
+    "call_334f8e0108544c358b6b804e3ac5dde5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5872168,
+        "max_bytes": 6278
+      },
+      "result_sha256": "56122bdc393731302a06a78899d707f85fed84e5c625dba1ab3b6866ad8eb82e"
+    },
+    "call_9ac1b8b33b8b4423aa73cb9fc3815baa": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5878446,
+        "max_bytes": 533
+      },
+      "result_sha256": "fd5dd9fd50ba7a365e1d0407f167d9873e06f6794b99fe19f8830baab1fe473d"
+    },
+    "call_493042135bd6483b8f08d7a295a0a622": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5878979,
+        "max_bytes": 6377
+      },
+      "result_sha256": "f6e9c13f13f4e7af47d0fb4b73d7929b3ab12b94996fd3487017c5328e3bb4bc"
+    },
+    "call_dbe16f8c3c954cff8921280275002ea6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5885356,
+        "max_bytes": 576
+      },
+      "result_sha256": "fb32fbad3255dcabc582870200f9c68e986147075a904e3d7d9d6eed5d0bd6a6"
+    },
+    "call_67dfb342f2d34e3a8f06fc97652bf622": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5885932,
+        "max_bytes": 10490
+      },
+      "result_sha256": "177e02dd18365dcf86f15b3673c5ebbaff11510e7d4848dab63ffb82c888427f"
+    },
+    "call_8b384890269f4c3d9fab3df6532c31af": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 5896422,
+        "max_bytes": 603
+      },
+      "result_sha256": "2f8b1a5eb6aa2648c18373c4c48d453ae265f84036f47911c3c84e562b327153"
+    },
+    "call_c270f116ea5a477ea80d9f01dfaefd0a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6123558,
+        "max_bytes": 359
+      },
+      "result_sha256": "5ef144d058b143f0c8665d9262a3189de75302e42a7825c226ca452ed656001a"
+    },
+    "call_c51233f913904848aeb2f50897e99962": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6182717,
+        "max_bytes": 4291
+      },
+      "result_sha256": "5654b144015fbbb63dae1ddb8d9a89e36203fb69372be817e7dce96c7efd957b"
+    },
+    "call_f43984cb75a74414ba04a7332a2c6d1e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/Cornell-RelaxML/qtip/blob/bd5fa8a9b7c9b2af080a2fe0c0acd60dcd7c15a1/lib/algo/ldlq.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "1d979d991e3c1ee92dd8643bb815369bcc0951a8fcea2b27cf23bf27bddc4a9c"
+    },
+    "call_e5636fe740ac4f7292b4a7a1cdc3fa95": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/Cornell-RelaxML/qtip/blob/bd5fa8a9b7c9b2af080a2fe0c0acd60dcd7c15a1/lib/codebook/bitshift.py",
+        "max_bytes": 23000
+      },
+      "result_sha256": "1c0d455408b0249d60b29c376192880a10b80a60d8325c3ab9dc9592238bb028"
+    },
+    "call_e78405b9364340c38c850efda04f759d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/Cornell-RelaxML/qtip/blob/bd5fa8a9b7c9b2af080a2fe0c0acd60dcd7c15a1/README.md",
+        "max_bytes": 6000
+      },
+      "result_sha256": "04f96de5335603c29837ffb2f6baad2cef688cfc021e120da5593477ca629dce"
+    },
+    "call_0662d87f7f1149108a96331477e4c822": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2406.11235v3",
+        "max_bytes": 26000
+      },
+      "result_sha256": "5637ec60bcd04936fa8c836c20994b18b383348358445f6f42c08bb0cb4a8cac"
+    },
+    "call_3b1aa5f9599c4f70a36d9b2f3374c7c7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2406.11235v3",
+        "offset": 26000,
+        "max_bytes": 26000
+      },
+      "result_sha256": "60399edfccdf80d022009e317d47860609d680fb424475ab1330646f378ad39b"
+    },
+    "call_577f9a82aa3a409ea5146d4f3afe446a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2406.11235v3",
+        "offset": 52000,
+        "max_bytes": 24000
+      },
+      "result_sha256": "8159c9f5ea38ebf75c447a203bac422e63b4128f629963fa13b048c32517168e"
+    },
+    "call_12f7ed73997c4f4eac17b518e817407e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2402.04396v2",
+        "max_bytes": 28000
+      },
+      "result_sha256": "705313a1d5d5c59761ae8ae6e712774e9d5a405f6cd7ca92c3061fef0e4ccb46"
+    },
+    "call_5683abc31c09459e992b5c791d4e87a3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2402.04396v2",
+        "offset": 28000,
+        "max_bytes": 28000
+      },
+      "result_sha256": "c36bfa6f965ee098449e9f3a7ed105acfba9abd81bbea850b31bf1dd7ce57814"
+    },
+    "call_014e2a3d12f54acaa7c5d241b07fbb91": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2402.04396v2",
+        "offset": 56000,
+        "max_bytes": 28000
+      },
+      "result_sha256": "761758db8805e6773eeeaca0ee9621a490b998fdcba6e4b33fbf21566edd2cbc"
+    },
+    "call_6214adf12107470896bef56a9bdb6ca7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2402.04396v2",
+        "offset": 84000,
+        "max_bytes": 26000
+      },
+      "result_sha256": "7124639a3bb1deb497217063f805944b600dcbb5d06f84018ea141017c3c8529"
+    },
+    "call_37060aaa5bc4447790ca24271f2d271b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://arxiv.org/html/2402.04396v2",
+        "offset": 110000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "6e35df459438edf76d053d6276baa386ccc2df6d3846ff6f9adb4a996c3d0350"
+    },
+    "call_1e67ee7b44e046f09d8c86b46c549388": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6104285,
+        "max_bytes": 7168
+      },
+      "result_sha256": "dca4d1df3dd04a1adca67bdb6e5dd714619ba8bff78b32bc6f330876b292fd32"
+    },
+    "call_9daa6ed7e921450f87c971bfbff2e5a3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "offset": 6117973,
+        "max_bytes": 5585
+      },
+      "result_sha256": "e80621f9c29fa222737e846a4997792b14598aa5db79836968c3a2b6e9b3eaa0"
+    }
+  }
+}

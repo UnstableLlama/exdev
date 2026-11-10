@@ -36,7 +36,7 @@ Repository reads allow ancestor trees only; `git_show` additionally permits the 
 
 ## Remaining work
 
-The five graph tools are attached through the restricted packet bridge. The Codex Astra/medium adapter and editorial v2 candidate are now implemented. Approved ancestor-prose export is also implemented. Independently review the complete boundary before promoting any fresh authoring into the corpus. Only afterward run a real training-example dry run and freeze the schemas. See the [boundary review guide](../docs/teacher-boundary.md).
+The five graph tools are attached through the restricted packet bridge. The Codex Astra adapter and editorial v2 candidate are now implemented. Approved ancestor-prose export is also implemented. Independently review the complete boundary before promoting any fresh authoring into the corpus. Only afterward run a real training-example dry run and freeze the schemas. See the [boundary review guide](../docs/teacher-boundary.md).
 
 ## Restricted graph bridge
 
@@ -48,9 +48,9 @@ Graph calls additionally mount an explicit list of graph modules, the frozen gra
 
 The real-packet audit checks all five graph tools for entries 9 and 10, plus mutation, task-result and future-commit denials. These are administrative checks, not training traces or an independent boundary review.
 
-## Codex Astra with medium reasoning
+## Codex Astra with task-specific reasoning
 
-The provider is pinned to `gpt-6-astra`, medium reasoning and Codex CLI 0.167.0. The [restricted model profile](../schema/codex-teacher-model.json) keeps that model identity but disables native patching, multi-agent and experimental tools, and uses direct dynamic tools instead of Code Mode. Do not remove that profile and rely only on feature flags. The local wire test caught the extra native tools that would otherwise be exposed.
+The provider is pinned to `gpt-6-astra` and Codex CLI 0.167.0. Root and chapter sessions use high reasoning; ordinary commit sessions retain medium reasoning. The [restricted model profile](../schema/codex-teacher-model.json) keeps that model identity but disables native patching, multi-agent and experimental tools, and uses direct dynamic tools instead of Code Mode. Do not remove that profile and rely only on feature flags. The local wire test caught the extra native tools that would otherwise be exposed.
 
 `codex_transport.py` launches a fresh Bubblewrap-isolated app-server with temporary state. It copies the selected Codex auth file into a private temporary directory and removes the copy on exit. It does not modify the original login or user configuration. The provider process has network access for inference; it has no repository, packet, old thread, review or credential directory mounted. Only the copied auth file is available to the trusted provider. The historical tool workers have separate networkless namespaces and no credentials.
 
@@ -74,3 +74,18 @@ Use the [approved ancestor-context workflow](../docs/ancestor-context.md) to rev
 ## Tracked review artifacts
 
 Teacher run directories under `.teacher/runs/` are tracked, including rejected attempts, raw transcripts, draft JSON/Markdown, provenance, status and review records. The [root candidate](../.teacher/runs/root-candidate-002/draft.md) and its [transcript](../.teacher/runs/root-candidate-002/raw-transcript.json) can be reviewed directly in GitHub. `published: false` means the run has not been promoted into the canonical corpus; it does not mean the files are private. Prepared source/graph packets, mirrors, databases and downloaded binaries remain ignored because of their size and reproducibility.
+
+## Root subsystem restart
+
+Candidate 002 is rejected. Root authoring without an explicit subsystem assignment is blocked. The tracked `schema/root-chapters-v1.json` assigns every code/doc section exactly once across ten chapters, with explicit exclusions for binary illustrations, calibration corpora and numeric transform tables. Each chapter has its own fresh provider session and an exact chapter ID in its output schema.
+
+Prepare packets only after historical evidence recovery is complete:
+
+```bash
+python3 -m teacher.root_tasks --destination .teacher/restart/root-chapters-001
+python3 -m teacher.author --packet .teacher/restart/root-chapters-001/quantizer --output .teacher/runs/root-quantizer-001
+```
+
+Destinations must be new directories. The prepared manifest carries assigned source-section indices, required external source IDs and the chapter focus. The validator checks complete byte-range coverage, including unread tails and gaps; tensor headers use complete tensor-index pagination. `git_show.truncated` now refers to the current section; `commit_truncated` separately describes the enclosing commit. A validated draft gets a separate `coverage.json` report. Reading evidence is a necessary condition, not proof of a sound explanation: design reasoning and paper mappings still need editorial review.
+
+The quantizer task requires the Python/CUDA quantizers, EXL3 documentation, packing/codebook and transform implementations, both pinned papers and QTIP reference code. All chapters remain components of one future canonical root entry. Chapter synthesis, editorial approval and canonical promotion remain separate unfinished steps. Neither rejected old candidate is supplied as authoring context.

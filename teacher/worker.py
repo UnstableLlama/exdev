@@ -156,7 +156,16 @@ def dispatch(packet, name, supplied):
     if name=='git_show':
         if args['commit'] not in manifest['shows']:
             raise ValueError('Commit is outside the supplied change/history allowlist')
-        return excerpt(load_blob(packet,manifest['shows'][args['commit']]),args)
+        data=load_blob(packet,manifest['shows'][args['commit']])
+        if args['commit']==manifest['task_sha']:
+            for index,section in enumerate(manifest.get('task_change_sections',[])):
+                end=section['offset']+section['bytes']
+                if section['offset']<=args['offset']<end:
+                    result=excerpt(data[:end],args)
+                    result['section']={'index':index,'start':section['offset'],'end':end}
+                    result['commit_truncated']=result['next_offset']<len(data)
+                    return result
+        return dict(excerpt(data,args),scope='commit')
     if name=='git_log':
         path=safe_path(args['path'],True)
         cutoff=datetime.fromisoformat(manifest['cutoff_date'].replace('Z','+00:00'))

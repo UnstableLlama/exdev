@@ -37,6 +37,8 @@ def approve_run(run, packet, reviewer, note):
     provenance=json.loads(read_regular(run/'provenance.json'))
     raw_manifest=read_regular(packet/'manifest.json')
     manifest=json.loads(raw_manifest)
+    if manifest.get('authoring_task',{}).get('kind')=='chapter':
+        raise ValueError('A subsystem chapter cannot be approved as a complete canonical entry')
     if provenance.get('packet_manifest_sha256')!=hashlib.sha256(raw_manifest).hexdigest():
         raise ValueError('Original authoring packet fingerprint mismatch')
     if provenance.get('input_mode')!='entry_analysis' or provenance.get('published') is not False:
