@@ -1,0 +1,300 @@
+{
+  "schema_version": 5,
+  "sha": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+  "parent_shas": [
+    "5b900442fede092ba091e1ac72709f4228a951e8"
+  ],
+  "cutoff_date": "2025-04-12T02:18:35+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Cache construction assumed a global layer count and identical KV head dimensions from configuration, rather than using each attention module's dimensions.",
+        "basis": "source",
+        "evidence": [
+          "call_4d3197c0bba946c09569b8dcf62f3e7d",
+          "call_f52cd0e55f30432499c6435e1f3f99c0"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change makes the model's cache-capable modules the shared source of ordering, count and per-layer shape, aligning allocation with the attention implementation that consumes those tensors.",
+        "basis": "source",
+        "evidence": [
+          "call_d6a0af50c736482eb7feacfd44457c56",
+          "call_4d3197c0bba946c09569b8dcf62f3e7d",
+          "call_c8b1be8a6f4742c8a487e9b992da4d64"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Custom cache-layer constructors must now accept (config, attention, max_num_tokens). Whole-parent-tree searches found the built-in FP16 subclass and factory call, both updated by the patch; external subclasses remain unverified.",
+        "basis": "source",
+        "evidence": [
+          "call_f888197448c647af93f3b0f1843a7908",
+          "call_c1e5f822f60f4c97aabde18836580553",
+          "call_4d3197c0bba946c09569b8dcf62f3e7d",
+          "call_f52cd0e55f30432499c6435e1f3f99c0"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No model loading, PyTorch allocation or Flash Attention execution was performed. Scalar checks validate only shape arithmetic and the transcribed assertion expression.",
+      "Support for heterogeneous dimensions is established at cache construction, not demonstrated end to end with a heterogeneous model. Attention still retrieves cache entries by layer_idx.",
+      "The memoized module list assumes stable model structure; attachment validates layer count, not destination attention dimensions."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "cache",
+        "title": "Allocate KV storage from individual attention modules",
+        "claims": [
+          {
+            "text": "Model.get_cache_layers memoizes the ordered traversal entries whose kv_cache capability is true. Cache uses this list for construction, attachment and detachment instead of counting configured hidden layers and independently filtering during attachment.",
+            "basis": "source",
+            "evidence": [
+              "call_d6a0af50c736482eb7feacfd44457c56",
+              "call_525c79c6386a400eb175ee085b305b64",
+              "call_4d3197c0bba946c09569b8dcf62f3e7d"
+            ]
+          },
+          {
+            "text": "CacheLayer retains its attention reference. FP16 storage becomes (max_num_tokens / 256, 256, attention.num_kv_heads, attention.head_dim), retaining the divisibility assertion. The first two axes represent pages and tokens per page; 256 is the repository's PAGE_SIZE.",
+            "basis": "source",
+            "evidence": [
+              "call_4d3197c0bba946c09569b8dcf62f3e7d",
+              "call_f52cd0e55f30432499c6435e1f3f99c0",
+              "call_0e6993695b684e1a88e0ada403f4cf10"
+            ]
+          },
+          {
+            "text": "A scalar shape check for 1,024 tokens produced 1,048,576 elements per tensor with eight 128-dimensional heads, versus 262,144 with four 64-dimensional heads. Both equal tokens \u00d7 KV heads \u00d7 head dimension; paging preserves element count.",
+            "basis": "execution",
+            "evidence": [
+              "call_3890627ee31545fe875d5b1f88a227a2"
+            ]
+          },
+          {
+            "text": "Attention.load allocates attached cache layers and unload frees them. decode_flash_attn reshapes new K/V using its own head dimensions, fetches cache.get_layer(self.layer_idx), and passes both to flash_attn_with_kvcache. The new allocation dimensions therefore match this existing consumer locally.",
+            "basis": "source",
+            "evidence": [
+              "call_c8b1be8a6f4742c8a487e9b992da4d64",
+              "call_bbc519007ef6441db1e5bbddc83b56b5",
+              "call_f52cd0e55f30432499c6435e1f3f99c0"
+            ]
+          },
+          {
+            "text": "Passing no attention produces shape=None and skips K/V allocation. Page copying now requires identical complete shapes, including page capacity, before retaining the existing tensor-slice copies; this is stricter than checking only the dimensions of the copied page.",
+            "basis": "source",
+            "evidence": [
+              "call_f52cd0e55f30432499c6435e1f3f99c0",
+              "call_768448de2d2a405298f95a4593e8d5e2"
+            ]
+          },
+          {
+            "text": "The base model initializes first_block_idx to None; Gemma2, Llama and Phi3 constructors set it to the current module-list length immediately before adding transformer blocks. The new cache enumeration does not use that index.",
+            "basis": "source",
+            "evidence": [
+              "call_d6a0af50c736482eb7feacfd44457c56",
+              "call_b6159a38f1da4481a756577623230336",
+              "call_9f6492af05c4457b8e617626d5fcdab4",
+              "call_38db3bea50f74c0b82dfa6e7ff97fd9d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "detach-count-diagnostic",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The mismatched-layer detachment diagnostic calls an integer as a function.",
+        "trigger": "Call Cache.detach_from_model with assertions enabled and a model whose cache-layer count differs from the cache's count.",
+        "expected_behavior": "Raise AssertionError with the incompatible layer counts.",
+        "actual_behavior": "Evaluating the assertion message invokes model_num_layers(), producing TypeError instead. Matching counts bypass the expression. Whole-parent-tree search found no direct repository callers, only the definition and documentation reference.",
+        "locations": [
+          {
+            "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+            "path": "exllamav3/cache/cache.py",
+            "symbol": "Cache.detach_from_model"
+          }
+        ],
+        "source_evidence": [
+          "call_4d3197c0bba946c09569b8dcf62f3e7d",
+          "call_dce31408ad4a4d66820c7c1faf387949"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The patch assigns len(model.get_cache_layers()) to model_num_layers, then calls it in the failure message.",
+            "evidence": [
+              "call_4d3197c0bba946c09569b8dcf62f3e7d"
+            ],
+            "limits": "No repository detachment workflow was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A mismatched-count assertion with the same integer-call expression raised TypeError: 'int' object is not callable.",
+            "evidence": [
+              "call_3890627ee31545fe875d5b1f88a227a2"
+            ],
+            "limits": "Standard-library reproduction of the expression, not execution of Cache.detach_from_model."
+          }
+        ]
+      }
+    ],
+    "summary": "Derives cache counts and FP16 KV shapes from individual attention modules, with stricter page-copy shape checks and a suspected error in the detachment mismatch diagnostic."
+  },
+  "evidence": {
+    "call_4d3197c0bba946c09569b8dcf62f3e7d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "offset": 163,
+        "max_bytes": 7204
+      },
+      "result_sha256": "eb0ce3dfb6d39184734d545ab649acb34406b816ada48f804c384945a446249b"
+    },
+    "call_f52cd0e55f30432499c6435e1f3f99c0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "offset": 3071,
+        "max_bytes": 2081
+      },
+      "result_sha256": "5f7d764eb8fc1d228e5fc97bcd64e0e9ec3e39b1e2425d9bcf32805e5e6e965d"
+    },
+    "call_b6159a38f1da4481a756577623230336": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "offset": 5152,
+        "max_bytes": 443
+      },
+      "result_sha256": "2de70be679de8492d70509365ab5109510326982fc7de0caabe2857fbe08a427"
+    },
+    "call_9f6492af05c4457b8e617626d5fcdab4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "offset": 5595,
+        "max_bytes": 442
+      },
+      "result_sha256": "50ea19fea4a7da96a8f76dcb8e80a053c4eb53a2fd4038bc9bab8dd045176070"
+    },
+    "call_d6a0af50c736482eb7feacfd44457c56": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "offset": 6037,
+        "max_bytes": 893
+      },
+      "result_sha256": "13419654fa9fd0915d98fd1bc6dd899e95e6c3be9c732b396f004986f6ef0f8a"
+    },
+    "call_38db3bea50f74c0b82dfa6e7ff97fd9d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "offset": 6930,
+        "max_bytes": 437
+      },
+      "result_sha256": "af676a180328fae73802165f8cb20c751558808ce46044448434665068235862"
+    },
+    "call_bbc519007ef6441db1e5bbddc83b56b5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "path": "exllamav3/cache/cache.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "39badd4b464d9f45866594742e13e7ce5e177c7c809f02006026d51046777a98"
+    },
+    "call_f888197448c647af93f3b0f1843a7908": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "query": "CacheLayer",
+        "limit": 100
+      },
+      "result_sha256": "bd3760ff542be077856fe9d7fc7859802bf3098cded43f47d175c05dd2e96290"
+    },
+    "call_c1e5f822f60f4c97aabde18836580553": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "query": "layer_type",
+        "limit": 100
+      },
+      "result_sha256": "880249a30fd7259b9f790c201e270424173a4dd647e669b09febfe60887adec4"
+    },
+    "call_dce31408ad4a4d66820c7c1faf387949": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "query": "detach_from_model",
+        "limit": 100
+      },
+      "result_sha256": "24e1cd21407c17b1c7b5a7ec4ad4dd45fe7175aee79da74c7e9bfa8bb5e66432"
+    },
+    "call_768448de2d2a405298f95a4593e8d5e2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "path": "exllamav3/cache/fp16.py"
+      },
+      "result_sha256": "ef4c76a2e07a6d645ab4e085017be9c6f6e72d80f74cbfc83e60cccbb5a34bb0"
+    },
+    "call_c8b1be8a6f4742c8a487e9b992da4d64": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "65b521ed2a0079fbaf85f9c4d0897b8e2b2c745e92ab592ddfc3c15db3360530"
+    },
+    "call_a21f129cba904807bcb991af3e788b4c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8",
+        "max_bytes": 16384
+      },
+      "result_sha256": "5e74a939b5a329174f85f0ba9dfb2e344ba1e1f06efaa2d7defce409dbae5f25"
+    },
+    "call_525c79c6386a400eb175ee085b305b64": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 2400
+      },
+      "result_sha256": "e76a66b8a8a1e8e9eced8547ffd43e7f8b3e26e39686fa6ef8c65b0d98e4ab78"
+    },
+    "call_0e6993695b684e1a88e0ada403f4cf10": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5b900442fede092ba091e1ac72709f4228a951e8",
+        "path": "exllamav3/constants.py"
+      },
+      "result_sha256": "8c777200c9f18d5a63f1b9828f27518859b2895d7e207eb0971e53d6fae4296e"
+    },
+    "call_3890627ee31545fe875d5b1f88a227a2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor h,d in [(8,128),(4,64)]:\n s=(1024//256,256,h,d)\n print(s,math.prod(s),math.prod(s)==1024*h*d)\ntry:\n n=2\n assert n==3, f'Cannot detach cache with 3 layers from model with {n()} layers.'\nexcept Exception as e:\n print(type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "fc214c6b302dad03a2a7efbffe0acc72dc55d6dd9d4b5fac0d464b90bb942ff1"
+    }
+  }
+}

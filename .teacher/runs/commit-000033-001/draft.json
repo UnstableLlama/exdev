@@ -1,0 +1,208 @@
+{
+  "schema_version": 5,
+  "sha": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+  "parent_shas": [
+    "1d77c0525ab2b1e716de6147023a48041496110c"
+  ],
+  "cutoff_date": "2025-04-11T02:04:27+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "LinearEXL3 rejected FP32 bias tensors, including biases preserved from LinearFP16 during conversion.",
+        "basis": "source",
+        "evidence": [
+          "call_b3507c645f0049afb182f3aa701daeda",
+          "call_41033f96b7da4be4b8f8939105faa310",
+          "call_119a504d7463413daf4bf5466213a851"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Normalize FP32 biases at construction rather than requiring callers to cast them: both implementations now convert non-None torch.float biases to torch.half before storing them.",
+        "basis": "source",
+        "evidence": [
+          "call_b49f156460cb46e99400c0636b6b7401",
+          "call_1f4d8fce89a344de9760989d88af9c8b"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change covers dense loading, direct EXL3 loading and dense-to-EXL3 conversion. Bias accessors and tensor export subsequently expose the converted bias.",
+        "basis": "source",
+        "evidence": [
+          "call_119a504d7463413daf4bf5466213a851",
+          "call_b3507c645f0049afb182f3aa701daeda",
+          "call_41033f96b7da4be4b8f8939105faa310",
+          "call_b49f156460cb46e99400c0636b6b7401",
+          "call_1f4d8fce89a344de9760989d88af9c8b"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #11, \u201cAssertionError: bias is wrong datatype,\u201d was reported by async0x42 during DeepCoder-14B-Preview quantization. Its connection to this change is inferred from the traceback matching the removed LinearEXL3 assertion; the supplied discussion does not explicitly link the commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_978420725a2b4eff821a15445bc2861e",
+          "call_b49f156460cb46e99400c0636b6b7401"
+        ]
+      },
+      {
+        "text": "The earlier quantized-inference entry describes FP16 bias as part of the EXL3 constructor contract and notes that dense weights already receive FP32-to-FP16 conversion.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_91cda48299104bc9b261db66522a878a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch constructor, CUDA inference or model conversion was executed. The scalar check illustrates rounding only, not framework casting behavior or model accuracy.",
+      "The reported issue does not establish the offending tensor's dtype; successful conversion of that model remains unverified."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Normalize FP32 biases for dense and EXL3 layers",
+        "claims": [
+          {
+            "text": "Linear.load_fp16 passes loaded biases into LinearFP16; convert_exl3 later obtains that stored bias through get_bias_tensor and forwards it to LinearEXL3. Casting in LinearFP16 normalizes this upstream path, while casting independently in LinearEXL3 also handles biases loaded directly from quantized storage.",
+            "basis": "source",
+            "evidence": [
+              "call_119a504d7463413daf4bf5466213a851",
+              "call_1f4d8fce89a344de9760989d88af9c8b",
+              "call_b49f156460cb46e99400c0636b6b7401"
+            ]
+          },
+          {
+            "text": "This is FP32 input acceptance through downcasting, not FP32 bias preservation. Dense forward adds the stored bias to its half-precision output; EXL3 forward casts its result to the stored bias dtype before addition. None and existing half biases bypass the new conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_41033f96b7da4be4b8f8939105faa310",
+              "call_b3507c645f0049afb182f3aa701daeda",
+              "call_b49f156460cb46e99400c0636b6b7401",
+              "call_1f4d8fce89a344de9760989d88af9c8b"
+            ]
+          },
+          {
+            "text": "A standard-library scalar illustration rounded FP32 0.10000000149011612 to binary16 0.0999755859375, showing the precision tradeoff of normalization. This did not execute repository code.",
+            "basis": "execution",
+            "evidence": [
+              "call_83f00cf39cb34386bcb003cc55fc69f9"
+            ]
+          },
+          {
+            "text": "EXL3 also loses its general bias-dtype assertion: non-FP32, non-half biases now pass this constructor check unchanged. The patch does not establish their downstream compatibility. LinearFP16_torch is unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_b49f156460cb46e99400c0636b6b7401",
+              "call_41033f96b7da4be4b8f8939105faa310"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Accept FP32 biases in dense and EXL3 constructors by converting them to FP16, removing the EXL3 bias assertion that could interrupt conversion."
+  },
+  "evidence": {
+    "call_b49f156460cb46e99400c0636b6b7401": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "offset": 156,
+        "max_bytes": 945
+      },
+      "result_sha256": "6cd80bba43e2f8a65a0d1de65d387f9dcea0d090be07819d892aa61ece001772"
+    },
+    "call_1f4d8fce89a344de9760989d88af9c8b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "offset": 1101,
+        "max_bytes": 617
+      },
+      "result_sha256": "6f45f24125c89fde9495e599ac93c818fc3ea2071613f2b16cbccb6aec71fcde"
+    },
+    "call_b3507c645f0049afb182f3aa701daeda": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "40f7a176765c81bf475edeb038e0c05c7040f04a09ae797efde4fbde69f8e169"
+    },
+    "call_41033f96b7da4be4b8f8939105faa310": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "ab458fc1164d6d2b360cb716e60d37ae2d759dc1ad85362d36e7005f3e1012c2"
+    },
+    "call_0e1ea9e004d1413999a16c0a1be5eeec": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "query": "LinearEXL3",
+        "limit": 100
+      },
+      "result_sha256": "8989cce4c853d1aaf14f193defd4560227d21a87f4809a0e435489011f3aa476"
+    },
+    "call_2654ea0dc96040b18055b6ad582c379b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "query": "LinearFP16",
+        "limit": 100
+      },
+      "result_sha256": "3ef2143e7c6400191b17e545fb9440a1211800c91b3aba3073416b04f24acc6b"
+    },
+    "call_119a504d7463413daf4bf5466213a851": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "81372f008e81ee5c507df37e58cc4e89870ca691ca0c58509775618110677757"
+    },
+    "call_978420725a2b4eff821a15445bc2861e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f8cc6345071eed3c6167e004ac053bff5b12768e7f290dc51ec59c2c25f5e1da"
+    },
+    "call_91cda48299104bc9b261db66522a878a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantized-inference",
+        "max_bytes": 16384
+      },
+      "result_sha256": "02b6734d29272cca0d4ea8a56ffcd9ba2d18a4cc524cb44db9d12c4d8741226c"
+    },
+    "call_83f00cf39cb34386bcb003cc55fc69f9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct\nx=struct.unpack('f',struct.pack('f',0.1))[0]\ny=struct.unpack('e',struct.pack('e',x))[0]\nprint({'float32_bias':x,'binary16_bias':y,'difference':y-x})"
+        ]
+      },
+      "result_sha256": "900134fb542383bf7651bd4805f81f6533f5b2206877aa8979b168088b4e0b34"
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "defect_id": "exllamav3-negative-final-device-share",
+  "revision_id": "r001",
+  "supersedes": null,
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "confirmed",
+  "description": "Commit 4d82aab independently rounds each requested multi-GPU tile share to a multiple of 16 and assigns the discrepancy to the final share, which can make that share negative.",
+  "trigger": "A multi-GPU quantization call with 32 tiles and device_ratios [3, 3, 3, 1].",
+  "expected_behavior": "Every size passed to torch.split is a nonnegative integer and the sizes sum to the tile count.",
+  "actual_behavior": "The arithmetic produces [16, 16, 16, -16] and passes it to torch.split before the later positive-share guard.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+      "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+      "status": "source_verified_introduction",
+      "scope": "The task diff introduces ratio-based share calculation, independent 16-tile rounding and final-share discrepancy adjustment."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+      "run": ".teacher/runs/commit-000028-001",
+      "finding_id": "negative-final-share",
+      "source": "Commit 28 authoring finding and independent Fable mailbox review.",
+      "reach": "The negative list reaches three torch.split calls before the per-device split_sizes[i] > 0 guard.",
+      "limits": "The condition is narrow. The reviewer tried nine ratio lists over tile counts 32 through 512 and found only the recorded example negative; this was not an exhaustive search."
+    }
+  ],
+  "fixes": [],
+  "verification": {
+    "method": "source_inspection_and_scalar_transcription",
+    "repository_execution": false,
+    "tree_scope": "Commit 4d82aab introduction only.",
+    "limits": [
+      "Plain Python executed a transcription of the arithmetic, not repository imports or CUDA quantization.",
+      "Torch was unavailable, so the exact torch.split exception was not observed.",
+      "The triggering space was sampled, not exhaustively enumerated."
+    ]
+  },
+  "evidence": [
+    {
+      "file": "evidence/commit28-device-ratio-and-required-devices-source-scan.json",
+      "sha256": "2516797bfbdc82e0b24ea81ec085024e1d70ec389546f3c37be0be2ef62c847a",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "artifact": "Commit-28 ratio arithmetic and source scan"
+      },
+      "retrieved_at": "2026-11-11T21:10:25Z"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+      "available_at": "2025-04-10T10:42:26+02:00"
+    }
+  ],
+  "recorded_at": "2026-11-11T21:10:25Z",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": ["4d82aab28eb526fb387a12f1d190af6fd875b999"],
+    "unaffected_checked_shas": ["5498926b60c23e4dfc689f5fe2adff29436cb2ed"]
+  },
+  "impact": {
+    "level": "medium",
+    "domain": "correctness",
+    "rationale": "A narrow but valid ratio/tile combination reaches an invalid split before GPU work; exact framework failure text and prevalence are unobserved."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "Commit-28 authoring finding independently confirmed by Fable; ledger candidate awaits independent review."
+}

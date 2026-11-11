@@ -1,0 +1,150 @@
+{
+  "schema_version": 5,
+  "sha": "08166e3f42463b13c51802ea892fb8ac66d90a45",
+  "parent_shas": [
+    "b0919fca3223eb454c35fad96a04af73fef74eb5"
+  ],
+  "cutoff_date": "2025-04-08T02:04:57+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Global-scale selection previously evaluated sampled quantization error on a coarse grid followed by a finer grid, repeatedly invoking quantize_tiles.",
+        "basis": "source",
+        "evidence": [
+          "call_9cdb6553ae474b7b8f39a63c97fe0dd8"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Golden-section search reuses one evaluated interior point after each interval reduction, trading grid coverage for an explicit assumption that error is unimodal in scale.",
+        "basis": "source",
+        "evidence": [
+          "call_9cdb6553ae474b7b8f39a63c97fe0dd8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The scalar search model required 13 objective evaluations rather than the old loops' 28, a 53.6% reduction in evaluation count, not a measured quantization speedup.",
+        "basis": "execution",
+        "evidence": [
+          "call_147f128e63d4445d8f3abec7aadf076d"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No repository quantizer or CUDA kernel was executed; runtime and quantization-quality effects remain unmeasured.",
+      "The scalar check used Python double precision and a synthetic quadratic objective, not tensor quantization error. The inspected sources do not establish unimodality or justify the chosen search bounds and tolerance."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Golden-section global-scale selection",
+        "claims": [
+          {
+            "text": "g_scale_gss replaces g_scale_mse_gridsearch while retaining its tile sampling and objective. Sampled 16-by-16 tiles are flattened to 256 elements and permuted into tensor-core order. Each objective evaluation quantizes tiles multiplied by scale, divides reconstructed values by that scale, and averages squared reconstruction error. This is direct sampled error, not the later Hessian-weighted proxy error.",
+            "basis": "source",
+            "evidence": [
+              "call_0bf01a95088340dabc547570db4549bd",
+              "call_9cdb6553ae474b7b8f39a63c97fe0dd8"
+            ]
+          },
+          {
+            "text": "The new interval is [0.1, 1.9], replacing the coarse [0.25, 1.075] grid and its local refinement. With phi=(1+sqrt(5))/2 and resphi=2-phi, the two interior points permit reuse of one objective value per iteration. The 0.01 tolerance bounds interval width in scale units; it is not an error threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_9cdb6553ae474b7b8f39a63c97fe0dd8"
+            ]
+          },
+          {
+            "text": "A standard-library transcription on (scale-0.8)^2 performed 11 interval reductions and 13 evaluations, ending with width 0.0090449977 and midpoint 0.8011063168. The previous inclusive loops perform 12+16=28 evaluations.",
+            "basis": "execution",
+            "evidence": [
+              "call_147f128e63d4445d8f3abec7aadf076d"
+            ]
+          },
+          {
+            "text": "The return value is the final interval midpoint rather than the best evaluated point. Verbose output now shows interval bounds and reports the average of the two cached objective values, not an evaluation at the returned midpoint. A non-unimodal objective can invalidate interval elimination, so fewer evaluations do not establish a better minimum.",
+            "basis": "inference",
+            "evidence": [
+              "call_9cdb6553ae474b7b8f39a63c97fe0dd8"
+            ]
+          },
+          {
+            "text": "quantize_exl3 calls the new search after channel normalization and Hadamard transforms. It then multiplies weight_r by g_scale and divides su by g_scale before LDLQ, preserving the inverse scaling used when reconstructing weights and storing input-channel scales.",
+            "basis": "source",
+            "evidence": [
+              "call_0bf01a95088340dabc547570db4549bd",
+              "call_9cdb6553ae474b7b8f39a63c97fe0dd8"
+            ]
+          },
+          {
+            "text": "The patch removes the unused outlier-ratio search alternative. It also replaces the scaling progress total with 100 and removes search-loop progress updates, although the progress-bar argument remains accepted.",
+            "basis": "source",
+            "evidence": [
+              "call_9cdb6553ae474b7b8f39a63c97fe0dd8"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Replaces two-stage scale grid search with golden-section search, reducing objective evaluations while assuming unimodal sampled quantization error."
+  },
+  "evidence": {
+    "call_9cdb6553ae474b7b8f39a63c97fe0dd8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08166e3f42463b13c51802ea892fb8ac66d90a45",
+        "offset": 186,
+        "max_bytes": 6196
+      },
+      "result_sha256": "629203cf37df58aa4162e1317fd8dc57ae9be091760db8abe012b6cec7b13050"
+    },
+    "call_0bf01a95088340dabc547570db4549bd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b0919fca3223eb454c35fad96a04af73fef74eb5",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 0,
+        "max_bytes": 26000
+      },
+      "result_sha256": "82c2915cfe790b6413f80fea28a6b78e03133d04e03ae1800b3ea5706eecda8b"
+    },
+    "call_fb4546a1dbde43cc9b57ea76481e37ad": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 8192,
+        "max_bytes": 8192
+      },
+      "result_sha256": "f3160632fdee66b35b819ddd1e77061b82d9a4ed6cce6674f5368ed4de3d0f31",
+      "catalog_only": true
+    },
+    "call_e78f99e0d9d84308a12c1f92aa036327": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b0919fca3223eb454c35fad96a04af73fef74eb5",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7bba72b5181ccffbb3006a17c32c222c5624a21e789416262e521276b87b93d0"
+    },
+    "call_147f128e63d4445d8f3abec7aadf076d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nr=2-(1+math.sqrt(5))/2\na,b=.1,1.9\nx1=a+r*(b-a);x2=b-r*(b-a)\nf=lambda x:(x-.8)**2\nf1,f2=f(x1),f(x2);n=0\nwhile abs(b-a)>.01:\n if f1<f2:\n  b=x2;x2=x1;f2=f1;x1=a+r*(b-a);f1=f(x1)\n else:\n  a=x1;x1=x2;f1=f2;x2=b-r*(b-a);f2=f(x2)\n n+=1\nprint({'iterations':n,'evaluations':2+n,'final_width':b-a,'midpoint':(a+b)/2,'old_evaluations':12+16,'evaluation_reduction':1-(n+2)/28,'resphi':r})"
+        ]
+      },
+      "result_sha256": "b753bb961dc845b44de3837e5c3b36cbf8e5db71acc23fd6cdb46d1440542a49"
+    }
+  }
+}

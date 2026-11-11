@@ -1,0 +1,260 @@
+{
+  "schema_version": 5,
+  "sha": "72e88aef02ac18ef080f3cc084bac6109553d322",
+  "parent_shas": [
+    "ff72058d5052ab8c65250dbd03cc96620dc03cf5"
+  ],
+  "cutoff_date": "2025-04-09T03:01:44+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Conversion previously selected cuda:0 unconditionally, and LDLQ quantized each tile batch on one device. The change exposes device selection and distributes tile quantization across the selected GPUs.",
+        "basis": "source",
+        "evidence": [
+          "call_1d87ab6a29d24c44b6b1e5e81a55e8f3",
+          "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Parallelism is confined to independent tiles within a quantization call: LDLQ's reverse-row error feedback remains sequential on the first device. This avoids distributing its dependency-bearing matrix updates.",
+        "basis": "source",
+        "evidence": [
+          "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The default remains device 0. Multiple devices add pinned-host transfers and per-device scratch storage, so the source establishes a parallel execution design, not a measured speedup or reduced primary-device memory requirement.",
+        "basis": "inference",
+        "evidence": [
+          "call_1d87ab6a29d24c44b6b1e5e81a55e8f3",
+          "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No CUDA kernels or end-to-end conversion were executed. Stream ordering, transfer overlap, numerical equivalence and performance remain unmeasured.",
+      "Scalar checks model split arithmetic, scratch sizes and golden-section interval contraction only; they do not execute PyTorch or establish GPU floating-point behavior.",
+      "Native handling of empty tile slices, possible when devices outnumber tiles, was not inspected."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Distribute tile quantization while retaining first-device feedback",
+        "claims": [
+          {
+            "text": "--devices accepts comma-separated integer IDs, defaults to \"0\", and is added to the resumable argument override list. main selects its first entry for module loading and passes the whole list through Linear.convert_exl3's quant_args. Because the parser supplies a non-None default, resuming without an explicit selection can override a previously stored device list with \"0\".",
+            "basis": "source",
+            "evidence": [
+              "call_1d87ab6a29d24c44b6b1e5e81a55e8f3",
+              "call_cb646eadf9ae4c9abf49ffa87a4ab2b7"
+            ]
+          },
+          {
+            "text": "quantize_tiles_multigpu preserves the direct quantize_tiles path for a single device. Otherwise it copies contiguous input tiles from the first device to reusable pinned CPU storage, divides the leading tile dimension evenly, and assigns the entire remainder to the last device. Each device receives a contiguous slice and returns reconstructed float tiles plus int16 indices to corresponding pinned slices.",
+            "basis": "source",
+            "evidence": [
+              "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+            ]
+          },
+          {
+            "text": "A cached stream per device and explicit events order the host-staged pipeline: secondary streams wait for the input copy; each records completion after copying its outputs back; the first stream waits for all slice events before gathering full results onto the first device. Both LDLQ and scale search run their dependent operations within that first stream after synchronizing selected devices on entry; LDLQ also synchronizes before returning.",
+            "basis": "source",
+            "evidence": [
+              "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+            ]
+          },
+          {
+            "text": "LDLQ still forms compensated 16-by-16 tiles, hence 256 values per tile, applies the tensor-core permutation, and reverses that permutation only for reconstructed weights. Encoded indices retain tensor-core order. The distributed call replaces the tile quantizer without changing this representation contract or the subsequent error-cache update.",
+            "basis": "source",
+            "evidence": [
+              "call_1a3aeae02ded47c1b07d93ba130e7e9d",
+              "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+            ]
+          },
+          {
+            "text": "get_temp_buffers caches scratch allocations by device and bitrate K rather than allocating them on every call. It retains the existing 128-batch allocation with costs shaped (128, 2, 65536 >> K) and edges shaped (128, 256, 65536 >> K). Pinned input, reconstructed output and index buffers grow to the largest requested tile count and are reused.",
+            "basis": "source",
+            "evidence": [
+              "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+            ]
+          },
+          {
+            "text": "A scalar calculation gives 272,629,760 scratch bytes at K=4 using four-byte costs and two-byte edges. Split examples preserve the tile count but put unequal extra work on the last device: 128 tiles across three devices becomes [42, 42, 44], while eight tiles across ten becomes nine empty slices followed by eight tiles.",
+            "basis": "execution",
+            "evidence": [
+              "call_a03d362ceadb4669bf8bd60647ee22f4"
+            ]
+          },
+          {
+            "text": "The added quantize_tiles_multigpu_sync supplies a more explicitly synchronized alternative using device transfers and concatenation. The inspected task call sites instead choose the pinned-memory implementation. Its host staging trades additional copies and persistent host storage for an event-ordered multi-device path.",
+            "basis": "inference",
+            "evidence": [
+              "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+            ]
+          },
+          {
+            "text": "Global-scale search now distributes its sampled-tile objective through the same helper. Its objective remains mean squared reconstruction error after undoing the trial scale, and its unchanged [0.1, 1.9] interval and 0.01 stopping tolerance govern scale search rather than quantization bitrate. Separately, block_rms, block_rms_n and block_nmse double their default reduction chunk size from 16 to 32 without changing their formulas.",
+            "basis": "source",
+            "evidence": [
+              "call_1a3aeae02ded47c1b07d93ba130e7e9d",
+              "call_ba2ac6b3cb6449cebe5b500bfc055e3e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "scale-progress-premature-completion",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new scale-search progress expression reports completion on every iteration, including the first.",
+        "trigger": "g_scale_gss performs its first interval contraction with a visible ProgressBar.",
+        "expected_behavior": "Progress should distinguish an intermediate interval contraction from search completion.",
+        "actual_behavior": "The contracted-width ratio is between zero and one, so int(delta2 / delta1) is zero and the reported value is 100. Search continues despite the completion display.",
+        "locations": [
+          {
+            "commit": "72e88aef02ac18ef080f3cc084bac6109553d322",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "g_scale_gss"
+          }
+        ],
+        "source_evidence": [
+          "call_ba2ac6b3cb6449cebe5b500bfc055e3e",
+          "call_f323b2bb276b4097a5c0b7e9c1422194",
+          "call_47b4b00cb40747668c60c24076075880",
+          "call_1a3aeae02ded47c1b07d93ba130e7e9d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Parent-tree caller search found quantize_exl3 supplying its ProgressBar to g_scale_gss. ProgressBar.update treats the supplied number as completed work. Conversion supplies a visible progress string, so this reaches normal conversion scaling feedback; it does not change the search objective.",
+            "evidence": [
+              "call_47b4b00cb40747668c60c24076075880",
+              "call_1a3aeae02ded47c1b07d93ba130e7e9d",
+              "call_f323b2bb276b4097a5c0b7e9c1422194",
+              "call_cb646eadf9ae4c9abf49ffa87a4ab2b7"
+            ],
+            "limits": "No terminal rendering or conversion was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled golden-section width contraction from 1.8 to below 0.01: all eleven progress updates were 100, with final width approximately 0.009045.",
+            "evidence": [
+              "call_a03d362ceadb4669bf8bd60647ee22f4"
+            ],
+            "limits": "Standard-library scalar arithmetic, not repository or GPU execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds selectable multi-GPU tile quantization using cached streams, scratch buffers and pinned-host staging while retaining first-device LDLQ feedback. A scalar check identifies premature scale-search progress completion; GPU behavior and speedup were not tested."
+  },
+  "evidence": {
+    "call_1d87ab6a29d24c44b6b1e5e81a55e8f3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "72e88aef02ac18ef080f3cc084bac6109553d322",
+        "offset": 156,
+        "max_bytes": 1825
+      },
+      "result_sha256": "acf2daa5e4ab533b8b0579df43f5d81b734460675690b78e5d7993cf4aa4912b"
+    },
+    "call_ba2ac6b3cb6449cebe5b500bfc055e3e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "72e88aef02ac18ef080f3cc084bac6109553d322",
+        "offset": 1981,
+        "max_bytes": 24000
+      },
+      "result_sha256": "dc314a79395d3c97c689e783bb05876295b6a5b5d9c40a57a0f98742aab56b05"
+    },
+    "call_bcfe4efb1b8a40e8b483ccdbdd0d42c3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "query": "devices",
+        "path": "exllamav3",
+        "limit": 100
+      },
+      "result_sha256": "2dfb30fa21869e38e0ad82857b5839b1d1d34fa35488a535c35056d532329164"
+    },
+    "call_1a3aeae02ded47c1b07d93ba130e7e9d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 35000
+      },
+      "result_sha256": "809ccb61035f9cf172c0b090f0f207507d51c41d68c4b7e0870605072bfd3554"
+    },
+    "call_e688370f3ef44068997c75bdc0b0b53c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "2cf3f37a07efd2ff73b693e263d3d35aa0b7f23f7777db13834cfcfc17c45b26",
+      "catalog_only": true
+    },
+    "call_e4f644210781404c81a966198ced9bd2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "query": "device",
+        "path": "exllamav3/conversion/convert_model.py",
+        "limit": 50
+      },
+      "result_sha256": "138dacbe8f44d997ce9251126d657048b745eaba2a2e9e046e313f557665ea43"
+    },
+    "call_cb646eadf9ae4c9abf49ffa87a4ab2b7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 3000,
+        "max_bytes": 11000
+      },
+      "result_sha256": "abc8997c4101d0c43e1373d0ec9bb26d1d759251629f4352037a08bf171f046f"
+    },
+    "call_47b4b00cb40747668c60c24076075880": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "query": "g_scale_gss(",
+        "limit": 30
+      },
+      "result_sha256": "842fadbc85af51e302caac06ed731c01c1da98a503fecdb687225d8ad090179b"
+    },
+    "call_f323b2bb276b4097a5c0b7e9c1422194": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "path": "exllamav3/util/progress.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "75b82471ff9e022bed8490f7349aff057f5b2708715bbcc9996e1578e77a9dd8"
+    },
+    "call_a03d362ceadb4669bf8bd60647ee22f4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nr=(math.sqrt(5)-1)/2\nwidth=1.8\nupdates=[]\nwhile width>0.01:\n width*=r\n updates.append(100-100*int(width/1.8))\nprint({'iterations':len(updates),'updates':updates,'final_width':width})\nfor n,d in [(128,3),(8,3),(8,10)]:\n s=[n//d]*d;s[-1]+=n-sum(s)\n print(n,d,s,sum(s))\nprint('K=4 scratch bytes',128*(2*4+256*2)*(65536>>4))"
+        ]
+      },
+      "result_sha256": "7e2acf185d4d20ba51ee72ac9a7e2c7d8eb086c7dc1427e70434c9ef88631ec4"
+    }
+  }
+}

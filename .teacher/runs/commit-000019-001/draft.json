@@ -1,0 +1,236 @@
+{
+  "schema_version": 5,
+  "sha": "c8b4bd5454414b046a38344f0aa41b6e1d80d54d",
+  "parent_shas": [
+    "b73e159bc81f0b4bf0f2a2413e223919622e6ff9"
+  ],
+  "cutoff_date": "2025-04-08T15:31:51+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The change standardizes Linear.quant_format_id() from uppercase \"EXL3\" to lowercase \"exl3\", matching the spelling already written into quantization metadata.",
+        "basis": "source",
+        "evidence": [
+          "call_f023e43de0614c9ba5ee62524831c956",
+          "call_54fd6c3e244c40d981276b469c31ac31"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The producer changes, but its metadata consumer still compares against \"EXL3\". Consistent capitalization requires updating that comparison too; changing only the producer prevents the recognition branch from running.",
+        "basis": "source",
+        "evidence": [
+          "call_f023e43de0614c9ba5ee62524831c956",
+          "call_54fd6c3e244c40d981276b469c31ac31"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "For recognized EXL3 linear leaves, generated metadata retains stored_tensors but omits quant_format and bits_per_weight. Both compilation and the standalone metadata utility call the affected generator.",
+        "basis": "source",
+        "evidence": [
+          "call_f023e43de0614c9ba5ee62524831c956",
+          "call_54fd6c3e244c40d981276b469c31ac31",
+          "call_8555f726a1544005b41529cf7bcd2ea3",
+          "call_840e413e6f0a47ebbdcdb49f3b47a45f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent entry describes the newly introduced header-derived inventory and its per-leaf format and bit-width fields.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_fae02dbbfedf4438b012eff8ae291b48"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model conversion, metadata utility, or GPU implementation was executed. The Python check transcribed only the consumer branch using synthetic header metadata.",
+      "External consumers of quant_format_id() were not established."
+    ],
+    "links": [
+      "b73e159bc81f0b4bf0f2a2413e223919622e6ff9"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Lowercase format identifier and its metadata consumer",
+        "claims": [
+          {
+            "text": "Linear.quant_format_id() classifies storage under the primary module key using trellis plus the su/suh and sv/svh alternatives. The patch changes only the successful return string; unrecognized storage still returns None, and weight-loading behavior is unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_a595b5f026264531a798106b6b94205f",
+              "call_f023e43de0614c9ba5ee62524831c956"
+            ]
+          },
+          {
+            "text": "create_quantization_config_json constructs a model without loading weights, visits leaf modules, records stored tensor headers, and uses quant_format_id() to decide whether to add EXL3-specific metadata. Its serialized quant_format value was already lowercase before this patch.",
+            "basis": "source",
+            "evidence": [
+              "call_54fd6c3e244c40d981276b469c31ac31"
+            ]
+          },
+          {
+            "text": "A scalar transcription with a synthetic trellis last dimension of 48 produced quant_format='exl3' and bits_per_weight=3 for the old identifier, but only stored_tensors for the new identifier. This checks the case-sensitive branch, not repository execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_6a5b5a972f60483999b95e6cf71938af"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "format-identifier-consumer-mismatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The lowercase return value no longer matches the unchanged uppercase metadata discriminator.",
+        "trigger": "Generate quantization_config.json for a model containing a leaf Linear whose primary-key storage satisfies is_exl3_storage().",
+        "expected_behavior": "Preserve the leaf's quant_format='exl3' and header-derived bits_per_weight fields while standardizing the identifier.",
+        "actual_behavior": "The EXL3 branch is skipped, so those two fields are omitted while stored_tensors remains.",
+        "locations": [
+          {
+            "commit": "c8b4bd5454414b046a38344f0aa41b6e1d80d54d",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.quant_format_id"
+          },
+          {
+            "commit": "c8b4bd5454414b046a38344f0aa41b6e1d80d54d",
+            "path": "exllamav3/conversion/quant_config.py",
+            "symbol": "create_quantization_config_json"
+          }
+        ],
+        "source_evidence": [
+          "call_f023e43de0614c9ba5ee62524831c956",
+          "call_54fd6c3e244c40d981276b469c31ac31",
+          "call_ef7df9b0c87f45d19b15f096227517a2",
+          "call_98733ee6b2904dc1bd0fa518152ba499",
+          "call_8555f726a1544005b41529cf7bcd2ea3",
+          "call_840e413e6f0a47ebbdcdb49f3b47a45f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Parent-tree searches located the direct metadata consumer and its compilation and standalone-utility callers. The complete task diff changes only Linear's return string, leaving the uppercase comparison intact.",
+            "evidence": [
+              "call_ef7df9b0c87f45d19b15f096227517a2",
+              "call_98733ee6b2904dc1bd0fa518152ba499",
+              "call_f023e43de0614c9ba5ee62524831c956",
+              "call_54fd6c3e244c40d981276b469c31ac31",
+              "call_8555f726a1544005b41529cf7bcd2ea3",
+              "call_840e413e6f0a47ebbdcdb49f3b47a45f"
+            ],
+            "limits": "Reach is established for these inspected repository call sites, not external or dynamically selected callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Ran a standard-library reproduction of the metadata branch with old and new identifier strings.",
+            "evidence": [
+              "call_6a5b5a972f60483999b95e6cf71938af",
+              "call_54fd6c3e244c40d981276b469c31ac31"
+            ],
+            "limits": "Synthetic dictionary input; no repository model construction or file generation was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Lowercases Linear's EXL3 format identifier, but leaves its metadata consumer checking uppercase, causing EXL3-specific inventory fields to be omitted."
+  },
+  "evidence": {
+    "call_f023e43de0614c9ba5ee62524831c956": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c8b4bd5454414b046a38344f0aa41b6e1d80d54d",
+        "offset": 198,
+        "max_bytes": 510
+      },
+      "result_sha256": "dc2ece97af4ebfd59e73c19d7d1212e4c6afa4becc5921e1c984c94dc889fd61"
+    },
+    "call_ef7df9b0c87f45d19b15f096227517a2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "query": "quant_format_id"
+      },
+      "result_sha256": "53e73beb1b1fce27856f7c46d443a2d92c012bb44ed33e31500539c9cad07428"
+    },
+    "call_54fd6c3e244c40d981276b469c31ac31": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "path": "exllamav3/conversion/quant_config.py"
+      },
+      "result_sha256": "eab02c1da29bab55e38c5b54a426afb50077d27760ec3ec1bf41cd5820c1ab34"
+    },
+    "call_a595b5f026264531a798106b6b94205f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "path": "exllamav3/modules/linear.py"
+      },
+      "result_sha256": "171ee05d63f6f4536dd93012f59dceb6be3792e416e6fe35da98e6501eb94a7b"
+    },
+    "call_fae02dbbfedf4438b012eff8ae291b48": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "23fbfb8bfa68c3565e19f2dfbf0ebad245f4b6c077a86dcdcd3e57b3200c638a"
+    },
+    "call_98733ee6b2904dc1bd0fa518152ba499": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "query": "create_quantization_config_json"
+      },
+      "result_sha256": "0e1775ff0c74b1dfa145e0f10f2f899bf1ab7ebdaa2c03a1fc6b455bf936c0a1"
+    },
+    "call_8555f726a1544005b41529cf7bcd2ea3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "path": "exllamav3/conversion/compile.py",
+        "offset": 4300,
+        "max_bytes": 3000
+      },
+      "result_sha256": "0fc4fe981804a77ed5f46eb01d8500217dced3992905d1eb046155df6739a4ae"
+    },
+    "call_840e413e6f0a47ebbdcdb49f3b47a45f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "path": "util/add_quant_config.py"
+      },
+      "result_sha256": "ab9d1dbb4ccebfcf87c7da3af818b84129caaab9931b2391ef2d1d84bd2c405f"
+    },
+    "call_c16a03b580a84a7695bce4436b4cf5b8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "query": "quant_format"
+      },
+      "result_sha256": "92615d858b324eb83726d02f0d6817bf8b9db146305a55e66218867f17ff638f"
+    },
+    "call_6a5b5a972f60483999b95e6cf71938af": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nfor qformat in ['EXL3', 'exl3']:\n    module_dict={'stored_tensors': {'layer.trellis': {'shape': [1,48]}}}\n    if qformat == 'EXL3':\n        shape=module_dict['stored_tensors']['layer.trellis']['shape']\n        module_dict['quant_format']='exl3'\n        module_dict['bits_per_weight']=shape[-1]//16\n    print(qformat, json.dumps(module_dict,sort_keys=True))"
+        ]
+      },
+      "result_sha256": "c4e383afc32dfbf32a99f2a408974ece23ca11ec6cd0928a3aaf770999969248"
+    }
+  }
+}

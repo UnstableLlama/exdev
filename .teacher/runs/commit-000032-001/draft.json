@@ -1,0 +1,219 @@
+{
+  "schema_version": 5,
+  "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+  "parent_shas": [
+    "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c"
+  ],
+  "cutoff_date": "2025-04-11T01:51:14+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Linear previously retained the exact output width, while EXL3 quantization requires its transposed weight's output dimension to be divisible by 128. Nonaligned vocabulary projections could violate that requirement.",
+        "basis": "source",
+        "evidence": [
+          "call_c7e5c69d9e0646549110b604e5d7e93c",
+          "call_149990c644184411bb771111ed351bf7",
+          "call_c4bce6f26d4746a585267aa4b95af671",
+          "call_525c45ad2b8d47b397d97ead5bc86301"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch rounds output widths upward and zero-pads loaded weights and optional biases before constructing LinearFP16, so conversion receives physically padded tensors rather than only enlarged dimension metadata.",
+        "basis": "source",
+        "evidence": [
+          "call_4e3764fc6d944d5ba1aa2adee5053803",
+          "call_c7e5c69d9e0646549110b604e5d7e93c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Padding applies to every Linear by default, not only vocabulary heads. Already aligned dimensions are unchanged; unaligned dimensions consume additional storage and produce wider outputs because Linear.forward does not trim them.",
+        "basis": "source",
+        "evidence": [
+          "call_4e3764fc6d944d5ba1aa2adee5053803",
+          "call_c7e5c69d9e0646549110b604e5d7e93c",
+          "call_149990c644184411bb771111ed351bf7"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "An earlier annotation reported a lowercase/uppercase EXL3 metadata discriminator mismatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_c1b07069924d457bafe093a3268eabf4"
+        ]
+      },
+      {
+        "text": "That mismatch is already removed in the inspected parent: both Linear.quant_format_id and its metadata consumer use lowercase 'exl3'. This patch leaves those paths unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_c7e5c69d9e0646549110b604e5d7e93c",
+          "call_4e99eae3dcd247a8b8684ae52bf23843",
+          "call_4e3764fc6d944d5ba1aa2adee5053803"
+        ]
+      }
+    ],
+    "limitations": [
+      "The arithmetic check executes a scalar transcription, not repository tensor operations, conversion, or GPU kernels.",
+      "End-to-end compatibility of padded outputs with generation and non-vocabulary projections was not established.",
+      "The fused-weight branch pads bias before slicing it; compatibility across fused bias layouts was not executed or established."
+    ],
+    "links": [
+      "c8b4bd5454414b046a38344f0aa41b6e1d80d54d"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Align linear output dimensions through zero padding",
+        "claims": [
+          {
+            "text": "Linear.__init__ adds optional pad_to=128, preserves the requested width as out_features_unpadded, and computes ceil(out_features / pad_to) \u00d7 pad_to. Here 'odd' means nonaligned, not merely an odd integer. The default matches the quantizer's size_n % 128 assertion.",
+            "basis": "source",
+            "evidence": [
+              "call_4e3764fc6d944d5ba1aa2adee5053803",
+              "call_c4bce6f26d4746a585267aa4b95af671"
+            ]
+          },
+          {
+            "text": "pad_out returns None or already-aligned tensors unchanged. Otherwise it allocates zeros with the original dtype and device, copies weight rows or bias entries into the prefix, and returns contiguous storage. For fused weights, load_fp16 selects the requested row range before padding the weight.",
+            "basis": "source",
+            "evidence": [
+              "call_4e3764fc6d944d5ba1aa2adee5053803"
+            ]
+          },
+          {
+            "text": "LinearFP16 transposes the padded weight into input-by-output layout. convert_exl3 retrieves that tensor for quantization, and weights_numel now counts the padded width. This aligns storage, quantization input and reported dimensions, at the cost of retaining extra output channels rather than trimming them at the Linear boundary.",
+            "basis": "source",
+            "evidence": [
+              "call_149990c644184411bb771111ed351bf7",
+              "call_c7e5c69d9e0646549110b604e5d7e93c",
+              "call_4e3764fc6d944d5ba1aa2adee5053803"
+            ]
+          },
+          {
+            "text": "A standard-library transcription verified rounding invariants for widths 1\u20139999: the result is divisible by 128 and adds between 0 and 127 channels. Example widths 129 and 151665 round to 256 and 151680 respectively.",
+            "basis": "execution",
+            "evidence": [
+              "call_93c261f122ea48bd9ce7e2db6dd40875"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Pads Linear output widths and loaded FP16 tensors to multiples of 128, accommodating nonaligned vocabulary projections before EXL3 conversion."
+  },
+  "evidence": {
+    "call_4e3764fc6d944d5ba1aa2adee5053803": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "offset": 165,
+        "max_bytes": 2818
+      },
+      "result_sha256": "5f677a938541e0d05eb7744b0aaea2263a32d2116524337788cf7e1099b6cd3e"
+    },
+    "call_c7e5c69d9e0646549110b604e5d7e93c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "219c5d4582104d58c85ab7b2e0f103c152d30c3717fc2df0f3e415a6af1e3a08"
+    },
+    "call_fa2396069bc94f8babfbc373cd8312ff": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "query": "128",
+        "path": "exllamav3/modules/quant",
+        "limit": 40
+      },
+      "result_sha256": "5360aabda41d2efdf7a9a0cf5cdd6d322147d2062650eba0c637e5ea138a447f"
+    },
+    "call_525c45ad2b8d47b397d97ead5bc86301": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "query": "vocab_size",
+        "limit": 60
+      },
+      "result_sha256": "838c6a2c105ffd4c5a03eb3daf719d6fe623ef7f9b74b5d35f6502bf6103f1bf"
+    },
+    "call_c1b07069924d457bafe093a3268eabf4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c8b4bd5454414b046a38344f0aa41b6e1d80d54d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "69ec157600f9d2eae0ee4ae84ab9bede31bb8f7eba45b9b0e45e692c44e2d8c2"
+    },
+    "call_4e99eae3dcd247a8b8684ae52bf23843": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/conversion/quant_config.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "38663448ff80a41fdd507b9c7fd8e81e85da3699220db74fdb76a7c71e6ca12e"
+    },
+    "call_3b7db34b080446019e7c23401351c78a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 10000,
+        "max_bytes": 6000
+      },
+      "result_sha256": "c8d7fd0eefc870464ca4df7224c8ccd8fa07dac5620fd3d20e43f06deb91e0ea"
+    },
+    "call_c4bce6f26d4746a585267aa4b95af671": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 8800,
+        "max_bytes": 1250
+      },
+      "result_sha256": "ccf337f1425571eaedb59c3822b33c1d173aa951b4455a56e6b893586f03e40b"
+    },
+    "call_5d96d136844b48bb939ec9d446b7e06a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/models/llama.py",
+        "offset": 4400,
+        "max_bytes": 1800
+      },
+      "result_sha256": "b31697bdab9d03b2d4d4f28c4e64d6606b48bb8420b7382e299873c8b8329287"
+    },
+    "call_149990c644184411bb771111ed351bf7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "ab458fc1164d6d2b360cb716e60d37ae2d759dc1ad85362d36e7005f3e1012c2"
+    },
+    "call_93c261f122ea48bd9ce7e2db6dd40875": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for n in (128,129,151665,151936):\n p=(n+127)//128*128\n print(n,p,p-n)\nassert all((n+127)//128*128%128==0 and 0<=((n+127)//128*128-n)<128 for n in range(1,10000))\nprint('rounding invariants pass for 1..9999')"
+        ]
+      },
+      "result_sha256": "e97fc2fb1c17758cc8ddf9b0b99af4072712e1808484049ae1eb4bb28f665539"
+    }
+  }
+}

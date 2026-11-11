@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/turboderp-org/exllamav3",
+  "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+  "scope": "Commit-32 Linear padding, fused bias ordering and logits-width consumers",
+  "issue_context": {
+    "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+    "source_id": "unreferenced-issue-8@2025-04-11T01:51:14+02:00",
+    "content_sha256": "bf7871782cf22d6a100841e85148aba37bd1260fba46a1ada3a66a477ca4f52f",
+    "available_at": "2025-04-10T13:35:47Z",
+    "summary": "A conversion shape error near lm_head was followed by the commit author's diagnosis that logits were not padded correctly for an odd-sized vocabulary and an intention to fix it shortly; another user reported a similar Phi-3-mini failure.",
+    "link_limit": "The commit does not cite the issue. Same author, phrasing, 128 dimension and timing make the relationship a strong inference, not a reference."
+  },
+  "fused_bias_ordering": {
+    "source_rule": "In the fkey/frange load_fp16 branch, weight is sliced then padded, but bias from key + '.bias' is padded then sliced with frange.",
+    "effect_by_source": "For a first fused sub-layer the post-padding slice can remove padding and leave bias shorter than the padded weight; later ranges can fall partly or wholly outside the per-layer bias.",
+    "reach_limit": "Reach requires a per-layer bias tensor to exist for a fused layer. No model with that layout was established and no tensor operation was executed."
+  },
+  "logits_widths": {
+    "linear_head": "The default pad_to=128 makes the head output width a multiple of 128 and forward does not trim it.",
+    "sampler": "custom.py masks logits columns from tokenizer.actual_vocab_size onward to negative infinity when a tokenizer is supplied; without that mask padded zero-weight, zero-or-absent-bias columns yield zero logits.",
+    "return_logits": "generator.py computes padded_vocab_size to a multiple of 32 and job.py sizes held_logits with it.",
+    "inconsistency": "A vocabulary divisible by 32 but not 128 produces different head-output and held-logits widths after this commit.",
+    "reach_limit": "SeqTensor.append behavior for mismatched widths was not traced, so runtime effect on return_logits is unassessed."
+  },
+  "non_head_projection": {
+    "source_rule": "All Linear constructions inherit pad_to=128, including o_proj, down, up and gate projections.",
+    "effect_by_source": "A hidden or intermediate size not divisible by 128 makes those projections emit wider tensors than the residual or paired stream expects.",
+    "execution_limit": "No model with such dimensions was established and no forward pass ran."
+  },
+  "limits": [
+    "Source inspection only; repository tensor, generation and conversion paths were not executed.",
+    "The fused-bias and 32-versus-128 runtime effects remain conditional or unassessed.",
+    "Issue 8 is context by inference, not an explicit commit reference."
+  ],
+  "recorded_at": "2026-11-11T21:45:00Z"
+}

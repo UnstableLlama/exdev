@@ -1,0 +1,253 @@
+{
+  "schema_version": 5,
+  "sha": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+  "parent_shas": [
+    "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8"
+  ],
+  "cutoff_date": "2025-04-09T02:42:52+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Conversion reported module bitrate and forward-pass error separately, without a module duration or remaining-time estimate. Scaling and quantization also used separate progress-bar contexts.",
+        "basis": "source",
+        "evidence": [
+          "call_faf09829e469478d90836ace57e61c11",
+          "call_17fbaee6d5a947ab90170c4c7b4c9da9"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change consolidates module feedback and reuses the scaling progress task for quantization, adding visibility without changing the inspected quantization arithmetic.",
+        "basis": "source",
+        "evidence": [
+          "call_faf09829e469478d90836ace57e61c11",
+          "call_17fbaee6d5a947ab90170c4c7b4c9da9",
+          "call_508fa6dad59a413ebc9f9375ba90f68d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The estimate extrapolates the latest module's duration to all remaining modules. It is inexpensive but does not account for differing module costs, subsequent unloading/checkpointing, or final compilation.",
+        "basis": "inference",
+        "evidence": [
+          "call_faf09829e469478d90836ace57e61c11",
+          "call_3819f7485b4446558d8e8b1187184ad2"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The new human_time import is exposed through util's existing wildcard import from misc.",
+        "basis": "source",
+        "evidence": [
+          "call_dd378ccae68b46aca4f8f4f640363353",
+          "call_a272bae446fa4afebd0b3558de597456",
+          "call_faf09829e469478d90836ace57e61c11"
+        ]
+      }
+    ],
+    "limitations": [
+      "Conversion and Rich progress rendering were not executed; elapsed-time accuracy and library handling of new_task's progress keyword remain unestablished.",
+      "The scalar check executes a transcription of human_time, not the repository implementation or a GPU workflow."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Module timing and reusable quantization progress",
+        "claims": [
+          {
+            "text": "Timing begins before loading each processed module and ends after advancing calibration state. The consolidated line reports module key, actual tensor-storage bits per weight, rfn, and elapsed seconds. The key width 47 and bitrate width 5 are minimum display widths, not truncation limits.",
+            "basis": "source",
+            "evidence": [
+              "call_faf09829e469478d90836ace57e61c11",
+              "call_3819f7485b4446558d8e8b1187184ad2"
+            ]
+          },
+          {
+            "text": "Actual module bpw remains tensor byte size multiplied by eight and divided by weights_numel(), whereas each linear's printed bpw is its assigned quantization K. The unchanged rfn calculation sums relative Frobenius errors for up to five reference states and divides by five; modules without quantized linears retain zero error.",
+            "basis": "source",
+            "evidence": [
+              "call_3819f7485b4446558d8e8b1187184ad2",
+              "call_faf09829e469478d90836ace57e61c11"
+            ]
+          },
+          {
+            "text": "For absolute module indices of at least one, the estimate is module_time \u00d7 (module_count \u2212 index \u2212 1), then formatted by human_time. This skips index zero, rather than requiring two newly processed modules after resumption.",
+            "basis": "source",
+            "evidence": [
+              "call_faf09829e469478d90836ace57e61c11",
+              "call_3819f7485b4446558d8e8b1187184ad2"
+            ]
+          },
+          {
+            "text": "quantize_exl3 now stays in the original ProgressBar context after scale selection. It explicitly sets completed work to zero, changes the description from Scaling to Quantizing, and changes the total from 100 to tiles_k, the input weight's first dimension divided by 16. new_task updates the existing task rather than allocating another task.",
+            "basis": "source",
+            "evidence": [
+              "call_17fbaee6d5a947ab90170c4c7b4c9da9",
+              "call_7ff7c7094f49429690592a120d2aeac3",
+              "call_ca1020007d9c4733a843d55b131d873b",
+              "call_508fa6dad59a413ebc9f9375ba90f68d"
+            ]
+          },
+          {
+            "text": "human_time first rounds seconds, then uses offsets of 30 before division by 60 to round minutes and hours. Rounding hours upward before subtracting their minutes can produce negative minute remainders.",
+            "basis": "source",
+            "evidence": [
+              "call_a272bae446fa4afebd0b3558de597456"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "negative-remaining-minutes",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new duration formatter can display negative minutes for positive remaining-time estimates.",
+        "trigger": "Conversion reaches its estimate print with an estimated duration such as 1800 seconds.",
+        "expected_behavior": "A nonnegative duration representation, such as 30 minutes.",
+        "actual_behavior": "The transcribed formatter returns '1 hour, -30 minute': it rounds 30 minutes to one hour, then subtracts 60 minutes.",
+        "locations": [
+          {
+            "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+            "path": "exllamav3/util/misc.py",
+            "symbol": "human_time"
+          },
+          {
+            "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_a272bae446fa4afebd0b3558de597456",
+          "call_faf09829e469478d90836ace57e61c11",
+          "call_3338161b2f1f4fd9814bad796b20c61c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Parent-tree search found no human_time occurrences. The task diff introduces the helper and its direct conversion-main caller, gated by idx >= 1; the observed reach is remaining-time display, not quantized tensors.",
+            "evidence": [
+              "call_3338161b2f1f4fd9814bad796b20c61c",
+              "call_faf09829e469478d90836ace57e61c11",
+              "call_a272bae446fa4afebd0b3558de597456"
+            ],
+            "limits": "This identifies the introduced direct caller, not external consumers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Standard-library Python reproduced negative minute output for 1770, 1800, and 5400 seconds, alongside boundary examples.",
+            "evidence": [
+              "call_d377c3bf25de48e1ab08f38ecfd510f3"
+            ],
+            "limits": "The formatter was transcribed; conversion itself was not run."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds consolidated module timing, remaining-time estimates, and progress-task reuse during conversion. The new time formatter can produce negative minute remainders."
+  },
+  "evidence": {
+    "call_faf09829e469478d90836ace57e61c11": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "offset": 163,
+        "max_bytes": 2472
+      },
+      "result_sha256": "79129a9c34f90631085ff7d8c301994582fa40a5d7f8cfd98ad55e08e4fad3a7"
+    },
+    "call_17fbaee6d5a947ab90170c4c7b4c9da9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "offset": 2635,
+        "max_bytes": 833
+      },
+      "result_sha256": "2570d681f2439b30ddbce863b6d322118c14c37b25180d7876146de711ff6220"
+    },
+    "call_a272bae446fa4afebd0b3558de597456": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "offset": 3468,
+        "max_bytes": 831
+      },
+      "result_sha256": "2aae84f938a694beccaa65e1a74b76211276252a06244b29065b3704ce244db5"
+    },
+    "call_7ff7c7094f49429690592a120d2aeac3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "offset": 4299,
+        "max_bytes": 624
+      },
+      "result_sha256": "6154b60ca770c4ec276d6c5f0742301637dac5ef6ad94505609b12d992a5c040"
+    },
+    "call_3819f7485b4446558d8e8b1187184ad2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "cf85d40734183a5dc9afded46f2b7e33d702f4f03df5cfa746260a6946514f98"
+    },
+    "call_ca1020007d9c4733a843d55b131d873b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8",
+        "path": "exllamav3/util/progress.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "08c40965aaab0f672d67a47a13275beb2196bca1f9120fb232726746677942ce"
+    },
+    "call_508fa6dad59a413ebc9f9375ba90f68d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 13000,
+        "max_bytes": 18000
+      },
+      "result_sha256": "6dc0a868cda9d8ea252bc0c82792bad381e20bf8a2a9d7e9f9f8591550930fef"
+    },
+    "call_3338161b2f1f4fd9814bad796b20c61c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8",
+        "query": "human_time",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_dd378ccae68b46aca4f8f4f640363353": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8",
+        "path": "exllamav3/util/__init__.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "ecec40de1e31d1106f0555bd9fc2f1b3509fc5832e9ed2ae0ae20777fd0219e7"
+    },
+    "call_d377c3bf25de48e1ab08f38ecfd510f3": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def human_time(seconds):\n seconds=round(seconds)\n minutes=(seconds+30)//60\n hours=(minutes+30)//60\n minutes-=hours*60\n if hours:\n  return f\"{hours} hour{'s' if hours>1 else ''}, {minutes} minute{'s' if minutes>1 else ''}\"\n elif minutes:\n  return f\"{minutes} minute{'s' if minutes>1 else ''}\"\n return '< 1 minute'\nfor s in [29,30,1769,1770,1800,3599,5400]: print(s, human_time(s))"
+        ]
+      },
+      "result_sha256": "3cf71af60e9e9dfae8dd2f74f396f7fa75e1381a40dd11ff03a6841ba50e816c"
+    }
+  }
+}

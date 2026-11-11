@@ -1,0 +1,203 @@
+{
+  "schema_version": 5,
+  "sha": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+  "parent_shas": [
+    "b1c7f251d27b35fe9679ad1007dd6f9b8a723d4c"
+  ],
+  "cutoff_date": "2025-04-08T09:42:34+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Module saving prefixed the filename with work_dir twice: main() constructed a work-relative destination, then save_tensor() joined work_dir again. Ordinary relative working directories therefore targeted an unintended nested directory.",
+        "basis": "source",
+        "evidence": [
+          "call_0bdef51fe5d5479595ea6fa87d8ac7ea",
+          "call_67c625fffe024cbb9e4155ffe0ea456c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The fix leaves path resolution in save_tensor() and passes only qtensors/<module-key>.safetensors from main(), matching the helper's existing checkpoint caller rather than changing the shared helper.",
+        "basis": "source",
+        "evidence": [
+          "call_67c625fffe024cbb9e4155ffe0ea456c",
+          "call_c82a1b7b03784486aee26082bdb52813",
+          "call_0bdef51fe5d5479595ea6fa87d8ac7ea"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The corrected destination matches the qtensors directory created by prepare_env(). Tensor collection and serialization are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_0bdef51fe5d5479595ea6fa87d8ac7ea",
+          "call_67c625fffe024cbb9e4155ffe0ea456c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier conversion entry identified this relative-path hazard; the task removes that specific hazard.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_2cdda5c583f24eb7bff93f5171dce3c6"
+        ]
+      }
+    ],
+    "limitations": [
+      "Validation models POSIX path joining only; no safetensors write, model conversion, GPU execution or interruption/recovery test was run."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Resolve module output paths once",
+        "claims": [
+          {
+            "text": "main() merges each module's get_tensors() results into a dictionary and passes it to save_tensor(), whose dictionary branch writes the named tensors with save_file(). The patch changes only the filename argument, so the correction applies to every processed module reaching this save point, not just modules with quantization targets.",
+            "basis": "source",
+            "evidence": [
+              "call_0bdef51fe5d5479595ea6fa87d8ac7ea",
+              "call_67c625fffe024cbb9e4155ffe0ea456c"
+            ]
+          },
+          {
+            "text": "A standard-library transcription produced work/work/qtensors/layer.safetensors before the patch and work/qtensors/layer.safetensors afterward. For /tmp/work both expressions produced the same absolute destination; for '.' they normalized identically. Thus the commit message's 'double absolute path' wording describes redundant construction, but the demonstrated destination error concerns relative paths.",
+            "basis": "execution",
+            "evidence": [
+              "call_9ebba8a3f793428ba722971d6347384e",
+              "call_67c625fffe024cbb9e4155ffe0ea456c"
+            ]
+          },
+          {
+            "text": "The inspected CLI entrypoint calls prepare() and then main(). The other direct save_tensor() caller already supplies ckpt_new/state.safetensors relative to work_dir and is unchanged. The patch does not alter checkpoint rotation or resume loading.",
+            "basis": "source",
+            "evidence": [
+              "call_f8fdd6c983424c47b80a54a69a4ddb2c",
+              "call_c82a1b7b03784486aee26082bdb52813",
+              "call_0bdef51fe5d5479595ea6fa87d8ac7ea",
+              "call_67c625fffe024cbb9e4155ffe0ea456c"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "checkpoint-rotation-gap",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited interruption window in checkpoint rotation remains unchanged by this path fix.",
+        "trigger": "Conversion is interrupted after renaming ckpt to ckpt_old but before renaming ckpt_new to ckpt, then the user resumes.",
+        "expected_behavior": "Resume recovers an available complete checkpoint.",
+        "actual_behavior": "prepare() loads ckpt/job.json without falling back to ckpt_old or ckpt_new; prepare_env() can recreate an empty ckpt directory, but not its missing job.json.",
+        "locations": [
+          {
+            "commit": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "prepare"
+          }
+        ],
+        "source_evidence": [
+          "call_0bdef51fe5d5479595ea6fa87d8ac7ea",
+          "call_67c625fffe024cbb9e4155ffe0ea456c",
+          "call_f8fdd6c983424c47b80a54a69a4ddb2c",
+          "call_8b84b7439ae64e14abfa13e171738016"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the two sequential renames, resume loader and CLI calls; the complete task diff changes only the module-save filename. Reach is the inspected conversion CLI's checkpoint/resume workflow.",
+            "evidence": [
+              "call_0bdef51fe5d5479595ea6fa87d8ac7ea",
+              "call_67c625fffe024cbb9e4155ffe0ea456c",
+              "call_f8fdd6c983424c47b80a54a69a4ddb2c"
+            ],
+            "limits": "No interruption was injected; literal caller search does not establish all external callers."
+          }
+        ]
+      }
+    ],
+    "summary": "Fixes duplicated working-directory prefixes when saving converted module tensors, preserving absolute-path destinations and the shared serialization helper."
+  },
+  "evidence": {
+    "call_67c625fffe024cbb9e4155ffe0ea456c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+        "offset": 178,
+        "max_bytes": 754
+      },
+      "result_sha256": "e12ca5ec7aa095b5efd88e730ee388486c11ccc4dc635d855d6cb1cc07a6c6d3"
+    },
+    "call_2cdda5c583f24eb7bff93f5171dce3c6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "conversion",
+        "max_bytes": 16384
+      },
+      "result_sha256": "edbf5d62a8d51728040b0c6b2c3e7d4ad552cc5a8e56385f194f283883691541"
+    },
+    "call_0bdef51fe5d5479595ea6fa87d8ac7ea": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b1c7f251d27b35fe9679ad1007dd6f9b8a723d4c",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "bc3123b682c7f43959879e281792c3b6b834a7e0eafd47b56255cc3e8e6b62da"
+    },
+    "call_c82a1b7b03784486aee26082bdb52813": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b1c7f251d27b35fe9679ad1007dd6f9b8a723d4c",
+        "query": "save_tensor(",
+        "limit": 50
+      },
+      "result_sha256": "b5d9b2199e111698892cf67856226f658ed9e5d8d5651ce52823c54a62f18c94"
+    },
+    "call_8b84b7439ae64e14abfa13e171738016": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b1c7f251d27b35fe9679ad1007dd6f9b8a723d4c",
+        "query": "convert_model",
+        "limit": 50
+      },
+      "result_sha256": "1e033972b046c9d0e344bbfd11ff7dd35ac79627a8c51e05cc1ddf2d83e355c5"
+    },
+    "call_f8fdd6c983424c47b80a54a69a4ddb2c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b1c7f251d27b35fe9679ad1007dd6f9b8a723d4c",
+        "path": "convert.py",
+        "max_bytes": 2000
+      },
+      "result_sha256": "005aa3bf1d4e254f82c7c5985334dbfb69de9a398326c807fea79b6970168e52"
+    },
+    "call_9ebba8a3f793428ba722971d6347384e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import posixpath as p\nfor w in ['work','/tmp/work','.']:\n old=p.join(w,p.join(w,'qtensors','layer.safetensors'))\n new=p.join(w,'qtensors/layer.safetensors')\n print(repr(w), 'old='+old, 'new='+new, 'equivalent='+str(p.normpath(old)==p.normpath(new)))"
+        ]
+      },
+      "result_sha256": "79364ffa5abb63d514cb9b903868f56a1fc36ef948f40ff97600a8bdb1b90835"
+    }
+  }
+}

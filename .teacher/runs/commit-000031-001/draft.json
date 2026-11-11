@@ -1,0 +1,274 @@
+{
+  "schema_version": 5,
+  "sha": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+  "parent_shas": [
+    "f4da1467ba031d3c2b3ee4ee2a57c9ae01eb40ae"
+  ],
+  "cutoff_date": "2025-04-11T01:49:34+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The special-token encoding path split text around literal token spellings and inserted mapped IDs itself, withholding those tokens and their surrounding context from the backend tokenizer.",
+        "basis": "source",
+        "evidence": [
+          "call_21228fafc8c64a948a14bf95b05982d6"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Passing the complete input to the backend delegates token recognition and whitespace handling to that engine rather than duplicating recognition with a regular expression. The retained TODO explicitly leaves the necessity of the old SentencePiece-oriented workaround unresolved.",
+        "basis": "source",
+        "evidence": [
+          "call_6b4434947cc54510b3654e82f700f55a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "encode_special now returns one backend encoding with add_special_tokens=False. Explicit BOS/EOS insertion and batch padding remain in encode; the change does not alter decoding.",
+        "basis": "source",
+        "evidence": [
+          "call_6b4434947cc54510b3654e82f700f55a",
+          "call_21228fafc8c64a948a14bf95b05982d6"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier loading-tokenization entry identifies the manual path's lack of AddedToken whitespace rules and reports Phi configurations with rstrip=true. That is historical explanatory context, not a fresh inspection of those model artifacts.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_815bf842cc9f4ffd882503e8794a0777"
+        ]
+      },
+      {
+        "text": "The whole-parent Phi search found a Phi3/Phi4 prompt formatter alongside incidental calibration-text matches. The formatter places newlines after role and end markers, making token-adjacent whitespace locally relevant without establishing a reproduced Phi failure.",
+        "basis": "source",
+        "evidence": [
+          "call_ebd3ca892fa949c38b70a0e5387bb3a1",
+          "call_322d4cdf3123465d85277bfb862459fb"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Hugging Face tokenizer, model-specific tokenization, or generation test was executed. Actual lstrip/rstrip behavior and compatibility across tokenizer files remain unverified.",
+      "The standard-library check models regex segmentation and decoding filters only; it does not execute the repository tokenizer.",
+      "The broad Phi search was truncated by calibration-text matches and does not establish an exhaustive inventory of related source."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Delegate special-token encoding to the backend",
+        "claims": [
+          {
+            "text": "Previously, encode_special lazily compiled escaped extended-vocabulary spellings into a capturing regex, encoded the intervening fragments separately, and inserted special IDs directly. The patch comments out that implementation and encodes the entire text once instead.",
+            "basis": "source",
+            "evidence": [
+              "call_6b4434947cc54510b3654e82f700f55a"
+            ]
+          },
+          {
+            "text": "The backend is loaded from tokenizer.json. Separate added_tokens.json and special added_tokens_decoder entries still populate wrapper lookup dictionaries, but the new encode_special no longer consults those dictionaries. Correct special-token recognition therefore depends on the backend's loaded definitions rather than wrapper-side ID substitution.",
+            "basis": "source",
+            "evidence": [
+              "call_21228fafc8c64a948a14bf95b05982d6",
+              "call_6b4434947cc54510b3654e82f700f55a"
+            ]
+          },
+          {
+            "text": "The direct caller is encode_special_or_unspecial when special is true; encode reaches it for both scalar and batched input through encode_special_tokens. The ordinary branch is unchanged and already delegates directly when its unspecial mapping is empty.",
+            "basis": "source",
+            "evidence": [
+              "call_bdd35ddfcda5441ca1cfc4ef616c69e0",
+              "call_21228fafc8c64a948a14bf95b05982d6"
+            ]
+          },
+          {
+            "text": "A scalar transcription using '<|user|>\\nhello<|end|>\\n' produced ordinary fragments '\\nhello' and '\\n' under the old split. This demonstrates that the old wrapper sent those newlines separately from the special tokens; it does not establish what the backend emits for the replacement whole-text call.",
+            "basis": "execution",
+            "evidence": [
+              "call_7bc883eb00214d9ba0676d09ff09ec70"
+            ]
+          },
+          {
+            "text": "The tradeoff is removal of manual token-boundary enforcement in favor of backend semantics. This gives the backend complete context but does not prove equivalence for tokens represented only in the wrapper's auxiliary mappings.",
+            "basis": "inference",
+            "evidence": [
+              "call_21228fafc8c64a948a14bf95b05982d6",
+              "call_6b4434947cc54510b3654e82f700f55a"
+            ]
+          },
+          {
+            "text": "Inspection against the task diff shows that inherited decoding limitations remain: EOS filtering precedes attempted truncation, extended IDs outside backend vocabulary are filtered, and rank-two decoding returns a list even for one row. The padding fallback, ordinal-table construction, and ordinary encoding branch also remain unchanged; this patch is not a general tokenizer compatibility repair.",
+            "basis": "source",
+            "evidence": [
+              "call_21228fafc8c64a948a14bf95b05982d6",
+              "call_6b4434947cc54510b3654e82f700f55a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-decode-filtering",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Unchanged decode_ filtering prevents its EOS truncation branch from working and discards extended IDs outside backend vocabulary before special rendering.",
+        "trigger": "Decode a sequence containing EOS followed by ordinary tokens, or request special rendering of a mapped ID at or beyond backend vocabulary size.",
+        "expected_behavior": "The explicit EOS truncation branch should discard the suffix; special rendering should retain a mapped extended token.",
+        "actual_behavior": "EOS is removed before truncation can find it, while the vocabulary-bound filter removes extended IDs before dictionary rendering.",
+        "locations": [
+          {
+            "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+            "path": "exllamav3/tokenizer/tokenizer.py",
+            "symbol": "Tokenizer.decode_"
+          }
+        ],
+        "source_evidence": [
+          "call_21228fafc8c64a948a14bf95b05982d6",
+          "call_6b4434947cc54510b3654e82f700f55a",
+          "call_0a7e433416b34bbebdb7e15f238efa19"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search finds direct calls from both rank-one and rank-two branches of decode. Both pass through the inspected filters, which the task leaves unchanged.",
+            "evidence": [
+              "call_0a7e433416b34bbebdb7e15f238efa19",
+              "call_21228fafc8c64a948a14bf95b05982d6",
+              "call_6b4434947cc54510b3654e82f700f55a"
+            ],
+            "limits": "Broader generation workflows were not traced; no backend decoding ran."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "With EOS=2, PAD=0 and vocabulary size 50, the filter transformed [11,2,12,0,99] into [11,12], retaining the token after EOS.",
+            "evidence": [
+              "call_7bc883eb00214d9ba0676d09ff09ec70"
+            ],
+            "limits": "Python list filtering only, not repository execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-decode-return-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "decode retains its mismatch between the documented one-sequence return type and rank-two handling.",
+        "trigger": "Pass a rank-two tensor with one row to Tokenizer.decode.",
+        "expected_behavior": "Its docstring promises a string when batch size is one.",
+        "actual_behavior": "The rank-two branch returns a one-element list. The internal recursive call for list inputs also uses this rank-dependent behavior.",
+        "locations": [
+          {
+            "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+            "path": "exllamav3/tokenizer/tokenizer.py",
+            "symbol": "Tokenizer.decode"
+          }
+        ],
+        "source_evidence": [
+          "call_21228fafc8c64a948a14bf95b05982d6",
+          "call_6b4434947cc54510b3654e82f700f55a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the docstring and rank-two return branch with the task's encode_special-only edit.",
+            "evidence": [
+              "call_21228fafc8c64a948a14bf95b05982d6",
+              "call_6b4434947cc54510b3654e82f700f55a"
+            ],
+            "limits": "No tensor execution or inventory of external decode callers was performed; reach is limited here to the public method's stated input contract."
+          }
+        ]
+      }
+    ],
+    "summary": "Replaces manual special-token splitting with whole-text backend encoding, enabling backend-controlled token handling while leaving compatibility and inherited decoding limitations unresolved."
+  },
+  "evidence": {
+    "call_6b4434947cc54510b3654e82f700f55a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "offset": 303,
+        "max_bytes": 1691
+      },
+      "result_sha256": "6b4ded5b85e661906608859a49f380a3f423fb4750b13c34473dc48bb5873e2f"
+    },
+    "call_21228fafc8c64a948a14bf95b05982d6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f4da1467ba031d3c2b3ee4ee2a57c9ae01eb40ae",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "7651abc62c2589b05a938bad41a293c3e3a7d6e2ddb514dae8880d8e88720527"
+    },
+    "call_ebd3ca892fa949c38b70a0e5387bb3a1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f4da1467ba031d3c2b3ee4ee2a57c9ae01eb40ae",
+        "query": "Phi",
+        "limit": 100
+      },
+      "result_sha256": "6bb1a5fc1107e2ed788534ab738b05ada141cb7132a95658693016cbfe7f45ad"
+    },
+    "call_815bf842cc9f4ffd882503e8794a0777": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    },
+    "call_0a7e433416b34bbebdb7e15f238efa19": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f4da1467ba031d3c2b3ee4ee2a57c9ae01eb40ae",
+        "query": "decode_(",
+        "limit": 30
+      },
+      "result_sha256": "7192c9de9f6925358d96af3d88b0e9808ddb639164593dce2dcdb0460df8de28"
+    },
+    "call_bdd35ddfcda5441ca1cfc4ef616c69e0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f4da1467ba031d3c2b3ee4ee2a57c9ae01eb40ae",
+        "query": "encode_special(",
+        "limit": 30
+      },
+      "result_sha256": "88973a36634909991453f6866eb9de4cac8aae0c4e0d80ab17ffdbc8a6416ccf"
+    },
+    "call_322d4cdf3123465d85277bfb862459fb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f4da1467ba031d3c2b3ee4ee2a57c9ae01eb40ae",
+        "path": "examples/chat_templates.py",
+        "offset": 3000,
+        "max_bytes": 4500
+      },
+      "result_sha256": "1c5b9195142e91dac0455e1ee8f9150747df49b2cfd82b44df6d978cbabadec7"
+    },
+    "call_7bc883eb00214d9ba0676d09ff09ec70": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import re,json\ntext='<|user|>\\nhello<|end|>\\n'\npieces={'<|user|>':32010,'<|end|>':32007}\nsplit=re.compile('('+'|'.join(map(re.escape,pieces))+')').split(text)\nseq=[11,2,12,0,99]; eos=2; pad=0; vocab=50\nfiltered=[t for t in seq if t != pad and t < vocab and t != eos]\nif eos in filtered: filtered=filtered[:filtered.index(eos)]\nprint(json.dumps({'old_split':split,'ordinary_segments':[split[i] for i in range(0,len(split),2) if split[i]],'decode_filtered':filtered}))"
+        ]
+      },
+      "result_sha256": "001b19f7be23aafbc79bdacdaa3529c3d6ae4277806452d1c40218f3a0961b4b"
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "defect_id": "exllamav3-double-prefixed-qtensor-path",
+  "revision_id": "r001",
+  "supersedes": null,
+  "origin": "fix_derived",
+  "classification": "defect",
+  "status": "confirmed",
+  "description": "The root conversion code prefixes a relative work directory twice when saving converted module tensors, while compilation reads from the singly prefixed qtensors directory.",
+  "trigger": "Conversion uses a relative work_dir and saves a converted module tensor through the root main/save_tensor call chain.",
+  "expected_behavior": "Converted module tensors are written under work_dir/qtensors, the directory created by prepare_env and read by compile_model.",
+  "actual_behavior": "main passes work_dir/qtensors/<key>.safetensors to save_tensor, which joins work_dir again and targets work_dir/work_dir/qtensors/<key>.safetensors. The inspected code does not create that doubled parent directory; the write outcome itself was not executed.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "path": "exllamav3/conversion/convert_model.py",
+      "status": "source_verified_root_introduction",
+      "scope": "Present in the root tree; relative work_dir only."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+      "run": ".teacher/runs/commit-000015-001",
+      "source": "Commit 15 authored finding and independent source inspection of root and fix trees.",
+      "locations": [
+        {
+          "path": "exllamav3/conversion/convert_model.py",
+          "root_save_call_lines": [296, 298],
+          "fix_save_call_line": 296,
+          "save_tensor_join_line": 63
+        },
+        {
+          "path": "exllamav3/conversion/compile.py",
+          "reader_line": 22
+        }
+      ]
+    }
+  ],
+  "fixes": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+      "path": "exllamav3/conversion/convert_model.py",
+      "status": "source_verified_fix",
+      "description": "Passes qtensors/<key>.safetensors relative to work_dir, so save_tensor produces the destination read by compile_model."
+    }
+  ],
+  "verification": {
+    "method": "source_inspection",
+    "repository_execution": false,
+    "tree_scope": "Root introduction 543c4b27714c6a677a6e714c452d62532f634cff and fix 2591348cf879664aeebb2ba188cdcf9c3fe07311.",
+    "reader_reach": "compile_model constructs SafetensorsCollection from work_dir/qtensors, matching the corrected destination.",
+    "limits": [
+      "No conversion or safetensors write ran.",
+      "The inspected code does not create the doubled parent directory, but whether save_file fails or creates it is unestablished.",
+      "Absolute intermediate paths cause os.path.join to discard the first component; the defect is verified for relative work_dir values only."
+    ]
+  },
+  "evidence": [
+    {
+      "file": "evidence/root-exllamav3_conversion_convert_model.py",
+      "sha256": "3e3e14531d4c3d0d6390984390165253e6f805ecb65d71b08dee8e4e77cfa1f4",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "path": "exllamav3/conversion/convert_model.py"
+      },
+      "retrieved_at": "2026-11-11T19:33:15.271037+00:00"
+    },
+    {
+      "file": "evidence/root-exllamav3_conversion_compile.py",
+      "sha256": "e628dd29bf9bc56ff913715d11ce5e83db07d7684bac14e941f954f59851b4c1",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "path": "exllamav3/conversion/compile.py"
+      },
+      "retrieved_at": "2026-11-11T19:33:15.271037+00:00"
+    },
+    {
+      "file": "evidence/commit15-exllamav3_conversion_convert_model.py",
+      "sha256": "df18bd2d559b93252f5b2236b17dd0d24d0e03ce25928295f3c515843f4769fe",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+        "path": "exllamav3/conversion/convert_model.py"
+      },
+      "retrieved_at": "2026-11-11T19:33:15.271037+00:00"
+    },
+    {
+      "file": "evidence/commit15-exllamav3_conversion_compile.py",
+      "sha256": "e628dd29bf9bc56ff913715d11ce5e83db07d7684bac14e941f954f59851b4c1",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+        "path": "exllamav3/conversion/compile.py"
+      },
+      "retrieved_at": "2026-11-11T19:33:15.271037+00:00"
+    },
+    {
+      "file": "evidence/commit15-double-prefix-path-source-scan.json",
+      "sha256": "2142b63871767849b37690b755bf58dcc196bb86e75b83cfa157af60d0c57d9a",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+        "artifact": "Root/fix writer and reader path inspection"
+      },
+      "retrieved_at": "2026-11-11T19:33:15.271037+00:00"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "2591348cf879664aeebb2ba188cdcf9c3fe07311",
+      "available_at": "2025-04-08T09:42:34+02:00"
+    }
+  ],
+  "recorded_at": "2026-11-11T19:33:15.271037+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "unaffected_checked_shas": [
+      "2591348cf879664aeebb2ba188cdcf9c3fe07311"
+    ]
+  },
+  "impact": {
+    "level": "unknown",
+    "domain": "runtime_failure",
+    "rationale": "The writer and reader destinations disagree for relative work_dir and the doubled parent is not created by inspected code, but the actual save_file outcome was not executed."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "Fix-derived ledger candidate awaiting independent review; source verified, not executed."
+}

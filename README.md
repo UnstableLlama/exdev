@@ -10,6 +10,16 @@ Original tooling and commentary: [MIT](LICENSE). Upstream code and diffs: retain
 
 ## Current status
 
+The teacher walk has approved entries through **commit 12 for ancestor retrieval
+only**. Commit 13 (`Replace scale grid search with golden section search`) is
+next. Reviews now use the `reviews/requests/` and `reviews/verdicts/` mailbox;
+recorded approvals bind the verdict path and hash. Commits 11 and 12 retain
+canonical-use blockers in their administrative review records. The default
+suite passes 158 tests with 11 host-only tests skipped. This session still denies
+Bubblewrap namespaces; the next authoring run requires the established host
+environment. See the [latest handover](reports/teacher-walk-handover-008.json).
+The graph walk continues independently; `store/walk-status.json` records progress.
+
 The accepted ten root chapters now have a [combined assembly candidate](.teacher/assemblies/root-002/entry.md), preserving their prose and resolving chapter links. The user-supplied review accepts it, and hash-bound ancestor approval plus bounded retrieval are implemented; the canonical Encyclopedia has not been replaced. [Validation report](reports/root-assembly-validation-002.json).
 
 The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) describes the historical extraction and teacher workflow. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; the second isolated root-entry candidate was rejected for insufficient coverage, and the restart now uses assigned subsystem chapters. No training traces have been generated.

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/turboderp-org/exllamav3",
+  "sha": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+  "scope": "Commit-28 device-ratio arithmetic, resume behavior and required-devices persistence",
+  "negative_final_share": {
+    "source_rule": "For a truthy ratio list, each share is tiles * ratio / sum(ratios), each share is rounded independently to a multiple of 16, and the total discrepancy is added to the last share before torch.split.",
+    "scalar_transcription": {
+      "tiles": 32,
+      "ratios": [3, 3, 3, 1],
+      "result": [16, 16, 16, -16]
+    },
+    "reach": "The resulting list is passed to three torch.split calls before the later per-device positive-share guard.",
+    "frequency_limit": "The condition is narrow: earlier rounded shares must overshoot the tile count by more than the last share can absorb. The mailbox reviewer tried nine ratio lists over tile counts 32 through 512 and observed a negative share only for the recorded example.",
+    "execution_limit": "Plain Python executed a transcription of the arithmetic. Torch was unavailable, so the exact torch.split exception was not observed."
+  },
+  "zero_sum_ratios": {
+    "source_rule": "A nonempty all-zero ratio list is truthy, but sum(ratios) is zero.",
+    "result_by_source": "The first tiles * ratio / sum(ratios) expression raises ZeroDivisionError before splitting."
+  },
+  "required_devices_persistence": {
+    "implementation": "quantize_tiles_multigpu and its callers still read quant_args[\"devices\"] unconditionally.",
+    "repository_caller": "tests/test_quant_fn.py still constructs quant_args with K and seed only before calling Linear.convert_exl3.",
+    "new_key": "Commit 28 reads device_ratios with quant_args.get, so the unchanged test caller gains no second missing-key failure."
+  },
+  "resume_observation": {
+    "status": "suspected_intent_unknown",
+    "source_rule": "The parser default for device_ratios is the empty string and prepare's override path writes that non-None value over a stored value; its warning branch requires the new value to be truthy.",
+    "effect_by_source": "Resuming without the option discards a stored ratio silently. The devices default likewise restores device 0, but that truthy value produces a warning.",
+    "execution_limit": "Resume behavior was source inspected, not executed."
+  },
+  "help_observation": {
+    "text": "The help example uses singular --device_ratio although the declared long option is --device_ratios.",
+    "reviewer_execution": "The mailbox reviewer confirmed argparse accepts the singular spelling as an unambiguous prefix."
+  },
+  "limits": [
+    "No CUDA quantization path was executed.",
+    "No exact Torch exception was observed.",
+    "External callers were not inventoried."
+  ],
+  "recorded_at": "2026-11-11T21:10:25Z"
+}
