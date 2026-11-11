@@ -1,0 +1,215 @@
+{
+  "schema_version": 5,
+  "sha": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+  "parent_shas": [
+    "5498926b60c23e4dfc689f5fe2adff29436cb2ed"
+  ],
+  "cutoff_date": "2025-04-10T10:42:26+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Multi-GPU tile quantization previously divided work equally, apart from a remainder assigned to the last device; users could not specify relative shares.",
+        "basis": "source",
+        "evidence": [
+          "call_45d0c7d750984088b7805e6ff191c1d9"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change threads optional integer device ratios from conversion arguments into the existing asynchronous tile distributor rather than changing the quantization kernel.",
+        "basis": "source",
+        "evidence": [
+          "call_9e66790884f944c3b9b960961924a09f",
+          "call_45d0c7d750984088b7805e6ff191c1d9"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Users can assign unequal tile shares while retaining equal splitting when ratios are omitted. Single-device execution still bypasses the multi-GPU splitter.",
+        "basis": "source",
+        "evidence": [
+          "call_45d0c7d750984088b7805e6ff191c1d9",
+          "call_ae7dc3dcddc54416ba869c0bdc2a6e66"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No CUDA kernels, PyTorch splitting, or end-to-end conversion were executed; the computation checks only transcribed Python allocation arithmetic.",
+      "The source establishes 16-tile rounding granularity but does not explain why that granularity was chosen. Performance improvements are unmeasured."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "User-weighted multi-GPU tile allocation",
+        "claims": [
+          {
+            "text": "Conversion adds -dr/--device_ratios, defaulting to an empty string. main parses a supplied comma-separated list as integers, asserts that its length matches --devices, and passes it through quant_args; otherwise it passes None. Parent-tree searches found neither device_ratios nor the near spelling device_ratio.",
+            "basis": "source",
+            "evidence": [
+              "call_9e66790884f944c3b9b960961924a09f",
+              "call_c335d6451a4b43629a13dd326d5163aa",
+              "call_ef968921332c4893a686e693a22c002e"
+            ]
+          },
+          {
+            "text": "For N tiles and ratios r, quantize_tiles_multigpu computes N*r/sum(r), rounds each share to a multiple of 16 tiles, then assigns the entire rounding discrepancy to the last share. Each tile contains 256 values. This preserves the total tile count but neither exact proportions nor necessarily nonnegative shares.",
+            "basis": "source",
+            "evidence": [
+              "call_45d0c7d750984088b7805e6ff191c1d9",
+              "call_ae7dc3dcddc54416ba869c0bdc2a6e66"
+            ]
+          },
+          {
+            "text": "A scalar transcription produced shares [64, 64, 128] for 256 tiles with ratios [2, 2, 4], and [0, 256] with ratios [0, 1].",
+            "basis": "execution",
+            "evidence": [
+              "call_58f03df754cd48a785f29662e9dca6af"
+            ]
+          },
+          {
+            "text": "Input, reconstructed tiles, and indices use matching pinned-host slices. Positive shares are copied to their selected GPUs, quantized with cached scratch buffers, and copied back. The new guard skips those operations for empty shares, but completion events remain outside the guard; gathering still returns results to the first device.",
+            "basis": "source",
+            "evidence": [
+              "call_45d0c7d750984088b7805e6ff191c1d9",
+              "call_ae7dc3dcddc54416ba869c0bdc2a6e66"
+            ]
+          },
+          {
+            "text": "The inspected direct callers are ldlq and the nested test_scale in g_scale_gss, so the same allocation policy applies to feedback quantization and scale-search trials. LDLQ feedback remains on the first device. The separate synchronous helper is unchanged and still splits equally.",
+            "basis": "source",
+            "evidence": [
+              "call_0a3457b688c44d849e4f0cb00e0ea776",
+              "call_ae7dc3dcddc54416ba869c0bdc2a6e66"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "negative-final-share",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Independent rounding can overallocate earlier devices and leave a negative final split even with positive ratios.",
+        "trigger": "A multi-GPU call with 32 tiles and device_ratios=[3,3,3,1]. LDLQ constructs 32 tiles per call when size_n is 512.",
+        "expected_behavior": "Produce nonnegative device shares totaling 32 tiles.",
+        "actual_behavior": "The allocation arithmetic produces [16,16,16,-16] and passes it to torch.split before the positive-share guard. The guard therefore does not repair the invalid partition.",
+        "locations": [
+          {
+            "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "quantize_tiles_multigpu"
+          }
+        ],
+        "source_evidence": [
+          "call_45d0c7d750984088b7805e6ff191c1d9",
+          "call_0a3457b688c44d849e4f0cb00e0ea776",
+          "call_ae7dc3dcddc54416ba869c0bdc2a6e66"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Executed the new share formula with 32 tiles and four positive ratios, obtaining a negative final share.",
+            "evidence": [
+              "call_58f03df754cd48a785f29662e9dca6af"
+            ],
+            "limits": "No PyTorch or GPU execution; the exact library exception was not observed."
+          },
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree caller search identifies LDLQ and scale-search trials as direct consumers. LDLQ uses size_n/16 tiles; actual model availability for the illustrative width was not established.",
+            "evidence": [
+              "call_0a3457b688c44d849e4f0cb00e0ea776",
+              "call_ae7dc3dcddc54416ba869c0bdc2a6e66"
+            ],
+            "limits": "Reach is conditional on tile count and ratios, not every conversion."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional weighted GPU tile splitting and skips empty-device work, while preserving the existing asynchronous transfer path. Independent rounding can produce a negative final share."
+  },
+  "evidence": {
+    "call_9e66790884f944c3b9b960961924a09f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "offset": 191,
+        "max_bytes": 2078
+      },
+      "result_sha256": "fcf320a109617ede55896ef171f699b8d9e3f90cf4c98ba53f7bb405c5ba3bcf"
+    },
+    "call_45d0c7d750984088b7805e6ff191c1d9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "offset": 2269,
+        "max_bytes": 3478
+      },
+      "result_sha256": "3abf47d1d5beb2291e8b0efaed140cd47a0b0311d264fa9ccf268852a8d1bb67"
+    },
+    "call_ef968921332c4893a686e693a22c002e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+        "query": "device_ratio",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_0a3457b688c44d849e4f0cb00e0ea776": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+        "query": "quantize_tiles_multigpu",
+        "limit": 100
+      },
+      "result_sha256": "7e67e320ba8365bb74d571dc44dd13d1730ade21026b792c04ad0ac37538e676"
+    },
+    "call_ae7dc3dcddc54416ba869c0bdc2a6e66": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "1ac897bc889786ffb1334efa8434ce501c2cbb1c084cc043731e3f98ebe7f074"
+    },
+    "call_12e2ad13f88f4c41889414fafafc189c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "339a542ddae725bcc5e18cafad08b39d4e79ab4b99b4b53efc25d9f3c0e7f1e4"
+    },
+    "call_c335d6451a4b43629a13dd326d5163aa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+        "query": "device_ratios",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_58f03df754cd48a785f29662e9dca6af": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def split(n, ratios):\n s=sum(ratios)\n sizes=[round((n*r/s)/16)*16 for r in ratios]\n sizes[-1]+=n-sum(sizes)\n return sizes\nfor n,r in [(256,[2,2,4]),(32,[3,3,3,1]),(256,[0,1])]:\n print(n,r,split(n,r))"
+        ]
+      },
+      "result_sha256": "59cebffe47285c697e8347f83365a1876e02deb9bbb59c0d50e492f90753b181"
+    }
+  }
+}

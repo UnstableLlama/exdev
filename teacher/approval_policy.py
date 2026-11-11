@@ -31,7 +31,12 @@ def tier(parents, files, annotation, validated):
         if isinstance(value,dict):return value.get('basis')=='execution' or any(execution(v) for v in value.values())
         if isinstance(value,list):return any(execution(v) for v in value)
         return False
-    if execution(annotation):reasons.append('execution_claim')
+    executed_finding_verification=any(
+        check.get('method')!='source_inspection'
+        for finding in annotation.get('findings',[])
+        for check in finding.get('verification',[])
+    )
+    if execution(annotation) or executed_finding_verification:reasons.append('execution_claim')
     if not validated:reasons.append('validation_incomplete')
     return {'tier':'full_review' if reasons else 'mechanical','reasons':reasons}
 

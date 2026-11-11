@@ -37,12 +37,18 @@ def validate(record):
             raise ValueError('Fix-derived record must depend on its fixing revisions')
 
 
-def append(directory, record):
-    validate(record);directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
+def validate_evidence(directory, record):
+    """Verify every local evidence hash before a record is appended or reviewed."""
+    directory=Path(directory)
     for item in record['evidence']:
         path=directory/item['file']
         if path.is_symlink() or not path.resolve().is_relative_to(directory.resolve()):raise ValueError('Unsafe evidence path')
         if hashlib.sha256(path.read_bytes()).hexdigest()!=item['sha256']:raise ValueError('Evidence hash mismatch')
+
+
+def append(directory, record):
+    validate(record);directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
+    validate_evidence(directory,record)
     existing=sorted(directory.glob(record['defect_id']+'--*.json'))
     previous=[json.loads(p.read_text()) for p in existing]
     leaves={r['revision_id'] for r in previous}-{r['supersedes'] for r in previous if r['supersedes']}

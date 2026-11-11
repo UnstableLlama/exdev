@@ -1,0 +1,198 @@
+{
+  "schema_version": 5,
+  "sha": "b0919fca3223eb454c35fad96a04af73fef74eb5",
+  "parent_shas": [
+    "2f12246ec32a231a5f9bde18db1a69ed6e40c29e"
+  ],
+  "cutoff_date": "2025-04-08T02:03:55+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Proxy-error evaluation explicitly constructed E @ E.T and W @ W.T; the existing comments identified large intermediate tensors, especially for lm_head, as a memory concern.",
+        "basis": "source",
+        "evidence": [
+          "call_f7f0f10331794e588cf96808a6106742"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch replaces both Gram-matrix expressions with scalar einsum contractions and evaluates the numerator before transferring W to the working device.",
+        "basis": "source",
+        "evidence": [
+          "call_f7f0f10331794e588cf96808a6106742"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This offers lower temporary-memory overhead, but the diff also renames the computed result to proxy_err_2 without updating the return of proxy_err.",
+        "basis": "inference",
+        "evidence": [
+          "call_f7f0f10331794e588cf96808a6106742",
+          "call_b74f589b368b4086aa96541bcf2b78e3",
+          "call_502b31bf1d75428e9044d4cd759c1a00"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No PyTorch or CUDA execution was performed; peak VRAM, contraction planning and floating-point differences remain unmeasured.",
+      "The scalar check uses exact small integer sums, not the repository implementation or GPU arithmetic."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Proxy-error contraction and tensor lifetimes",
+        "claims": [
+          {
+            "text": "quantize_exl3 measures error after LDLQ in the transformed weight space: E = weight_r - weight_q, W = weight_r, and Hd = H.to(device). The unchanged CPU-buffer branch applies above 5e8 weight elements, making the ordering of device transfers relevant for large tensors.",
+            "basis": "source",
+            "evidence": [
+              "call_b74f589b368b4086aa96541bcf2b78e3",
+              "call_f7f0f10331794e588cf96808a6106742"
+            ]
+          },
+          {
+            "text": "For a matrix X with input-channel rows and output-channel columns, both formulations sum H[i,j] * X[i,k] * X[j,k] over i,j,k. The old expression explicitly forms an input-channel-square Gram matrix; einsum expresses the scalar directly, allowing a contraction plan that avoids that explicit intermediate. Algebraic equivalence does not require H to be symmetric.",
+            "basis": "inference",
+            "evidence": [
+              "call_f7f0f10331794e588cf96808a6106742",
+              "call_b74f589b368b4086aa96541bcf2b78e3"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription on two 2-by-3 matrices produced identical old/new numerators of 54 and denominators of 87, yielding 0.6206896551724138.",
+            "basis": "execution",
+            "evidence": [
+              "call_dc8524452f644aa5ac4c48b07df7d0f9"
+            ]
+          },
+          {
+            "text": "The denominator floor remains 1e-8, preventing division by zero or a smaller denominator. The patch clears weight_r early, although W still aliases that tensor, then extracts num with item(), clears E, transfers W and computes den. Thus clearing weight_r alone does not release the weights; the useful lifetime change is releasing E before the denominator's device work.",
+            "basis": "source",
+            "evidence": [
+              "call_f7f0f10331794e588cf96808a6106742"
+            ]
+          },
+          {
+            "text": "The final progress update becomes unconditional. ProgressBar.__enter__ returns the object even without display text, and update internally checks that text, so this change preserves the no-display path.",
+            "basis": "source",
+            "evidence": [
+              "call_f7f0f10331794e588cf96808a6106742",
+              "call_543f8dd7e68a4f2eaabb425a4462d8f7"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "proxy-error-return-name",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new metric assignment leaves the returned proxy-error name undefined.",
+        "trigger": "quantize_exl3 successfully completes quantization, metric evaluation and tensor packing and reaches its return statement.",
+        "expected_behavior": "Return weight_q, the computed normalized proxy error, and out_tensors.",
+        "actual_behavior": "The patch assigns proxy_err_2, while the unchanged return references proxy_err. Source inspection indicates a NameError instead of a successful return.",
+        "locations": [
+          {
+            "commit": "b0919fca3223eb454c35fad96a04af73fef74eb5",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "quantize_exl3"
+          }
+        ],
+        "source_evidence": [
+          "call_f7f0f10331794e588cf96808a6106742",
+          "call_b74f589b368b4086aa96541bcf2b78e3",
+          "call_502b31bf1d75428e9044d4cd759c1a00"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the complete patch with the parent function and its proxy_err occurrences: the sole assignment is replaced, but the return is not.",
+            "evidence": [
+              "call_f7f0f10331794e588cf96808a6106742",
+              "call_b74f589b368b4086aa96541bcf2b78e3",
+              "call_502b31bf1d75428e9044d4cd759c1a00"
+            ],
+            "limits": "The quantizer was not executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Reworks proxy-error evaluation into sequential scalar contractions to reduce memory overhead, but leaves a suspected undefined-name failure at the return."
+  },
+  "evidence": {
+    "call_f7f0f10331794e588cf96808a6106742": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b0919fca3223eb454c35fad96a04af73fef74eb5",
+        "offset": 179,
+        "max_bytes": 1296
+      },
+      "result_sha256": "1cf66fe6ba626b718bd4c2339ed0a3c7d588cfbb143b7e3efb52628d92d00056"
+    },
+    "call_b74f589b368b4086aa96541bcf2b78e3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 12000,
+        "max_bytes": 18000
+      },
+      "result_sha256": "106dfcda7b54ba951a5d397ee815d24dff5d6ec64a3950615f786dbba9b3a007"
+    },
+    "call_96996e54b7c54145a7616dca71ef17c2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "4002745a8ab8a465739617c5f6ba1e4f87367e339cca97a69e58aca9f784ffd9",
+      "catalog_only": true
+    },
+    "call_502b31bf1d75428e9044d4cd759c1a00": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+        "query": "proxy_err",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py"
+      },
+      "result_sha256": "decc9ca2decd0dddd73c8401d3fa480d9815342fdc176705015c16d07d179703"
+    },
+    "call_823621a62dff4d2491dcc851773371ec": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+        "query": "class ProgressBar"
+      },
+      "result_sha256": "bf5b9df8870f6348b252496229faa140072539be95cd75e9a062dea9306e8e39"
+    },
+    "call_543f8dd7e68a4f2eaabb425a4462d8f7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+        "path": "exllamav3/util/progress.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "08c40965aaab0f672d67a47a13275beb2196bca1f9120fb232726746677942ce"
+    },
+    "call_dc8524452f644aa5ac4c48b07df7d0f9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "H=[[3,1],[1,2]]\nE=[[1,2,3],[-2,0,1]]\nW=[[2,1,4],[1,3,-1]]\ndef old(X):\n return sum(H[i][j]*sum(X[i][k]*X[j][k] for k in range(3)) for i in range(2) for j in range(2))\ndef new(X):\n return sum(X[i][k]*H[i][j]*X[j][k] for i in range(2) for j in range(2) for k in range(3))\nprint({'old_num':old(E),'new_num':new(E),'old_den':old(W),'new_den':new(W),'ratio':new(E)/max(new(W),1e-8)})\nassert old(E)==new(E) and old(W)==new(W)\n"
+        ]
+      },
+      "result_sha256": "1d80b16f336249becafcda25315a2275e210a1df7914197c08b10568ad984341"
+    }
+  }
+}

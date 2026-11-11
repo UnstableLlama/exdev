@@ -13,6 +13,23 @@ from .approval_policy import assess, approve_mechanical
 ROOT=Path(__file__).resolve().parents[1]
 
 
+def publish_review_request(state_path, request_path):
+    """Expose a full-review stop only after its mailbox request is durable."""
+    state_path,request_path=Path(state_path),Path(request_path)
+    state=json.loads(state_path.read_text())
+    if state.get('status')!='awaiting_review_request':
+        raise ValueError('Walk is not waiting for a review request')
+    handover=state.get('handover') or {};run=handover.get('full_review')
+    if not run or not request_path.is_file() or request_path.is_symlink() or not request_path.read_text().strip():
+        raise ValueError('A nonempty regular review request is required')
+    record=next((r for r in reversed(state['runs']) if r.get('run')==run),None)
+    if record is None or record.get('status')!='awaiting_review_request':
+        raise ValueError('Review request does not match the pending run')
+    record['status']='pending_full_review';state['status']='awaiting_full_review'
+    handover['request']=str(request_path);write_json(state_path,state)
+    return state
+
+
 def resume(state_path, auth_file):
     state_path=Path(state_path);state=json.loads(state_path.read_text())
     if state['status']!='ready':raise ValueError('Walk is stopped; explicit review/recovery is required')
@@ -45,7 +62,7 @@ def resume(state_path, auth_file):
             author(packet,run,auth_file)
             decision=assess(run,packet,repo);record.update(decision)
             if decision['tier']=='full_review':
-                record['status']='pending_full_review';state['status']='awaiting_full_review'
+                record['status']='awaiting_review_request';state['status']='awaiting_review_request'
                 state['handover']={'full_review':record['run'],
                     'sampled_mechanical':[r['run'] for r in state['runs'] if r.get('tier')=='mechanical' and r.get('sampled') and not r.get('sample_handed_over')]}
                 for r in state['runs']:
@@ -62,8 +79,11 @@ def resume(state_path, auth_file):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--state',type=Path,required=True)
-    p.add_argument('--auth-file',type=Path,default=Path.home()/'.codex/auth.json');a=p.parse_args()
-    print(json.dumps(resume(a.state,a.auth_file),indent=2))
+    p.add_argument('--auth-file',type=Path,default=Path.home()/'.codex/auth.json')
+    p.add_argument('--publish-review-request',type=Path);a=p.parse_args()
+    result=(publish_review_request(a.state,a.publish_review_request)
+            if a.publish_review_request else resume(a.state,a.auth_file))
+    print(json.dumps(result,indent=2))
 
 
 if __name__=='__main__':main()

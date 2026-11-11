@@ -1,0 +1,194 @@
+{
+  "schema_version": 5,
+  "sha": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+  "parent_shas": [
+    "08cf8e91ce7b145c20700a055214fa23b6c0b2d9"
+  ],
+  "cutoff_date": "2025-04-10T10:41:12+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "docs",
+    "problem": [
+      {
+        "text": "The disk-cache decorator and selective clearing helper lacked docstrings.",
+        "basis": "source",
+        "evidence": [
+          "call_249cf257554f424dbfda1daa7dbec3c1"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change documents evaluation-result caching, cache-name collisions, output serialization and clearing by arguments, without changing the implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_249cf257554f424dbfda1daa7dbec3c1"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Cache lookup, writes and deletion retain their existing behavior; the new documentation does not precisely describe the actual path, namespace or argument-serialization requirements.",
+        "basis": "source",
+        "evidence": [
+          "call_249cf257554f424dbfda1daa7dbec3c1",
+          "call_e40188926cdc4a0cb9498db533bfcb86"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No evaluation workflow or shelve filesystem operation was executed. The standard-library check models only path construction and JSON key serialization."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "runtime",
+        "title": "Document persistent evaluation caching",
+        "claims": [
+          {
+            "text": "Both lookup and clearing open the shelf selected by the explicit filename argument. They construct the same key from separately JSON-serialized positional and keyword arguments, with sorted dictionary keys. A hit returns the stored result; a miss calls the wrapped function and stores its output. Clearing deletes only the matching entry.",
+            "basis": "source",
+            "evidence": [
+              "call_e40188926cdc4a0cb9498db533bfcb86"
+            ]
+          },
+          {
+            "text": "disk_lru_cache_name creates __disk_lru_cache__ beside the absolute sys.argv[0] path and appends filename + '.lru'. Function identity is not included. In compare_q.py, get_test_data explicitly uses the different cache name 'get_dataset'; main selectively clears 'test_ppl' using the same specification arguments passed to the cached function.",
+            "basis": "source",
+            "evidence": [
+              "call_e40188926cdc4a0cb9498db533bfcb86",
+              "call_6c23015cb774460596cf7598cbc8c251"
+            ]
+          },
+          {
+            "text": "The earlier runtime entry describes JSON-keyed persistence beside the launching script and notes that no eviction is implemented. Inspection of the unchanged implementation confirms that this patch adds neither eviction nor capacity limits.",
+            "basis": "source",
+            "evidence": [
+              "call_f6782c813a704489a68ecfb4e882631c",
+              "call_e40188926cdc4a0cb9498db533bfcb86",
+              "call_249cf257554f424dbfda1daa7dbec3c1"
+            ]
+          },
+          {
+            "text": "A bounded standard-library transcription produced identical keys for dictionaries with reversed insertion order, resolved a synthetic launcher path to /tmp/launcher/__disk_lru_cache__/get_dataset.lru, and rejected an object with a string representation as not JSON serializable.",
+            "basis": "execution",
+            "evidence": [
+              "call_a65a1f3445124906a194d8c09d52f715"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "cache-docstring-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The added documentation substitutes module directory, function name and string representation for the implementation's launcher directory, explicit cache filename and JSON serialization.",
+        "trigger": "A caller relies on the docstring when the launcher and decorated module are in different directories, the cache filename differs from the function name, or an argument is printable but not JSON serializable.",
+        "expected_behavior": "Documentation should identify sys.argv[0]-relative storage, the explicit filename namespace and JSON-serializable arguments; clearing must use that same namespace.",
+        "actual_behavior": "The docstrings describe module-relative storage and function-name identification, and state a string-representation requirement. The unchanged implementation instead uses sys.argv[0], filename and json.dumps. Existing get_test_data already uses a cache name different from its function name.",
+        "locations": [
+          {
+            "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+            "path": "exllamav3/util/file.py",
+            "symbol": "disk_lru_cache"
+          },
+          {
+            "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+            "path": "exllamav3/util/file.py",
+            "symbol": "disk_lru_cache_clear"
+          }
+        ],
+        "source_evidence": [
+          "call_249cf257554f424dbfda1daa7dbec3c1",
+          "call_e40188926cdc4a0cb9498db533bfcb86",
+          "call_6c23015cb774460596cf7598cbc8c251"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent literal search found uses in four evaluation files. Inspected compare_q.py demonstrates the explicit-name mismatch and a direct clearing call from main. This is a documentation-contract observation, not evidence of failures across all evaluation workflows.",
+            "evidence": [
+              "call_f20bf542f2ca47c3b03aab84c691f40d",
+              "call_6c23015cb774460596cf7598cbc8c251"
+            ],
+            "limits": "Other evaluation call sites were located but not individually inspected; dynamic use is not ruled out."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the inspected JSON serialization and path expressions with standard-library Python.",
+            "evidence": [
+              "call_e40188926cdc4a0cb9498db533bfcb86",
+              "call_a65a1f3445124906a194d8c09d52f715"
+            ],
+            "limits": "Did not execute the decorator or open a shelf."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds disk-cache docstrings without changing caching behavior, but inaccurately describes cache location, naming and accepted arguments."
+  },
+  "evidence": {
+    "call_249cf257554f424dbfda1daa7dbec3c1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+        "offset": 148,
+        "max_bytes": 1289
+      },
+      "result_sha256": "1ba55e02101fd5511da95b32571aac9444294c26accb6f0f0c52f0ac5eebfd94"
+    },
+    "call_e40188926cdc4a0cb9498db533bfcb86": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "08cf8e91ce7b145c20700a055214fa23b6c0b2d9",
+        "path": "exllamav3/util/file.py"
+      },
+      "result_sha256": "cc25abf475be3abcfd7b9cd0522fade7db5e89b3145af277d72caacc92338e0d"
+    },
+    "call_f6782c813a704489a68ecfb4e882631c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "runtime",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de1b97ae94bf13488b4bad98c6eb3de8b285753d46b56295711c375be802464"
+    },
+    "call_f20bf542f2ca47c3b03aab84c691f40d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "08cf8e91ce7b145c20700a055214fa23b6c0b2d9",
+        "query": "disk_lru_cache",
+        "limit": 100
+      },
+      "result_sha256": "27e467ca59a5059000d655a9a876c78b628c40850410af893749a531ba7837df"
+    },
+    "call_6c23015cb774460596cf7598cbc8c251": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "08cf8e91ce7b145c20700a055214fa23b6c0b2d9",
+        "path": "eval/compare_q.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "b226a6c3a4abca296276a830f3f5740e03120412eca913f344d553de0b9021c5"
+    },
+    "call_a65a1f3445124906a194d8c09d52f715": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json, os\nclass Printable:\n def __str__(self): return 'value'\ntry: json.dumps((Printable(),), sort_keys=True)\nexcept TypeError as e: print(type(e).__name__, str(e))\nprint(os.path.join(os.path.dirname(os.path.abspath('/tmp/launcher/main.py')), '__disk_lru_cache__', 'get_dataset.lru'))\nprint(str((json.dumps(({'b':2,'a':1},),sort_keys=True),json.dumps({},sort_keys=True))) == str((json.dumps(({'a':1,'b':2},),sort_keys=True),json.dumps({},sort_keys=True))))"
+        ]
+      },
+      "result_sha256": "05dab2d4e9d29ca29131f2c15195da9cc60740df59ccf2863180bbaf971d3782"
+    }
+  }
+}

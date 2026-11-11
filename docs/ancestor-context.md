@@ -85,3 +85,62 @@ including when the evidence is a historical edit. These are attribution fields,
 not independent corroboration or authorization. GitHub logins are those returned
 at recovery time; no historical username reconstruction is claimed. Already saved
 packets and drafts remain unchanged.
+
+Walk input contract v4 also binds a separate, trusted catalog of GitHub issues
+and pull requests that were created by the task cutoff and still open at that
+cutoff, even when the commit message did not reference them. The opening context
+contains titles and metadata only: number, issue/PR kind, title, author login,
+creation time, as-of-cutoff open state, URL and availability. Available rows
+also contain `repo_paths_mentioned`, a sorted, de-duplicated, capped navigation
+list of repository files named in cutoff-bound issue text, plus an explicit
+truncation flag. Traceback paths under install prefixes such as
+`site-packages/` are normalized to repository-relative paths, and only paths
+that exist in the task's parent tree survive. The hint exposes file names from
+issue bodies or comments, but no prose, surrounding lines or excerpts. It is
+navigation, not evidence; authors must fetch the item before using it.
+Unavailable rows contain no hint. The opening catalog never contains bodies or
+comments. It is capped, reports its limit and truncation state, and is distinct
+from author-linked `evidence_catalog` entries.
+
+Trusted recovery paginates title and close/reopen timelines and content edit
+histories. Post-cutoff title changes are reversed for the catalog; items created
+after the cutoff or closed before it are excluded. Body, comment and review text
+is stored only when its as-of-cutoff representation can be established. Any
+uncertain item is marked unavailable and cannot be fetched; current text is
+never used as a fallback. GitHub does not expose a recoverable trace for every
+comment deleted after the cutoff, so `available` means all still-recoverable
+cutoff content was established, not that every object once visible is present.
+Reading available content requires an explicit
+`web_fetch` call recorded in the author transcript. Standing guidance requires
+comparison of every row against the task diff and files read in the session,
+including shared numbers, identifiers, file names, error text and path hints.
+When there are at most ten rows, every available item whose title reports an
+error or failure must be read. The item's own framing must be reported
+faithfully and any relationship not stated by the commit author must be labeled
+as inference with its concrete basis.
+Legacy packets without this field retain their original prompt and replay shape.
+
+Recovery is intentionally administrative and can be expensive: without
+`--reuse`, it fetches full edit, comment, review and timeline history for every
+discussion created by the target cutoff. Use `--reuse` after the raw histories
+have been recovered and verified, especially once the repository has hundreds
+of discussions. Range-derived retrospective filenames prevent later recovery
+runs from overwriting an already accepted earlier audit.
+
+New merge packets also expose `merge_facts`: the task tree ID, each parent's
+tree ID, every parent with an identical tree, and the first-parent diff base.
+Trusted packet-building code computes these directly from Git. Tree equality
+establishes repository-content equality, not an absence of new ancestry or
+eligible discussion. Merge approval policy is unchanged: all merges still need
+full review. Standing authoring guidance asks for contributor attribution when
+supported, without treating matching display names as proof of identity.
+
+## Dependency-change inspection
+
+Standing authoring guidance requires `repo_grep` on the parent tree for imports
+of added or removed declared dependencies before describing impact. Package and
+module names can differ (for example pillow/PIL); inspect matches and the task
+diff. Empty static searches do not establish absence of dynamic or external use.
+Commit 11 remains approved only for ancestor retrieval, with canonical-use
+coverage blockers recorded in its administrative review. Its draft, transcript
+and provenance remain unchanged, including its pre-gating guidance wording.

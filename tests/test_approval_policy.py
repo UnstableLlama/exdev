@@ -24,6 +24,16 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(sampled('19'+'0'*38));self.assertTrue(sampled('00'+'f'*38))
         self.assertFalse(sampled('1a'+'0'*38));self.assertFalse(sampled('ff'+'0'*38))
 
+    def test_executed_finding_verification_requires_full_review(self):
+        for method in ('scalar_transcription','repository_execution'):
+            annotation={'findings':[{'verification':[{'method':method}]}],'chapters':[]}
+            decision=tier(['parent'],['README.md'],annotation,True)
+            self.assertEqual(decision['tier'],'full_review')
+            self.assertIn('execution_claim',decision['reasons'])
+
+        annotation={'findings':[{'verification':[{'method':'source_inspection'}]}],'chapters':[]}
+        self.assertNotIn('execution_claim',tier(['parent'],['README.md'],annotation,True)['reasons'])
+
     def test_rejection_invalidates_every_later_run_and_blocks_resume(self):
         from teacher.walk import resume
         with tempfile.TemporaryDirectory() as tmp:
@@ -39,6 +49,19 @@ class PolicyTests(unittest.TestCase):
                 r=json.loads((root/str(i)/'review.json').read_text())
                 self.assertEqual(r['status'],'needs_reauthoring');self.assertFalse(r['ancestor_context_approved'])
             with self.assertRaises(ValueError):resume(p,root/'unused-auth')
+
+    def test_review_stop_is_not_published_before_request_exists(self):
+        from teacher.walk import publish_review_request
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);p=root/'state.json';request=root/'request.md'
+            run='run/one';write_json(p,{'status':'awaiting_review_request',
+                'runs':[{'run':run,'status':'awaiting_review_request'}],
+                'handover':{'full_review':run}})
+            with self.assertRaises(ValueError):publish_review_request(p,request)
+            request.write_text('review this run\n');state=publish_review_request(p,request)
+            self.assertEqual(state['status'],'awaiting_full_review')
+            self.assertEqual(state['runs'][0]['status'],'pending_full_review')
+            self.assertEqual(state['handover']['request'],str(request))
 
 
 class MetricsTests(unittest.TestCase):

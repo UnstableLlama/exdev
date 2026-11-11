@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 import unittest
-from teacher.evidence import eligible_content
+from teacher.evidence import eligible_content, discussion_snapshot
 
 class EvidenceTests(unittest.TestCase):
     def obj(self, **kwargs):
@@ -37,3 +37,28 @@ class EvidenceTests(unittest.TestCase):
     def test_author_attribution_and_unknown_author(self):
         self.assertEqual(eligible_content(self.obj(author={'login':'reporter'}),'2025-01-02T00:00:00Z')['author_login'],'reporter')
         self.assertIsNone(eligible_content(self.obj(author=None),'2025-01-02T00:00:00Z')['author_login'])
+
+    def discussion(self, **kwargs):
+        root=self.obj(author={'login':'reporter'})
+        result=dict(retrieved_at='2025-02-01T00:00:00Z',kind='issue',number=7,title='Current title',
+                    state='OPEN',createdAt=root['createdAt'],closedAt=None,author=root['author'],url=root['url'],
+                    timeline_complete=True,title_events=[],state_events=[],objects=[root])
+        result.update(kwargs);return result
+
+    def test_discussion_snapshot_filters_cutoff_state_and_recovers_title(self):
+        cutoff='2025-01-02T00:00:00Z'
+        self.assertIsNone(discussion_snapshot(self.discussion(createdAt='2025-01-03T00:00:00Z'),cutoff))
+        closed=self.discussion(state_events=[{'kind':'closed','createdAt':'2025-01-01T12:00:00Z'}])
+        self.assertIsNone(discussion_snapshot(closed,cutoff))
+        reopened=self.discussion(state_events=[{'kind':'closed','createdAt':'2025-01-01T12:00:00Z'},
+                                                {'kind':'reopened','createdAt':'2025-01-01T13:00:00Z'}],
+                                  title_events=[{'createdAt':'2025-01-03T00:00:00Z','previousTitle':'Cutoff title','currentTitle':'Current title'}])
+        row=discussion_snapshot(reopened,cutoff)
+        self.assertEqual(row['title'],'Cutoff title');self.assertEqual(row['state'],'OPEN');self.assertTrue(row['available'])
+
+    def test_discussion_snapshot_fails_closed_on_unknown_historical_content(self):
+        root=self.obj();root.update(lastEditedAt='2025-01-03T00:00:00Z',body='FUTURE')
+        row=discussion_snapshot(self.discussion(objects=[root]),'2025-01-02T00:00:00Z')
+        self.assertFalse(row['available']);self.assertNotIn('content',row)
+        with self.assertRaisesRegex(ValueError,'timeline'):
+            discussion_snapshot(self.discussion(timeline_complete=False),'2025-01-02T00:00:00Z')

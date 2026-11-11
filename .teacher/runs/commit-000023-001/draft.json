@@ -1,0 +1,150 @@
+{
+  "schema_version": 5,
+  "sha": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+  "parent_shas": [
+    "e0f26ed129ca94cc9ea8b810849d3c68885ef51b"
+  ],
+  "cutoff_date": "2025-04-09T02:43:59+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Conversion explicitly invoked garbage collection and CUDA cache clearing at repeated module and quantizer boundaries.",
+        "basis": "source",
+        "evidence": [
+          "call_1492d1f996fc4ec4a09f82264982866f",
+          "call_b03f2650a960436bbe28373e82315f69",
+          "call_4fa411aabf224deeb56a862dbc7af08d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Skipping these calls avoids forced cleanup at those boundaries. This is narrower than disabling garbage collection globally, and broader than skipping only GC: free_mem() calls both gc.collect() and torch.cuda.empty_cache().",
+        "basis": "source",
+        "evidence": [
+          "call_4fa411aabf224deeb56a862dbc7af08d",
+          "call_1492d1f996fc4ec4a09f82264982866f",
+          "call_b03f2650a960436bbe28373e82315f69"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The likely tradeoff is less cleanup overhead versus less eager reclamation and cache release; neither conversion speed nor peak memory improvement is established by the source.",
+        "basis": "inference",
+        "evidence": [
+          "call_4fa411aabf224deeb56a862dbc7af08d",
+          "call_1492d1f996fc4ec4a09f82264982866f",
+          "call_b03f2650a960436bbe28373e82315f69"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No conversion or GPU workload was executed. A scalar computation would not establish the runtime or allocator effects of removing these cleanup calls."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Skip forced cleanup at conversion boundaries",
+        "claims": [
+          {
+            "text": "In main(), two free_mem() calls become comments: after saving the converted module tensors and deleting the temporary tensor dictionary, and after unloading the module. Saving, del tensors, calibration-state advancement, module.unload(), and checkpoint handling remain in place.",
+            "basis": "source",
+            "evidence": [
+              "call_1492d1f996fc4ec4a09f82264982866f",
+              "call_150260e818a14a50bd0d09ada4e94f80"
+            ]
+          },
+          {
+            "text": "In quantize_exl3(), three calls become comments: immediately before LDLQ, immediately after LDLQ, and after the proxy-error calculation. The quantized weights and encoded output still feed metric calculation, optional weight reconstruction, and packed-tensor construction; the patch does not change those calculations or returned values.",
+            "basis": "source",
+            "evidence": [
+              "call_b03f2650a960436bbe28373e82315f69",
+              "call_6c389c5cd3c84d119e326e3b14cd277c"
+            ]
+          },
+          {
+            "text": "The implementation chooses to omit the combined cleanup helper rather than separate garbage collection from CUDA cache clearing. Explicit reference clearing remains in the metric path, so removing the helper does not mean retaining every temporary reference.",
+            "basis": "source",
+            "evidence": [
+              "call_4fa411aabf224deeb56a862dbc7af08d",
+              "call_6c389c5cd3c84d119e326e3b14cd277c",
+              "call_b03f2650a960436bbe28373e82315f69"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Comments out five forced cleanup calls in conversion and EXL3 quantization, skipping both Python collection and CUDA cache clearing at those points without changing quantization calculations."
+  },
+  "evidence": {
+    "call_1492d1f996fc4ec4a09f82264982866f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "offset": 158,
+        "max_bytes": 709
+      },
+      "result_sha256": "32e93a363b5e6f561f7bb6a02322bb1691c32148d25c5ff9df257ccc0c36743a"
+    },
+    "call_b03f2650a960436bbe28373e82315f69": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ff72058d5052ab8c65250dbd03cc96620dc03cf5",
+        "offset": 867,
+        "max_bytes": 814
+      },
+      "result_sha256": "212705e9dab2f466a8814386e9d552778306ec24c4df898754a437a94fe83b6e"
+    },
+    "call_49ab9807d8664c46816433651e6fb0a1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "query": "def free_mem"
+      },
+      "result_sha256": "f86ba2d8aaeac940b8caf4408583aca20f67609fff671afe003053f8d9d2a7c4"
+    },
+    "call_4fa411aabf224deeb56a862dbc7af08d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "path": "exllamav3/util/memory.py"
+      },
+      "result_sha256": "8fa5105f6593f9d5947f53a9358888e9729ad053e406a9db4983413c1eaa261f"
+    },
+    "call_150260e818a14a50bd0d09ada4e94f80": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 8000,
+        "max_bytes": 14000
+      },
+      "result_sha256": "8875696dd9bce1ba347a6ba5cbd6e373a4570c950f8e4fd6d1e7c805ffd00221"
+    },
+    "call_d85df35dbb5f43ceaada0bedfcb9b3f7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "query": "free_mem"
+      },
+      "result_sha256": "fbf6cf54f90af9b4c47dacb4673e54c4c7b4d0443e9af023ee792af480722a0f"
+    },
+    "call_6c389c5cd3c84d119e326e3b14cd277c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 15800,
+        "max_bytes": 11000
+      },
+      "result_sha256": "1dd4909e05adcbaf8c98d5a751141ecf293fafb0f8c9ae631964106362c6ee50"
+    }
+  }
+}

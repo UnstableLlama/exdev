@@ -1,0 +1,311 @@
+{
+  "schema_version": 5,
+  "sha": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+  "parent_shas": [
+    "4fa0e6863e130adf7319d4b00293284c4f33296d"
+  ],
+  "cutoff_date": "2025-04-12T02:18:35+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "TransformerBlock already accepted optional attention and MLP components, but forward and quantization allocation dereferenced them unconditionally. Allocation also required a gate projection even for a plain MLP.",
+        "basis": "source",
+        "evidence": [
+          "call_4b791a7220f84054b2f27db54e33d527",
+          "call_f70a22a190ff40d8a1dc18d497b25a5c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change makes execution and allocation conditional on component presence rather than requiring placeholder branches.",
+        "basis": "source",
+        "evidence": [
+          "call_1ab62abc29cd4c91b505476d6c20b2ec",
+          "call_24ead96064ce465d80f4087bcf9ff4ee"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Attention-only, gated-MLP-only and ungated-MLP allocations now have dedicated candidate sets. The inspected Llama, Gemma and Phi3 builders still supply both branches and both input norms.",
+        "basis": "source",
+        "evidence": [
+          "call_24ead96064ce465d80f4087bcf9ff4ee",
+          "call_63bb7551b28442cda050e9772ed294d4",
+          "call_4d1079873d2f4f4cbf793e962cbedbf0",
+          "call_ea824577137d478d8e03a249037ae5bf"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No tensor inference or GPU quantization was executed. The scalar check models allocation arithmetic only.",
+      "The source establishes the allocation ceiling of eight bits but does not explain the empirical rationale for the candidate offset patterns."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Optional transformer branches and matching bit allocation",
+        "claims": [
+          {
+            "text": "forward now skips absent branches, retaining optional post-normalization and residual addition for present ones. The prefill early return remains inside attention processing; without attention, execution proceeds to the MLP and final dtype conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_1ab62abc29cd4c91b505476d6c20b2ec"
+            ]
+          },
+          {
+            "text": "allocate_q passes None for absent projections. allocate_transformer builds matching key and weight-count lists for q/k/v/o, gate/up/down, or ungated up/down. Attention requires all four projections; either MLP form requires down.",
+            "basis": "source",
+            "evidence": [
+              "call_1ab62abc29cd4c91b505476d6c20b2ec",
+              "call_24ead96064ce465d80f4087bcf9ff4ee"
+            ]
+          },
+          {
+            "text": "The allocator retains budget = int(bpw \u00d7 weight_count) + surplus_bits + 1, a base width floored with minimum one, and candidate widths capped at eight. It combines branch candidates only when both branches exist, scores them by weighted bit cost, and returns projection widths plus remaining budget. The extra one bit lets integral costs equal to the nominal budget pass the existing tuple-based strict budget selection.",
+            "basis": "source",
+            "evidence": [
+              "call_f70a22a190ff40d8a1dc18d497b25a5c",
+              "call_24ead96064ce465d80f4087bcf9ff4ee"
+            ]
+          },
+          {
+            "text": "A standard-library transcription counted six attention, four gated-MLP and three ungated-MLP candidates, yielding 24 or 18 combined candidates. With 100 weights per projection, four requested bits and zero incoming surplus, every tested form selected four bits per projection and returned one surplus bit.",
+            "basis": "execution",
+            "evidence": [
+              "call_e38553c3094748308d2a7f70387cc3e5"
+            ]
+          },
+          {
+            "text": "Conversion consumes the returned strategy as each linear's K and carries surplus into later allocation. It calls allocate_q only when quantizable linears exist, so an entirely empty block does not reach allocation through this inspected call site.",
+            "basis": "source",
+            "evidence": [
+              "call_93e9ecb4027a4455b704fd720af03cf6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "missing-norm-input",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new optional input-normalization guards do not initialize the branch input when a norm is absent.",
+        "trigger": "Run a present attention branch without attn_norm, or a present MLP without mlp_norm.",
+        "expected_behavior": "A branch without input normalization should receive the current residual state x.",
+        "actual_behavior": "Attention without its norm reads unassigned y. An MLP without its norm likewise reads unassigned y when attention is absent, or reuses the attention branch output rather than the updated residual state when attention ran.",
+        "locations": [
+          {
+            "commit": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_1ab62abc29cd4c91b505476d6c20b2ec",
+          "call_4b791a7220f84054b2f27db54e33d527"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced assignments to y and searched parent callers across the tree. Model.forward and conversion dispatch module.forward directly. The three located model builders supply both norms, so the problematic configuration is not established for those builders.",
+            "evidence": [
+              "call_c0325fbcf34040849e2166242be853b0",
+              "call_f5281ad37ca8419f8a2196879aa2b22a",
+              "call_93e9ecb4027a4455b704fd720af03cf6",
+              "call_f26d6ed18a284a26a53fb81d8484f59a",
+              "call_63bb7551b28442cda050e9772ed294d4",
+              "call_4d1079873d2f4f4cbf793e962cbedbf0",
+              "call_ea824577137d478d8e03a249037ae5bf"
+            ],
+            "limits": "Source reasoning only; external or dynamically constructed blocks were not examined."
+          }
+        ]
+      },
+      {
+        "id": "empty-block-allocation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Allocation cannot handle a block with neither branch.",
+        "trigger": "Call TransformerBlock.allocate_q with both attn and mlp absent.",
+        "expected_behavior": "Return an empty strategy or explicitly reject the empty allocation before budget division.",
+        "actual_behavior": "The projection list is empty, so budget / numel divides by zero before the later 'Logic error' assertion.",
+        "locations": [
+          {
+            "commit": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+            "path": "exllamav3/conversion/allocation.py",
+            "symbol": "allocate_transformer"
+          }
+        ],
+        "source_evidence": [
+          "call_24ead96064ce465d80f4087bcf9ff4ee",
+          "call_1ab62abc29cd4c91b505476d6c20b2ec"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent searches located TransformerBlock.allocate_q as the allocator's caller and conversion as the allocate_q consumer. Conversion guards allocation with if linears, limiting this observation to direct calls or other callers not established by the search.",
+            "evidence": [
+              "call_2b5893600d6243169163b5d79e71e2ed",
+              "call_ac861bd6905e455a9d56358f80f822e3",
+              "call_93e9ecb4027a4455b704fd720af03cf6"
+            ],
+            "limits": "No repository execution of the empty-block case."
+          }
+        ]
+      }
+    ],
+    "summary": "Makes transformer branches optional in execution and quantization allocation, including ungated MLP allocation; missing input norms and direct empty-block allocation remain problematic."
+  },
+  "evidence": {
+    "call_24ead96064ce465d80f4087bcf9ff4ee": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+        "offset": 181,
+        "max_bytes": 3203
+      },
+      "result_sha256": "03ab881efa10237ddc90e76233dd39ae7a0bc67ce2538d4cb74800798a51714e"
+    },
+    "call_1ab62abc29cd4c91b505476d6c20b2ec": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+        "offset": 3384,
+        "max_bytes": 2308
+      },
+      "result_sha256": "af9b2822c13907a0c2c240a88e09f3b95443e2ccfb4934e16a8bd760da08a30d"
+    },
+    "call_f70a22a190ff40d8a1dc18d497b25a5c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "path": "exllamav3/conversion/allocation.py"
+      },
+      "result_sha256": "43228c469c80622ec777f56d302fba30a0cfdd33d46c37cf6e25a62ffa07b663"
+    },
+    "call_4b791a7220f84054b2f27db54e33d527": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "074088bde80c802d676a818a6c0a60658c2a3d476f13a79a432ec0cd932fd822"
+    },
+    "call_f26d6ed18a284a26a53fb81d8484f59a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "query": "TransformerBlock",
+        "limit": 100
+      },
+      "result_sha256": "216fdce7b451b28915217e2d9f141249174a9f32ed148a4b78d7d36db745aa07"
+    },
+    "call_9390b1f051c64e34b28d9982392f7592": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "query": ".forward(",
+        "path": "exllamav3/model",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_2b5893600d6243169163b5d79e71e2ed": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "query": "allocate_transformer",
+        "limit": 100
+      },
+      "result_sha256": "69e5ee3067f34970b7faab4be161adee8afe137aa75bbe065e5d5cc85ac3aa62"
+    },
+    "call_c0325fbcf34040849e2166242be853b0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "query": ".forward(",
+        "limit": 100
+      },
+      "result_sha256": "32e53d356bb96bdbdd82910f1050f62af416926642f67dd424248466b1b9d7cb"
+    },
+    "call_63bb7551b28442cda050e9772ed294d4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "path": "exllamav3/models/llama.py",
+        "offset": 2200,
+        "max_bytes": 4200
+      },
+      "result_sha256": "0cfeb3f9bf6f537f0c14d54987cd6a6bfe354733ecc47ec58d3782b008267d86"
+    },
+    "call_4d1079873d2f4f4cbf793e962cbedbf0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "path": "exllamav3/models/gemma.py",
+        "offset": 2200,
+        "max_bytes": 4500
+      },
+      "result_sha256": "23587eae63beadca6df49b2a6d369e91cec79df0bce810062394d51b9f86629f"
+    },
+    "call_ea824577137d478d8e03a249037ae5bf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "path": "exllamav3/models/phi3.py",
+        "offset": 2200,
+        "max_bytes": 4000
+      },
+      "result_sha256": "6d4d3a564ac0c2e9842e0964481af5f38e7072ab9dc65a898402e8cc5dae8930"
+    },
+    "call_f5281ad37ca8419f8a2196879aa2b22a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "path": "exllamav3/models/model.py",
+        "offset": 1400,
+        "max_bytes": 2000
+      },
+      "result_sha256": "f45a97660082a8eeacba34c3ad233df64684da2dec8dc9379b54a7e2c2b1756d"
+    },
+    "call_ac861bd6905e455a9d56358f80f822e3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "query": "allocate_q(",
+        "limit": 100
+      },
+      "result_sha256": "1afb75a1920cc91fc6b2e4e8e384aac16e8a49e1295db41aae3589a7a11b5550"
+    },
+    "call_93e9ecb4027a4455b704fd720af03cf6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 9200,
+        "max_bytes": 2600
+      },
+      "result_sha256": "c2a45110f72eef8e628f6ab6bbc9a7a531de4f5c7607f60cba904400599ccc1a"
+    },
+    "call_e38553c3094748308d2a7f70387cc3e5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import bisect\nq=[[0,0,0,0],[0,0,1,0],[0,0,2,0],[0,1,1,1],[0,1,2,1],[1,2,2,1]]\ng=[[0,0,0],[0,0,1],[0,1,1],[1,1,1]]\nu=[[0,0],[0,1],[1,1]]\nfor name,p in [('attention',q),('gated',g),('ungated',u),('both gated',[a+b for a in q for b in g]),('both ungated',[a+b for a in q for b in u])]:\n n=[100]*len(p[0]); budget=4*sum(n)+1; opts=sorted((sum(a*b for a,b in zip([min(8,x+4) for x in r],n)),[min(8,x+4) for x in r]) for r in p); used,selected=opts[max(0,bisect.bisect_right(opts,(budget,))-1)]; print(name,len(p),selected,budget-used)\n"
+        ]
+      },
+      "result_sha256": "7478b660208504ce352e046963ad05011a8f646f01ab5bbe873d5d523f03a2bd"
+    }
+  }
+}

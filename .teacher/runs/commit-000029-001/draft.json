@@ -1,0 +1,210 @@
+{
+  "schema_version": 5,
+  "sha": "ae9f910be23209c761505373e24b91adb6033c39",
+  "parent_shas": [
+    "4d82aab28eb526fb387a12f1d190af6fd875b999"
+  ],
+  "cutoff_date": "2025-04-11T00:26:03+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "docs",
+    "problem": [
+      {
+        "text": "Conversion guidance needed a dedicated reference beyond the README\u2019s brief instructions.",
+        "basis": "inference",
+        "evidence": [
+          "call_38f27bf7437d4e9eb8eaca7b0034c2be",
+          "call_a2c2a9c1baa2470a876923435e6aa127"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change adds doc/convert.md and links it from the README, grouping arguments into basic settings, checkpoints, performance and debugging, followed by runnable command examples and estimated durations.",
+        "basis": "source",
+        "evidence": [
+          "call_38f27bf7437d4e9eb8eaca7b0034c2be",
+          "call_a2c2a9c1baa2470a876923435e6aa127"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This is documentation-only: it exposes existing conversion controls without changing their implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_38f27bf7437d4e9eb8eaca7b0034c2be",
+          "call_a2c2a9c1baa2470a876923435e6aa127"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The timing table presents rough v0.0.1 estimates for 1B, 8B and 70B models at 2, 4 and 8 bits per weight; these are documentation claims, not measurements reproduced here.",
+        "basis": "source",
+        "evidence": [
+          "call_a2c2a9c1baa2470a876923435e6aa127"
+        ]
+      }
+    ],
+    "limitations": [
+      "No conversion, GPU workload or filesystem-writing operation was executed. The bounded Python check models only argument parsing and shard allocation.",
+      "The guide\u2019s performance, memory-use and hardware-tuning statements were not independently benchmarked."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Conversion usage and operational guidance",
+        "claims": [
+          {
+            "text": "The guide distinguishes source, output and working directories. The implementation stores arguments, checkpoint state and intermediate quantized tensors under the working directory, then calls compile_model after processing modules.",
+            "basis": "source",
+            "evidence": [
+              "call_a2c2a9c1baa2470a876923435e6aa127",
+              "call_e6a5caa4094245b1befba3f0af5e49a9"
+            ]
+          },
+          {
+            "text": "Explicit resume loads saved arguments and checkpoint state rather than starting a new job. The implementation allows selected overrides, while rejecting changes to saved bitrate, head bitrate and calibration dimensions.",
+            "basis": "source",
+            "evidence": [
+              "call_e6a5caa4094245b1befba3f0af5e49a9"
+            ]
+          },
+          {
+            "text": "The multi-GPU example pairs devices 2,0,1 with ratios 3,4,5. main selects the first listed device as primary, parses integer ratios, checks that their count matches the devices, and passes both lists into each linear conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_a2c2a9c1baa2470a876923435e6aa127",
+              "call_e6a5caa4094245b1befba3f0af5e49a9"
+            ]
+          },
+          {
+            "text": "The example\u2019s denominator 12 is the sum of its weights: its nominal shares are 25%, one third and approximately 41.67%. These fractions describe the requested proportions, not measured GPU utilization.",
+            "basis": "execution",
+            "evidence": [
+              "call_ca4d0c6abd8349fab67fb9ebc06c9a0c"
+            ]
+          },
+          {
+            "text": "The guide recommends adjusting ratios while monitoring utilization, offering workload weighting as an alternative to equal device participation. It frames additional GPUs as an encoding-speed option rather than a way to reduce primary-device memory requirements.",
+            "basis": "source",
+            "evidence": [
+              "call_a2c2a9c1baa2470a876923435e6aa127"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "shard-size-documentation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new shard-size documentation disagrees with the existing parser and allocator: it advertises floating-point values and says zero disables sharding.",
+        "trigger": "Follow the guide by passing --shard_size 1.5, or pass zero when compiling multiple modules with positive tensor sizes.",
+        "expected_behavior": "According to the guide, fractional sizes should be accepted and zero should produce an unsharded output.",
+        "actual_behavior": "The parser declares type=int, rejecting fractional text. compile_model converts zero to a zero-byte threshold without a disabling branch, so each subsequent positive-size module starts another shard. Its sole direct caller found in the parent tree is conversion main.",
+        "locations": [
+          {
+            "commit": "ae9f910be23209c761505373e24b91adb6033c39",
+            "path": "doc/convert.md",
+            "symbol": "--shard_size"
+          },
+          {
+            "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+            "path": "exllamav3/conversion/compile.py",
+            "symbol": "compile_model"
+          }
+        ],
+        "source_evidence": [
+          "call_a2c2a9c1baa2470a876923435e6aa127",
+          "call_e6a5caa4094245b1befba3f0af5e49a9",
+          "call_9148f0c965af4c5ebf81970be67871cb",
+          "call_295c8c85d6bb44cb916a635a8761fa96",
+          "call_be12e07a64ac47efbd731301f779c50c"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library reproduction rejected 1.5 with exit code 2 and allocated three separate shards for module sizes 100, 200 and 300 at a zero-byte limit.",
+            "evidence": [
+              "call_ca4d0c6abd8349fab67fb9ebc06c9a0c"
+            ],
+            "limits": "This transcribes the inspected parser declaration and allocation conditions; it does not execute repository conversion or safetensors serialization."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a linked EXL3 conversion guide covering arguments, resume, weighted multi-GPU examples and duration estimates; shard-size instructions conflict with existing behavior."
+  },
+  "evidence": {
+    "call_38f27bf7437d4e9eb8eaca7b0034c2be": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ae9f910be23209c761505373e24b91adb6033c39",
+        "offset": 160,
+        "max_bytes": 907
+      },
+      "result_sha256": "dcac0195fa71df7f1d93a1b30fc9097b766e3daf00c008a993609f2409d3baec"
+    },
+    "call_a2c2a9c1baa2470a876923435e6aa127": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ae9f910be23209c761505373e24b91adb6033c39",
+        "offset": 1067,
+        "max_bytes": 5363
+      },
+      "result_sha256": "e0b168d020f014974e32beb179fb7df36dd2588989996da2b7454cf8d1ec5165"
+    },
+    "call_e6a5caa4094245b1befba3f0af5e49a9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "59d00b3996572a5b0fef4dfa0ed59d590a9930a32875ed0074af8e1069351fc2"
+    },
+    "call_295c8c85d6bb44cb916a635a8761fa96": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "query": "shard_size",
+        "limit": 30
+      },
+      "result_sha256": "38dcff217de16f962a0083fa89fa92c2cd74891c27b0de82dacc2e2507cb5616"
+    },
+    "call_9148f0c965af4c5ebf81970be67871cb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "deb4433fb561ff144693e464e53400c731e47939e2ab4dc62520f7122f4df728"
+    },
+    "call_be12e07a64ac47efbd731301f779c50c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "query": "compile_model(",
+        "limit": 30
+      },
+      "result_sha256": "0cc09b246087b9e4761372616fda895ebb44db71fad70fe164b07c2928252beb"
+    },
+    "call_ca4d0c6abd8349fab67fb9ebc06c9a0c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import argparse,contextlib,io\np=argparse.ArgumentParser(); p.add_argument('-ss','--shard_size',type=int)\nwith contextlib.redirect_stderr(io.StringIO()):\n try: p.parse_args(['-ss','1.5'])\n except SystemExit as e: print('fractional shard size exit:',e.code)\nfor limit in [0,8192*1024**2]:\n shards=[[]]; current=0\n for size in [100,200,300]:\n  if current+size>limit and current>0:\n   current=0; shards.append([])\n  current+=size; shards[-1].append(size)\n print('byte limit:',limit,'shards:',shards)\nprint('normalized examples:',[x/sum([3,4,5]) for x in [3,4,5]])"
+        ]
+      },
+      "result_sha256": "d185d5e169ab91c6b2d86ae056e026f2f1bc912bec61bf343c4c2832c7ad8373"
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "defect_id": "exllamav3-logits-padding-width-mismatch",
+  "revision_id": "r001",
+  "supersedes": null,
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Commit 1d77c05 pads Linear heads to a multiple of 128 while the return_logits path sizes held logits to a multiple of 32, creating a source-level width mismatch for vocabularies divisible by 32 but not 128.",
+  "trigger": "Use return_logits with a vocabulary whose size is a multiple of 32 but not 128.",
+  "expected_behavior": "The model head output and held-logits storage use compatible padded widths.",
+  "actual_behavior": "The head emits the 128-aligned width while generator/job storage remains 32-aligned; SeqTensor.append behavior for this mismatch was not assessed.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+      "paths": [
+        "exllamav3/modules/linear.py",
+        "exllamav3/generator/generator.py",
+        "exllamav3/generator/job.py"
+      ],
+      "status": "source_verified_introduction",
+      "scope": "The task diff changes Linear's default output alignment from exact width to 128; the existing held-logits alignment remains 32."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+      "run": ".teacher/runs/commit-000032-001",
+      "source": "Independent Fable mailbox review of head padding and logits consumers.",
+      "reach": "The sampler masks columns beyond actual_vocab_size when a tokenizer is supplied. The separate return_logits storage path retains 32-based sizing.",
+      "limits": "SeqTensor.append and runtime return_logits behavior were not traced or executed."
+    }
+  ],
+  "fixes": [],
+  "verification": {
+    "method": "source_inspection",
+    "repository_execution": false,
+    "tree_scope": "Commit 1d77c05 introduction and task-tree logits consumers.",
+    "limits": [
+      "No generation, sampling or tensor append was executed.",
+      "SeqTensor.append behavior for mismatched widths is unassessed.",
+      "The record is suspected because runtime effect is not established."
+    ]
+  },
+  "evidence": [
+    {
+      "file": "evidence/commit32-linear-padding-source-scan.json",
+      "sha256": "019b83461b18918db8188e1ed78891073544a60bf3e6df3b07301c4b73435aa4",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "artifact": "Commit-32 Linear padding and logits-width source scan"
+      },
+      "retrieved_at": "2026-11-11T21:46:34Z"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+      "available_at": "2025-04-11T01:51:14+02:00"
+    }
+  ],
+  "recorded_at": "2026-11-11T21:46:34Z",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": ["1d77c0525ab2b1e716de6147023a48041496110c"],
+    "unaffected_checked_shas": ["40fb78fa4cc156e8b8a79d7470bc5062a02ea29c"]
+  },
+  "impact": {
+    "level": "medium",
+    "domain": "generation_output_shapes",
+    "rationale": "The source widths disagree on a concrete vocabulary class, but the append consumer and runtime effect remain unassessed."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "Commit-32 reviewer observation recorded as a suspected candidate awaiting independent ledger review."
+}

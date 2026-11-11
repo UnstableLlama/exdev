@@ -1,0 +1,245 @@
+{
+  "schema_version": 5,
+  "sha": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+  "parent_shas": [
+    "11822a5505f26056e07f92edd3c7056734264957"
+  ],
+  "cutoff_date": "2025-04-08T15:27:17+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Compilation previously wrote aggregate quantization settings into config.json but did not generate a per-module tensor-storage inventory.",
+        "basis": "source",
+        "evidence": [
+          "call_bd16775d15024152b5cd3ff7fdee8b49",
+          "call_b2507b19096141a98c040d58e4f75c31"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The new sidecar combines existing quantization settings with metadata derived from the output model's module structure and Safetensors headers, rather than loading weights to inspect their storage.",
+        "basis": "source",
+        "evidence": [
+          "call_41f0f744a2674ccea1f6581bd0763412",
+          "call_80dc6adac68849bb97bcfbac488f2a98"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Compilation now generates quantization_config.json after writing config.json. A separate utility creates or overwrites the sidecar for an existing model directory.",
+        "basis": "source",
+        "evidence": [
+          "call_b2507b19096141a98c040d58e4f75c31",
+          "call_3fc15baa807b4c2c843d14adf7b51481"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The additional update_config helper sets the literal key tied_word_embeddings to true when that key already exists; it does not insert an absent key. The standalone utility does not call this helper.",
+        "basis": "source",
+        "evidence": [
+          "call_41f0f744a2674ccea1f6581bd0763412",
+          "call_3fc15baa807b4c2c843d14adf7b51481"
+        ]
+      }
+    ],
+    "limitations": [
+      "No conversion, model construction, filesystem integration or GPU execution was tested. The Python check transcribed only prefix selection and integer division.",
+      "The intended semantics of the tied_word_embeddings update and downstream consumers of the new sidecar were not established."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Export a header-derived quantization inventory",
+        "claims": [
+          {
+            "text": "compile_model already writes tensor shards and aggregate settings including quant_method, version, bits and calibration dimensions. The new call runs after config.json is closed, so metadata generation reads the just-written output directory.",
+            "basis": "source",
+            "evidence": [
+              "call_bd16775d15024152b5cd3ff7fdee8b49",
+              "call_b2507b19096141a98c040d58e4f75c31"
+            ]
+          },
+          {
+            "text": "create_quantization_config_json constructs Config and Model without calling a weight-loading method, iterates the model, and skips modules with children. Each remaining module contributes stored_tensors under its primary key. It requires config.json to contain quantization_config, adds tensor_storage to that object in memory, and writes the enriched object to the separate sidecar rather than rewriting config.json.",
+            "basis": "source",
+            "evidence": [
+              "call_41f0f744a2674ccea1f6581bd0763412"
+            ]
+          },
+          {
+            "text": "SafetensorsCollection.list_tensors selects exact keys or dot-delimited descendants. It reports header shape, payload byte count as end minus beginning, and the string form of the converted Torch dtype. It uses existing header maps, not get_tensor; consequently this inventory contains neither tensor payloads nor shard filenames.",
+            "basis": "source",
+            "evidence": [
+              "call_80dc6adac68849bb97bcfbac488f2a98",
+              "call_85d897413bb74cb284712516dfb60896"
+            ]
+          },
+          {
+            "text": "Module.quant_format_id defaults to None. Linear overrides it using the same storage-group predicate now shared with load_exl3: trellis plus either sv or svh and either su or suh. Metadata classification checks the primary key only, while the refactored loader still accepts its key argument.",
+            "basis": "source",
+            "evidence": [
+              "call_e81bd54b25bd4ebdb914e61dae34b181",
+              "call_7ca82d68790b4d9391ce60a53ccc314a"
+            ]
+          },
+          {
+            "text": "Recognized EXL3 leaves receive quant_format='exl3' and bits_per_weight equal to the trellis header's last dimension divided by 16 using integer division. This matches LinearEXL3's existing K calculation; it is not calculated from total storage bytes and therefore does not account for ancillary tensors.",
+            "basis": "source",
+            "evidence": [
+              "call_41f0f744a2674ccea1f6581bd0763412",
+              "call_78b439eddc2d40a3bb26006f3d01f309"
+            ]
+          },
+          {
+            "text": "A scalar transcription confirmed that the prefix rule includes layer.1 and layer.1.weight but excludes layer.10.weight and layer.1x. Example last dimensions 32, 48, 64, 96 and 128 yield reported bit widths 2, 3, 4, 6 and 8 respectively.",
+            "basis": "execution",
+            "evidence": [
+              "call_50fc6e347e084f439d465774c18ce4c8"
+            ]
+          },
+          {
+            "text": "The standalone utility requires --model_dir/-m and uses preexisting sidecar presence only to choose its Created/Updated message. Both paths regenerate metadata from config.json and model storage rather than merging the previous sidecar.",
+            "basis": "source",
+            "evidence": [
+              "call_3fc15baa807b4c2c843d14adf7b51481",
+              "call_41f0f744a2674ccea1f6581bd0763412"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds quantization_config.json generation during compilation and through a standalone utility, recording leaf-module tensor storage and EXL3 bit widths from headers."
+  },
+  "evidence": {
+    "call_b2507b19096141a98c040d58e4f75c31": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "offset": 162,
+        "max_bytes": 6975
+      },
+      "result_sha256": "30d8e6567507fc411d1f619c1a8ff8c6e798939e722be276d4f3038f9d839ec1"
+    },
+    "call_41f0f744a2674ccea1f6581bd0763412": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "offset": 1264,
+        "max_bytes": 1937
+      },
+      "result_sha256": "9855d4c4e6fd08afc1dbd33a57ccd3a372b89bd953822e1b505ebad8f9ed384e"
+    },
+    "call_80dc6adac68849bb97bcfbac488f2a98": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "offset": 3201,
+        "max_bytes": 1083
+      },
+      "result_sha256": "c2386149220b9d1baf2842fb2401ae503fe408f851e5664eed9fc75b75ee3482"
+    },
+    "call_7ca82d68790b4d9391ce60a53ccc314a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "offset": 4284,
+        "max_bytes": 1325
+      },
+      "result_sha256": "7f9b14a1c7cd5f4a5e1b41d511c563403c2ab170b299de51d422e363bf49ef3c"
+    },
+    "call_e81bd54b25bd4ebdb914e61dae34b181": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "offset": 5609,
+        "max_bytes": 557
+      },
+      "result_sha256": "52ff01eaa93115e78b4623b7f888df088610d47244ca1187185100ed0695860a"
+    },
+    "call_3fc15baa807b4c2c843d14adf7b51481": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "offset": 6166,
+        "max_bytes": 971
+      },
+      "result_sha256": "e76fd750b36c5058d103e18f0b1b27c8fa9714c1548c63d535e74389d15291f5"
+    },
+    "call_bd16775d15024152b5cd3ff7fdee8b49": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "11822a5505f26056e07f92edd3c7056734264957",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3877d8323a26d8e66aa9643c71e2f60b929ca03378c2cb9bf53e9b9d55d6c06d"
+    },
+    "call_33d26fa50ba642688c458cc3a3acd509": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "11822a5505f26056e07f92edd3c7056734264957",
+        "query": "16",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "limit": 30
+      },
+      "result_sha256": "123b5f4df4942c03bff1b56ec1def9c1a5f61243cc7a9ade862d634ceab9d2ae"
+    },
+    "call_5e309e44cfae49878e0d0c6223fb3353": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "11822a5505f26056e07f92edd3c7056734264957",
+        "query": "reshape",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "limit": 30
+      },
+      "result_sha256": "4bf3fa3dd88427911c951dbbfa7b3ea5ec8f20e1f581a23a2af46ddf857be20d"
+    },
+    "call_00c8149b270342358c17c3afba54a7de": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "12c0079b5a56557034065cb044307605558c9ae8d6b1d3721ebf566688854435",
+      "catalog_only": true
+    },
+    "call_78b439eddc2d40a3bb26006f3d01f309": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "11822a5505f26056e07f92edd3c7056734264957",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 3700
+      },
+      "result_sha256": "7808db2f8f145940a9670521180de4a2f9e28046783195d37a4fb6b9bc1eb888"
+    },
+    "call_85d897413bb74cb284712516dfb60896": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "11822a5505f26056e07f92edd3c7056734264957",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 8500
+      },
+      "result_sha256": "91ec254cc396c5f3f4f089b6620528fcd9630f292c5fd305f255c0971225eae6"
+    },
+    "call_50fc6e347e084f439d465774c18ce4c8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "keys=['layer.1','layer.1.weight','layer.10.weight','layer.1x']; p='layer.1'; result=[k for k in keys if k==p or k.startswith(p+'.')]; assert result==keys[:2]; print(result); print({n:n//16 for n in [32,48,64,96,128]})"
+        ]
+      },
+      "result_sha256": "0effe873d5336dd868c184bf64a31844f1cfd4ee09c71b6e5f8f96b0049b658a"
+    }
+  }
+}

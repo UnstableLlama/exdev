@@ -16,7 +16,7 @@ def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], stdin=subprocess.DEVNULL)
 
 
-def build_packet(repo, task, destination, evidence=None):
+def build_packet(repo, task, destination, evidence=None, discussions=None):
     repo, destination = Path(repo), Path(destination)
     if destination.exists():
         raise ValueError('Packet destination must not already exist')
@@ -38,6 +38,15 @@ def build_packet(repo, task, destination, evidence=None):
                 'commits': {}, 'shows': {}, 'evidence': [], 'history_order': allowed,
                 'mode': 'entry_analysis', 'ancestor_entries': []}
     seen_blobs = {}
+    if len(parents) > 1:
+        task_tree = git(repo, 'rev-parse', task + '^{tree}').decode().strip()
+        parent_trees = {p: git(repo, 'rev-parse', p + '^{tree}').decode().strip() for p in parents}
+        manifest['merge_facts'] = {
+            'task_tree': task_tree,
+            'parent_trees': parent_trees,
+            'tree_identical_to_parents': [p for p in parents if parent_trees[p] == task_tree],
+            'diff_base_parent': parents[0],
+        }
     for sha in [*allowed, task]:
         fields = git(repo, 'show', '-s', '--format=%P%x00%cI%x00%B', sha).decode(errors='replace').split('\0', 2)
         ps, date, message = fields[0].split(), fields[1], fields[2].rstrip('\n')
@@ -96,6 +105,44 @@ def build_packet(repo, task, destination, evidence=None):
             if exported['kind']=='safetensors_header':
                 exported['tensor_count']=len([k for k in json.loads(data) if k!='__metadata__'])
             manifest['evidence'].append(exported)
+    if discussions is not None:
+        if discussions.get('task_sha') != task or timestamp(discussions.get('cutoff','')) != timestamp(cutoff):
+            raise ValueError('Unreferenced discussion catalog belongs to a different task/cutoff')
+        if discussions.get('complete') is not True or not isinstance(discussions.get('truncated'), bool):
+            raise ValueError('Unreferenced discussion recovery must be complete and state truncation')
+        catalog=[]
+        for item in discussions.get('items',[]):
+            required=('number','kind','title','author_login','created_at','state','url','available')
+            if any(k not in item for k in required) or item['kind'] not in ('issue','pull_request') or item['state']!='OPEN':
+                raise ValueError('Invalid unreferenced discussion catalog row')
+            if timestamp(item['created_at']) > timestamp(cutoff):
+                raise ValueError('Unreferenced discussion is newer than task cutoff')
+            opening={k:item[k] for k in required}
+            if not item['available']:
+                if not item.get('unavailable_reason'):
+                    raise ValueError('Unavailable discussion needs a reason')
+                opening['unavailable_reason']=item['unavailable_reason']
+            else:
+                paths=item.get('repo_paths_mentioned')
+                paths_truncated=item.get('repo_paths_mentioned_truncated')
+                if (not isinstance(paths,list) or not all(isinstance(p,str) for p in paths)
+                    or paths!=sorted(set(paths)) or not isinstance(paths_truncated,bool)):
+                    raise ValueError('Available discussion needs valid repository path hints')
+                opening['repo_paths_mentioned']=paths
+                opening['repo_paths_mentioned_truncated']=paths_truncated
+                data=item['content'].encode()
+                if hashlib.sha256(data).hexdigest()!=item['content_sha256'] or timestamp(item['revision_at'])>timestamp(cutoff):
+                    raise ValueError('Unreferenced discussion content is not cutoff-bound')
+                exported={k:item[k] for k in ('author_login','url','source_id','created_at','revision_at','retrieved_at',
+                                               'representation','content_sha256')}
+                exported.update(blob=store(data),kind='web',content_bytes=len(data),
+                                catalog_origin='unreferenced_discussion',discussion_number=item['number'],
+                                discussion_kind=item['kind'])
+                manifest['evidence'].append(exported)
+            catalog.append(opening)
+        manifest['unreferenced_discussion_catalog']=catalog
+        manifest['unreferenced_discussion_truncated']=discussions['truncated']
+        manifest['unreferenced_discussion_limit']=discussions.get('limit')
     (destination/'manifest.json').write_text(json.dumps(manifest, sort_keys=True, indent=2)+'\n')
     return manifest
 

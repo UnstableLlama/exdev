@@ -1,0 +1,170 @@
+{
+  "schema_version": 5,
+  "sha": "b1c7f251d27b35fe9679ad1007dd6f9b8a723d4c",
+  "parent_shas": [
+    "08166e3f42463b13c51802ea892fb8ac66d90a45"
+  ],
+  "cutoff_date": "2025-04-08T09:30:08+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "quantize_exl3 computed proxy_err_2 but returned proxy_err, leaving the return name undefined after quantization and packing.",
+        "basis": "source",
+        "evidence": [
+          "call_8b7cd238d7ba4af98a7e121f417b5e06"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The one-line fix assigns the existing normalized error calculation to proxy_err, matching the unchanged return contract without altering the calculation.",
+        "basis": "source",
+        "evidence": [
+          "call_ca6b95741bf9400598bfe61712684906",
+          "call_8b7cd238d7ba4af98a7e121f417b5e06"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This removes the return-name failure blocking the inspected direct caller, Linear.convert_exl3, from constructing LinearEXL3 and returning the metric.",
+        "basis": "source",
+        "evidence": [
+          "call_ca6b95741bf9400598bfe61712684906",
+          "call_f4e52671382e4f6ca131cf312bc4c6f0"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier memory-management entry recorded this undefined-name defect. Inspection of the parent function and task patch shows that this change removes that specific defect.",
+        "basis": "source",
+        "evidence": [
+          "call_b7892164f2384217abad72dd0492e21f",
+          "call_8b7cd238d7ba4af98a7e121f417b5e06",
+          "call_ca6b95741bf9400598bfe61712684906"
+        ]
+      }
+    ],
+    "limitations": [
+      "No full quantizer, PyTorch or CUDA execution was performed. The scalar check isolates assignment and return behavior, not tensor arithmetic or successful end-to-end conversion.",
+      "Caller inspection covers the direct Linear.convert_exl3 call found by literal search, not every broader conversion entry point."
+    ],
+    "links": [
+      "b0919fca3223eb454c35fad96a04af73fef74eb5"
+    ],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Restore the proxy-error return value",
+        "claims": [
+          {
+            "text": "After LDLQ, the metric uses transformed-space residual E = weight_r - weight_q and reference W = weight_r. Each scalar einsum sums X[i,k] * H[i,j] * X[j,k]; the residual contraction is divided by the reference contraction. The 1e-8 denominator floor protects against a zero or smaller denominator and is unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_8b7cd238d7ba4af98a7e121f417b5e06",
+              "call_ca6b95741bf9400598bfe61712684906"
+            ]
+          },
+          {
+            "text": "Renaming the assignment preserves sequential contractions, tensor-reference cleanup, optional weight reconstruction and packed-tensor construction. The returned tuple remains weight_q, proxy_err, out_tensors; changing the local assignment is sufficient to reconnect the computed scalar to that interface.",
+            "basis": "source",
+            "evidence": [
+              "call_ca6b95741bf9400598bfe61712684906",
+              "call_8b7cd238d7ba4af98a7e121f417b5e06"
+            ]
+          },
+          {
+            "text": "Linear.convert_exl3 unpacks this tuple, constructs LinearEXL3 from the packed tensors while preserving the original bias, and returns either proxy_err alone or proxy_err with weight_q.",
+            "basis": "source",
+            "evidence": [
+              "call_7145f2f95edf4949af7b80539dbcbd26",
+              "call_f4e52671382e4f6ca131cf312bc4c6f0"
+            ]
+          },
+          {
+            "text": "An isolated standard-library check using the inspected assignment and return statements raised NameError for the parent spelling. With the patched spelling, numerator 2 and denominator 4 returned metric 0.5; denominator zero returned 200000000.0 through the unchanged floor. This checks scalar binding and division only.",
+            "basis": "execution",
+            "evidence": [
+              "call_d0ce85746d9240dba00a34ac16a78132"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Fixes the proxy-error variable name so quantize_exl3 returns its computed metric instead of referencing an undefined name."
+  },
+  "evidence": {
+    "call_ca6b95741bf9400598bfe61712684906": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b1c7f251d27b35fe9679ad1007dd6f9b8a723d4c",
+        "offset": 147,
+        "max_bytes": 548
+      },
+      "result_sha256": "8ccfcd669d89fcffd21373f42e4e5ceda58cfbcb2905704c6dc8d68bd04bd03e"
+    },
+    "call_9a23cf82092d4cd1913547da8fbc0c64": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "8f483ebfb2a3097cfb22d8e1244c7cb5e27707c7bb0f2550caac13e10abc0aa9",
+      "catalog_only": true
+    },
+    "call_b7892164f2384217abad72dd0492e21f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b0919fca3223eb454c35fad96a04af73fef74eb5",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7bba72b5181ccffbb3006a17c32c222c5624a21e789416262e521276b87b93d0"
+    },
+    "call_8b7cd238d7ba4af98a7e121f417b5e06": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "08166e3f42463b13c51802ea892fb8ac66d90a45",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 12000,
+        "max_bytes": 18000
+      },
+      "result_sha256": "67cb7f6273c63cd878812a50629f81eb8146f6b8cef472cec587812a09e17d90"
+    },
+    "call_7145f2f95edf4949af7b80539dbcbd26": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "08166e3f42463b13c51802ea892fb8ac66d90a45",
+        "query": "quantize_exl3",
+        "limit": 100
+      },
+      "result_sha256": "8294887d30c9c311e142b3c847918a44fb826b555b3afe8fd2d16a21bfe7a8a2"
+    },
+    "call_f4e52671382e4f6ca131cf312bc4c6f0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "08166e3f42463b13c51802ea892fb8ac66d90a45",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 3500,
+        "max_bytes": 3700
+      },
+      "result_sha256": "54d2b05af7d6e98a8715a2ddd355bf2a642555f4ae9266dceea8612e6e9c704d"
+    },
+    "call_d0ce85746d9240dba00a34ac16a78132": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\ns=Path('exllamav3/modules/quant/exl3_lib/quantize.py').read_text()\nline=next(x.strip() for x in s.splitlines() if 'proxy_err_2 = ' in x)\nret=s[s.rfind('    return weight_q,'):].strip()\nfor label,assignment in [('parent',line),('patched',line.replace('proxy_err_2','proxy_err'))]:\n ns={}\n exec('def check(num, den):\\n    weight_q, out_tensors = None, {}\\n    '+assignment+'\\n    '+ret,ns)\n for num,den in [(2.0,4.0),(2.0,0.0)]:\n  try: print(label,num,den,ns['check'](num,den))\n  except NameError as e: print(label,type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "84968c3ebb2379ccaba86a9ca5fc6202c2d326bfadbce884900537a7b9514e1c"
+    }
+  }
+}

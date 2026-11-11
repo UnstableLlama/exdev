@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from copy import deepcopy
-from ledger.retrospectives import append, eligible_revisions,validate
+from ledger.retrospectives import append, eligible_revisions,validate,validate_evidence
 
 
 class RetrospectiveTests(unittest.TestCase):
@@ -27,6 +27,15 @@ class RetrospectiveTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root/'fixture-defect--r001.json').read_text())['status'],'confirmed')
         revision.update(revision_id='r003',supersedes='r002');(self.root/'evidence.txt').write_text('Changed')
         with self.assertRaises(ValueError):append(self.root,revision)
+
+    def test_typed_wrong_evidence_hash_is_refused_before_append(self):
+        record=deepcopy(self.record)
+        record['evidence'][0]['sha256']='0'*64
+        with self.assertRaisesRegex(ValueError,'Evidence hash mismatch'):
+            validate_evidence(self.root,record)
+        with self.assertRaisesRegex(ValueError,'Evidence hash mismatch'):
+            append(self.root,record)
+        self.assertFalse((self.root/'fixture-defect--r001.json').exists())
 
     def test_full_closure_cutoff_branch_and_eligible_correction(self):
         a=self.record;b=deepcopy(a);b.update(revision_id='r002',supersedes='r001',status='refuted')
