@@ -112,12 +112,22 @@ def single_process_filter():
 
 def evidence_item(manifest, args, kind):
     matches=[]
-    for e in manifest['evidence']:
+    candidates=list(manifest['evidence'])
+    if 'evidence_index' in manifest:
+        candidates += [o for row in manifest['evidence_index']['sources'] for o in row['objects']]
+    seen=set()
+    for e in candidates:
+        identity=(e.get('source_id'),e.get('content_sha256'))
+        if identity in seen:continue
+        seen.add(identity)
+        if args.get('source_id') and e.get('source_id')!=args['source_id']:continue
         if e['kind'] != kind:
             continue
         fields = ('url',) if kind == 'web' else ('repo_id','revision','path')
         if all(e.get(k) == args[k] for k in fields):
             matches.append(e)
+    if 'evidence_index' in manifest and kind=='web' and len(matches)>1 and not args.get('source_id'):
+        matches=sorted(matches,key=lambda e:(datetime.fromisoformat(e['revision_at'].replace('Z','+00:00')),e['source_id']))[-1:]
     if len(matches) != 1:
         raise ValueError('No unique approved evidence object at this cutoff; curator retrieval required')
     return matches[0]
@@ -193,6 +203,21 @@ def ancestor_read(packet, manifest, args):
     return dict(excerpt(data, args), **identity, content_sha256=digest, content_bytes=len(data))
 
 
+def evidence_index_page(manifest, args):
+    if args.get('index_id')=='closed_discussions':
+        from .closed_discussions import page
+        return page(manifest,args)
+    index=manifest.get('evidence_index')
+    if index is None:raise ValueError('No evidence index in this packet')
+    if args.get('index_id'):
+        rows=[r for r in index['sources'] if r['index_id']==args['index_id']]
+        if len(rows)!=1:raise ValueError('Unknown evidence source')
+        payload=rows[0]['objects']
+    else:
+        payload=[{k:v for k,v in row.items() if k!='objects'} for row in index['sources']]
+    return excerpt(json.dumps(payload,sort_keys=True).encode(),args)
+
+
 def dispatch(packet, name, supplied):
     packet=Path(packet)
     args=args_for(name,supplied)
@@ -200,6 +225,8 @@ def dispatch(packet, name, supplied):
     if name in ('graph_search','graph_trace','graph_query','symbol_history','repo_map'):
         from teacher.graph_worker import invoke
         return invoke(packet, manifest, name, args)
+    if name == 'evidence_index':
+        return evidence_index_page(manifest,args)
     if name == 'ancestor_read':
         return ancestor_read(packet, manifest, args)
     commits=manifest['commits']

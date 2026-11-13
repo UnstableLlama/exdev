@@ -216,12 +216,48 @@ def recover_unreferenced_catalogs(through_position, reuse=False, only_positions=
     return report
 
 
+def recover_closed_catalogs(through_position, reuse=False, audit_report=None):
+    """Recover a complete candidate inventory, then audit each historical cutoff."""
+    from .closed_discussions import select, task_terms, message_terms
+    directory=ROOT/'data/evidence/github'
+    records=[json.loads(next((ROOT/'data/exllamav3-v5/records').glob(f'{p:06d}_*.json')).read_text()) for p in range(2,through_position+1)]
+    histories=[]
+    for kind,number in repository_discussions('turboderp-org','exllamav3',records[-1]['commit_date']):
+        path=directory/f'discussion-{kind}-{number}-history.json'
+        bundle=json.loads(path.read_text()) if reuse and path.exists() else recover('turboderp-org','exllamav3',number)
+        path.write_text(json.dumps(bundle,indent=2)+'\n');histories.append(bundle)
+    audit=[];repo=ROOT/'.sources/exllamav3.git'
+    for position,record in enumerate(records,2):
+        referenced=directory/f'{position:06d}-eligible.json'
+        excluded=set()
+        if referenced.exists():
+            for obj in json.loads(referenced.read_text())['items']:
+                match=re.match(r'(https://github\.com/[^/]+/[^/]+/(?:issues|pull)/\d+)',obj.get('url',''))
+                if match:excluded.add(match[1])
+        result=select(histories,record['commit_date'],task_terms(repo,record['sha']),parent_tree_paths(repo,record['sha']),excluded,message=message_terms(repo,record['sha']))
+        result.update(task_sha=record['sha'],cutoff=record['commit_date'],complete=True)
+        path=directory/f'{position:06d}-closed.json';path.write_text(json.dumps(result,indent=2)+'\n')
+        audit.append({'position':position,'sha':record['sha'],'cutoff':record['commit_date'],'closed_at_cutoff':result['closed_at_cutoff'],'unknown_state_count':result['unknown_state_count'],'eligible_candidates':result['eligible_candidates'],
+                      'qualified_count':result['qualified_count'],'truncated':result['truncated'],
+                      'rows':[{k:r[k] for k in ('kind','number','title','matched_terms')} for r in result['items']]})
+    from .closed_discussions import digest
+    report={'scope':'report_only_no_reauthoring','rule':'salience-v2','positions':audit,
+            'history_sha256':{f"{b['kind']}-{b['number']}":digest(b) for b in histories}}
+    (Path(audit_report) if audit_report else ROOT/'reports/closed-discussion-salience-audit-001.json').write_text(json.dumps(report,indent=2)+'\n')
+    print(json.dumps({'positions':len(audit),'rows':sum(len(x['rows']) for x in audit),'last':audit[-1]},indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--audit-report',type=Path)
+    parser.add_argument('--closed-through-position',type=int)
     parser.add_argument('--reuse', action='store_true', help='Reuse previously retrieved raw history')
     parser.add_argument('--catalog-through-position',type=int)
     parser.add_argument('--catalog-position',type=int,action='append',default=[])
     args = parser.parse_args()
+    if args.closed_through_position:
+        recover_closed_catalogs(args.closed_through_position,args.reuse,args.audit_report)
+        return
     if args.catalog_through_position or args.catalog_position:
         through=args.catalog_through_position or max(args.catalog_position)
         if args.catalog_position and any(p>through for p in args.catalog_position):

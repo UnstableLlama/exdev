@@ -57,10 +57,21 @@ class ArchitectureTests(unittest.TestCase):
         directory=self.root/'evidence';directory.mkdir()
         cutoff=self.git('show','-s','--format=%cI',self.task)
         (directory/'000001-unreferenced.json').write_text(json.dumps({'task_sha':self.task,'cutoff':cutoff,'complete':True,'limit':100,'truncated':False,'items':[]}))
+        (directory/'000001-closed.json').write_text(json.dumps({'task_sha':self.task,'cutoff':cutoff,'complete':True,'rule':'salience-v2','limit':20,'truncated':False,'items':[]}))
         packet=self.root/'new';m=prepare(self.repo,self.task,1,packet,directory)
-        self.assertEqual(m['walk_input_contract']['version'],5)
+        self.assertEqual(m['walk_input_contract']['version'],8)
         self.assertIn('read the selected callee',FreshSession(packet).initial[0]['content'])
+        self.assertIn("read the config.json of every such model before finalizing",FreshSession(packet).initial[0]['content'])
+        self.assertNotIn("If any was not read",FreshSession(packet).initial[0]['content'])
+        self.assertNotIn("read every model's config.json",old)
+        self.assertNotIn('evidence_index',[t['name'] for t in FreshSession(self.packet).tools])
         validate_bundle(packet,directory/'000001-eligible.json')
+        legacy=json.loads(json.dumps(m));legacy['walk_input_contract']['version']=6;legacy['guidance_version']=3
+        (packet/'manifest.json').write_text(json.dumps(legacy))
+        legacy_system=FreshSession(packet).initial[0]['content']
+        self.assertIn("If any was not read",legacy_system)
+        self.assertNotIn("read the config.json of every such model before finalizing",legacy_system)
+        (packet/'manifest.json').write_text(json.dumps(m))
         m['walk_input_contract']['reference_signatures']=[['lost','a'*64]]
         (packet/'manifest.json').write_text(json.dumps(m))
         with self.assertRaisesRegex(ValueError,'Reference evidence'):validate_bundle(packet,directory/'000001-eligible.json')
@@ -75,8 +86,13 @@ class ArchitectureTests(unittest.TestCase):
             items.append(item(name,'https://huggingface.co/org/demo/resolve/'+('a'*40)+'/'+name,data,cutoff,kind=kind,artifact_role=role,repo_id='org/demo',revision='a'*40,path=name))
         bundle={'task_sha':sha,'cutoff':cutoff,'trigger':trigger(self.repo,sha),'items':items,'selections':[{'architecture':'Demo','repo':'org/demo','revision':'a'*40,'date':cutoff,'status':'complete','reason':'Task-named fixture','candidates_considered':['org/demo']}]}
         ref=directory/'000001-references.json';ref.write_text(json.dumps(bundle))
+        (directory/'000001-closed.json').write_text(json.dumps({'task_sha':sha,'cutoff':cutoff,'complete':True,'rule':'salience-v2','limit':20,'truncated':False,'items':[]}))
         packet=self.root/'references';m=prepare(self.repo,sha,1,packet,directory)
-        self.assertEqual(len(m['evidence']),3);validate_bundle(packet,directory/'000001-eligible.json')
+        self.assertEqual(len(m['evidence']),3)
+        opening=json.loads(FreshSession(packet).initial[1]['content'])
+        self.assertEqual(opening['evidence_catalog'],[])
+        self.assertEqual(len(json.loads(opening['evidence_index']['text'])),1)
+        validate_bundle(packet,directory/'000001-eligible.json')
         ref.write_text(ref.read_text()+' ')
         with self.assertRaisesRegex(ValueError,'Reference evidence changed'):validate_bundle(packet,directory/'000001-eligible.json')
         bundle['items'][-1]['kind']='hf_file';bundle['items'][-1]['artifact_role']='non_weight'

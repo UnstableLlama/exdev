@@ -95,10 +95,12 @@ def validate_annotation(annotation, manifest, transcript):
         if len(annotation['chapters'])!=1 or annotation['chapters'][0]['id']!=task['id']:
             raise ValueError('Chapter output does not match assigned subsystem')
     ledger=evidence_ledger(transcript)
-    if manifest.get('ancestor_context_mode') == 'retrieval_v1':
-        for item in ledger.values():
-            if item['tool'] == 'ancestor_read' and item['arguments'].get('mode') != 'content':
-                item['catalog_only'] = True
+    for item in ledger.values():
+        if item['tool']=='evidence_index' or (
+            manifest.get('ancestor_context_mode') == 'retrieval_v1'
+            and item['tool']=='ancestor_read' and item['arguments'].get('mode')!='content'
+        ):
+            item['catalog_only'] = True
     context={'ancestor:'+e['sha']:{'kind':'approved_ancestor_context','sha':e['sha'],'content_sha256':e['blob']}
              for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits'] and manifest.get('ancestor_context_mode') != 'retrieval_v1'}
     claims=[claim for field in ('problem','reasoning','impact','source_notes') for claim in annotation[field]]

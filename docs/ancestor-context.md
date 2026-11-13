@@ -188,3 +188,102 @@ move to an unknown location therefore stops preparation for curator inspection.
 Root tasks are exempt from that location guard. Rename/merge false positives
 and post-simplification identity derivation remain required follow-ups before
 position 100; this location fix does not resolve those separate cases.
+
+## Evidence source index (walk contract v6, guidance v3)
+
+New packets group model evidence by repository and pinned revision, with dates,
+attaching commit identities and role counts. Referenced discussion objects are
+grouped by discussion URL, kind and number; a recovered title history supplies
+its cutoff-correct title when available. No title is invented when legacy
+metadata lacks one. Bodies and headers are not opening-context content.
+Direct task discussion listings remain; direct model files use the same compact
+index as ancestor model files.
+
+The builder scans historical packet manifests, filters their task identities to
+strict ancestors, then independently checks each object's created and revision
+dates against the new task cutoff. Only evidence metadata and checksum-verified
+blobs are copied, never reviews, old prompts, coverage requests or curator notes.
+Evidence is collected from every packet for a strict ancestor, including failed
+and superseded attempts: evidence availability is distinct from approval of
+authored prose. Exact repeated content is deduplicated, retaining attaching ancestors. Historical
+unreferenced-discussion snapshots remain governed by their separate open-item
+catalog and are not converted into a closed-discussion archive.
+
+The initial index is an 8 KiB byte page with a truncation flag and next offset.
+`evidence_index` pages the source list, then object metadata for an `index_id`.
+Concatenate byte pages before parsing JSON. Object rows supply exact coordinates
+for existing `hf_fetch`, `safetensors_header`, and `web_fetch` tools. Optional
+`source_id` selects a historical object; without it, web reads prefer the latest
+eligible attached revision. Index pages are navigation, never claim evidence.
+All objects, index rows and coverage input are bound into the input contract;
+authoring checks blob presence and hashes before provider invocation.
+
+Guidance v3 requires reading every listed model's config.json before claiming a
+mapping, dimension or default is corroborated, naming the models read and limiting
+claims when any was not read. It does not require reading every tensor header.
+Legacy packets keep their original opening context, tool schema and replay.
+
+## Configuration-reading amendment (contract v7, guidance v4)
+
+New model source rows include `architectures`, copied from the pinned config.json
+key, or an empty list when the key is absent. The field is navigation metadata,
+covered by the index digest and checked against the configuration blob during
+packet validation. Invalid non-list values fail preparation rather than inventing
+an architecture. Earlier packet indexes and guidance remain unchanged.
+
+Guidance v4 replaces v3's optional limiting clause: when multiple indexed models
+include an architecture the task registers or whose model/configuration class it
+modifies, read every matching model's config.json before finalizing. Name each
+model and report mapping, dimension and default checks per model. Report failed
+reads; skipping a model is not an opt-out. Tensor headers remain claim-driven.
+This implements `config-reading-amendment.decision.md`; rejected attempt 39/003
+is retained unchanged, 39/002 stays active, and 39/004 will be unassisted after
+implementation acceptance.
+
+### Closed discussion salience (contract v8 / guidance 5)
+
+New packets have a separate `closed_discussion_catalog`. Open discussion selection
+is unchanged. Candidates include all issues and PRs created and closed by the
+committer cutoff, with no age window. Reopened discussions are classified by their
+state at the cutoff. Recovery enumerates all discussions created by the latest
+audit cutoff, then reconstructs each earlier state, title, body and comments.
+Unknown timelines/content are excluded. Closed candidates additionally require a
+known root body and full eligible bodies: historical edit-event summaries alone
+are excluded rather than scored as complete text. Later comments and titles do
+not contribute. Referenced discussion URLs are not duplicated in this catalog.
+
+`teacher/closed_discussions.py` defines `salience-v2`. Task terms come only from
+the task message, changed paths (including basename tokens), and lexical identifiers
+on added/removed code lines. Quoted literals and line comments are excluded from
+those code lines; prose-only diffs contribute their message and paths. Identifiers
+retain underscores, are lowercased, and have minimum length 4. The fixed stop set
+in that module excludes common prose and repository scaffolding words. The general stop list was extended after examining the positions 2–68 audit;
+it is fixed at runtime and never learned from teacher inputs. This lexical extraction is not a semantic
+parser and may miss identifiers in unusual syntax.
+
+For each remaining term t, df(t) counts eligible closed candidates containing it
+in their cutoff title/body/comments. Score = sum(1 / df(t)^2) over distinct terms shared with the **commit message only**, using exact rational
+arithmetic. Path and diff-identifier terms cannot qualify or rank a row; they may
+appear in matched_terms after that row qualifies. Gate >= 1; cap 20. Thus one term
+unique among candidates can qualify, while a shared term alone cannot. Ties use
+kind then number. No closure recency contributes. This navigation heuristic can
+miss synonyms and can match unrelated code vocabulary; it does not certify relevance.
+
+Rows expose kind/number, title, author, created/closed times, `state: closed`, URL,
+existing parent-tree path hints and matched terms. **Matched terms expose words
+from discussion text.** They contain no score, body or excerpt. Initial navigation
+is byte-paged at 8 KiB; `evidence_index(index_id="closed_discussions", offset=...)`
+returns subsequent pages (16 KiB maximum). The cap-truncation flag is distinct
+from byte-page truncation; rows beyond the top-20 cap are not served. Fetch a listed
+body with `web_fetch`. Navigation calls remain catalog-only, not claim evidence.
+One added guidance sentence extends the existing catalog reading rule and requires
+faithful title/framing and inference labels with a concrete basis for claimed links.
+
+The closed bundle digest and a digest of the full catalog plus served-object
+metadata are contract-bound; every fetched blob remains content-addressed. Closed
+snapshots are excluded from the general ancestor evidence index, so later packets
+must apply their own cutoff and salience gate. Old packets retain their original
+context, contract validation and replay. The audit reports total known closed discussions, full-body-eligible candidates
+and unknown-state exclusions at every position. The commits 2–68 audit is report-only;
+its rows do not authorize re-authoring. Commit 69 waits for implementation review
+before its next unassisted attempt. No commit 70 is authorized before that sequence.

@@ -6,6 +6,32 @@ is defined by `docs/ancestor-approval-policy.md`, `docs/ancestor-context.md`
 and `teacher/README.md`; if this file disagrees with those or with the user,
 they win.
 
+## Recorded pause for machine move (2026-11-13)
+
+**Paused by the user. Do not author commit 70 until the user restarts the loop.**
+Commit 69/003 is approved for ancestor retrieval only, unassisted, and supersedes
+69/002 for future retrieval. 69/002 stays approved on record; 69/001 stays rejected.
+The salience implementation and all requested replacements are reviewed and closed.
+There is no outstanding review handoff. Fable is handling the commit and push.
+
+Resume at **commit 70, contract 8 / guidance 5 / salience-v2**. Confirm the journal
+and `reports/commit-000069-review-003.json` on the new machine. On explicit restart,
+archive the user pause, clear `advancement_pause`, set status `ready`, and retain
+`next_position: 70`; do not reset approved-entry selection. Prepare cutoff-eligible
+open and closed catalogs before invoking the walk. Preserve historical bound
+bundles: the closed-catalog recovery helper currently regenerates earlier positions,
+so retain their exact bytes when recovering a new position. Prepared packets,
+evidence cache, mirror and store may be ignored local assets; check availability
+on the new machine rather than assuming a Git checkout contains them.
+
+Use Codex 0.167.0 first on PATH (the default binary previously broke wire tests).
+Latest accepted implementation suite: 221 host-enabled tests. Canonical/training
+remain false. Required architecture fixes 1 and 2 are due before position 100;
+five older invalid ledger origins remain open. Check closed-catalog issue 99 at
+position 560 and issue 233 at 1100. Observed parent-file reads through `run` should
+be reported separately from `repo_read`-only metrics. No teacher receives verdicts
+or these administrative notes.
+
 ## Where things stand
 
 Do not trust a summary for this, including one in this file. Read:
@@ -75,7 +101,10 @@ Put the verdict's follow-ups into your own tracking so they are not lost.
 - Nothing from a review reaches the teacher. No verdict text, expected
   answers or reviewer notes in a packet, prompt or standing instruction.
   A lesson from a review becomes a general change only through a user
-  decision file.
+  decision file. The user decision `thin-entries-and-retroactive.decision.md`
+  permits separate pointer-only coverage requests for fresh attempts; inspect
+  them for conclusions, hindsight and length quotas before binding their exact
+  hash. Verdicts and reviewer findings still never become teacher input.
 - Approval means ancestor retrieval only. Canonical and training stay false.
 - Authored runs are immutable. A fix is a new attempt.
 - A commit sees its strict ancestors and evidence as of its cutoff, nothing

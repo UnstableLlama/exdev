@@ -37,3 +37,33 @@ class AuthorTests(unittest.TestCase):
         self.assertIn('INVALID TEST FIXTURE',(out/'raw-transcript.json').read_text())
         self.assertEqual(json.loads((out/'status.json').read_text())['status'],'failed')
         self.assertFalse((out/'draft.json').exists())
+
+    def test_coverage_request_is_verbatim_and_marks_provenance_and_review(self):
+        import hashlib
+        from teacher.coverage_request import attach
+        from teacher.evidence_index import build
+        from teacher.session import FreshSession
+        m=json.loads((self.packet/'manifest.json').read_text())
+        # Use the fixture's existing evidence as the directly attached bundle.
+        from teacher.walk_inputs import signatures
+        m['guidance_version']=3
+        m['walk_input_contract']={'version':6,'reference_source_ids':[], 'reference_signatures':[],
+            'bundle_present':False,'expected_evidence':signatures(m['evidence']),
+            'discussion_truncated':False,'expected_discussions':[]}
+        m['unreferenced_discussion_catalog']=[];m['unreferenced_discussion_truncated']=False
+        build(self.packet,m,[])
+        request=self.root/'commit-000002-002.coverage.md';request.write_text('1. Inspect the parent file and explain the changed caller.\n')
+        sha=hashlib.sha256(request.read_bytes()).hexdigest();attach(m,request,sha)
+        (self.packet/'manifest.json').write_text(json.dumps(m))
+        session=FreshSession(self.packet)
+        self.assertEqual(json.loads(session.initial[1]['content'])['reviewer_coverage_request'],request.read_text())
+        self.assertIn("The reviewer_coverage_request field holds a reviewer's requests for coverage, not statements of fact.",session.initial[0]['content'])
+        self.assertIn("read every model's config.json",session.initial[0]['content'])
+        out=self.root/'commit-000002-002'
+        with self.assertRaisesRegex(ValueError,'another attempt'):
+            author(self.packet,self.root/'wrong-attempt',self.root/'unused')
+        with patch('teacher.runner.Runner.invoke',return_value={'ok':True,'result':{'text':'TEST FIXTURE ONLY'}}):
+            author(self.packet,out,self.root/'unused',transport_factory=lambda _:nullcontext(FakeTransport()))
+        provenance=json.loads((out/'provenance.json').read_text());review=json.loads((out/'review.json').read_text())
+        self.assertEqual(provenance['coverage_request'],{'path':str(request),'sha256':sha})
+        self.assertTrue(provenance['reviewer_assisted']);self.assertTrue(review['reviewer_assisted'])

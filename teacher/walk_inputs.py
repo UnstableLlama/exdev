@@ -58,14 +58,21 @@ def validate_contract(manifest):
     if not isinstance(manifest.get('task_commit_message'),str):
         raise ValueError('Walk packet lacks task commit message')
     if contract.get('version',1)>=5:
-        if manifest.get('guidance_version')!=2:raise ValueError('Missing dispatch guidance version')
+        if manifest.get('guidance_version')!=(5 if contract.get('version',1)>=8 else 4 if contract.get('version',1)>=7 else 3 if contract.get('version',1)>=6 else 2):raise ValueError('Missing dispatch guidance version')
         actual_refs=signatures([i for i in manifest['evidence'] if i['source_id'] in contract['reference_source_ids']])
         if actual_refs!=[tuple(x) for x in contract['reference_signatures']]:raise ValueError('Reference evidence missing or changed')
+    if contract.get('version',1)>=8:
+        from .closed_discussions import validate as validate_closed
+        validate_closed(manifest)
+    if contract.get('version',1)>=6:
+        from .evidence_index import validate
+        from .coverage_request import validate as validate_coverage
+        validate(manifest); validate_coverage(manifest)
     if contract.get('version',1)>=2:
         refs=references(manifest['task_commit_message'])
         if refs and not contract['bundle_present']:
             validate_recovery(contract.get('recovery_marker') or {},manifest['task_sha'],manifest['cutoff_date'],refs)
-    actual=signatures([item for item in manifest['evidence'] if item.get('catalog_origin')!='unreferenced_discussion' and item['source_id'] not in contract.get('reference_source_ids',[])])
+    actual=signatures([item for item in manifest['evidence'] if item.get('catalog_origin') not in ('unreferenced_discussion','closed_discussion') and item['source_id'] not in contract.get('reference_source_ids',[])])
     expected=[tuple(item) for item in contract['expected_evidence']]
     if actual!=expected or (contract['bundle_present'] and not actual):
         raise ValueError('Walk packet lacks eligible bundle evidence')
@@ -92,7 +99,7 @@ def validate_bundle(packet, bundle_path):
     if bundle_path.exists():
         raw=read_regular(bundle_path);bundle=json.loads(raw)
         if (not contract['bundle_present'] or hashlib.sha256(raw).hexdigest()!=contract['bundle_sha256']
-            or signatures([item for item in manifest['evidence'] if item.get('catalog_origin')!='unreferenced_discussion' and item['source_id'] not in contract.get('reference_source_ids',[])])!=signatures(bundle['items'])):
+            or signatures([item for item in manifest['evidence'] if item.get('catalog_origin') not in ('unreferenced_discussion','closed_discussion') and item['source_id'] not in contract.get('reference_source_ids',[])])!=signatures(bundle['items'])):
             raise ValueError('Eligible evidence bundle missing or changed after preparation')
     elif contract['bundle_present']:
         raise ValueError('Eligible evidence bundle disappeared')
@@ -115,10 +122,18 @@ def validate_bundle(packet, bundle_path):
             if hashlib.sha256(raw).hexdigest()!=contract['reference_bundle_sha256']:raise ValueError('Reference evidence changed after preparation')
         actual=signatures([i for i in manifest['evidence'] if i['source_id'] in contract['reference_source_ids']])
         if actual!=[tuple(x) for x in contract['reference_signatures']]:raise ValueError('Reference evidence missing or changed')
+    if contract.get('version',1)>=8:
+        from .closed_discussions import validate as validate_closed
+        closed_path=bundle_path.with_name(bundle_path.name.replace('-eligible.json','-closed.json'))
+        if hashlib.sha256(read_regular(closed_path)).hexdigest()!=contract['closed_bundle_sha256']:raise ValueError('Closed discussion bundle changed')
+        validate_closed(manifest,packet)
     validate_contract(manifest)
+    if contract.get('version',1)>=6:
+        from .evidence_index import validate
+        validate(manifest,packet)
 
 
-def prepare(repo,sha,position,packet,evidence_directory):
+def prepare(repo,sha,position,packet,evidence_directory,*,ancestor_packets=None,coverage_request=None,coverage_sha256=None):
     bundle_path=Path(evidence_directory)/f'{position:06d}-eligible.json'
     unreferenced_path=Path(evidence_directory)/f'{position:06d}-unreferenced.json'
     if not unreferenced_path.exists():
@@ -148,8 +163,8 @@ def prepare(repo,sha,position,packet,evidence_directory):
     combined['items']=[*combined['items'],*ref_items]
     if len({i['source_id'] for i in combined['items']})!=len(combined['items']):raise ValueError('Duplicate evidence IDs')
     manifest=build_packet(repo,sha,packet,evidence=combined,discussions=filtered)
-    manifest.update(guidance_version=2,editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1,
-        walk_input_contract={'version':5,'reference_source_ids':[i['source_id'] for i in ref_items],
+    manifest.update(guidance_version=5,editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1,
+        walk_input_contract={'version':8,'reference_source_ids':[i['source_id'] for i in ref_items],
             'reference_signatures':signatures(ref_items),
             'reference_bundle_sha256':hashlib.sha256(ref_path.read_bytes()).hexdigest() if ref else None,'recovery_marker':marker,
             'recovery_marker_sha256':hashlib.sha256(marker_raw).hexdigest() if marker_raw else None,
@@ -160,6 +175,21 @@ def prepare(repo,sha,position,packet,evidence_directory):
             'discussion_signatures':discussion_signatures(unreferenced.get('items',[])),
             'discussion_truncated':unreferenced.get('truncated'),
             'expected_discussions':opening_discussions(manifest['unreferenced_discussion_catalog'],True)})
+    from .closed_discussions import attach as attach_closed
+    closed_path=Path(evidence_directory)/f'{position:06d}-closed.json'
+    closed_raw=read_regular(closed_path)
+    attach_closed(packet,manifest,json.loads(closed_raw))
+    manifest['walk_input_contract']['closed_bundle_sha256']=hashlib.sha256(closed_raw).hexdigest()
+    from .evidence_index import build
+    if ancestor_packets is None:
+        root=Path(__file__).resolve().parents[1]/'.teacher'
+        ancestor_packets=[p.parent for p in root.rglob('manifest.json') if p.parent.resolve()!=Path(packet).resolve()]
+    build(packet,manifest,ancestor_packets,evidence_directory)
+    if coverage_request is not None:
+        if not Path(coverage_request).name.startswith(f'commit-{position:06d}-'):
+            raise ValueError('Coverage request belongs to another task position')
+        from .coverage_request import attach
+        attach(manifest,coverage_request,coverage_sha256)
     write_json(Path(packet)/'manifest.json',manifest)
     validate_bundle(packet,bundle_path)
     return manifest

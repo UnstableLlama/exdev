@@ -1,0 +1,259 @@
+{
+  "schema_version": 5,
+  "sha": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+  "parent_shas": [
+    "df30645b725b113599d60496a8f94d6f649119ea"
+  ],
+  "cutoff_date": "2025-04-12T16:10:04+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "DeciLM passed n_heads_in_group directly as the number of KV heads. The change instead divides the global query-head count by that per-layer value.",
+        "basis": "source",
+        "evidence": [
+          "call_faa0516a55094f6faf0c009effa1028f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The revised mapping treats n_heads_in_group as query heads sharing one KV head, rather than as the count of KV heads themselves.",
+        "basis": "inference",
+        "evidence": [
+          "call_faa0516a55094f6faf0c009effa1028f",
+          "call_7000822d1c0b45ecb6368225443df0d8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The corrected count determines K/V projection widths and the K/V head dimensions used by all three attention decode paths. Q and output projection dimensions are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_7000822d1c0b45ecb6368225443df0d8",
+          "call_faa0516a55094f6faf0c009effa1028f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Whole-parent searches found the exact key only in DeciLM's Attention construction; the broader n_heads search also located the global num_attention_heads readers.",
+        "basis": "source",
+        "evidence": [
+          "call_72d1eb4021de437c87b69beaff29dc4a",
+          "call_31fd77ecded84f8b81799e1e420bf3c0"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure and a reporter-supplied environment workaround, not a DeciLM head-count problem.",
+        "basis": "source",
+        "evidence": [
+          "call_f0a4cd45f0e548ba889b75f2e92f2a87"
+        ]
+      }
+    ],
+    "limitations": [
+      "The computation checks transcribed integer shape arithmetic only; no model loading, conversion, attention execution or GPU test was run.",
+      "Checkpoint tensor shapes and end-to-end compatibility were not verified. Correcting the head-count mapping alone does not establish complete support for any checkpoint."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Translate DeciLM group size into KV-head count",
+        "claims": [
+          {
+            "text": "DeciLMConfig reads num_attention_heads into num_q_heads and defaults an absent or falsey head_dim to hidden_size // num_q_heads. DeciLMModel now computes num_kv_heads separately for each active attention block as num_q_heads // n_heads_in_group. Attention marked no_op bypasses this calculation; existing unsupported-attention assertions remain unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_638a286c2c3c467bb7723aa559b55ba9",
+              "call_faa0516a55094f6faf0c009effa1028f"
+            ]
+          },
+          {
+            "text": "Attention.__init__ multiplies the resulting KV-head count by head_dim for both K and V projection widths. Its decode methods reshape projected K/V using that same count, so the fix aligns construction and runtime interpretation without modifying the shared attention implementation.",
+            "basis": "source",
+            "evidence": [
+              "call_7000822d1c0b45ecb6368225443df0d8"
+            ]
+          },
+          {
+            "text": "For nvidia/Llama-3_1-Nemotron-51B-Instruct, the inspected configuration supplies 64 query heads, hidden size 8192 and ordinary attention group sizes 8, 16, 32 and 64. It also requests linear-replacement attention, which the unchanged constructor explicitly rejects; this patch does not add that capability.",
+            "basis": "source",
+            "evidence": [
+              "call_2c969ce1a08b431684cc65e61ce6ec8b",
+              "call_638a286c2c3c467bb7723aa559b55ba9",
+              "call_faa0516a55094f6faf0c009effa1028f"
+            ]
+          },
+          {
+            "text": "For nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1 and, separately, nvidia/Llama-3_1-Nemotron-Ultra-253B-v1, the inspected configurations supply 128 query heads, hidden size 16384 and group size 16 for active attention. Neither supplies head_dim, so both use the constructor's fallback.",
+            "basis": "source",
+            "evidence": [
+              "call_a439415bb06b4167be24fe1374b28d15",
+              "call_8a7bedf311cf440fb36aaad3b81c350e",
+              "call_d5581aaa62034c5d9fdb1a7b8f2e02d6",
+              "call_8861ba2b2cfa4a5ab3d9f99e6d28e1f8",
+              "call_638a286c2c3c467bb7723aa559b55ba9"
+            ]
+          },
+          {
+            "text": "For nvidia/Llama-3_3-Nemotron-Super-49B-v1, the inspected configuration supplies 64 query heads, hidden size 8192 and group size 8 for active attention, again without an explicit head_dim.",
+            "basis": "source",
+            "evidence": [
+              "call_6473e1445f2b40f2aa49aa0e9e19bbb4"
+            ]
+          },
+          {
+            "text": "A scalar calculation gives head_dim 128 for all four configurations. For 51B, group sizes 8/16/32/64 map to 8/4/2/1 KV heads and widths 1024/512/256/128. Each Ultra configuration changes from 16 to 8 KV heads, reducing the configured K/V width from 2048 to 1024. Super remains at 8 KV heads and width 1024 because 64 // 8 equals the previous value 8.",
+            "basis": "execution",
+            "evidence": [
+              "call_26f69e8b9abd465eb31f54a6c69dfab5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Corrects DeciLM's per-layer KV-head count by dividing query heads by group size, changing K/V projection dimensions and runtime reshaping where the previous direct mapping differed."
+  },
+  "evidence": {
+    "call_faa0516a55094f6faf0c009effa1028f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "offset": 173,
+        "max_bytes": 724
+      },
+      "result_sha256": "ca608b94540b152665667069900068a48145978b24eb62dcf1faf511fd567bef"
+    },
+    "call_638a286c2c3c467bb7723aa559b55ba9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "path": "exllamav3/models/decilm.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c233591e966a6fb8546e9ac3ad4b270ca862d6a0a39311324659fd4d7993df55"
+    },
+    "call_31fd77ecded84f8b81799e1e420bf3c0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "query": "n_heads",
+        "limit": 100
+      },
+      "result_sha256": "115f9a402a9557554cd3984d617133f4b7ab71efcf99dd06ebb9928218ada79b"
+    },
+    "call_4c2491aa23ce477ab13a8e16395b3fef": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "query": "DeciLM",
+        "limit": 100
+      },
+      "result_sha256": "d13df9570f98bb9a866aa237a3831ca22350c4783c790f6b8c3d4f48f3b37aa9"
+    },
+    "call_2c969ce1a08b431684cc65e61ce6ec8b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-51B-Instruct",
+        "revision": "2e9bdbfa8e1ab73ce98f5960143cf927192d59e7",
+        "path": "config.json",
+        "max_bytes": 24000
+      },
+      "result_sha256": "96106afe9b4c71ecb8f270b4b2ad5014cd8a5e8f9a6b580ca6c7ed69b5741116"
+    },
+    "call_a439415bb06b4167be24fe1374b28d15": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "max_bytes": 60000
+      },
+      "result_sha256": "57135c6e64da23d42ba004f3a66217eb71e862dbc72dcf0e268d40a00574adde"
+    },
+    "call_8a7bedf311cf440fb36aaad3b81c350e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "offset": 60000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "d0a2610ed0f2d0d8f91d87e78aac0bee200d7c07e5c5ab7b9cfa78768b7ef1ff"
+    },
+    "call_d5581aaa62034c5d9fdb1a7b8f2e02d6": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "max_bytes": 60000
+      },
+      "result_sha256": "6a998e105a0f34057ec561067f76c128fd78b83c1ae154976e08e935e12f5597"
+    },
+    "call_8861ba2b2cfa4a5ab3d9f99e6d28e1f8": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "offset": 60000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "805e884d6ba2e6388e39dd57197621643c0a9200c5b787c7e6d8e9a25d323728"
+    },
+    "call_6473e1445f2b40f2aa49aa0e9e19bbb4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1",
+        "revision": "4605d825c59945d6f8a195826ae8ff3366653f83",
+        "path": "config.json",
+        "max_bytes": 50000
+      },
+      "result_sha256": "2f1208946964481b753aa3e8e97d0a2d7e3f3a1284419a1701641b7bf9efa5bc"
+    },
+    "call_7000822d1c0b45ecb6368225443df0d8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 19000
+      },
+      "result_sha256": "65b521ed2a0079fbaf85f9c4d0897b8e2b2c745e92ab592ddfc3c15db3360530"
+    },
+    "call_f0a4cd45f0e548ba889b75f2e92f2a87": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "eea7b1bc31983e9009e71e6fb111b6d9bdd69921b075a4109ca2132b7ba1de28"
+    },
+    "call_72d1eb4021de437c87b69beaff29dc4a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "query": "n_heads_in_group"
+      },
+      "result_sha256": "ded223687470366b11f0d0a9b99952355ff3e2277730103310617e83302185d9"
+    },
+    "call_26f69e8b9abd465eb31f54a6c69dfab5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for name,q,h,groups in [('51B',64,8192,[8,16,32,64]),('Ultra-CPT',128,16384,[16]),('Ultra',128,16384,[16]),('Super',64,8192,[8])]:\n d=h//q\n print(name,'head_dim',d,[(g,g,q//g,g*d,(q//g)*d) for g in groups])"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "556eca9523a2d491d9d03b0e86f8aff5e35ef7ceb140a062d92e7daef76b4b8c"
+    }
+  }
+}

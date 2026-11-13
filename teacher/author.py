@@ -24,6 +24,10 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
         raise ValueError('Draft output must be outside the immutable packet')
     session=FreshSession(packet)
     session.require_authoring_context()
+    coverage=session.runner.packet/'manifest.json'
+    coverage=json.loads(coverage.read_text()).get('coverage_request')
+    if coverage and output.name!=Path(coverage['path']).name.removesuffix('.coverage.md'):
+        raise ValueError('Coverage request belongs to another attempt')
     output.mkdir(parents=True,exist_ok=False)
     manifest=(packet/'manifest.json').read_bytes()
     provenance={'model':MODEL,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
@@ -31,6 +35,10 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
         'input_mode':'entry_analysis','published':False,
         'implementation_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted([*(ROOT/'teacher').glob('*.py'),*(ROOT/'schema').glob('*.json')])}}
+    coverage=json.loads(manifest).get('coverage_request')
+    if coverage:
+        provenance['coverage_request']={k:coverage[k] for k in ('path','sha256')}
+        provenance['reviewer_assisted']=True
     write_json(output/'provenance.json',provenance)
     write_json(output/'status.json',{'status':'running','published':False})
     try:
@@ -40,6 +48,7 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
         if manifest!=(packet/'manifest.json').read_bytes():
             raise ValueError('Packet changed during authoring')
         write_json(output/'draft.json',result['draft'])
+        if coverage: result['review']['reviewer_assisted']=True
         write_json(output/'review.json',result['review'])
         from .coverage import run_coverage
         write_json(output/'coverage.json',run_coverage(packet,json.loads(manifest),result['transcript']))

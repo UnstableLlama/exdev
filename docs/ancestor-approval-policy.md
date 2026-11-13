@@ -26,7 +26,7 @@ Mechanical approvals identify the policy name/version as reviewer and record `ap
 
 A mechanical draft is sampled exactly when the first byte of its full commit SHA is below `0x1A` (26/256). A sampled mechanical draft is approved provisionally for ancestor use without waiting for Fable. Sampling is deterministic and no model decides it.
 
-`teacher.walk` journals each run before authoring, proceeds sequentially through mechanical approvals, and stops after authoring the first full-review draft. Its handover includes that draft and all sampled mechanical drafts since the last handover. Stops and failures require explicit review/recovery; rerunning the command does not bypass them. The history tip is pinned in the journal. There is no task-specific reviewer steering of the teacher.
+`teacher.walk` journals each run before authoring, proceeds sequentially through mechanical approvals, and stops after authoring the first full-review draft. Its handover includes that draft and all sampled mechanical drafts since the last handover. Stops and failures require explicit review/recovery; rerunning the command does not bypass them. The history tip is pinned in the journal. Task-specific reviewer input is limited to the pointer-only coverage-request mechanism described below.
 
 ```sh
 python3 -m teacher.walk --state reports/teacher-walk-001.json
@@ -38,3 +38,26 @@ On a sampled rejection, trusted code first persists a stopped state. It marks th
 The initial journal starts at commit 4 with the reviewed root, commit 2 and commit 3 as its approved baseline. Earlier runs predate the new mechanical policy and are not part of its sample population. The journal is local trusted administrative state, not a provider tool.
 
 Walk input preparation also verifies task-message delivery and eligible-bundle attachment before inference. These input-integrity failures stop the walk before any tier approval. Re-authoring allocates fresh attempt directories; rejected artifacts remain available for review.
+
+## Thin entries and bounded reviewer assistance
+
+Under `reviews/verdicts/thin-entries-and-retroactive.decision.md`, a reviewer may
+reject an accurate but materially incomplete draft as `REJECTED: thin`. Small
+accurate entries for small changes need not be expanded. A fresh attempt may
+receive a separate `commit-NNNNNN-AAA.coverage.md` file: pointers and questions
+about the task, strict ancestors, or cutoff-eligible evidence only. No answers,
+suspected defects, later knowledge, or length quotas are permitted.
+
+The trusted author reads the request and refuses any semantic violation before
+passing its path and exact SHA-256 to `prepare(coverage_request=...,
+coverage_sha256=...)`. Filename/position, digest, size and explicit full commit
+identities are checked mechanically; these checks cannot certify prose semantics.
+The original text is a separate opening field, with one fixed instruction that
+it is a reviewer's coverage request, not fact. Its path and hash are contract-bound
+and recorded in provenance. Both provenance and review carry `reviewer_assisted:
+true`. Verdict text, findings, canonical follow-ups and ledger objects remain
+excluded. Old attempts remain immutable; replacements each require full review.
+
+The walk refuses to run while an `advancement_pause` is present, even if its
+status is accidentally set to ready. Today's replacement order is 39/003,
+44/002, 45/002, 55/002, after implementation review and before commit 62.

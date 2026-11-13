@@ -20,6 +20,7 @@ class WalkInputTests(unittest.TestCase):
         cutoff=self.git('show','-s','--format=%cI',sha)
         payload={'task_sha':sha,'cutoff':cutoff,'complete':True,'limit':100,'truncated':False,'items':items or []}
         (directory/f'{position:06d}-unreferenced.json').write_text(json.dumps(payload))
+        (directory/f'{position:06d}-closed.json').write_text(json.dumps(dict(payload,rule='salience-v2',limit=20,items=[])))
 
     def bundle(self):
         m=json.loads((self.packet/'manifest.json').read_text());content='ELIGIBLE_ISSUE_FIXTURE: setup paths must be relative.'
@@ -130,7 +131,7 @@ class WalkInputTests(unittest.TestCase):
         self.assertIn('title reports an error or failure',system)
         from teacher.worker import dispatch
         self.assertEqual(dispatch(packet,'web_fetch',{'url':item['url']})['text'],content)
-        self.assertEqual(m['walk_input_contract']['version'],5)
+        self.assertEqual(m['walk_input_contract']['version'],8)
 
         # Path hints are bound independently inside the v4 contract.
         manifest_path=packet/'manifest.json';changed=json.loads(manifest_path.read_text())
@@ -284,3 +285,10 @@ class WalkInputTests(unittest.TestCase):
         system=FreshSession(self.packet).initial[0]['content']
         self.assertNotIn('unreferenced discussion catalog is discovery input',system)
         self.assertNotIn('Read any relevant item explicitly',system)
+
+    def test_closed_bundle_missing_and_changed_fail(self):
+        directory=self.bundle();closed=directory/'000009-closed.json';raw=closed.read_bytes();closed.unlink()
+        with self.assertRaises(ValueError):prepare(self.repo,self.task,9,self.root/'no-closed',directory)
+        closed.write_bytes(raw);packet=self.root/'closed-bound';prepare(self.repo,self.task,9,packet,directory)
+        closed.write_bytes(raw+b' ')
+        with self.assertRaisesRegex(ValueError,'Closed discussion bundle changed'):validate_bundle(packet,directory/'000009-eligible.json')

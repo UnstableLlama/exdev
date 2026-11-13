@@ -59,13 +59,21 @@ class FreshSession:
     def __init__(self, packet):
         self.runner = Runner(packet)
         manifest = json.loads((self.runner.packet/'manifest.json').read_text())
+        if 'coverage_request' in manifest and manifest.get('walk_input_contract',{}).get('version',1)<6:
+            raise ValueError('Coverage requests require contract v6')
         from .ancestor_context import load_entries
         task = {'task_sha': manifest['task_sha'], 'task_parents': manifest['task_parents'],
                 'base_commit': manifest['base_commit'], 'cutoff_date': manifest['cutoff_date'],
                 'ancestor_entries':load_entries(self.runner.packet,manifest),
                 'task_change_sections':manifest.get('task_change_sections',[]),
                 'evidence_catalog': [{k:v for k,v in e.items() if k!='blob'} for e in manifest['evidence']
-                                     if e.get('catalog_origin')!='unreferenced_discussion']}
+                                     if e.get('catalog_origin') not in ('unreferenced_discussion','closed_discussion')]}
+        if manifest.get('walk_input_contract',{}).get('version',1)>=6:
+            from .worker import evidence_index_page
+            task['evidence_catalog'] = [e for e in task['evidence_catalog'] if e['kind'] not in ('hf_file','safetensors_header')]
+            task['evidence_index'] = evidence_index_page(manifest,{'offset':0,'max_bytes':8192})
+            if 'coverage_request' in manifest:
+                task['reviewer_coverage_request'] = manifest['coverage_request']['text']
         if 'unreferenced_discussion_catalog' in manifest:
             task['unreferenced_discussion_catalog']=manifest['unreferenced_discussion_catalog']
             task['unreferenced_discussion_catalog_truncated']=manifest['unreferenced_discussion_truncated']
@@ -88,9 +96,24 @@ class FreshSession:
         merge_instruction = ('\nThe supplied merge_facts are mechanically verified Git tree comparisons. An identical tree means the merge adds no repository content beyond that parent; distinguish this from its first-parent diff, ancestry, and newly eligible discussion.' if 'merge_facts' in manifest else '')
         discussion_instruction = ('\nThe unreferenced discussion catalog is discovery input, not evidence that the upstream author linked an item to this change. Before finalizing, compare every catalog row with the task diff and files read in this session. Read with web_fetch any item whose title shares a number, identifier, file name or error text with them, and any item whose repo_paths_mentioned names a file the task touches or the session read. When the catalog contains ten items or fewer, read every available item whose title reports an error or failure, even without another match. The path hints are navigation derived from cutoff-bound issue text, not evidence; read the item before using it. Report the item\'s own title and framing faithfully. Label every link you draw to the task as inference and state the concrete matching basis, such as a traceback line matching a source line.' if 'unreferenced_discussion_catalog' in manifest else '')
         dispatch_instruction = ('\nWhen a change alters which function, kernel or code path is selected (a threshold, flag, default, dispatch table or registry entry), read the selected callee or callees in the parent tree before describing the effect. Report what their own limits, tiers or preconditions show, as source inspection. State a conclusion about the author\'s reason as inference, and say that the rationale is unestablished only after that inspection.' if manifest.get('guidance_version',1)>=2 else '')
-        self.initial = [{'role':'system','content':SYSTEM+message_instruction+provenance_instruction+merge_instruction+discussion_instruction+dispatch_instruction},
+        config_instruction = ('\nWhen reference configurations for more than one model are supplied or listed in the evidence index, read every model\'s config.json before stating that a mapping, dimension or default is corroborated. Name the models read. If any was not read, say so and limit the claim to those that were.' if manifest.get('guidance_version',1)>=3 else '')
+        if manifest.get('guidance_version',1)>=4:
+            config_instruction = ("\nWhen the evidence index lists more than one model whose architectures include an architecture that the task adds or changes, read the config.json of every such model before finalizing. Name each model read and say, model by model, whether the mappings, dimensions and defaults you describe hold for it. If a read fails, say so. Adds or changes means the task diff registers that architecture or modifies its model or configuration class. This applies to configuration files only; read tensor headers as needed to support claims.")
+        closed_instruction=''
+        if 'closed_discussion_catalog' in manifest:
+            from .closed_discussions import page, INSTRUCTION as CLOSED_INSTRUCTION
+            task['closed_discussion_catalog']=dict(page(manifest,{'max_bytes':8192}), index_id='closed_discussions', limit=manifest['closed_discussion_catalog']['limit'], cap_truncated=manifest['closed_discussion_catalog']['truncated'])
+            closed_instruction='\n'+CLOSED_INSTRUCTION
+        from .coverage_request import INSTRUCTION
+        coverage_instruction = ('\n'+INSTRUCTION if 'coverage_request' in manifest else '')
+        self.initial = [{'role':'system','content':SYSTEM+message_instruction+provenance_instruction+merge_instruction+discussion_instruction+dispatch_instruction+config_instruction+coverage_instruction+closed_instruction},
                         {'role':'user','content':json.dumps(task, sort_keys=True)}]
         self.tools = json.loads((ROOT/'schema/repo-tools-v1.json').read_text())['tools']
+        if manifest.get('walk_input_contract',{}).get('version',1)<6:
+            self.tools = [t for t in self.tools if t['name']!='evidence_index']
+            for t in self.tools:
+                if t['name'] in ('web_fetch','hf_fetch','safetensors_header'):
+                    t['parameters']['properties'].pop('source_id',None)
         if manifest.get('ancestor_context_mode') != 'retrieval_v1':
             self.tools = [t for t in self.tools if t['name'] != 'ancestor_read']
         if 'graphs' in manifest:
@@ -102,6 +125,9 @@ class FreshSession:
         if 'walk_input_contract' in manifest:
             from .walk_inputs import validate_contract
             validate_contract(manifest)
+            if manifest['walk_input_contract'].get('version',1)>=6:
+                from .evidence_index import validate
+                validate(manifest,self.runner.packet)
         from .root_tasks import validate_task
         validate_task(manifest)
         if manifest['commits'] and not manifest.get('ancestor_context_complete'):

@@ -32,6 +32,7 @@ def publish_review_request(state_path, request_path):
 
 def resume(state_path, auth_file):
     state_path=Path(state_path);state=json.loads(state_path.read_text())
+    if state.get('advancement_pause'):raise ValueError('Walk advancement is paused by user decision')
     if state['status']!='ready':raise ValueError('Walk is stopped; explicit review/recovery is required')
     repo=ROOT/'.sources/exllamav3.git'
     order=git(repo,'rev-list','--reverse','--topo-order',state['history_tip']).decode().split()

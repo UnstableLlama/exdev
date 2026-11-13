@@ -39,7 +39,7 @@ def eligible_content(obj, cutoff):
             'content_sha256': hashlib.sha256(content.encode()).hexdigest()}
 
 
-def discussion_snapshot(bundle, cutoff):
+def discussion_snapshot(bundle, cutoff, *, closed=False):
     """Build one fail-closed, as-of-cutoff open-discussion snapshot.
 
     The returned catalog row contains only trusted metadata plus an optional
@@ -52,16 +52,19 @@ def discussion_snapshot(bundle, cutoff):
     if not bundle.get('timeline_complete'):
         raise ValueError('Discussion timeline recovery is incomplete')
     state = 'OPEN'
+    closed_at = None
     for event in sorted(bundle.get('state_events', []), key=lambda e: timestamp(e['createdAt'])):
         if timestamp(event['createdAt']) > bound:
             break
         if event['kind'] == 'closed':
             state = 'CLOSED'
+            closed_at = event['createdAt']
         elif event['kind'] == 'reopened':
             state = 'OPEN'
+            closed_at = None
         else:
             raise ValueError('Unknown discussion state event')
-    if state != 'OPEN':
+    if state != ('CLOSED' if closed else 'OPEN'):
         return None
     title = bundle['title']
     title_events = sorted(bundle.get('title_events', []), key=lambda e: timestamp(e['createdAt']))
@@ -71,6 +74,8 @@ def discussion_snapshot(bundle, cutoff):
     row = {'number': bundle['number'], 'kind': bundle['kind'], 'title': title,
            'author_login': (bundle.get('author') or {}).get('login'),
            'created_at': bundle['createdAt'], 'state': state, 'url': bundle['url']}
+    if closed:
+        row['closed_at'] = closed_at
     eligible = []
     unavailable = []
     for obj in bundle['objects']:

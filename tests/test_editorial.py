@@ -85,3 +85,23 @@ class EditorialTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate_annotation(annotation,self.manifest,self.transcript)
         annotation['chapters'][0]['related_chapters']=['quantizer']
         with self.assertRaises(ValueError):validate_annotation(annotation,self.manifest,self.transcript)
+
+    def index_pages(self):
+        self.manifest['ancestor_context_mode']='retrieval_v1'
+        for offset in (0,8192):
+            identity=f'index-{offset}'
+            self.transcript.extend([
+                {'role':'assistant','calls':[{'id':identity,'tool':'evidence_index','arguments':{'offset':offset}}]},
+                {'role':'tool','call_id':identity,'name':'evidence_index','content':json.dumps({'ok':True,'result':{'text':'navigation','next_offset':offset+8192,'truncated':offset==0}})}])
+
+    def test_uncited_evidence_index_pages_allow_other_evidence_claims(self):
+        self.index_pages()
+        entry,review=assemble_draft(fixture(),self.manifest,self.transcript)
+        self.assertEqual(entry['annotation']['problem'][0]['evidence'],['read-1'])
+        self.assertEqual(review['status'],'pending')
+
+    def test_evidence_index_page_cannot_be_cited_as_claim_evidence(self):
+        self.index_pages()
+        annotation=fixture();annotation['problem'][0]['evidence']=['index-8192']
+        with self.assertRaisesRegex(ValueError,'Unknown or unsuccessful evidence call'):
+            validate_annotation(annotation,self.manifest,self.transcript)

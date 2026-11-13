@@ -1,0 +1,441 @@
+{
+  "schema_version": 5,
+  "sha": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+  "parent_shas": [
+    "29060addb5a3994cec3867e1f2f6b30ecda7b8a3"
+  ],
+  "cutoff_date": "2025-04-12T03:05:05+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The architecture registry lacked DeciLMForCausalLM, so Config.from_directory could not select a DeciLM implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_efda0deeaec04ed8bce1386143c321a8",
+          "call_bf50c63e984d4e249a8b4b930a186a94"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation represents heterogeneous decoder blocks using existing attention, gated-MLP and optional-branch machinery rather than introducing another execution backend.",
+        "basis": "source",
+        "evidence": [
+          "call_7abba61d0f374a1385e14ec6ba6b93e7",
+          "call_4f5d30c048f0474198e92ae08083dc2b"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Architecture discovery now selects DeciLMConfig and DeciLMModel. This enables construction of the supported block forms, but does not establish compatibility with every Nemotron checkpoint.",
+        "basis": "source",
+        "evidence": [
+          "call_efda0deeaec04ed8bce1386143c321a8",
+          "call_7abba61d0f374a1385e14ec6ba6b93e7"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Whole-parent literal searches found no DeciLM or Nemotron occurrences; these searches do not exclude dynamically supplied architectures.",
+        "basis": "source",
+        "evidence": [
+          "call_2ad507e8b20a4780b62791bb33cebc5c",
+          "call_b929d28b466b43aa9b00e8f2feafbeac"
+        ]
+      },
+      {
+        "text": "The inspected discussions concern separate failures: \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d and \u201cFix a tokenizer issue while converting models without a bos_token_id defined.\u201d They provide no explicit attribution of this DeciLM change to those reports.",
+        "basis": "source",
+        "evidence": [
+          "call_aa20e039e0504de5820911480505d6f2",
+          "call_066b218ae8a74718b194c71cd0870aca",
+          "call_5b749fd6bc0548c3b165a66defe2eff1",
+          "call_d98ef688fe9945aa934fbd8add48b043"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model construction, tensor loading, conversion or GPU inference was executed. The Python check transcribed scalar dimension arithmetic only.",
+      "Reference inspection was limited to nvidia/Llama-3_1-Nemotron-51B-Instruct and its first tensor shard header. Configurations for Nemotron Ultra CPT, Ultra, Super, Qwen2.5-0.5B, TinyLlama, Phi-3, Mistral and Gemma were not read; no cross-model compatibility claim is made.",
+      "The numerical rationale for the MLP formula's factor 2/3 and the choice of 256-wide alignment is not established by the inspected sources."
+    ],
+    "links": [
+      "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "DeciLM registration and heterogeneous decoder construction",
+        "claims": [
+          {
+            "text": "The new registry entry connects the architecture string to DeciLMConfig and DeciLMModel. Config.from_directory selects the configuration class, while Model.from_config invokes the model class stored by that configuration.",
+            "basis": "source",
+            "evidence": [
+              "call_efda0deeaec04ed8bce1386143c321a8",
+              "call_bf50c63e984d4e249a8b4b930a186a94",
+              "call_006d9aaa71c14432b34cd48f176d5ea6"
+            ]
+          },
+          {
+            "text": "DeciLMConfig reads global hidden width and query-head count, derives head dimension by integer division when absent or false-valued, and requires one block_configs entry per declared hidden layer. Each block supplies attention and ffn dictionaries rather than a single global intermediate width and KV-head count.",
+            "basis": "source",
+            "evidence": [
+              "call_7abba61d0f374a1385e14ec6ba6b93e7",
+              "call_8c6fa0e6fd7c40ccbbea00c785bfa0ed",
+              "call_19f600c907c348c3825d15ff521e0177",
+              "call_21ff6934e1324cecb90189553afe3907"
+            ]
+          },
+          {
+            "text": "A branch marked no_op creates neither its normalization nor its attention/MLP module. Present branches receive RMSNorm and are passed to TransformerBlock, whose forward method skips absent branches and applies residual additions for present ones. The new constructor always supplies a normalization for each present branch.",
+            "basis": "source",
+            "evidence": [
+              "call_7abba61d0f374a1385e14ec6ba6b93e7",
+              "call_4f5d30c048f0474198e92ae08083dc2b"
+            ]
+          },
+          {
+            "text": "The earlier optional-transformer entry describes matching allocation strategies for attention-only and MLP-only blocks. DeciLM's branch construction uses that existing interface.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_f874e9530c894bd4942257242a9bad74"
+            ]
+          },
+          {
+            "text": "Checkpoint keys retain original block indices, but cache_layer_idx increments only for present attention modules. Attention.decode_flash_attn uses that dense index to retrieve KV storage. last_kv_module_idx tracks the final attention-bearing top-level module, allowing Model.prefill to stop there rather than process trailing MLP-only blocks or the output head.",
+            "basis": "source",
+            "evidence": [
+              "call_7abba61d0f374a1385e14ec6ba6b93e7",
+              "call_fc652812faf94209865123fb314a1da1",
+              "call_006d9aaa71c14432b34cd48f176d5ea6"
+            ]
+          },
+          {
+            "text": "For active FFNs, the constructor truncates 2 \u00d7 ffn_mult \u00d7 hidden_size / 3 to an integer and rounds that integer upward to a multiple of 256. Here 255 implements ceiling division; 256 is an alignment unit, not a dispatch threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_7abba61d0f374a1385e14ec6ba6b93e7"
+            ]
+          },
+          {
+            "text": "Scalar transcription for the inspected 51B configuration produced intermediate widths 7168, 14336 and 28672 for multipliers 1.3125, 2.625 and 5.25. These equal the corresponding first-shard gate/up tensor dimensions. This checks arithmetic and metadata, not model execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_7f96e73bde8a462580742870120b414c",
+              "call_6857823172304b869eaaf21680d525ed",
+              "call_69378cd6036f4c6fb16be4de2719baaa"
+            ]
+          },
+          {
+            "text": "Input preparation delegates to prepare_for_attn. Its existing alternatives remain uncached SDPA, uncached Flash Attention and cached Flash Attention; uncached preparation rejects a supplied cache, while rectangular cached preparation checks page alignment and requires exactly one of past_len or cache_seqlens.",
+            "basis": "source",
+            "evidence": [
+              "call_7abba61d0f374a1385e14ec6ba6b93e7",
+              "call_fc652812faf94209865123fb314a1da1"
+            ]
+          },
+          {
+            "text": "The implementation deliberately bounds its supported subset with assertions against active linear-replacement and sparsification branches and several sink-attention options. Reusing conventional modules keeps the integration small, but these checks are narrower than the commit message's unqualified Nemotron label.",
+            "basis": "inference",
+            "evidence": [
+              "call_7abba61d0f374a1385e14ec6ba6b93e7"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "decilm-kv-head-mapping",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Directly treating n_heads_in_group as the KV-head count disagrees with the inspected 51B checkpoint's second block.",
+        "trigger": "Construct attention for block 1 of the pinned nvidia/Llama-3_1-Nemotron-51B-Instruct configuration, where n_heads_in_group is 16, hidden_size is 8192 and num_attention_heads is 64.",
+        "expected_behavior": "Construct K/V projection dimensions matching the stored [512, 8192] tensors: four KV heads of dimension 128.",
+        "actual_behavior": "DeciLMModel passes 16 as num_kv_heads, so Attention declares K/V output width 2048 and later reshapes using 16 heads. The checkpoint header instead has width 512. The first block happens to match because both 8 and 64/8 are 8. The separate linear-replacement assertion prevents complete construction of this exact checkpoint before loading reaches the mismatch.",
+        "locations": [
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/models/decilm.py",
+            "symbol": "DeciLMModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_7abba61d0f374a1385e14ec6ba6b93e7",
+          "call_fc652812faf94209865123fb314a1da1",
+          "call_6857823172304b869eaaf21680d525ed",
+          "call_69378cd6036f4c6fb16be4de2719baaa"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the constructor argument, Attention projection/reshape dimensions and pinned tensor shapes. Whole-parent searches found no pre-existing DeciLM callers; the inspected generic construction route is Model.from_config through config.model_class.",
+            "evidence": [
+              "call_2ad507e8b20a4780b62791bb33cebc5c",
+              "call_ebf4fe2032fc48dcbe9ed47d3b906cd2",
+              "call_006d9aaa71c14432b34cd48f176d5ea6",
+              "call_23b81d3fb3cf4b2d9643b3898b1b1042"
+            ],
+            "limits": "Reach is established for generic model construction, not every external entry point. No tensor loading failure was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Calculated head dimension 128, patch width 2048 and quotient-based width 512 for group size 16.",
+            "evidence": [
+              "call_7f96e73bde8a462580742870120b414c"
+            ],
+            "limits": "Standard-library arithmetic only; no repository model or GPU kernel ran."
+          }
+        ]
+      },
+      {
+        "id": "nemotron-51b-linear-replacement",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "Registering DeciLM does not make the inspected Nemotron-51B checkpoint constructible.",
+        "trigger": "Instantiate the pinned 51B configuration through DeciLMModel with assertions enabled; block 11 has active attention with replace_with_linear=true.",
+        "expected_behavior": "For complete compatibility with this checkpoint, construct its configured linear-replacement attention branch.",
+        "actual_behavior": "The constructor raises the explicit assertion \u201cDeciLM: replace_with_linear not supported.\u201d This is an intentional unsupported form, not evidence that all Nemotron variants fail.",
+        "locations": [
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/models/decilm.py",
+            "symbol": "DeciLMModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_7abba61d0f374a1385e14ec6ba6b93e7",
+          "call_6857823172304b869eaaf21680d525ed"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the checkpoint's active replacement branch with the constructor assertion and inspected Model.from_config's indirect constructor call.",
+            "evidence": [
+              "call_7abba61d0f374a1385e14ec6ba6b93e7",
+              "call_6857823172304b869eaaf21680d525ed",
+              "call_ebf4fe2032fc48dcbe9ed47d3b906cd2",
+              "call_006d9aaa71c14432b34cd48f176d5ea6"
+            ],
+            "limits": "Constructor execution was not performed; compatibility assessment is limited to the inspected checkpoint and assertion-enabled execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds DeciLM discovery and per-block model assembly using existing optional transformer branches; inspected Nemotron-51B metadata exposes unsupported linear replacements and a KV-head dimension mismatch."
+  },
+  "evidence": {
+    "call_efda0deeaec04ed8bce1386143c321a8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 159,
+        "max_bytes": 7765
+      },
+      "result_sha256": "521e55eb45dc84fc2b10dd63d4a8b37a368cf0f6f677a0df1518dd0ec06567b2"
+    },
+    "call_7abba61d0f374a1385e14ec6ba6b93e7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 1019,
+        "max_bytes": 8000
+      },
+      "result_sha256": "4dcb34e5872add2bf58d0c4e05daf4431ea645f4adced894d03e2fe6bf090339"
+    },
+    "call_2ad507e8b20a4780b62791bb33cebc5c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "DeciLM",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_b929d28b466b43aa9b00e8f2feafbeac": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "Nemotron"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_4f5d30c048f0474198e92ae08083dc2b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "50384b5303f4fc1a56d580d948197e7e81cedc753634dd689952b6d3bb74cd56"
+    },
+    "call_6857823172304b869eaaf21680d525ed": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-51B-Instruct",
+        "revision": "2e9bdbfa8e1ab73ce98f5960143cf927192d59e7",
+        "path": "config.json",
+        "max_bytes": 30000
+      },
+      "result_sha256": "6bd9601d154177923ca84c25b09eeb2024efcdd89acb583d9f62ebd06835f10c"
+    },
+    "call_8c6fa0e6fd7c40ccbbea00c785bfa0ed": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "block_config",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_19f600c907c348c3825d15ff521e0177": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "n_heads_in_group"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_fc652812faf94209865123fb314a1da1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 19000
+      },
+      "result_sha256": "65b521ed2a0079fbaf85f9c4d0897b8e2b2c745e92ab592ddfc3c15db3360530"
+    },
+    "call_bf50c63e984d4e249a8b4b930a186a94": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "b92de8817507087fcd534c15ea865b7d5e4729fc8ce45b356f9a32abccdb1b54"
+    },
+    "call_21ff6934e1324cecb90189553afe3907": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "ffn_mult"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_ebf4fe2032fc48dcbe9ed47d3b906cd2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "model_class",
+        "limit": 100
+      },
+      "result_sha256": "3e17eceb2169ee660d46693ca3e15ca873752798d63941b71a1f163a6e9d118f"
+    },
+    "call_006d9aaa71c14432b34cd48f176d5ea6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "1f1ee802f818a2673cc7b7d689a41dbd1356b48118eaf2244c5a0ae80602ed30"
+    },
+    "call_aa20e039e0504de5820911480505d6f2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d3fc0f185430623c228c0ee8aaa3c2617ebb17d2b423d71172e7c6436b3c379b"
+    },
+    "call_066b218ae8a74718b194c71cd0870aca": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0b37c822302f218cb3926d0bfb5487835a69c632650414ddec695f2e2e58938c"
+    },
+    "call_5b749fd6bc0548c3b165a66defe2eff1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "bc853094b1874b20b1f937bf181265940fbfa7655ff4596f84f263fb754b0cf7"
+    },
+    "call_d98ef688fe9945aa934fbd8add48b043": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9b0a0567ed5d98a225f6b6b2d291c806968c8fbf2ac5fae86b8a291374c9ff88"
+    },
+    "call_f874e9530c894bd4942257242a9bad74": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "4896507f25527cc4f67f5761bf821bcd2fd443f503c926e8dc90304159bcd47d"
+    },
+    "call_29565c4c24c84190a981b5eb6adc31e7": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "1ecc393eb114143c22527b02551f3752341df196cf03769994e73e24ff580b86",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b2333c9dddb0dbd522c9ee854665e5a93d38898da16592631614c7ca9a092eb2",
+      "catalog_only": true
+    },
+    "call_69378cd6036f4c6fb16be4de2719baaa": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-51B-Instruct",
+        "revision": "2e9bdbfa8e1ab73ce98f5960143cf927192d59e7",
+        "path": "model-00001-of-00022.safetensors",
+        "limit": 40
+      },
+      "result_sha256": "a4278ce4b679d3022f9a2e800302865379df7a2e4998b6f206e907471ce8a307"
+    },
+    "call_7f96e73bde8a462580742870120b414c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "h=8192;q=64;d=h//q\nfor g,stored in [(8,1024),(16,512)]:\n print({'group':g,'head_dim':d,'patch_kv_width':g*d,'stored_kv_width':stored,'quotient_kv_width':(q//g)*d})\nfor m in [1.3125,2.625,5.25]:\n n=int(2*m*h/3); print({'ffn_mult':m,'raw':n,'aligned':((n+255)//256)*256})"
+        ]
+      },
+      "result_sha256": "c2633f22942b238a9abc55e54b6c6653f286f27c525f33a76913ec302baf93ac"
+    },
+    "call_23b81d3fb3cf4b2d9643b3898b1b1042": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "81372f008e81ee5c507df37e58cc4e89870ca691ca0c58509775618110677757"
+    },
+    "call_fd56e44448f14118b4b97fdbd23a2402": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "num_kv_heads",
+        "limit": 60
+      },
+      "result_sha256": "364d24848a1484304b015df8aa3ff19c546e71d98442364732a7e64bae1245bb"
+    }
+  }
+}
