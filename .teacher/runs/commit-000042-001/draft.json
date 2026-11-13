@@ -1,0 +1,232 @@
+{
+  "schema_version": 5,
+  "sha": "5e46530bee701713b551884be5e5fcf6697a6b63",
+  "parent_shas": [
+    "897e20a2ad1e10a7d3b09c63826d058c0f3bc651"
+  ],
+  "cutoff_date": "2025-04-11T08:32:56-07:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Tokenizer initialization previously passed unresolved BOS or EOS IDs into the backend's id_to_token lookup. The change guards both lookups when the resolved ID is None.",
+        "basis": "source",
+        "evidence": [
+          "call_c141334337754391919dcdfd21be5871",
+          "call_a84a102d6fe94a88b6f82d145792a6fe"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Missing bos_token_id in model configuration does not alone imply this path: the tokenizer first tries bos_token in tokenizer configuration and otherwise defaults to ID 1. Explicit null, unsupported token descriptions, or unresolved token strings can instead leave the ID None. EOS follows the same resolution scheme with default ID 2.",
+        "basis": "source",
+        "evidence": [
+          "call_1a8bba260c9c4f69beb089e2e427cc52",
+          "call_a84a102d6fe94a88b6f82d145792a6fe",
+          "call_2c58ebf464344d8e94ac0f50527bb909",
+          "call_ef98a72b8a1a46c6a787cf5015c9c76c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The guard applies to shared tokenizer construction, not only conversion. Conversion's get_base_model calls Tokenizer.from_config, which directly constructs Tokenizer; parent-tree searches also locate factory calls in examples, evaluation, model initialization and a stress test.",
+        "basis": "source",
+        "evidence": [
+          "call_2a456305295140b9810deceabc86124e",
+          "call_a84a102d6fe94a88b6f82d145792a6fe",
+          "call_037202fc07324503bf95dbcbf536a5f6",
+          "call_9c6d01a0bbef463498940237d211ab17"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The inspected discussions report different problems: issue 7 concerns an undefined native symbol, issue 8 an invalid quantization reshape, issue 11 a bias datatype assertion, and issue 12 unsupported stop_conditions after conversion, discussed in terms of chat mode selection. PR 4 is a spelling correction. None supplies a reproduction of this None-ID lookup.",
+        "basis": "source",
+        "evidence": [
+          "call_58c630c7fb6643069c0befbc390d12e5",
+          "call_bf1f99d76f284898a7b8a92ea56d3b1c",
+          "call_d9b76a3f731245f19e68bdf5e67dac46",
+          "call_eda60567a14d407582ad4890e495ed4d",
+          "call_7a7724c40e984499952c006e39d49060",
+          "call_4760df8c06d74d5b88b6a553abe38d74"
+        ]
+      }
+    ],
+    "limitations": [
+      "No real tokenizer backend, model conversion or GPU workload was executed; the backend's exact exception for None and end-to-end conversion success remain unverified.",
+      "The scalar check models only the changed lookup expressions, not complete tokenizer initialization or downstream padding and generation behavior."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Preserve absent BOS and EOS tokens during initialization",
+        "claims": [
+          {
+            "text": "Tokenizer.__init__ now stores None for each control-token string whose resolved ID is None. For non-None IDs, it retains the original preference for extended_id_to_piece, falling back to backend id_to_token when that mapping is absent or falsey. The explicit identity check also preserves valid ID zero.",
+            "basis": "source",
+            "evidence": [
+              "call_c141334337754391919dcdfd21be5871"
+            ]
+          },
+          {
+            "text": "This keeps absence explicit rather than inventing a replacement token. Existing truthiness guards skip adding absent control-token strings to the extended vocabulary, while encode already skips BOS/EOS insertion when the corresponding ID is None. ID resolution and padding fallback are unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_a84a102d6fe94a88b6f82d145792a6fe",
+              "call_c141334337754391919dcdfd21be5871"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription checked 12 combinations of IDs and extended mappings. All nine non-None cases retained identical results and backend calls; all three None cases avoided the backend call after the change. The backend was a recording stub, not the tokenizers library.",
+            "basis": "execution",
+            "evidence": [
+              "call_1ee0bc4ee0b84dd8a62468c002e087c7"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Guard BOS and EOS string lookup when their resolved IDs are None, preserving existing lookup behavior for defined IDs."
+  },
+  "evidence": {
+    "call_c141334337754391919dcdfd21be5871": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "5e46530bee701713b551884be5e5fcf6697a6b63",
+        "offset": 210,
+        "max_bytes": 1073
+      },
+      "result_sha256": "0a14497c79692333f2dead0c4645eb58e33030258c65726ee329c24f762db433"
+    },
+    "call_a84a102d6fe94a88b6f82d145792a6fe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "max_bytes": 27000
+      },
+      "result_sha256": "51f8b589a97f43db9d032cab8326d45dbc17c681bcbcbeb6c0098a2e105f8024"
+    },
+    "call_2c58ebf464344d8e94ac0f50527bb909": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "query": "bos_token",
+        "limit": 100
+      },
+      "result_sha256": "46e834a37493fc3d58154808c1767378319fccd1cb3e31cb2700730cc813640c"
+    },
+    "call_ef98a72b8a1a46c6a787cf5015c9c76c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "query": "eos_token",
+        "limit": 100
+      },
+      "result_sha256": "20aacc3862c6bbfde72a6ca9f0876227d57966d7598e8f7be0dd7052790b8d55"
+    },
+    "call_9c6d01a0bbef463498940237d211ab17": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "query": "Tokenizer(",
+        "limit": 100
+      },
+      "result_sha256": "7e73f6606363d328056cfb68dfc0dcb2adcd430911d0c49283e72e9ee6ca1507"
+    },
+    "call_037202fc07324503bf95dbcbf536a5f6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "query": "Tokenizer.from_config",
+        "limit": 100
+      },
+      "result_sha256": "7083f54c2c27dec5e848d4327fa026a10fa7f5ec3d6df14f476c6a9ac48d2ce5"
+    },
+    "call_1a8bba260c9c4f69beb089e2e427cc52": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 5400
+      },
+      "result_sha256": "0e392826050d81079260d49620ab27f2cbb9a4e2482febcb26e22414471c9784"
+    },
+    "call_2a456305295140b9810deceabc86124e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 5500,
+        "max_bytes": 2500
+      },
+      "result_sha256": "f65d546b3ef4cb3e9ba8fe70bc90b75fa52e812e8a645d17bf59b3928d4f97a8"
+    },
+    "call_58c630c7fb6643069c0befbc390d12e5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "67d3cba08332a0834a266eb46e8e1064c800efddd43967b0b9f1de3bfaae1d67"
+    },
+    "call_bf1f99d76f284898a7b8a92ea56d3b1c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6e4f34fb6a9f51ce32374e618d1773f64545c942dd64a19bb354806ce1493ab2"
+    },
+    "call_d9b76a3f731245f19e68bdf5e67dac46": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 16000
+      },
+      "result_sha256": "62f8a2ac6ed390adeceb8ebbdb4639d2590b516b79cf22932f9a85d20faa3d75"
+    },
+    "call_eda60567a14d407582ad4890e495ed4d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "bfe9486bd3ac14f5fb2d826d7bfdf088a1b1f886aabd6c8db07d12d962ff1810"
+    },
+    "call_7a7724c40e984499952c006e39d49060": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "0ad83530ede9549fb8ccb84a13acce3b041d5cfba1fff2a4a901d0ecfac20602"
+    },
+    "call_4760df8c06d74d5b88b6a553abe38d74": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a79e26a4656541e5eb186658b0c0cedabe7316a719c41f5557bb207b5b3d57f8"
+    },
+    "call_1ee0bc4ee0b84dd8a62468c002e087c7": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nrows=[]\nfor token_id in [None,0,1,2]:\n for extended in [{},{0:'zero',1:'bos',2:'eos'},{0:''}]:\n  old_calls=[]; new_calls=[]\n  def backend(i,calls):\n   calls.append(i); return 'backend:'+str(i)\n  old=extended.get(token_id) or backend(token_id,old_calls)\n  new=None if token_id is None else (extended.get(token_id) or backend(token_id,new_calls))\n  assert (new is None and not new_calls) if token_id is None else (old==new and old_calls==new_calls)\n  rows.append((token_id,extended,old_calls,new_calls))\nprint(json.dumps({'cases':len(rows),'none_cases':sum(r[0] is None for r in rows),'non_none_equivalent':9,'none_backend_calls_before':3,'none_backend_calls_after':0}))"
+        ]
+      },
+      "result_sha256": "50225dd0c8bdec98e7d1c8c94a804232045568e5759b163cde175e97f00f2eef"
+    }
+  }
+}

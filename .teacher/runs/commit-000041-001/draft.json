@@ -1,0 +1,173 @@
+{
+  "schema_version": 5,
+  "sha": "41717916cedc946ff93930c13aff9bf812fda90c",
+  "parent_shas": [
+    "4c7b1e29485c7004a59be08ae8d88ebd239e36d1"
+  ],
+  "cutoff_date": "2025-04-12T04:40:25+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The default EXL3 dispatch reconstructed weights at exactly 32 input rows. The patch moves that boundary so reconstruction begins above 32 rows.",
+        "basis": "source",
+        "evidence": [
+          "call_2eb38ac3636b4babafc6bd00a6c163de"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The threshold counts rows after flattening all leading input dimensions, not just the original batch dimension. Explicit params['reconstruct'] values still override the automatic choice.",
+        "basis": "source",
+        "evidence": [
+          "call_3536b0ad59994cfdadf372888f9a2edc",
+          "call_2eb38ac3636b4babafc6bd00a6c163de"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "At exactly 32 flattened rows with no override, forward now uses ext.exl3_gemm instead of allocating and reconstructing a dense inner weight tensor for ext.hgemm. Other row counts retain their previous dispatch.",
+        "basis": "source",
+        "evidence": [
+          "call_3536b0ad59994cfdadf372888f9a2edc",
+          "call_2eb38ac3636b4babafc6bd00a6c163de"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier bias-normalization entry describes FP32-to-FP16 constructor conversion; this threshold-only patch leaves that behavior unchanged.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_9b54db2d6d3c41a999c8ccb210313d28"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA kernel, model inference or repository test was executed; numerical equivalence and performance gains remain unmeasured.",
+      "The inspected evidence establishes the boundary change but not why 32 is the preferred crossover."
+    ],
+    "links": [
+      "897e20a2ad1e10a7d3b09c63826d058c0f3bc651"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Keep 32-row EXL3 operations on the quantized path",
+        "claims": [
+          {
+            "text": "Both branches first apply the input Hadamard transform. Reconstruction obtains a fresh half-precision matrix shaped (in_features, out_features), fills it through ext.reconstruct, and passes it to ext.hgemm. The alternative passes the packed trellis directly to ext.exl3_gemm. Output transforms, bias addition and output dtype handling are unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_3536b0ad59994cfdadf372888f9a2edc",
+              "call_2eb38ac3636b4babafc6bd00a6c163de"
+            ]
+          },
+          {
+            "text": "A standard-library transcription checked row counts 1\u20134096: only 32 changed its default branch. Explicit True and False overrides remained unchanged at sampled boundary-adjacent sizes. This checks dispatch arithmetic, not tensor execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_10d884464e1d47749db618671340db3c"
+            ]
+          },
+          {
+            "text": "The existing test_qgemm includes sizes 31, 32 and 33 and compares explicitly forced quantized and reconstructed outputs. Because both calls supply reconstruct, that test does not exercise the changed automatic threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_39b8d9d093a744de985ae810b04c6a32"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Changes automatic EXL3 reconstruction from at least 32 flattened input rows to more than 32, preserving explicit overrides."
+  },
+  "evidence": {
+    "call_2eb38ac3636b4babafc6bd00a6c163de": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "41717916cedc946ff93930c13aff9bf812fda90c",
+        "offset": 164,
+        "max_bytes": 580
+      },
+      "result_sha256": "e789b1cd818932c5ce2d2dcfc703c8b88fcdfdb87f221c060038775ef7612742"
+    },
+    "call_3536b0ad59994cfdadf372888f9a2edc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "1e0b9da384e73d67292129864040b8e10c33602440922a0130886b16caf84912"
+    },
+    "call_5ca78b3297934db6be36475ecfae483b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+        "query": "reconstruct",
+        "limit": 100
+      },
+      "result_sha256": "309728df31266b70f96e6516c36c2ffe1074c66472f5eab7977480d325398d12"
+    },
+    "call_7b8e9bb1354e4ef5ad4150fa12ebc9ed": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+        "query": "reconstr",
+        "path": "exllamav3/modules",
+        "limit": 30
+      },
+      "result_sha256": "94aa0b73b5036844743b9d4d79abaf372d7ebd9e22dd5ada19da26827bd86c9f"
+    },
+    "call_08f23b06c9af4b7b9287149ffd53294c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "788dd6dcb84f95c8aa87eabaf1df627fff57e9f5874cea050b33a3f17c859a6a"
+    },
+    "call_4d5e2ef52fb543a384dfa0e4a5867ced": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a3ad12336a61b7e8cb65c85f157275d0680a77eeaab12fdedb90534e6d7a9e9f"
+    },
+    "call_9b54db2d6d3c41a999c8ccb210313d28": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "897e20a2ad1e10a7d3b09c63826d058c0f3bc651",
+        "max_bytes": 16384
+      },
+      "result_sha256": "d76d1d940f00496bedfb83f15db65b9240783a8cb9a525c5ffd6c2ea0fa97ac8"
+    },
+    "call_39b8d9d093a744de985ae810b04c6a32": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+        "path": "tests/test_qgemm.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "fd4b0144e6490a8fd230588f1366847e2fff47279b6dfd368f27f989177d3707"
+    },
+    "call_10d884464e1d47749db618671340db3c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for n in (1,31,32,33,64):\n print(n, [(p, {'reconstruct':p}.get('reconstruct',n>=32), {'reconstruct':p}.get('reconstruct',n>32)) for p in (False,True)], 'default', n>=32,n>32)\nprint('changed defaults 1..4096:', [n for n in range(1,4097) if (n>=32)!=(n>32)])"
+        ]
+      },
+      "result_sha256": "e04d9700d4786429e55fd9e283e7beeaf927efa387263aa6b2888762df1ded74"
+    }
+  }
+}

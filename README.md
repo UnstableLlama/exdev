@@ -1,109 +1,67 @@
 # exdev
 
-**exdev** builds a historical Encyclopedia and code graph of a repository, then uses them to generate training data for training models.
+exdev builds a historical Encyclopedia and code graph of a software repository, then uses that evidence to prepare training data for developer models.
 
-The order is **repository history → Encyclopedia + graph → training data → trained models**. The current work is building and validating the Encyclopedia and graph.
+**Repository history → Encyclopedia + code graph → training data → trained models**
 
-The upstream project studied here is **[exllamav3](https://github.com/turboderp-org/exllamav3)**, created by **Turboderp** and developed with its contributors. That credit applies to exllamav3. exdev's tooling and annotations are separate work, and exdev is not authored or endorsed by Turboderp.
+The current source project is [exllamav3](https://github.com/turboderp-org/exllamav3), created by **Turboderp** and developed with its contributors. exdev provides separate tooling and annotations; it is not authored or endorsed by Turboderp.
 
-Original tooling and commentary: [MIT](LICENSE). Upstream code and diffs: retain Turboderp's [MIT notice](LICENSES/exllamav3-MIT.txt). See [NOTICE](NOTICE) and [ATTRIBUTION.md](ATTRIBUTION.md) for scope, credits and external-source handling.
+## What it does
 
-## Current status
+- **Mine repository history:** extract commit records, first-parent diffs, merge provenance and referenced evidence in parent-before-child order.
+- **Build historical code graphs:** store commit-specific symbols, call relationships and supplemental Python-to-native binding edges.
+- **Author explanations:** give isolated teacher sessions source, graph data and reviewed ancestor explanations restricted to each task’s historical cutoff.
+- **Preserve evidence:** retain drafts, transcripts, provenance and review decisions, with retrospective defect findings kept separate from historical context.
 
-The teacher walk has approved entries through **commit 12 for ancestor retrieval
-only**. Commit 13 (`Replace scale grid search with golden section search`) is
-next. Reviews now use the `reviews/requests/` and `reviews/verdicts/` mailbox;
-recorded approvals bind the verdict path and hash. Commits 11 and 12 retain
-canonical-use blockers in their administrative review records. The default
-suite passes 158 tests with 11 host-only tests skipped. This session still denies
-Bubblewrap namespaces; the next authoring run requires the established host
-environment. See the [latest handover](reports/teacher-walk-handover-008.json).
-The graph walk continues independently; `store/walk-status.json` records progress.
+Source code, explanations and graph relationships share commit and symbol identifiers. This lets later training examples use evidence available at the relevant point in history.
 
-The accepted ten root chapters now have a [combined assembly candidate](.teacher/assemblies/root-002/entry.md), preserving their prose and resolving chapter links. The user-supplied review accepts it, and hash-bound ancestor approval plus bounded retrieval are implemented; the canonical Encyclopedia has not been replaced. [Validation report](reports/root-assembly-validation-002.json).
+## Project maturity
 
-The [work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) describes the historical extraction and teacher workflow. The miner has processed 2,264 commits at pinned tip `bd1f519172406a9560bd5c90e61000691bb69a07`. The first 25 Encyclopedia entries and three structural snapshots are drafts awaiting revision following review. The rewrite will use fresh sandboxed authoring contexts; the second isolated root-entry candidate was rejected for insufficient coverage, and the restart now uses assigned subsystem chapters. No training traces have been generated.
+Mining and graph indexing cover the pinned 2,264-commit exllamav3 history. Graph indexing has completed locally; completion of the full final audit is not yet confirmed.
+
+The Encyclopedia and teacher workflow are under active review. Drafts and approval for ancestor retrieval do not imply approval for canonical publication or training. No training traces have been generated and no models have been trained. A wiki-style Encyclopedia and interactive graph viewer are planned.
+
+Operational progress, review decisions and run artifacts live in [`reports/`](reports/), [`reviews/`](reviews/) and [`.teacher/runs/`](.teacher/runs/), rather than this overview.
+
+## Working with the repository
+
+The miner requires **Python 3.12+ and Git**, with no third-party Python packages. Run commands from the repository root:
 
 ```sh
+# Run the default test suite; host-only sandbox checks are opt-in.
 python3 -m unittest discover -s tests
+
+# Mine the pinned source history.
 python3 scripts/mine.py mine --out data/exllamav3-v5
+
+# Inspect an Encyclopedia entry.
 python3 scripts/encyclopedia.py show 1
-# Export a chosen commit's first parent, with no .git history:
+
+# Export a commit’s first-parent tree without Git history.
 python3 scripts/mine.py parent COMMIT_SHA worktrees/parent
 ```
 
-Raw records, the SQLite index, source checkouts and graph databases remain local under ignored directories. The repository includes summary reports and the extracted reference inventory. The miner pins a run to its manifest tip and refuses incompatible miner versions. Use a new output directory for a new extraction version. A root commit exports an empty parent directory. Merge diffs are against the first parent and retain all parent SHAs. The walk is topological, with parents before children, rather than a timestamp sort that could put a child before its parent.
+The miner pins each extraction to its manifest tip and rejects incompatible miner versions. Use a new output directory for a new extraction version.
 
-[Mining report and complete reference inventory](reports/mining-report.md) · [Encyclopedia index](encyclopedia/README.md) · [Verification results](reports/verification.json)
+Graph indexing additionally requires the checksum-pinned Linux amd64 backend described in the [graph setup guide](graph/README.md). Teacher execution requires Bubblewrap, libseccomp, enabled user namespaces and the provider setup described in the [teacher guide](teacher/README.md). Its restricted source execution profile does not support Torch or GPU workloads.
 
-Requires Python 3.12+ and Git. No third-party Python packages are needed for the miner or its tests. GPU execution belongs to later validation work.
+Raw records, source checkouts, prepared packets and graph databases remain local in ignored directories. Summary reports and teacher review artifacts are tracked. A fresh checkout therefore needs the relevant data and runtime preparation before graph or teacher commands can run.
 
-## Graph validation checkpoint
+## Documentation
 
-The [graph work order](exllama-encyclopedia-graph-index.md) adds commit-specific code graphs using a pinned, checksum-verified release of **codebase-memory-mcp v0.12.1**, by DeusData. See [backend attribution](ATTRIBUTION.md#graph-backend).
+| Topic | Guide |
+| --- | --- |
+| Project design and teacher workflow | [Work order](EXL3%20Dev%20Model%20Plan%20and%20Teacher%20Work%20Order.md) |
+| Historical explanations | [Encyclopedia index](encyclopedia/README.md) |
+| Graph setup, indexing and queries | [Graph guide](graph/README.md) |
+| Isolated authoring and review artifacts | [Teacher guide](teacher/README.md) |
+| Historical context and retrieval | [Ancestor context](docs/ancestor-context.md) |
+| Isolation and evidence boundaries | [Boundary review guide](docs/teacher-boundary.md) |
+| Retrospective defect records | [Defect retrospectives](docs/defect-retrospectives.md) |
+| Planned browsing interfaces | [Human browser plan](docs/human-browser-plan.md) |
 
-Validation is complete at commit positions **1, 755, 1,509 and 2,264**:
+## Attribution and licensing
 
-- Exported node and edge counts match all four snapshot databases.
-- Selected Python call-trace checks pass with test code included.
-- At the pinned tip, the diagnostic probe finds 2,902 of 3,000 simple Python call candidates. This is a narrow coverage check, not an overall accuracy score.
-- All 1,106 uniquely resolved Python-to-native call sites at the tip need supplemental edges; 80 files have partial parsing diagnostics.
-- The original validation checkpoint passed all 13 tests; the integrated pipeline now passes 164 tests with host sandbox tests enabled. No GPU execution or training has been performed.
+Original exdev tooling and commentary are [MIT-licensed](LICENSE). Upstream exllamav3 code and diffs retain [Turboderp’s MIT notice](LICENSES/exllamav3-MIT.txt). The graph backend is **codebase-memory-mcp v0.12.1**, by DeusData; see [backend attribution](ATTRIBUTION.md#graph-backend).
 
-Read the [validation report](reports/graph-validation.md) for evidence and limitations, and the [validation setup](graph/README.md) to reproduce the probe. Raw backend responses and snapshot databases remain local. These validation worktrees share full Git history and are not teacher-facing artifacts.
-
-## Historical graph integration
-
-The chronological pipeline passed its initial **25-commit integration checkpoint** and an independent audit through **commit 165**. The full 2,264-commit graph walk is continuing; the local status file below records its live progress. It stores isolated snapshots, adds evidence-bearing Python-to-native edges, records first-parent symbol events, and links the existing Encyclopedia entries to symbols.
-
-- **695 symbol events and 62 entry links** in the first batch; SQLite foreign-key checks pass.
-- All five graph tools are implemented with [frozen version-one schemas](schema/graph-tools-v1.json). The trusted caller sets the historical cutoff outside model arguments.
-- Read-only Cypher queries and call traces include supplemental binding edges. Real-data checks reject future commits and mutation queries.
-- Rerunning the first 25 commits verifies and reuses completed snapshots without duplicate imports.
-
-See the [integration report](reports/graph-integration.md), [tool and indexing instructions](graph/README.md), and [entry/symbol links](encyclopedia/symbol-links.json). Snapshot databases and the timeline remain local under ignored `store/`.
-
-The full graph-history walk is running locally. It resumes from the verified prefix, processing parents before children:
-
-```sh
-python3 -m graph.walk --stop-position 2264
-# Progress and completion/error status are written to store/walk-status.json.
-```
-
-An independent [source/database audit](reports/graph-audit.json) has verified the first 165 commits. `python3 -m graph.verify` audits the currently completed prefix; `python3 -m graph.finalize_walk` waits for the active walk and audits its full result. Live audit status and final results remain local under `store/`.
-
-The Encyclopedia still stops at 25 draft entries. No training traces have been generated. The nine repository/source tools and operating-system isolation are implemented as a review candidate; the restricted graph bridge and Codex Astra/medium adapter are implemented, with the first live root-entry candidate pending review and independent boundary review still outstanding. See the [teacher runner](teacher/README.md) and [boundary review guide](docs/teacher-boundary.md). The **repository code, Encyclopedia explanations and graph relationships**, joined by commit and symbol, will provide the evidence for generating training data. That data will then be used to train models. Historical examples must use only evidence available at their cutoff.
-
-## Planned human-facing views
-
-Alongside the model tools, we plan a **wiki-style Encyclopedia website** and an **interactive HTML graph viewer**. Readers will be able to browse commits, explanations and symbols, explore call relationships, and compare historical revisions. Both views will use the same source records and commit/symbol links as the training infrastructure, with draft status, evidence gaps and upstream credit visible.
-
-This is later-phase work; no viewer is implemented yet. See the [human browser plan](docs/human-browser-plan.md) for the proposed experience, data contracts and delivery order.
-
-
-## Review remediation
-
-[Fable's original review](astra-review.md), covering commit `45b7af1`, shifted the next priority to historical authoring correctness:
-ancestor-only context and merge provenance, eligible issue evidence, then the
-sandboxed teacher tools. The first 25 drafts will be redone in fresh restricted
-contexts before a trace dry run. The review is preserved as historical feedback; some findings have since been addressed. See the [agreed remediation order and completed fixes](docs/review-remediation.md).
-
-The [measured storage projection](reports/graph-storage-projection.md) is about
-47.2 GiB for the original full-history layout. Removing duplicate uncompressed
-snapshot JSON from SQLite reduces that estimate to 36.7 GiB. Schema v2 references
-the existing compressed snapshots; migrated data through commit 165 passed the
-source audit and resume check. The graph walk continues in the background.
-
-Eligible issue/PR evidence for entries 9 and 10 has been recovered with content-edit cutoffs. Entry 9 receives historical edit-event text, not a claimed reconstruction of the complete issue body. See the [recovery report](reports/github-evidence-recovery.json). No drafts were rewritten by this administrative session.
-
-The [Codex adapter and editorial schema](docs/editorial-v2.md) are ready for review. A real app-server startup check and local fake-provider round trip pass; the latter verifies the exact 14-tool allowlist. Candidate 002 passed schema validation but was rejected for insufficient source coverage. Its replacement uses ten independently authored subsystem chapters with mandatory full reads and Astra/high reasoning. See the [live-run report](reports/root-authoring-candidate.json). No training trace has been generated.
-
-[Approved ancestor context](docs/ancestor-context.md) now verifies exact reviewed artifacts and supplies only strict-ancestor explanations to each new teacher session. Existing drafts remain unchanged while the rejected root candidates are preserved separately.
-
-The rejected [root-entry draft](.teacher/runs/root-candidate-002/draft.md), [evidence transcript](.teacher/runs/root-candidate-002/raw-transcript.json) and [review record](.teacher/runs/root-candidate-002/review.json) are tracked for audit. The rejected first attempt is preserved alongside them. Prepared source packets and graph databases remain local.
-
-The [root chapter assignments](schema/root-chapters-v1.json) cover all source and documentation files. [Pinned external evidence](reports/root-evidence-recovery.json) is recovered for QTIP, QuIP#, QTIP reference code and five model architectures, including the public Unsloth Gemma 2 mirror. The first [quantizer chapter](.teacher/runs/root-quantizer-001/draft.md) passed full-read validation for 13 source files and five external references in a fresh Astra/high session. Fable accepted it as the template for the other chapters, with instruction improvements and a later fresh rerun requested; the later accepted chapter assembly is linked above. See the [run report](reports/root-quantizer-candidate.json).
-
-[Retrospective defect records](docs/defect-retrospectives.md) are planned as a separate layer for human browsing and cutoff-safe sample selection, preserving historical explanations. [Chapter revision rules](docs/chapter-revisions.md) define immutable attempts, fresh reruns, useful execution checks and cross-chapter navigation. These documents do not mean the defect ledger or sample-policy engine is implemented.
-
-The root entry has an [administrative known-limits companion](.teacher/assemblies/root-002/known-limits.md). Later defect findings are kept in the [separate retrospective ledger](reports/defect-ledger/exllamav3-missing-exl3-gemv-header--r001.json), outside historical ancestor context.
+See [NOTICE](NOTICE) and [ATTRIBUTION.md](ATTRIBUTION.md) for credits, license scope and external-source handling.

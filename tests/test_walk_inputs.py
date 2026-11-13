@@ -11,6 +11,7 @@ import test_teacher_packet
 
 
 class WalkInputTests(unittest.TestCase):
+    architecture_fixture=True
     setUp=test_teacher_packet.PacketTests.setUp
     tearDown=test_teacher_packet.PacketTests.tearDown
 
@@ -129,7 +130,7 @@ class WalkInputTests(unittest.TestCase):
         self.assertIn('title reports an error or failure',system)
         from teacher.worker import dispatch
         self.assertEqual(dispatch(packet,'web_fetch',{'url':item['url']})['text'],content)
-        self.assertEqual(m['walk_input_contract']['version'],4)
+        self.assertEqual(m['walk_input_contract']['version'],5)
 
         # Path hints are bound independently inside the v4 contract.
         manifest_path=packet/'manifest.json';changed=json.loads(manifest_path.read_text())

@@ -144,3 +144,47 @@ diff. Empty static searches do not establish absence of dynamic or external use.
 Commit 11 remains approved only for ancestor retrieval, with canonical-use
 coverage blockers recorded in its administrative review. Its draft, transcript
 and provenance remain unchanged, including its pre-gating guidance wording.
+
+## Architecture references and changed dispatch (contract v5)
+
+New walk packets use guidance version 2. When dispatch changes, the teacher is
+asked to inspect selected callees in the parent tree and distinguish their
+limits and preconditions from an inferred author rationale. Legacy packets
+without this version retain their prior prompt; retrieval remains report-only.
+
+Trusted preparation compares the task with its first parent. It detects newly
+registered architecture keys in model registry dictionaries (including renamed
+registry files under `exllamav3/models/`) and newly added files defining model
+or config classes. A triggered task requires `POSITION-references.json` next
+to its other evidence bundles before authoring. Preparation verifies task,
+cutoff, trigger, selection provenance, architecture identity and required roles.
+
+The curator supplies a selection JSON list with `architecture`, `repo`, `reason`
+and `candidates_considered`. Prefer repositories named by the task or eligible
+discussions, otherwise the defining organisation's reference; include multiple
+reasonable choices. Do not consult later fixes, issues or reviewer hindsight.
+
+```sh
+python3 -m teacher.architecture_evidence --task TASK_SHA --selection SELECTION.json --output data/evidence/github/POSITION-references.json --cache LOCAL_CACHE
+```
+
+Recovery pins the latest revision at or before the task cutoff. It retrieves
+config.json, tokenizer configuration files and safetensors headers using the
+root evidence tools and exact byte ranges; it never retrieves weight payloads.
+A repository with no eligible revision contributes no objects and an explicit
+`no_eligible_revision` selection report. Missing required roles or other recovery
+failures block preparation. New class files without registry additions still
+require a curator selection report; config identity is checked against its
+reported architecture. The selection report remains administrative, while only
+neutral evidence objects reach the teacher. Contract v5 binds the reference
+bundle hash and object signatures independently of referenced GitHub evidence.
+Changing or omitting an attached object fails validation. Old packets are not
+modified or re-exported.
+
+Architecture-location guard (implementation revision 002): the trusted inventory
+also scans `exllamav3/architecture/`. For a non-root task, finding no model/config
+classes in either known directory is an error, not an empty trigger. A future
+move to an unknown location therefore stops preparation for curator inspection.
+Root tasks are exempt from that location guard. Rename/merge false positives
+and post-simplification identity derivation remain required follow-ups before
+position 100; this location fix does not resolve those separate cases.

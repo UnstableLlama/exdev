@@ -1,0 +1,180 @@
+{
+  "schema_version": 5,
+  "sha": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+  "parent_shas": [
+    "d2165ca1ac914225233edbc5e31399bae7dd8378"
+  ],
+  "cutoff_date": "2025-04-12T02:18:35+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Weighted multi-GPU allocation rounds individual shares to multiples of 16 tiles, then assigns the discrepancy to the last device. Earlier shares can exceed the available tiles, leaving a negative final split before torch.split.",
+        "basis": "source",
+        "evidence": [
+          "call_c6f56dda4e4b4adcb8ecb175231b53a5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch walks backward through the shares, subtracting each negative share from its predecessor and setting the negative share to zero. Backward traversal allows a deficit to propagate across several devices.",
+        "basis": "source",
+        "evidence": [
+          "call_3c4568c551b348c1b04001040ce35d0a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The corrected partition is used consistently for input tiles, reconstructed tiles and indices. Existing positive-share guards skip quantization for devices reduced to zero work.",
+        "basis": "source",
+        "evidence": [
+          "call_3c4568c551b348c1b04001040ce35d0a",
+          "call_c6f56dda4e4b4adcb8ecb175231b53a5"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier weighted-allocation entry identified the negative-final-share case. Inspection of the parent and this patch shows that the allocation defect is addressed rather than carried over for nonnegative ratios with a positive sum.",
+        "basis": "source",
+        "evidence": [
+          "call_c6f56dda4e4b4adcb8ecb175231b53a5",
+          "call_3c4568c551b348c1b04001040ce35d0a"
+        ]
+      },
+      {
+        "text": "The earlier entry records the illustrative 32-tile, [3,3,3,1] ratio case as a suspected defect.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_152bdc1e0d604be5b738125789aa3b9b"
+        ]
+      }
+    ],
+    "limitations": [
+      "Checks executed scalar Python transcriptions, not repository quantization, torch.split or CUDA kernels; end-to-end success and performance remain unmeasured.",
+      "The inspected source establishes 16-tile rounding granularity but does not explain its rationale. Allocation guarantees here assume nonnegative ratios with positive sum and a ratio count matching the devices."
+    ],
+    "links": [
+      "4d82aab28eb526fb387a12f1d190af6fd875b999"
+    ],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Repair negative multi-GPU tile shares",
+        "claims": [
+          {
+            "text": "The repair runs after both allocation branches and before all three pinned-buffer splits. Equal splitting already produces nonnegative shares for a nonempty device list; single-device execution bypasses this code entirely.",
+            "basis": "source",
+            "evidence": [
+              "call_c6f56dda4e4b4adcb8ecb175231b53a5",
+              "call_3c4568c551b348c1b04001040ce35d0a"
+            ]
+          },
+          {
+            "text": "Each adjustment preserves the total tile count. Unlike simply clamping the last share to zero, it also removes the excess assigned elsewhere. It preferentially reduces later devices rather than recomputing proportional shares, so requested ratios remain approximate.",
+            "basis": "inference",
+            "evidence": [
+              "call_3c4568c551b348c1b04001040ce35d0a",
+              "call_c6f56dda4e4b4adcb8ecb175231b53a5"
+            ]
+          },
+          {
+            "text": "Scalar transcription changed 32 tiles with ratios [3,3,3,1] from [16,16,16,-16] to [16,16,0,0]. A cascading case changed [16,16,16,16,16,-32] to [16,16,16,0,0,0]. Across 175,440 cases covering 0\u2013128 tiles, 2\u20135 devices and integer ratios 1\u20134, every corrected partition was nonnegative and preserved its total; already-valid partitions were unchanged.",
+            "basis": "execution",
+            "evidence": [
+              "call_c5a8c7f4e979406da7f348915aab4a59"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree search found direct calls from ldlq and g_scale_gss.test_scale. LDLQ supplies size_n/16 tiles per call, each containing 256 values, so width 512 supplies the illustrative 32 tiles. Scale-search trials share the same repair; the separate synchronous splitter is unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_60ff930585c14df0b9e880e09bf7137b",
+              "call_c6f56dda4e4b4adcb8ecb175231b53a5",
+              "call_3c4568c551b348c1b04001040ce35d0a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Repairs negative weighted GPU tile shares by propagating deficits backward, preserving the total and allowing existing zero-work guards to handle emptied devices."
+  },
+  "evidence": {
+    "call_3c4568c551b348c1b04001040ce35d0a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "offset": 219,
+        "max_bytes": 957
+      },
+      "result_sha256": "e9a0f24db2caab1d50602f99ded58f038279afbe5dadc9e47272a80e44f6533d"
+    },
+    "call_c6f56dda4e4b4adcb8ecb175231b53a5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d2165ca1ac914225233edbc5e31399bae7dd8378",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "afbd15fd9672bc91db540f6bb5dba77456f9a1381b471a6f21823e3c27583bee"
+    },
+    "call_152bdc1e0d604be5b738125789aa3b9b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4d82aab28eb526fb387a12f1d190af6fd875b999",
+        "max_bytes": 16384
+      },
+      "result_sha256": "23992ac8575b0de2569ce131c52506319b5a5ce2c0c5d84584d4b19485ad0207"
+    },
+    "call_60ff930585c14df0b9e880e09bf7137b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d2165ca1ac914225233edbc5e31399bae7dd8378",
+        "query": "quantize_tiles_multigpu",
+        "limit": 100
+      },
+      "result_sha256": "8a14b34f508197ea55e715df1465d117624413cfa698ad8bf651e6e16cd339a4"
+    },
+    "call_a5c7553d62cc4b92b1223df5c8564f98": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "bc64496c052401ca98530fba00ffd397975ece8692fd05b04a72dd974c1306b1"
+    },
+    "call_4e34125b699641f5990139acb7ec276e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16384
+      },
+      "result_sha256": "881581b6909c042c430e4d1f04512eda68ff173043bf83daaba1c064decb5837"
+    },
+    "call_5f21958207f3441bb42c3a0ff19735e6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "a68aeff65cecf1b7c60e8640768fb40724f6a07a4bbca22fae9d2ab0c56ca169"
+    },
+    "call_c5a8c7f4e979406da7f348915aab4a59": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from itertools import product\n\ndef split(n,r):\n a=[round((n*x/sum(r))/16)*16 for x in r]; a[-1]+=n-sum(a); return a\n\ndef fix(a):\n a=a.copy()\n for i in range(len(a)-2,-1,-1):\n  if a[i+1]<0:\n   a[i]+=a[i+1];a[i+1]=0\n return a\nfor n,r in [(32,[3,3,3,1]),(48,[3,3,3,3,3,1]),(256,[2,2,4])]:\n a=split(n,r); print(n,r,a,fix(a))\nc=0;neg=0\nfor d in range(2,6):\n for r in product(range(1,5),repeat=d):\n  for n in range(129):\n   a=split(n,r); b=fix(a); assert sum(b)==n and min(b)>=0\n   if min(a)>=0: assert a==b\n   neg+=min(a)<0;c+=1\nprint('checked',c,'cases;',neg,'negative partitions repaired')"
+        ]
+      },
+      "result_sha256": "b09f4ca8e6c36f3b33dfad30574e4be4715a354ac53a1235a6d0ecde9de5d61b"
+    }
+  }
+}

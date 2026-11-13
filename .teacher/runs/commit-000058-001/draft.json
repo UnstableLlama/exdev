@@ -1,0 +1,252 @@
+{
+  "schema_version": 5,
+  "sha": "3129b748ff0f61ef43e8176805b9ea87862feaa4",
+  "parent_shas": [
+    "1f7c1f709f0933c005052cd0f212b9f519ff0dd4"
+  ],
+  "cutoff_date": "2025-04-13T20:59:28+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The default Rich input path did not consult the multiline flag, and response presentation had no separate handling for <think> reasoning.",
+        "basis": "source",
+        "evidence": [
+          "call_4d5e65bc840d41fa896b9b07c915d6e1"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change unifies input through prompt_toolkit while retaining separate basic and Markdown output paths. Reasoning mode appends <think> to the formatted prompt and delays Markdown rendering until </think> appears.",
+        "basis": "source",
+        "evidence": [
+          "call_d4490acea4c042d5ade4324241b0649d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "requirements_examples.txt adds prompt_toolkit, matching the new unconditional imports in chat.py. The whole-parent search found no existing literal prompt_toolkit references; it does not exclude dynamic imports or external users.",
+        "basis": "source",
+        "evidence": [
+          "call_99e310fc72644f95a38b1cb24be47451",
+          "call_a130e82cfe274fad945759561a333241",
+          "call_d4490acea4c042d5ade4324241b0649d"
+        ]
+      },
+      {
+        "text": "The parser now declares --multiline instead of --mli, retaining -mli. Both output modes use prompt_toolkit input, so basic mode no longer selects the old stdin reader.",
+        "basis": "source",
+        "evidence": [
+          "call_d4490acea4c042d5ade4324241b0649d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier Markdown entry records the default input path ignoring --mli.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0a2d8351472549599405b6097932484b"
+        ]
+      },
+      {
+        "text": "That active-path omission is removed: both branches now select read_input_ptk, which passes args.multiline to prompt(). The old readers remain defined but are no longer selected by main.",
+        "basis": "source",
+        "evidence": [
+          "call_4d5e65bc840d41fa896b9b07c915d6e1",
+          "call_d4490acea4c042d5ade4324241b0649d"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports native-extension loading failure and an environment workaround, not multiline input or reasoning presentation.",
+        "basis": "source",
+        "evidence": [
+          "call_9f7b151d5bc045ec9e4bf4d94880000b"
+        ]
+      }
+    ],
+    "limitations": [
+      "No interactive terminal, prompt_toolkit key bindings, Rich rendering or model inference was executed. Alt+Enter submission is advertised by the parser but not independently verified.",
+      "The bounded Python check models string routing only; it does not execute Streamer_rich or establish which chunk boundaries a model will produce."
+    ],
+    "links": [
+      "4c7b1e29485c7004a59be08ae8d88ebd239e36d1"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Multiline input and simple reasoning presentation",
+        "claims": [
+          {
+            "text": "read_input_ptk wraps the colored user label in ANSI and forwards the store_true multiline option, which defaults to false. This replaces both the stdin-based reader and Prompt.ask in main's dispatch.",
+            "basis": "source",
+            "evidence": [
+              "call_d4490acea4c042d5ade4324241b0649d",
+              "call_4d5e65bc840d41fa896b9b07c915d6e1"
+            ]
+          },
+          {
+            "text": "get_input_ids appends <think> after template formatting and before tokenization, including when context is re-tokenized during trimming. This is prompt conditioning, not a change to sampling or the model.",
+            "basis": "source",
+            "evidence": [
+              "call_d4490acea4c042d5ade4324241b0649d",
+              "call_4d5e65bc840d41fa896b9b07c915d6e1"
+            ]
+          },
+          {
+            "text": "With --think, Streamer_rich initially prints a magenta Thinking label and accumulates flushed plain text in think_text. It searches that accumulated string for </think>, allowing detection across chunks, then starts Live. Subsequent chunks populate all_text and the Markdown display; history stores all_text.strip(), excluding the thinking buffer.",
+            "basis": "source",
+            "evidence": [
+              "call_d4490acea4c042d5ade4324241b0649d"
+            ]
+          },
+          {
+            "text": "Without --think, Rich begins immediately as before. Live retains a default refresh limit of 25 updates per second, not a token-generation limit. Basic output does not implement the reasoning split: it prints and retains every generated chunk even when the prompt receives <think>.",
+            "basis": "source",
+            "evidence": [
+              "call_d4490acea4c042d5ade4324241b0649d",
+              "call_4d5e65bc840d41fa896b9b07c915d6e1"
+            ]
+          },
+          {
+            "text": "The implementation favors a small delimiter-driven presentation state machine over structured reasoning parsing. It requires a closing delimiter to enter answer rendering and treats the entire delimiter-containing chunk as thinking.",
+            "basis": "inference",
+            "evidence": [
+              "call_d4490acea4c042d5ade4324241b0649d"
+            ]
+          },
+          {
+            "text": "A scalar transcription retained Answer when it arrived after a delimiter-only chunk, but produced empty history when Answer shared the closing-delimiter chunk, including when the delimiter itself spanned chunks. A stream without a closing delimiter also left history empty.",
+            "basis": "execution",
+            "evidence": [
+              "call_39ef3ddd916f4821ac1e4576911fcb19"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "reasoning-boundary-answer-loss",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Answer text sharing the closing-reasoning chunk is omitted from answer history.",
+        "trigger": "Use Rich output with --think and receive a chunk containing </think> followed by answer text.",
+        "expected_behavior": "Text after the closing delimiter enters the Markdown answer and saved conversation response.",
+        "actual_behavior": "stream prints and stores the entire chunk in think_text, then begins Live without transferring its suffix. Only later chunks enter all_text, which main uses for history.",
+        "locations": [
+          {
+            "commit": "3129b748ff0f61ef43e8176805b9ea87862feaa4",
+            "path": "examples/chat.py",
+            "symbol": "Streamer_rich.stream"
+          }
+        ],
+        "source_evidence": [
+          "call_d4490acea4c042d5ade4324241b0649d",
+          "call_4d5e65bc840d41fa896b9b07c915d6e1",
+          "call_3ca1b848e91c498aae29bf6d04bdbc5d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The whole-parent .stream( search identifies main's s.stream(chunk) as the chatbot call site. Main supplies generator result text and saves s.all_text.strip(); the diff selects Streamer_rich only outside basic mode.",
+            "evidence": [
+              "call_3ca1b848e91c498aae29bf6d04bdbc5d",
+              "call_4d5e65bc840d41fa896b9b07c915d6e1",
+              "call_d4490acea4c042d5ade4324241b0649d"
+            ],
+            "limits": "Literal call-site search does not establish external or dynamically dispatched callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the inspected accumulation and delimiter transition with separate and combined delimiter/answer chunks; combined chunks lost Answer from history.",
+            "evidence": [
+              "call_39ef3ddd916f4821ac1e4576911fcb19"
+            ],
+            "limits": "Standard-library string model only; no repository streamer, terminal or generator execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds shared prompt_toolkit multiline input and opt-in reasoning presentation, with a chunk-boundary risk that can omit answer text from history."
+  },
+  "evidence": {
+    "call_d4490acea4c042d5ade4324241b0649d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3129b748ff0f61ef43e8176805b9ea87862feaa4",
+        "offset": 210,
+        "max_bytes": 6487
+      },
+      "result_sha256": "f7219c1a9c9e04293027ae8aa7de424940cc1fa976d5feaeab6ea7c53a56c12e"
+    },
+    "call_99e310fc72644f95a38b1cb24be47451": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3129b748ff0f61ef43e8176805b9ea87862feaa4",
+        "offset": 6697,
+        "max_bytes": 294
+      },
+      "result_sha256": "c53be746dad13c5577e4b5b61323e87c07d8d36aeb47f13808a98745389a4f76"
+    },
+    "call_a130e82cfe274fad945759561a333241": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7c1f709f0933c005052cd0f212b9f519ff0dd4",
+        "query": "prompt_toolkit",
+        "path": ""
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_4d5e65bc840d41fa896b9b07c915d6e1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f7c1f709f0933c005052cd0f212b9f519ff0dd4",
+        "path": "examples/chat.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "c59f6a08482e6f6ac609a92235872f2c55ff5f206a1e78bb5e12bbc3a2c9ea08"
+    },
+    "call_9f7b151d5bc045ec9e4bf4d94880000b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "37bce33b479462d522073019cf2ee84894e77030201fa67bf48c638d1febc2ab"
+    },
+    "call_0a2d8351472549599405b6097932484b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+        "max_bytes": 16384
+      },
+      "result_sha256": "23f04bf691d85d39f81a88e8a7a225970c5a79dd3d7cbfbd29da830cb7716bc0"
+    },
+    "call_3ca1b848e91c498aae29bf6d04bdbc5d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7c1f709f0933c005052cd0f212b9f519ff0dd4",
+        "query": ".stream(",
+        "limit": 100
+      },
+      "result_sha256": "3228ce73c79594444f34663306e3925f71a810a308aae66c04cb8a1e1f89af8a"
+    },
+    "call_39ef3ddd916f4821ac1e4576911fcb19": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\ndef model(chunks):\n think=''; answer=''; live=False\n for text in chunks:\n  if not live:\n   p=text if think or not text.startswith(' ') else text[1:]\n   think+=p\n   if '</think>' in think: live=True\n  else: answer+=text\n return {'thinking':think,'history':answer.strip(),'live':live}\nfor chunks in [['reason</think>','Answer'],['reason</think>Answer'],['reason</thi','nk>Answer'],['reason only']]:\n print(json.dumps({'chunks':chunks,'result':model(chunks)}))"
+        ]
+      },
+      "result_sha256": "535df98a0c679cafc52b76d3f5662a11cdb8554c2250a3fbdad5cf6935bb7842"
+    }
+  }
+}

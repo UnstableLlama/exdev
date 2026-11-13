@@ -79,8 +79,8 @@ def pages(url):
         if url and urlsplit(url).netloc!='huggingface.co':raise ValueError('Unexpected pagination host')
 
 
-def choose_revision(rows):
-    eligible=[row for row in rows if timestamp(row['date'])<=timestamp(CUTOFF)]
+def choose_revision(rows, cutoff=CUTOFF):
+    eligible=[row for row in rows if timestamp(row['date'])<=timestamp(cutoff)]
     if not eligible:raise ValueError('No recoverable pre-cutoff revision')
     return max(eligible,key=lambda row:timestamp(row['date']))
 
@@ -123,11 +123,15 @@ def recover_paper(name, cache):
         'source':name,'revision':revision,'date':date,'raw_sha256':hashlib.sha256(data).hexdigest(),'status':'complete'}
 
 
-def recover_hf(architecture, cache):
-    repo=MODELS[architecture]
+def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=False):
+    repo=repo or MODELS[architecture]
     rows=[row for page in pages('https://huggingface.co/api/models/'+repo+'/commits/main') for row in page]
     (cache/(architecture+'-history.json')).write_text(json.dumps(rows,indent=2))
-    pin=choose_revision(rows);sha=pin['id']
+    try:pin=choose_revision(rows,cutoff)
+    except ValueError:
+        if not reference_only:raise
+        return [],{'architecture':architecture,'repo':repo,'status':'no_eligible_revision'}
+    sha=pin['id']
     tree=[row for page in pages('https://huggingface.co/api/models/'+repo+'/tree/'+sha+'?recursive=true') for row in page]
     (cache/(architecture+'-tree.json')).write_text(json.dumps(tree,indent=2))
     evidence=[];nonweights=[];headers=[];failures=[]
@@ -150,14 +154,14 @@ def recover_hf(architecture, cache):
                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='safetensors_header',
                                      repo_id=repo,revision=sha,path=path,artifact_role='tensor_header'))
                 headers.append(path)
-            elif not path.lower().endswith(WEIGHTS):
+            elif not path.lower().endswith(WEIGHTS) and (not reference_only or Path(path).name in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json')):
                 data,_=fetch(url)
                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='hf_file',
                                      repo_id=repo,revision=sha,path=path,artifact_role='non_weight'))
                 nonweights.append(path)
         except Exception as error:
             failures.append({'path':path,'error_type':type(error).__name__,'message':str(error)})
-    needed=('config.json','tokenizer_config.json','tokenizer.json')
+    needed=('config.json','tokenizer_config.json') if reference_only else ('config.json','tokenizer_config.json','tokenizer.json')
     missing=[path for path in needed if path not in nonweights]
     if not headers:missing.append('safetensors headers')
     for entry in evidence:

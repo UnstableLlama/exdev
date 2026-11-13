@@ -1,0 +1,187 @@
+{
+  "schema_version": 5,
+  "sha": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+  "parent_shas": [
+    "df30645b725b113599d60496a8f94d6f649119ea"
+  ],
+  "cutoff_date": "2025-04-12T16:10:04+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "DeciLMModel passed n_heads_in_group directly as the KV-head count. The patch instead derives that count by dividing the global query-head count by the per-block group size.",
+        "basis": "source",
+        "evidence": [
+          "call_e6aacf01cdd1462a8936ec12faad45d3"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The revised expression interprets n_heads_in_group as query heads sharing one KV head, rather than the number of KV heads. This keeps the architecture-specific translation in DeciLMModel while retaining the shared Attention interface.",
+        "basis": "inference",
+        "evidence": [
+          "call_e6aacf01cdd1462a8936ec12faad45d3",
+          "call_fb4dcac8f41446a08860928ba6f7714d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The derived count controls K/V projection widths, K/V tensor reshaping and Attention's grouped-query flag. Query and output projection widths remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_fb4dcac8f41446a08860928ba6f7714d",
+          "call_e6aacf01cdd1462a8936ec12faad45d3"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier DeciLM entry describes the original direct mapping and reports matching initial checkpoint dimensions; that historical check did not establish correctness for other group sizes.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_381393499b5447739d2ef0f7cecb7f25"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure and a reporter-described environment workaround, not a DeciLM head-configuration failure.",
+        "basis": "source",
+        "evidence": [
+          "call_0f0655f621034632a000c3e96ee1ee49"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, conversion or GPU inference was executed; the scalar check models only integer head-count and width arithmetic.",
+      "No external DeciLM configuration specification or checkpoint was inspected in this session. Valid positive, evenly dividing group sizes are assumed when interpreting the quotient as a head count; the changed expression adds no validation."
+    ],
+    "links": [
+      "75c7366bb2e2a7671e38d079f9e5f54945b78006"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Derive DeciLM KV-head counts from attention group sizes",
+        "claims": [
+          {
+            "text": "DeciLMConfig obtains num_q_heads from num_attention_heads. For each active attention block, DeciLMModel now supplies num_q_heads // n_heads_in_group to Attention. Attention-free blocks bypass this construction; checkpoint projection names and contiguous cache-layer indexing are unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_5a3c061650bf4b82a085dc1e71295d94",
+              "call_e6aacf01cdd1462a8936ec12faad45d3"
+            ]
+          },
+          {
+            "text": "Attention constructs each K/V projection with num_kv_heads * head_dim output features and uses the same head count when reshaping projected tensors in all three decode paths. Its SDPA path enables grouped-query attention when query and KV counts differ.",
+            "basis": "source",
+            "evidence": [
+              "call_fb4dcac8f41446a08860928ba6f7714d"
+            ]
+          },
+          {
+            "text": "A scalar transcription with 32 query heads, group size 8 and head dimension 128 changes the KV count from 8 to 4 and each KV width from 1024 to 512. With 64 query heads and group size 8, both formulas give 8 KV heads, illustrating how one dimension check can miss the distinction.",
+            "basis": "execution",
+            "evidence": [
+              "call_a8601004c9ed4111bdb3dce671d7726b"
+            ]
+          },
+          {
+            "text": "For 32 query heads, the scalar check maps group size 1 to 32 KV heads and group size 32 to one KV head\u2014the unshared and fully shared endpoints of the revised interpretation.",
+            "basis": "execution",
+            "evidence": [
+              "call_a8601004c9ed4111bdb3dce671d7726b"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Corrects DeciLM attention construction by deriving KV-head count from query-head count divided by per-block group size, affecting K/V dimensions without changing shared attention kernels."
+  },
+  "evidence": {
+    "call_e6aacf01cdd1462a8936ec12faad45d3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "offset": 173,
+        "max_bytes": 724
+      },
+      "result_sha256": "ca608b94540b152665667069900068a48145978b24eb62dcf1faf511fd567bef"
+    },
+    "call_b9e6d8828db24318bfe980e75238ba9f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "query": "n_heads",
+        "limit": 100
+      },
+      "result_sha256": "115f9a402a9557554cd3984d617133f4b7ab71efcf99dd06ebb9928218ada79b"
+    },
+    "call_590d19b2835b42b1b0b706876aaa8760": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "query": "DeciLM",
+        "limit": 100
+      },
+      "result_sha256": "d13df9570f98bb9a866aa237a3831ca22350c4783c790f6b8c3d4f48f3b37aa9"
+    },
+    "call_5a3c061650bf4b82a085dc1e71295d94": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "path": "exllamav3/models/decilm.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c233591e966a6fb8546e9ac3ad4b270ca862d6a0a39311324659fd4d7993df55"
+    },
+    "call_5263a3a962404ce6bde186605ffce830": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "query": "heads_in_group",
+        "limit": 100
+      },
+      "result_sha256": "ded223687470366b11f0d0a9b99952355ff3e2277730103310617e83302185d9"
+    },
+    "call_fb4dcac8f41446a08860928ba6f7714d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "65b521ed2a0079fbaf85f9c4d0897b8e2b2c745e92ab592ddfc3c15db3360530"
+    },
+    "call_381393499b5447739d2ef0f7cecb7f25": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6893c958d6799655843ba594b18bc4fcb4316cd14446f419b7306f6436a038cd"
+    },
+    "call_0f0655f621034632a000c3e96ee1ee49": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "eea7b1bc31983e9009e71e6fb111b6d9bdd69921b075a4109ca2132b7ba1de28"
+    },
+    "call_a8601004c9ed4111bdb3dce671d7726b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for q,g,d in [(32,8,128),(64,8,128),(32,1,128),(32,32,128)]:\n print(dict(q=q,group=g,head_dim=d,old_kv=g,new_kv=q//g,old_kv_width=g*d,new_kv_width=(q//g)*d))\n"
+        ]
+      },
+      "result_sha256": "652198bfd34a01644f3414619b90fc24f645a997e780dba0fa828e632ee82df1"
+    }
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "schema_version": 5,
+  "sha": "1d3e3b9dcc3f102a3720fd28d1b38095d44b1d30",
+  "parent_shas": [
+    "083729ba09c51485813e707672966e12ca54b9df"
+  ],
+  "cutoff_date": "2025-04-12T18:17:26+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Hessian finalization previously materialized full-matrix results for both Hadamard transforms before LDL decomposition.",
+        "basis": "source",
+        "evidence": [
+          "call_e17cda7aec5e48abad888cb47045c8a6"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change replaces those two calls with blockwise helpers that overwrite the original tensor, trading batched matrix multiplication for sequential block multiplication and slice assignment.",
+        "basis": "source",
+        "evidence": [
+          "call_afc19eb777474021bc4ed9142c28831d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This reduces the size of individual transform-result temporaries from a whole Hessian to a 128-row or 128-column slab. Actual peak VRAM savings and runtime costs remain unmeasured.",
+        "basis": "inference",
+        "evidence": [
+          "call_afc19eb777474021bc4ed9142c28831d",
+          "call_e17cda7aec5e48abad888cb47045c8a6"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure and a reporter-supplied environment workaround, not Hadamard memory pressure. It does not establish motivation for this change.",
+        "basis": "source",
+        "evidence": [
+          "call_5fdf18f2553242ee93e131f435c0d04b"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch or CUDA execution, allocator measurements, throughput benchmarks, or end-to-end quantization tests were performed.",
+      "The scalar check uses Python arithmetic and a smaller block size for overwrite equivalence; it does not establish float32 rounding equivalence or GPU workspace requirements."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Blockwise in-place Hessian Hadamard transforms",
+        "claims": [
+          {
+            "text": "blockwise_preapply_had_r_ multiplies each column slab by the normalized Hadamard matrix; blockwise_preapply_had_l_ multiplies each row slab from the left. Each computes a separate block_transformed tensor before copying it into the corresponding input slice. These are mutating Python helpers, not allocation-free custom kernels, and they return no transformed tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_afc19eb777474021bc4ed9142c28831d"
+            ]
+          },
+          {
+            "text": "Both helpers require torch.float input and divisibility of the transformed dimension by had_dim. finalize_capture_H supplies had_k = 128. The factor 1/sqrt(had_dim) normalizes the Hadamard matrix; get_hadamard_dt caches the device-and-dtype-specific scaled matrix.",
+            "basis": "source",
+            "evidence": [
+              "call_afc19eb777474021bc4ed9142c28831d",
+              "call_e17cda7aec5e48abad888cb47045c8a6",
+              "call_6048fdf9b3bf4852b46a4c0d0588cba1"
+            ]
+          },
+          {
+            "text": "The surrounding data flow is preserved: average and regularize H, apply column signs, transform columns, apply row signs, transform rows, then call block_ldl(H, 16). That callee uses Cholesky factorization and 16-wide diagonal blocks; the patch does not eliminate its allocations or positive-definiteness requirement. Finalized H is still moved to CPU for later proxy-error evaluation, while L and sign data are cached for reuse.",
+            "basis": "source",
+            "evidence": [
+              "call_e17cda7aec5e48abad888cb47045c8a6",
+              "call_afc19eb777474021bc4ed9142c28831d"
+            ]
+          },
+          {
+            "text": "The original out-of-place helpers remain available, with only a local variable rename. quantize_exl3 still uses them for weight preprocessing and reconstruction; the memory optimization is confined to Hessian finalization.",
+            "basis": "source",
+            "evidence": [
+              "call_afc19eb777474021bc4ed9142c28831d",
+              "call_e17cda7aec5e48abad888cb47045c8a6"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription verified that overwriting independent slabs matches out-of-place left and right transforms on an 8\u00d712 matrix with block size 4. It also verified order-128 Sylvester orthogonality. For a square float32 Hessian of width d, one result slab contains 128d elements rather than d\u00b2; the 128\u00d7128 transform itself occupies 65,536 bytes.",
+            "basis": "execution",
+            "evidence": [
+              "call_e82a7a0f3885434daaece0a4e873aabc"
+            ]
+          },
+          {
+            "text": "The smaller temporaries support the stated VRAM objective, but sequential Python iterations and additional slice writes may cost throughput. Temporary lifetimes, matrix-multiplication workspaces, and allocator caching prevent treating the slab-size calculation as a measured peak-memory reduction.",
+            "basis": "inference",
+            "evidence": [
+              "call_afc19eb777474021bc4ed9142c28831d",
+              "call_e82a7a0f3885434daaece0a4e873aabc"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Replace full-result Hessian Hadamard transforms with float32 blockwise overwrites, reducing temporary size while retaining out-of-place weight transforms."
+  },
+  "evidence": {
+    "call_afc19eb777474021bc4ed9142c28831d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1d3e3b9dcc3f102a3720fd28d1b38095d44b1d30",
+        "offset": 169,
+        "max_bytes": 2513
+      },
+      "result_sha256": "ab63830ab453fa621fc6a3bdf9079e9eb53bc700336769a3152315f02c5696c7"
+    },
+    "call_e17cda7aec5e48abad888cb47045c8a6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "083729ba09c51485813e707672966e12ca54b9df",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "480d7de43a3fa397a6e65965c55d98fda09a57cc465c2167afd826902007b077"
+    },
+    "call_6048fdf9b3bf4852b46a4c0d0588cba1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "083729ba09c51485813e707672966e12ca54b9df",
+        "path": "exllamav3/util/hadamard.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "4c45a673fd236a5e6a744b22077ec09cd66bc50e21df90656de17db43e73cda6"
+    },
+    "call_5fdf18f2553242ee93e131f435c0d04b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "5e708106b43fb6a5ba8abd2a19d2152122c5b067a3fc9ead39022564073c7200"
+    },
+    "call_8908eeeb69654f54bd2850bc4da643ae": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "083729ba09c51485813e707672966e12ca54b9df",
+        "query": "H_data",
+        "limit": 100
+      },
+      "result_sha256": "3fff6f4d469eb804f9fa6ffb8e52a7d17d054f015c948fd2e290bdeeac3c7f49"
+    },
+    "call_e82a7a0f3885434daaece0a4e873aabc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nh=128\nA=[[(-1 if (i&j).bit_count()%2 else 1) for j in range(h)] for i in range(h)]\nassert all(sum(A[i][t]*A[j][t] for t in range(h))==(h if i==j else 0) for i in range(h) for j in range(h))\nb=4;k=8;n=12\nQ=[[(-1 if (i&j).bit_count()%2 else 1)/math.sqrt(b) for j in range(b)] for i in range(b)]\nx=[[float((i*17+j*3)%23-11) for j in range(n)] for i in range(k)]\nr=[[sum(x[i][j//b*b+t]*Q[t][j%b] for t in range(b)) for j in range(n)] for i in range(k)]\ny=[row[:] for row in x]\nfor s in range(0,n,b):\n z=[[sum(y[i][s+t]*Q[t][j] for t in range(b)) for j in range(b)] for i in range(k)]\n for i in range(k): y[i][s:s+b]=z[i]\nassert y==r\nl=[[sum(Q[i%b][t]*r[i//b*b+t][j] for t in range(b)) for j in range(n)] for i in range(k)]\nfor s in range(0,k,b):\n z=[[sum(Q[i][t]*y[s+t][j] for t in range(b)) for j in range(n)] for i in range(b)]\n y[s:s+b]=z\nassert y==l\nprint('Scalar block overwrite equals out-of-place transform: 8x12, block 4; 128-order Sylvester orthogonality verified. For square width d: full result 4*d*d bytes, each block result 4*128*d bytes; cached transform 65536 bytes.')"
+        ]
+      },
+      "result_sha256": "cdafeb9f6ad929f913683207b940424efddbabd6d50287562f06e8a3047396cf"
+    }
+  }
+}

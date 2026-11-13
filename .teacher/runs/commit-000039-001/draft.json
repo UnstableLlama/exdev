@@ -1,0 +1,291 @@
+{
+  "schema_version": 5,
+  "sha": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+  "parent_shas": [
+    "29060addb5a3994cec3867e1f2f6b30ecda7b8a3"
+  ],
+  "cutoff_date": "2025-04-12T03:05:05+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The architecture registry lacked DeciLMForCausalLM. The existing Llama constructor uses uniform attention and MLP settings, whereas the new adapter constructs branches and widths from per-block configuration.",
+        "basis": "source",
+        "evidence": [
+          "call_5de3ced181bb4815921595e936d2fcb6",
+          "call_174274e0ca46472f8855afc4befc30e5",
+          "call_3d078f61ff7049a9830e644a7d7ae503"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation reuses shared transformer modules rather than introducing a separate execution kernel, preserving familiar checkpoint names while allowing heterogeneous blocks.",
+        "basis": "source",
+        "evidence": [
+          "call_3d078f61ff7049a9830e644a7d7ae503",
+          "call_a31570fc45044da798110cf27eedecc8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Config.from_directory can now dispatch DeciLMForCausalLM to DeciLMConfig. This establishes architecture selection and construction logic, not verified compatibility with every Nemotron checkpoint.",
+        "basis": "source",
+        "evidence": [
+          "call_5de3ced181bb4815921595e936d2fcb6",
+          "call_73a16df97e744641a62ffa999c39b395",
+          "call_3d078f61ff7049a9830e644a7d7ae503"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Whole-parent searches found no Nemotron occurrence; Deci matches were unrelated calibration prose. The inspected discussion reports concern a native-extension symbol error, Qwen chat stop conditions, and missing-BOS tokenization, rather than reporting DeciLM support.",
+        "basis": "source",
+        "evidence": [
+          "call_c515d56a81444078807d49d1a9dbd4b9",
+          "call_8782020fdb3147559298337727805c6d",
+          "call_4a027c1b229446c286d31601d768aa86",
+          "call_297be5ed780243fb91945186927efa5f",
+          "call_b4fb129eb89347da800f4f469422ef9e",
+          "call_c6064d18ef154d559bfd76f9d27c8ef4"
+        ]
+      }
+    ],
+    "limitations": [
+      "No DeciLM checkpoint configuration, tensor header, reference implementation or model execution was available to establish checkpoint or numerical equivalence.",
+      "The width check is a Python scalar transcription, not repository model execution or a GPU test. The architectural rationale for the 2/3 multiplier and 256-wide alignment is not established by the inspected sources.",
+      "Conversion, generation quality and performance were not tested."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "DeciLM dispatch and heterogeneous block construction",
+        "claims": [
+          {
+            "text": "The earlier architecture entry describes dispatch and checkpoint mapping through shared modules. This change extends that design with a dedicated DeciLM configuration and model pair.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_24f6ff4abcf74f659798c84ef820c66d"
+            ]
+          },
+          {
+            "text": "DeciLMConfig requires block_configs to contain exactly num_hidden_layers entries. It retains global hidden width and query-head count, derives head_dim by integer division when absent or false, accepts SiLU or an omitted hidden_act, and requests the shared NEOX-style RoPE settings.",
+            "basis": "source",
+            "evidence": [
+              "call_3d078f61ff7049a9830e644a7d7ae503",
+              "call_73a16df97e744641a62ffa999c39b395"
+            ]
+          },
+          {
+            "text": "Each block reads attention and ffn dictionaries. A truthy no_op omits that branch and its norm; otherwise attention receives n_heads_in_group as num_kv_heads, while the MLP receives a block-specific intermediate width. Shared TransformerBlock.forward conditionally executes present branches with residual additions.",
+            "basis": "source",
+            "evidence": [
+              "call_3d078f61ff7049a9830e644a7d7ae503",
+              "call_a31570fc45044da798110cf27eedecc8"
+            ]
+          },
+          {
+            "text": "Active attention branches reject sink-token, linear-replacement, sparsification, unshifted-sink and prefill-window-in-sink options through assertions; active FFNs reject linear replacement and sparsification. These checks occur after the no_op decision, so omitted branches bypass them.",
+            "basis": "source",
+            "evidence": [
+              "call_3d078f61ff7049a9830e644a7d7ae503"
+            ]
+          },
+          {
+            "text": "MLP width is computed as int(2 * ffn_mult * hidden_size / 3), then rounded upward to a multiple of 256 using an added 255 before integer division. Truncation therefore precedes alignment.",
+            "basis": "source",
+            "evidence": [
+              "call_3d078f61ff7049a9830e644a7d7ae503"
+            ]
+          },
+          {
+            "text": "A scalar transcription produced widths 11008 for hidden_size=4096 and ffn_mult=4, 8192 for 4096 and 3, and 768 for 1024 and 1. Exhaustively checking intermediate integers 1 through 100000 confirmed that alignment returns a multiple of 256 no smaller than its input and adds fewer than 256 elements.",
+            "basis": "execution",
+            "evidence": [
+              "call_1479fcfc61a243a9956bf3b8693b9117"
+            ]
+          },
+          {
+            "text": "Checkpoint layer numbering remains the original block index, but attention layer_idx advances only for present attention branches. last_kv_module_idx tracks the latest attention-containing block. This separates checkpoint positions from compact cache indexing; the existing Cache constructor allocates one cache layer per model.get_cache_layers() entry rather than per configured hidden layer.",
+            "basis": "source",
+            "evidence": [
+              "call_3d078f61ff7049a9830e644a7d7ae503",
+              "call_b4061cbefd684e06959cdcee2e914147"
+            ]
+          },
+          {
+            "text": "The adapter retains model.embed_tokens, separate q_proj/k_proj/v_proj/o_proj and gate_proj/up_proj/down_proj names, final model.norm and lm_head. It preserves the tied-embedding alternate-key logic, marks the head as logits output, and delegates input preparation to prepare_for_attn.",
+            "basis": "source",
+            "evidence": [
+              "call_3d078f61ff7049a9830e644a7d7ae503",
+              "call_174274e0ca46472f8855afc4befc30e5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds DeciLM architecture dispatch and per-block attention/MLP construction, including optional branches, variable widths and compact cache indices; checkpoint compatibility remains untested."
+  },
+  "evidence": {
+    "call_5de3ced181bb4815921595e936d2fcb6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 159,
+        "max_bytes": 860
+      },
+      "result_sha256": "521e55eb45dc84fc2b10dd63d4a8b37a368cf0f6f677a0df1518dd0ec06567b2"
+    },
+    "call_3d078f61ff7049a9830e644a7d7ae503": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 1019,
+        "max_bytes": 6905
+      },
+      "result_sha256": "4dcb34e5872add2bf58d0c4e05daf4431ea645f4adced894d03e2fe6bf090339"
+    },
+    "call_8782020fdb3147559298337727805c6d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "Deci",
+        "limit": 50
+      },
+      "result_sha256": "6ff4613a00df6d509842140cd096ecdfbc3f6d2d28ce5eeab6fbcee831e1a1be"
+    },
+    "call_c515d56a81444078807d49d1a9dbd4b9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "Nemotron",
+        "limit": 50
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_174274e0ca46472f8855afc4befc30e5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/models/llama.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "c1f7e35c3852debceb9174d5abd7d13d8d4117fcbd2d370378c32284737db22c"
+    },
+    "call_a31570fc45044da798110cf27eedecc8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "50384b5303f4fc1a56d580d948197e7e81cedc753634dd689952b6d3bb74cd56"
+    },
+    "call_24f6ff4abcf74f659798c84ef820c66d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_db603bdc56a64edeb4e3c55ca8c0ed24": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "block_config",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_d3ffc2bb327e4e5d85d7a6467fb78c33": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "ffn_mult",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_b487033accbc4ec6b709e9e856467904": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "n_heads",
+        "limit": 100
+      },
+      "result_sha256": "d28c8223056bc5807081791e5c6ea3ece23b13f5f989a2a5f5be6be3b15f58f4"
+    },
+    "call_73a16df97e744641a62ffa999c39b395": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "b92de8817507087fcd534c15ea865b7d5e4729fc8ce45b356f9a32abccdb1b54"
+    },
+    "call_4a027c1b229446c286d31601d768aa86": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d3fc0f185430623c228c0ee8aaa3c2617ebb17d2b423d71172e7c6436b3c379b"
+    },
+    "call_297be5ed780243fb91945186927efa5f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0b37c822302f218cb3926d0bfb5487835a69c632650414ddec695f2e2e58938c"
+    },
+    "call_b4fb129eb89347da800f4f469422ef9e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "bc853094b1874b20b1f937bf181265940fbfa7655ff4596f84f263fb754b0cf7"
+    },
+    "call_c6064d18ef154d559bfd76f9d27c8ef4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9b0a0567ed5d98a225f6b6b2d291c806968c8fbf2ac5fae86b8a291374c9ff88"
+    },
+    "call_1479fcfc61a243a9956bf3b8693b9117": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def width(h,m):\n n=int(2*m*h/3); return n,((n+255)//256)*256\nfor h,m in [(4096,4),(4096,3),(1024,1)]: print(h,m,width(h,m))\nfor n in range(1,100001):\n r=((n+255)//256)*256\n assert r%256==0 and n<=r<n+256\nprint('100000 positive integer alignment cases passed')"
+        ]
+      },
+      "result_sha256": "10b4e7192f8a0d92ee1737e7f462921df63c6ba113f0acdeb2f7c33757984f05"
+    },
+    "call_b4061cbefd684e06959cdcee2e914147": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/cache/cache.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "a1e1199354b253b822cafcdc1010ce47cc90c1866db17bbcf0cede7145813965"
+    }
+  }
+}

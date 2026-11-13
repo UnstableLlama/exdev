@@ -1,0 +1,209 @@
+{
+  "schema_version": 5,
+  "sha": "addeaaaaa76f5d9f9fc28d7d3b9125244235173d",
+  "parent_shas": [
+    "872e698b8b7f5e41639022a78bc83a6e1614f0bb"
+  ],
+  "cutoff_date": "2025-04-14T16:31:06+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The Markdown streamer previously split captured output directly on newlines, retaining repeated blank lines and a trailing empty element.",
+        "basis": "source",
+        "evidence": [
+          "call_e7bd2ed06ba3473da7d3d94a257c47c5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Normalizing rendered lines before prefix comparison makes blank-line suppression part of the streamer's stored display state, rather than modifying generated response text.",
+        "basis": "source",
+        "evidence": [
+          "call_e7bd2ed06ba3473da7d3d94a257c47c5",
+          "call_3a6071c7d79e4acab96eada108f6ecac"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change affects Markdown answer rendering. Basic output, directly printed reasoning text, and accumulated conversation text are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_e7bd2ed06ba3473da7d3d94a257c47c5",
+          "call_3a6071c7d79e4acab96eada108f6ecac",
+          "call_0bb771f4ac614aa3a8ad7cf3b522465d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The preceding entry records reasoning-boundary answer loss in Streamer_rich.stream.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_78fac77dacd84a5ab3348c098577057e"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports native-extension import failure and a reporter-supplied environment workaround, not blank-line rendering.",
+        "basis": "source",
+        "evidence": [
+          "call_690607ebe1c64bf3bb5b4d0463115adb"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Rich rendering or interactive terminal behavior was executed; the computation transcribed only the string-normalization loop.",
+      "Blankness is determined by Python string whitespace stripping, not terminal appearance; ANSI-only lines are not collapsed.",
+      "The caller search covers literal repository calls, not dynamically constructed or external callers."
+    ],
+    "links": [
+      "872e698b8b7f5e41639022a78bc83a6e1614f0bb"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Collapse consecutive blank Markdown display lines",
+        "claims": [
+          {
+            "text": "_render_to_lines still captures a complete Rich Markdown rendering. It now removes terminal newline characters, splits the result, and strips trailing whitespace from each line. A line is retained if nonempty, first, or preceded by a nonempty retained line, so each run of empty strings contributes at most one line.",
+            "basis": "source",
+            "evidence": [
+              "call_e7bd2ed06ba3473da7d3d94a257c47c5",
+              "call_3a6071c7d79e4acab96eada108f6ecac"
+            ]
+          },
+          {
+            "text": "update compares the normalized list with _last_lines, preserves their common prefix, and clears and rewrites the changed suffix. Trailing whitespace previously stripped only when printing is now also absent from comparison state. Full Markdown rendering still occurs on every update.",
+            "basis": "source",
+            "evidence": [
+              "call_3a6071c7d79e4acab96eada108f6ecac",
+              "call_e7bd2ed06ba3473da7d3d94a257c47c5"
+            ]
+          },
+          {
+            "text": "The display-level approach preserves generated text but applies equally to every rendered region; it does not distinguish intentional spacing in code blocks from other blank lines.",
+            "basis": "source",
+            "evidence": [
+              "call_e7bd2ed06ba3473da7d3d94a257c47c5",
+              "call_3a6071c7d79e4acab96eada108f6ecac"
+            ]
+          },
+          {
+            "text": "A scalar transcription produced ['a', '', ' b'] from 'a\\n\\n\\n b  \\n\\n' and found no adjacent empty strings across 1,093 generated cases. Empty input still yields ['']; a trailing whitespace-only line can leave one blank line. ANSI reset-only lines remain nonempty.",
+            "basis": "execution",
+            "evidence": [
+              "call_1791fb2bd0b849efa4458eda7bc396a6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-reasoning-boundary-answer-loss",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The existing reasoning-boundary answer loss is carried over; this patch changes only rendered-line normalization.",
+        "trigger": "Rich reasoning mode receives a chunk containing </think> followed by answer text.",
+        "expected_behavior": "The suffix after the delimiter enters the Markdown answer and saved conversation response.",
+        "actual_behavior": "Streamer_rich.stream appends the entire chunk to think_text and calls begin without transferring the answer suffix. main saves all_text.strip(), which lacks that suffix.",
+        "locations": [
+          {
+            "commit": "addeaaaaa76f5d9f9fc28d7d3b9125244235173d",
+            "path": "examples/chat_console.py",
+            "symbol": "Streamer_rich.stream"
+          }
+        ],
+        "source_evidence": [
+          "call_3a6071c7d79e4acab96eada108f6ecac",
+          "call_0bb771f4ac614aa3a8ad7cf3b522465d",
+          "call_e7bd2ed06ba3473da7d3d94a257c47c5"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent implementation and complete task diff. Whole-tree .stream( search identifies main's s.stream(chunk, thinktag[1]) as the chatbot call site; inspection follows it through Rich selection and response storage. The finding concerns Rich reasoning mode, not basic streaming.",
+            "evidence": [
+              "call_e45aa6731f6f4df0a4e4a6eeacadc2bf",
+              "call_0bb771f4ac614aa3a8ad7cf3b522465d",
+              "call_3a6071c7d79e4acab96eada108f6ecac",
+              "call_e7bd2ed06ba3473da7d3d94a257c47c5"
+            ],
+            "limits": "No generator or streamer execution; actual generated chunk boundaries were not tested."
+          }
+        ]
+      }
+    ],
+    "summary": "Normalize captured Markdown lines to suppress consecutive blanks before suffix-based display updates, without changing saved response text."
+  },
+  "evidence": {
+    "call_e7bd2ed06ba3473da7d3d94a257c47c5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "addeaaaaa76f5d9f9fc28d7d3b9125244235173d",
+        "offset": 188,
+        "max_bytes": 751
+      },
+      "result_sha256": "f908d7727dd21670fd784470a5efca09780ce009763fd8925c33c7e3c459713f"
+    },
+    "call_3a6071c7d79e4acab96eada108f6ecac": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "872e698b8b7f5e41639022a78bc83a6e1614f0bb",
+        "path": "examples/chat_console.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "d45211febe6db09b2452c0f61c47680c70881500f51646768ed3f74d08bf0ee7"
+    },
+    "call_78fac77dacd84a5ab3348c098577057e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "872e698b8b7f5e41639022a78bc83a6e1614f0bb",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6522cd5d13b00cfd3c08a7d885c7f3ef4868d1b821dabca5a862b84841dd8048"
+    },
+    "call_e45aa6731f6f4df0a4e4a6eeacadc2bf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "872e698b8b7f5e41639022a78bc83a6e1614f0bb",
+        "query": ".stream(",
+        "limit": 100
+      },
+      "result_sha256": "c73522bc2f2af96174245b3e78aac0af125c728f32b1919f931c6ecdee5f40dd"
+    },
+    "call_0bb771f4ac614aa3a8ad7cf3b522465d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "872e698b8b7f5e41639022a78bc83a6e1614f0bb",
+        "path": "examples/chat.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "3b3c17e0bd653c4d85faf264f7e2e9bee0b2b892eb28a14b7a8478bba814738e"
+    },
+    "call_690607ebe1c64bf3bb5b4d0463115adb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c29b0e2fca75aa3417a63bb4be5f2e218725e4cebe8f7c9715ff9aa05a703271"
+    },
+    "call_1791fb2bd0b849efa4458eda7bc396a6": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def clean(rendered):\n    split=[]\n    for s in [r.rstrip() for r in rendered.rstrip('\\n').split('\\n')]:\n        if s or len(split)==0 or split[-1]:\n            split.append(s)\n    return split\nfor x in ['a\\n\\n\\n b  \\n\\n','\\n\\nA\\n','a\\n  \\n\\t\\nb\\n','','a\\n   \\n','a\\n\\x1b[0m\\n\\x1b[0m\\nb\\n']:\n    print(repr(x), '=>', repr(clean(x)))\nimport itertools\nn=0\nfor size in range(7):\n    for parts in itertools.product(['x',' ',''],repeat=size):\n        out=clean('\\n'.join(parts)); assert not any(a==b=='' for a,b in zip(out,out[1:])); n+=1\nprint('no adjacent empty strings:',n,'cases')"
+        ]
+      },
+      "result_sha256": "99d535911ee3f9f0718abcacd1050e74b11132e8bea6d4bcb83c27b412153da7"
+    }
+  }
+}

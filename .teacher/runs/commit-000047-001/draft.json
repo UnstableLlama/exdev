@@ -1,0 +1,287 @@
+{
+  "schema_version": 5,
+  "sha": "28b09f96df750c5943dd7aec83e7a1b8d1785b69",
+  "parent_shas": [
+    "e5f9f22afcc5aae48267b513a9653de54ca058e4"
+  ],
+  "cutoff_date": "2025-04-12T18:14:55+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Conversion restored each FP16 layer to its original device before converting its weights to float32 and finalizing the Hessian. This kept the weight matrix resident during LDL decomposition.",
+        "basis": "source",
+        "evidence": [
+          "call_7cf76af2b9ea4928a7030918c2f37e76",
+          "call_87b02b21899a44bf87edf92d5c231473",
+          "call_dcdcbbf606544384beb86e1b4cfa77b4"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change separates the intended quantization device from the weight's current storage device, allowing Hessian preparation to finish before restoring weights.",
+        "basis": "source",
+        "evidence": [
+          "call_dea61c2ecef041ee9048ac3aac8355e3",
+          "call_98857ddab88b4995b813d169900ac388"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Keeping the float32 weight on CPU during decomposition should reduce overlapping GPU allocations, at the cost of retaining that float32 representation in host memory. Peak VRAM and conversion speed were not measured.",
+        "basis": "inference",
+        "evidence": [
+          "call_a7bb3f335f364492855ec7af184ffc8c",
+          "call_dea61c2ecef041ee9048ac3aac8355e3",
+          "call_98857ddab88b4995b813d169900ac388"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension-import failure and a reporter-described environment remedy, not a weight-residency failure. It does not establish motivation for this change.",
+        "basis": "source",
+        "evidence": [
+          "call_5f6810a7cca14152a72c211d8a997f17"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA conversion, memory profiling, or repository tests were executed. The numerical check measures only illustrative tensor-size arithmetic.",
+      "The suspected bias-device mismatch is based on source data flow; its runtime exception and affected model coverage were not tested."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Delay weight restoration until after Hessian decomposition",
+        "claims": [
+          {
+            "text": "The converter still swaps all target linears to CPU, but no longer unswaps each one before convert_exl3. That method captures swap_device before destroying the FP16 wrapper, converts the still-CPU weight to float32, and passes the saved destination to quantize_exl3.",
+            "basis": "source",
+            "evidence": [
+              "call_7cf76af2b9ea4928a7030918c2f37e76",
+              "call_a7bb3f335f364492855ec7af184ffc8c",
+              "call_dea61c2ecef041ee9048ac3aac8355e3"
+            ]
+          },
+          {
+            "text": "quantize_exl3 chooses the saved destination when supplied, calls finalize_capture_H, moves the stored L to CPU and the working L to that destination, and only then transfers the weight. finalize_capture_H restores captured H, regularizes and transforms it, computes block LDL with block size 16, and caches the result; already-finalized shared Hessians bypass recomputation.",
+            "basis": "source",
+            "evidence": [
+              "call_98857ddab88b4995b813d169900ac388",
+              "call_dcdcbbf606544384beb86e1b4cfa77b4",
+              "call_3465a0d248704254862e2f3f6735c6da"
+            ]
+          },
+          {
+            "text": "The new destination argument defaults to None, retaining weight.device for unswapped callers. LinearFP16 swap and unswap operations also become idempotent: repeated calls return instead of asserting, preserving the originally recorded destination.",
+            "basis": "source",
+            "evidence": [
+              "call_98857ddab88b4995b813d169900ac388",
+              "call_7b487efadf4245a0811ad3fb243a0b1a",
+              "call_e5a954f835c4411aae0955207c4ff033"
+            ]
+          },
+          {
+            "text": "For illustration, a 4096-by-4096 float32 weight occupies 67,108,864 bytes, or 64 MiB. This is the weight payload whose GPU residency can be deferred, not a measured reduction in peak allocated or reserved VRAM.",
+            "basis": "execution",
+            "evidence": [
+              "call_3761a7a75fb6463d9052a00a01bfca69"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "cpu-bias-after-conversion",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Delaying restoration transfers the weight but leaves a swapped bias on CPU in the newly constructed quantized layer.",
+        "trigger": "Convert a GPU-resident LinearFP16 with a non-None bias through the converter's swap_cpu path, then execute the converted layer on GPU.",
+        "expected_behavior": "The converted bias should be colocated with the GPU output before bias addition.",
+        "actual_behavior": "swap_cpu moves both weight and bias to CPU. After removal of unswap_cpu, convert_exl3 retains that CPU bias unchanged; quantize_exl3 transfers only the weight. LinearEXL3 stores the bias without a device transfer, then adds it to the output, suggesting a device mismatch.",
+        "locations": [
+          {
+            "commit": "28b09f96df750c5943dd7aec83e7a1b8d1785b69",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.convert_exl3"
+          },
+          {
+            "commit": "28b09f96df750c5943dd7aec83e7a1b8d1785b69",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_e5a954f835c4411aae0955207c4ff033",
+          "call_87b02b21899a44bf87edf92d5c231473",
+          "call_a7bb3f335f364492855ec7af184ffc8c",
+          "call_98857ddab88b4995b813d169900ac388",
+          "call_440ce47cce3049f899e07bfe278edfe4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree caller search found the converter and tests/test_quant_fn.py. The converter swaps weights and subsequently performs module forward passes. The inspected test calls conversion without that swap sequence. The observation therefore concerns swapped, biased GPU layers, not every conversion caller.",
+            "evidence": [
+              "call_f5768e56d1234fc8975acbe0e09493ae",
+              "call_7cf76af2b9ea4928a7030918c2f37e76",
+              "call_55d1f8413a404c489ecd73fc63b76549",
+              "call_440ce47cce3049f899e07bfe278edfe4"
+            ],
+            "limits": "Source inspection only; no biased-layer GPU execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Defers restoring swapped weights until after Hessian LDL decomposition to reduce GPU allocation overlap; source inspection also exposes a possible CPU-bias carryover."
+  },
+  "evidence": {
+    "call_a7bb3f335f364492855ec7af184ffc8c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "28b09f96df750c5943dd7aec83e7a1b8d1785b69",
+        "offset": 197,
+        "max_bytes": 4000
+      },
+      "result_sha256": "ea6a90ad8fe24a3e48ba4ebc6a5718d32ee68ff5906691d2f7fe28bfa9e70815"
+    },
+    "call_dea61c2ecef041ee9048ac3aac8355e3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "28b09f96df750c5943dd7aec83e7a1b8d1785b69",
+        "offset": 721,
+        "max_bytes": 4000
+      },
+      "result_sha256": "28d765bfee7c1c1966b7918f3edbed4db493ffd5109d1cb3e817a85b0faa153a"
+    },
+    "call_98857ddab88b4995b813d169900ac388": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "28b09f96df750c5943dd7aec83e7a1b8d1785b69",
+        "offset": 1591,
+        "max_bytes": 4000
+      },
+      "result_sha256": "38af1d543b8cc1bda465f0bf44f385b4613a50b1880b8dba2cd56e673e0b054f"
+    },
+    "call_7b487efadf4245a0811ad3fb243a0b1a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "28b09f96df750c5943dd7aec83e7a1b8d1785b69",
+        "offset": 3197,
+        "max_bytes": 2000
+      },
+      "result_sha256": "0b8f62915b93bb6db9515b1e54f0b7c1b2bc8e8ae4f666132210c93485db7383"
+    },
+    "call_dcdcbbf606544384beb86e1b4cfa77b4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 19000,
+        "max_bytes": 18000
+      },
+      "result_sha256": "bfccdc0f3a847512f74e9c80d0966a5133596adc3d4684703388e8d3abe289c9"
+    },
+    "call_e5a954f835c4411aae0955207c4ff033": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "49ed006659b27c4946f6740bf6ad34176c8a7e3915a5090716e8e967df82c68c"
+    },
+    "call_87b02b21899a44bf87edf92d5c231473": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "81372f008e81ee5c507df37e58cc4e89870ca691ca0c58509775618110677757"
+    },
+    "call_7cf76af2b9ea4928a7030918c2f37e76": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 8500,
+        "max_bytes": 10000
+      },
+      "result_sha256": "da5c51c9feaabcf6c8e314801860c9a28660aeaccc36b5d0a5c51c9798c725c1"
+    },
+    "call_34b349385a104dbb87f37f4411247270": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "query": "finalize_capture_H",
+        "limit": 30
+      },
+      "result_sha256": "8ddb0d5764ea73b23fc37fe5d333da36c6470b5366c5c541d30df6d3846f5cde"
+    },
+    "call_3465a0d248704254862e2f3f6735c6da": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 12900,
+        "max_bytes": 4800
+      },
+      "result_sha256": "134912cd066c33a2ddf509ad189573f393aeed36dbc5e776df95fdaec68e8f4d"
+    },
+    "call_f5768e56d1234fc8975acbe0e09493ae": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "query": "convert_exl3(",
+        "limit": 50
+      },
+      "result_sha256": "7605c81e7bfb6efdc28a2a4fd5765942ce9690cd7eb3e21873e3742ec35196c2"
+    },
+    "call_440ce47cce3049f899e07bfe278edfe4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "cce58e4db5e5897d73c46cd4122369d6a93872af830bc2cbbf2ce1abc3957fb7"
+    },
+    "call_55d1f8413a404c489ecd73fc63b76549": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e5f9f22afcc5aae48267b513a9653de54ca058e4",
+        "path": "tests/test_quant_fn.py",
+        "offset": 3500,
+        "max_bytes": 4500
+      },
+      "result_sha256": "b98864903ebd8b832d0db22fd76e26695a69a4994d82066af580306700beaffe"
+    },
+    "call_5f6810a7cca14152a72c211d8a997f17": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "855ab6ba50f9a92a633af31d855f9e55c80949d77a50b6946dbb416883abb231"
+    },
+    "call_3761a7a75fb6463d9052a00a01bfca69": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "k=n=4096; print({'illustrative_shape':[k,n], 'float32_weight_bytes':4*k*n,'float32_weight_MiB':4*k*n/2**20})"
+        ]
+      },
+      "result_sha256": "7011f7f971d81808b67f2caa69f560c9fc7eb1d6ecf9efba07459f7e64e6fd34"
+    }
+  }
+}

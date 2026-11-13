@@ -57,11 +57,15 @@ def validate_contract(manifest):
     contract=manifest['walk_input_contract']
     if not isinstance(manifest.get('task_commit_message'),str):
         raise ValueError('Walk packet lacks task commit message')
+    if contract.get('version',1)>=5:
+        if manifest.get('guidance_version')!=2:raise ValueError('Missing dispatch guidance version')
+        actual_refs=signatures([i for i in manifest['evidence'] if i['source_id'] in contract['reference_source_ids']])
+        if actual_refs!=[tuple(x) for x in contract['reference_signatures']]:raise ValueError('Reference evidence missing or changed')
     if contract.get('version',1)>=2:
         refs=references(manifest['task_commit_message'])
         if refs and not contract['bundle_present']:
             validate_recovery(contract.get('recovery_marker') or {},manifest['task_sha'],manifest['cutoff_date'],refs)
-    actual=signatures([item for item in manifest['evidence'] if item.get('catalog_origin')!='unreferenced_discussion'])
+    actual=signatures([item for item in manifest['evidence'] if item.get('catalog_origin')!='unreferenced_discussion' and item['source_id'] not in contract.get('reference_source_ids',[])])
     expected=[tuple(item) for item in contract['expected_evidence']]
     if actual!=expected or (contract['bundle_present'] and not actual):
         raise ValueError('Walk packet lacks eligible bundle evidence')
@@ -88,7 +92,7 @@ def validate_bundle(packet, bundle_path):
     if bundle_path.exists():
         raw=read_regular(bundle_path);bundle=json.loads(raw)
         if (not contract['bundle_present'] or hashlib.sha256(raw).hexdigest()!=contract['bundle_sha256']
-            or signatures([item for item in manifest['evidence'] if item.get('catalog_origin')!='unreferenced_discussion'])!=signatures(bundle['items'])):
+            or signatures([item for item in manifest['evidence'] if item.get('catalog_origin')!='unreferenced_discussion' and item['source_id'] not in contract.get('reference_source_ids',[])])!=signatures(bundle['items'])):
             raise ValueError('Eligible evidence bundle missing or changed after preparation')
     elif contract['bundle_present']:
         raise ValueError('Eligible evidence bundle disappeared')
@@ -104,6 +108,13 @@ def validate_bundle(packet, bundle_path):
         bundle=json.loads(raw)
         if discussion_signatures(bundle.get('items',[]),contract.get('version',1)>=4)!=[tuple(r) for r in contract['discussion_signatures']]:
             raise ValueError('Unreferenced discussion content changed after preparation')
+    if contract.get('version',1)>=5:
+        ref_path=bundle_path.with_name(bundle_path.name.replace('-eligible.json','-references.json'))
+        if contract.get('reference_bundle_sha256'):
+            raw=read_regular(ref_path)
+            if hashlib.sha256(raw).hexdigest()!=contract['reference_bundle_sha256']:raise ValueError('Reference evidence changed after preparation')
+        actual=signatures([i for i in manifest['evidence'] if i['source_id'] in contract['reference_source_ids']])
+        if actual!=[tuple(x) for x in contract['reference_signatures']]:raise ValueError('Reference evidence missing or changed')
     validate_contract(manifest)
 
 
@@ -129,9 +140,18 @@ def prepare(repo,sha,position,packet,evidence_directory):
         match=re.match(r'(https://github\.com/[^/]+/[^/]+/(?:issues|pull)/\d+)',item.get('url',''))
         if match:referenced_roots.add(match.group(1))
     filtered=dict(unreferenced,items=[item for item in unreferenced.get('items',[]) if item.get('url') not in referenced_roots])
-    manifest=build_packet(repo,sha,packet,evidence=evidence,discussions=filtered)
-    manifest.update(editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1,
-        walk_input_contract={'version':4,'recovery_marker':marker,
+    from .architecture_evidence import load_bundle
+    ref_path=Path(evidence_directory)/f'{position:06d}-references.json'
+    ref=load_bundle(repo,sha,ref_path)
+    ref_items=ref['items'] if ref else []
+    combined=dict(evidence or {'task_sha':sha,'cutoff':unreferenced['cutoff'],'items':[]})
+    combined['items']=[*combined['items'],*ref_items]
+    if len({i['source_id'] for i in combined['items']})!=len(combined['items']):raise ValueError('Duplicate evidence IDs')
+    manifest=build_packet(repo,sha,packet,evidence=combined,discussions=filtered)
+    manifest.update(guidance_version=2,editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1,
+        walk_input_contract={'version':5,'reference_source_ids':[i['source_id'] for i in ref_items],
+            'reference_signatures':signatures(ref_items),
+            'reference_bundle_sha256':hashlib.sha256(ref_path.read_bytes()).hexdigest() if ref else None,'recovery_marker':marker,
             'recovery_marker_sha256':hashlib.sha256(marker_raw).hexdigest() if marker_raw else None,
             'bundle_present':raw is not None,
             'bundle_sha256':hashlib.sha256(raw).hexdigest() if raw is not None else None,

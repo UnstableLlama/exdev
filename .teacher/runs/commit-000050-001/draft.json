@@ -1,0 +1,189 @@
+{
+  "schema_version": 5,
+  "sha": "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9",
+  "parent_shas": [
+    "1d3e3b9dcc3f102a3720fd28d1b38095d44b1d30"
+  ],
+  "cutoff_date": "2025-04-12T18:18:11+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "quantize_exl3 retained its working LDL factor L after its last use in ldlq, overlapping its lifetime with proxy-error evaluation and output packing.",
+        "basis": "source",
+        "evidence": [
+          "call_d848526986d3471885c653454e77c519"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The substantive lifetime change is del L immediately after ldlq returns. Replacing existing assignments to None with del removes local bindings but already-released tensor references were not an additional source of savings.",
+        "basis": "source",
+        "evidence": [
+          "call_be6448c192d748d7b89faa2923eb46af",
+          "call_d848526986d3471885c653454e77c519"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Dropping the working factor earlier can reduce live GPU storage during subsequent metrics and packing, without changing the quantization arithmetic. Actual peak-VRAM savings are unmeasured.",
+        "basis": "inference",
+        "evidence": [
+          "call_be6448c192d748d7b89faa2923eb46af",
+          "call_d848526986d3471885c653454e77c519"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent entry describes an earlier, separate optimization: blockwise in-place Hessian Hadamard transforms.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_bd16a6253d6642f28562e6fcbd884133"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension-import failure and a reporter-supplied environment workaround, not tensor-lifetime pressure.",
+        "basis": "source",
+        "evidence": [
+          "call_4a55a9a41e7b4b9db71ff36b19202b76"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch/CUDA execution, allocator measurements or end-to-end quantization tests were performed. Python object-lifetime checks do not establish GPU storage release or allocator-reserved memory reductions."
+    ],
+    "links": [
+      "1d3e3b9dcc3f102a3720fd28d1b38095d44b1d30"
+    ],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Release the working LDL factor before error evaluation",
+        "claims": [
+          {
+            "text": "finalize_capture_H supplies H, L and input signs. quantize_exl3 moves the cached H_data['L'] to CPU and its working L to the computation device. The new deletion preserves that reusable CPU cache while ending the local working factor's lifetime after ldlq.",
+            "basis": "source",
+            "evidence": [
+              "call_d848526986d3471885c653454e77c519",
+              "call_be6448c192d748d7b89faa2923eb46af"
+            ]
+          },
+          {
+            "text": "ldlq uses slices of L for error compensation and synchronizes the configured devices before returning only quantized weights and encoded indices. No subsequent statement in quantize_exl3 needs L.",
+            "basis": "source",
+            "evidence": [
+              "call_d848526986d3471885c653454e77c519"
+            ]
+          },
+          {
+            "text": "The metric still forms E = weight_r - weight_q and aliases W = weight_r, transfers H to the device, then evaluates residual and reference Hessian contractions sequentially. Deleting weight_r does not remove W's reference. The unchanged denominator floor of 1e-8 prevents division by zero or a smaller denominator.",
+            "basis": "source",
+            "evidence": [
+              "call_d848526986d3471885c653454e77c519",
+              "call_be6448c192d748d7b89faa2923eb46af"
+            ]
+          },
+          {
+            "text": "A standard-library weak-reference model verified that assigning None and deleting a binding both preserve an independently held alias, and that deleting a separate working object leaves a cached object intact. This modeled ownership, not repository tensor execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_263d6ad7fe5f4bdea23e9d654603c725"
+            ]
+          },
+          {
+            "text": "The patch shortens ownership rather than adding forced garbage collection or CUDA cache clearing. Its benefit therefore depends on whether other references retain the working storage and how the allocator reuses released memory.",
+            "basis": "inference",
+            "evidence": [
+              "call_be6448c192d748d7b89faa2923eb46af",
+              "call_d848526986d3471885c653454e77c519"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Release the working LDL factor immediately after quantization, before proxy-error evaluation; other edits replace existing None assignments with explicit deletions."
+  },
+  "evidence": {
+    "call_be6448c192d748d7b89faa2923eb46af": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9",
+        "offset": 178,
+        "max_bytes": 1266
+      },
+      "result_sha256": "965187fce0d4bdcff4f2027a304ad67fa2ad56e9993af05ff34b03020eb2268a"
+    },
+    "call_d848526986d3471885c653454e77c519": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1d3e3b9dcc3f102a3720fd28d1b38095d44b1d30",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 48000
+      },
+      "result_sha256": "5615c9723b8df8267a64bd416ec8742a5b3038ec943bafa7988cd1d132e08803"
+    },
+    "call_bd16a6253d6642f28562e6fcbd884133": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "1d3e3b9dcc3f102a3720fd28d1b38095d44b1d30",
+        "max_bytes": 16384
+      },
+      "result_sha256": "557e7abdb729be3b67213ea097921e44e4e0b84795bd5c968e9f094a2e0a026c"
+    },
+    "call_4a55a9a41e7b4b9db71ff36b19202b76": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "d9d3ec82c0abf128d8005854db04fd29887762388f3569e89ab57d6082732d39"
+    },
+    "call_12a960a927b849378e32e2d8cfdd052f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "febe4d4b29989d82d588add36ddb5061355ddf10dc59d16b3c65d9f305e6b245",
+      "catalog_only": true
+    },
+    "call_b6bbd62406fb4e04a72dbf133d8d2c0b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "81050a7ace9b363c56450f60799601cf5478a9cdb7a535795f4e613848dda14a",
+      "catalog_only": true
+    },
+    "call_029896a7f708405aaa53a2b93c01aa82": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "catalog",
+        "offset": 40960,
+        "max_bytes": 16384
+      },
+      "result_sha256": "7f65c4ae026137cbc63bb17ac02eec91c23ac8736a2fa8ae4f652c352b886310",
+      "catalog_only": true
+    },
+    "call_263d6ad7fe5f4bdea23e9d654603c725": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import weakref\nclass Buffer: pass\nfor action in ('none','del'):\n    x=Buffer(); r=weakref.ref(x); alias=x\n    if action=='none': x=None\n    else: del x\n    assert r() is not None\n    del alias\n    assert r() is None\n    print(action, 'preserves alias; releases after last alias')\nL=Buffer(); r=weakref.ref(L); H_data={'L':Buffer()}\ndel L\nassert r() is None and 'L' in H_data\nprint('separate working L released; cached L retained')"
+        ]
+      },
+      "result_sha256": "e51b1121ac3871e45d1992548e0e64f4d9a99e328b6c2bfd2abdba78ce08a7df"
+    }
+  }
+}

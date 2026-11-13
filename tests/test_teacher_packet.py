@@ -11,6 +11,9 @@ class PacketTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.repo=self.root/'repo';self.repo.mkdir()
         def git(*args):return subprocess.check_output(['git','-C',str(self.repo),*args],stderr=subprocess.DEVNULL).decode().strip()
         self.git=git;git('init','-b','main');git('config','user.name','Test');git('config','user.email','test@example.test')
+        if getattr(self,'architecture_fixture',False):
+            model=self.repo/'exllamav3/models/base.py';model.parent.mkdir(parents=True)
+            model.write_text('class BaseModel: pass\n')
         (self.repo/'a.py').write_text('value = 1\n');git('add','.');git('commit','-m','Root');self.first=git('rev-parse','HEAD')
         git('checkout','-b','side');(self.repo/'branch.txt').write_text('UNRELATED');git('add','.');git('commit','-m','Other branch');self.side=git('rev-parse','HEAD')
         git('checkout','main');(self.repo/'a.py').write_text('value = 2\n');git('commit','-am','Task');self.task=git('rev-parse','HEAD')

@@ -1,0 +1,184 @@
+{
+  "schema_version": 5,
+  "sha": "d908052e96929a4f92e90256838f9cad9b72226d",
+  "parent_shas": [
+    "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9"
+  ],
+  "cutoff_date": "2025-04-12T18:19:23+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "block_ldl previously allocated a Cholesky factor alongside the Hessian, with no recovery from device out-of-memory errors.",
+        "basis": "source",
+        "evidence": [
+          "call_63db9ac495cb4aa4a30a76548d6aeb56"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change preserves the Hessian on CPU and reuses its original device storage for the factor. Recognized out-of-memory exceptions instead trigger CPU Cholesky before copying the factor into that same device storage.",
+        "basis": "source",
+        "evidence": [
+          "call_6edf965bcbbb4f55a291d5022ea588f2"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This can allow factorization to proceed when device Cholesky cannot allocate its working storage, trading host memory and transfers for lower device-memory demand. Subsequent block inversion and normalization still run on the original device.",
+        "basis": "inference",
+        "evidence": [
+          "call_6edf965bcbbb4f55a291d5022ea588f2",
+          "call_63db9ac495cb4aa4a30a76548d6aeb56"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The preceding entry describes deleting the working LDL factor after quantization; this change addresses its construction instead.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_6c3c808652bf4516b221d95e523500a7"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension-import failure and an environment workaround, not a Cholesky allocation failure.",
+        "basis": "source",
+        "evidence": [
+          "call_bdeddcd057794b0da73c7df0459cdfb3"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository PyTorch execution, CPU/GPU numerical comparison, forced-OOM test or VRAM measurement was performed. The list-based ownership model does not establish tensor aliasing, allocator behavior or transfer costs.",
+      "The fallback does not cover failures in subsequent block inversion, normalization or quantization, and CPU factorization can itself fail."
+    ],
+    "links": [
+      "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9"
+    ],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "CPU Cholesky fallback with device-storage reuse",
+        "claims": [
+          {
+            "text": "finalize_capture_H regularizes and transforms the Hessian before calling block_ldl(H, 16). The unchanged 16 is the diagonal block width: block_ldl requires divisibility by that width, extracts and inverts diagonal Cholesky blocks, and normalizes block columns to produce a block-unit-lower factor.",
+            "basis": "source",
+            "evidence": [
+              "call_63db9ac495cb4aa4a30a76548d6aeb56"
+            ]
+          },
+          {
+            "text": "On the successful device path, block_ldl first copies H to CPU, overwrites the original H storage with the Cholesky result, and rebinds L to that storage. Keeping the CPU copy preserves the transformed Hessian while allowing the caller-held device allocation to become useful factor storage.",
+            "basis": "source",
+            "evidence": [
+              "call_6edf965bcbbb4f55a291d5022ea588f2"
+            ]
+          },
+          {
+            "text": "The try block includes Cholesky and the following copies. Exceptions qualify for retry when their class name is OutOfMemoryError or their text contains CUDA out of memory or HIP out of memory; other exceptions are re-raised. The retry prints the device, calls free_mem, factors a CPU copy, and copies that result into H. free_mem performs garbage collection and CUDA cache clearing.",
+            "basis": "source",
+            "evidence": [
+              "call_6edf965bcbbb4f55a291d5022ea588f2",
+              "call_22971dbc768c44b28119687a2cc026d2"
+            ]
+          },
+          {
+            "text": "The second return value changes from D to the preserved CPU Hessian, and the unused computation D[i] = DL[i] @ DL[i].T is removed. Whole-parent-tree literal search finds only finalize_capture_H calling block_ldl; its unpacking changes from L, _ to L, H.",
+            "basis": "source",
+            "evidence": [
+              "call_3872383cf9e3466a99358ff4ff7fd752",
+              "call_6edf965bcbbb4f55a291d5022ea588f2"
+            ]
+          },
+          {
+            "text": "The caller zeros L's diagonal and stores L separately from H_data['H']. Preserving H matters because quantize_exl3 later transfers it back to the computation device for residual and reference Hessian contractions used in proxy error.",
+            "basis": "source",
+            "evidence": [
+              "call_6edf965bcbbb4f55a291d5022ea588f2",
+              "call_63db9ac495cb4aa4a30a76548d6aeb56"
+            ]
+          },
+          {
+            "text": "A standard-library list model of both copy-and-rebind paths preserved the original Hessian values while reusing the modeled device-buffer identity for the factor. This checked the ownership sequence, not repository Cholesky or GPU execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_5c5c032af6b44ad7b76a84d95da6db1b"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Add an OOM-triggered CPU Cholesky fallback and reuse Hessian device storage for the LDL factor while preserving the Hessian on CPU for proxy-error evaluation."
+  },
+  "evidence": {
+    "call_6edf965bcbbb4f55a291d5022ea588f2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "offset": 188,
+        "max_bytes": 2520
+      },
+      "result_sha256": "4758f505a11c36ee90922d22a0584b2075c02ba0aa551dcf10add7111d4f5f4d"
+    },
+    "call_63db9ac495cb4aa4a30a76548d6aeb56": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "e5bd0f42289bc9fb91095525f0a2e1b9d623800dd594635602eeb22bb2ce9437"
+    },
+    "call_3872383cf9e3466a99358ff4ff7fd752": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9",
+        "query": "block_ldl",
+        "limit": 100
+      },
+      "result_sha256": "761701d632b1aba39c225e588129ce84f81a094bfa63a2555e90c27aee7b38e3"
+    },
+    "call_22971dbc768c44b28119687a2cc026d2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9",
+        "path": "exllamav3/util/memory.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "6da5a23f0905f30b24264ec5036091fe6c8dc08a38d76af35dcb1a6b1fa7a882"
+    },
+    "call_bdeddcd057794b0da73c7df0459cdfb3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b1b851f49c15ed4b87e4200e829b68646925955b7bd50dfab6b36955fea3cab6"
+    },
+    "call_6c3c808652bf4516b221d95e523500a7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "2322004f58a8e2156bd9ed5ca77e2d7abdbf40a9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9a2113db341ea821578f99e21c6a2f10ab02037e333eb2e15c88abe931004add"
+    },
+    "call_5c5c032af6b44ad7b76a84d95da6db1b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "original=[[4.,2.],[2.,5.]]\nfactor=[[2.,0.],[1.,2.]]\nfor branch in ('device_success','cpu_fallback'):\n    device=[r[:] for r in original]\n    parent=device\n    host=[r[:] for r in device]\n    device[:]=[r[:] for r in factor]\n    L=device\n    H=host\n    assert parent is L and H==original and L==factor and H is not L\n    parent=H\n    assert parent==original\n    print(branch, 'preserved Hessian; reused original device-buffer identity')"
+        ]
+      },
+      "result_sha256": "10a1a44cdc31ad2c0b11daf65a9ad6c0b49308a30ecc835ebf96f7e8233e39d4"
+    }
+  }
+}

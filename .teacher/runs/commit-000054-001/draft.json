@@ -1,0 +1,164 @@
+{
+  "schema_version": 5,
+  "sha": "8e0634b6a595bc4aa6f5fbc24a1e59ffd7eaf7f6",
+  "parent_shas": [
+    "8e128ed9040b0fff1107798a1d5e57c8376bb4d5"
+  ],
+  "cutoff_date": "2025-04-13T15:36:20+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "LinearEXL3 lacked CPU swap methods for temporarily offloading its quantized tensors during quantization.",
+        "basis": "source",
+        "evidence": [
+          "call_01bc104e87f145ad95e378382dbd0607",
+          "call_5f5197db3f75484db97f19efaa6d3354"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change adds explicit offload and restore operations rather than changing inference or automatically scheduling transfers. This provides a memory-management capability whose benefit depends on callers using it.",
+        "basis": "source",
+        "evidence": [
+          "call_5f5197db3f75484db97f19efaa6d3354",
+          "call_07de5bce5cf9473e85a367871e4a8c33"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The existing converter swaps only LinearFP16 instances before conversion; this patch does not add a call to swap newly quantized EXL3 layers. Immediate converter VRAM savings are therefore not established.",
+        "basis": "source",
+        "evidence": [
+          "call_c1a2740bce0746dc8640ba77f821e0d8",
+          "call_07de5bce5cf9473e85a367871e4a8c33",
+          "call_5f5197db3f75484db97f19efaa6d3354"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure and a reporter-provided environment workaround, not CPU tensor swapping.",
+        "basis": "source",
+        "evidence": [
+          "call_232e7da8903b4de0b731d0d58336a7b5"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository or CUDA execution was performed; transfer costs, allocator behavior and peak VRAM savings remain unmeasured.",
+      "A scalar calculation would not meaningfully validate this device-transfer change; tensor placement and restoration require runtime testing."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Explicit CPU offload for quantized linear tensors",
+        "claims": [
+          {
+            "text": "Construction initializes swap_device to None. swap_cpu records the trellis device, then replaces each present su, sv, suh, svh, trellis and bias tensor with its CPU counterpart. The constructor already requires a non-null trellis.",
+            "basis": "source",
+            "evidence": [
+              "call_5f5197db3f75484db97f19efaa6d3354",
+              "call_01bc104e87f145ad95e378382dbd0607"
+            ]
+          },
+          {
+            "text": "unswap_cpu moves the same six optional tensor attributes to the saved device and clears the marker. Repeated swaps while marked, and restores while unmarked, return immediately. Restoration uses one shared destination, not a separate original device per tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_5f5197db3f75484db97f19efaa6d3354"
+            ]
+          },
+          {
+            "text": "The methods preserve the stored quantized representation: they transfer packed and unpacked sign/scale tensors and the trellis without reconstructing a dense weight. Forward and weight reconstruction remain unchanged and do not automatically restore swapped tensors.",
+            "basis": "source",
+            "evidence": [
+              "call_5f5197db3f75484db97f19efaa6d3354",
+              "call_01bc104e87f145ad95e378382dbd0607"
+            ]
+          },
+          {
+            "text": "Explicit offload can reduce device-resident tensor storage while another layer is quantized, at the cost of CPU storage and transfer work. Callers must arrange restoration before device-side use; the patch supplies the mechanism rather than that scheduling policy.",
+            "basis": "inference",
+            "evidence": [
+              "call_5f5197db3f75484db97f19efaa6d3354",
+              "call_01bc104e87f145ad95e378382dbd0607",
+              "call_07de5bce5cf9473e85a367871e4a8c33"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds guarded CPU offload and restoration methods for LinearEXL3 tensors, without wiring them into the conversion loop."
+  },
+  "evidence": {
+    "call_5f5197db3f75484db97f19efaa6d3354": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8e0634b6a595bc4aa6f5fbc24a1e59ffd7eaf7f6",
+        "offset": 203,
+        "max_bytes": 1746
+      },
+      "result_sha256": "f1b59ec8138dafb3902f5bdcbe0c27d0c11c4e1365c89942a63f219a6bbd6451"
+    },
+    "call_01bc104e87f145ad95e378382dbd0607": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "cce58e4db5e5897d73c46cd4122369d6a93872af830bc2cbbf2ce1abc3957fb7"
+    },
+    "call_c1a2740bce0746dc8640ba77f821e0d8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "query": "swap_cpu",
+        "limit": 100
+      },
+      "result_sha256": "2cbd64a719892e77feacfa17dfdbde775492064a0e086db10241886060f8e0ab"
+    },
+    "call_9b9547b72c694c16a13c43680640c449": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "f0c639f8191c8e7e3b77577b53138533275174b34f4b9e6bd72337ab18dfd6a9"
+    },
+    "call_07de5bce5cf9473e85a367871e4a8c33": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 9000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "2d155e2e9aec292ff4d326d63032fcdd0928adbb9fa7dad246dd9b685777b418"
+    },
+    "call_232e7da8903b4de0b731d0d58336a7b5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fce6fdc90a8d59ca9e3287e1437f4657ac7ce0dc4e4f0840d319fe57eddb08b1"
+    },
+    "call_74c0da791dfd46d0a9bfaa976e815c03": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "41717916cedc946ff93930c13aff9bf812fda90c",
+        "max_bytes": 16384
+      },
+      "result_sha256": "cfb648a28028776a57f3082922066cbce768f62e5ef448eb4a083205a4460dbb"
+    }
+  }
+}

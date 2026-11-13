@@ -1,0 +1,333 @@
+{
+  "schema_version": 5,
+  "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+  "parent_shas": [
+    "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c"
+  ],
+  "cutoff_date": "2025-04-11T01:51:14+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Output widths not divisible by 128 cannot satisfy the quantizer's right-Hadamard reshape. Here \u201codd\u201d means unaligned, not necessarily odd-valued.",
+        "basis": "source",
+        "evidence": [
+          "call_1b82ada99e1a4f9f8a7bcab4c6b1309f",
+          "call_42ef8cb2aa5e4983bf3da29de834ddc8"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Padding before LinearFP16 transposes the weights makes the quantizer receive an aligned output dimension, rather than changing the Hadamard algorithm.",
+        "basis": "source",
+        "evidence": [
+          "call_a7662f4f940841bcbcbb6308bfd7f47c",
+          "call_a7f66232ccff4837857bba663ad4e890",
+          "call_56036f33cec94ae0be2eb366f1241dc9"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The default applies to every Linear, not only vocabulary heads. It increases stored and computed output width while leaving input width unchanged; Linear.forward does not trim the result.",
+        "basis": "source",
+        "evidence": [
+          "call_a7662f4f940841bcbcbb6308bfd7f47c",
+          "call_56036f33cec94ae0be2eb366f1241dc9",
+          "call_a7f66232ccff4837857bba663ad4e890"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #8, titled \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800\u201d, reports lm_head conversion failures. A turboderp comment attributes them to missing padding. Its connection to this change is inferred from the matching Linear.convert_exl3 \u2192 preapply_had_r path and padding mechanism, not an explicit commit reference.",
+        "basis": "inference",
+        "evidence": [
+          "call_e628dfb3bda7440daab676019e129a1a",
+          "call_a7662f4f940841bcbcbb6308bfd7f47c",
+          "call_42ef8cb2aa5e4983bf3da29de834ddc8"
+        ]
+      },
+      {
+        "text": "The other inspected reports concern \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d, \u201cAssertionError: bias is wrong datatype\u201d, and \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions\u201d. They are not evidence of successful padding validation; the new helper explicitly preserves dtype.",
+        "basis": "source",
+        "evidence": [
+          "call_dd2167044579465795903fb7014ca2a8",
+          "call_086ea055af0a49cf8482416e54d6356e",
+          "call_b628b6a01855445fb7fcf5ce4c38a2e9",
+          "call_09c1e00445d24eb6aa7c3dbc4ec6b897",
+          "call_a7662f4f940841bcbcbb6308bfd7f47c"
+        ]
+      }
+    ],
+    "limitations": [
+      "No tensor loading, model conversion, generation or GPU kernel was executed. The standard-library check establishes shape arithmetic only.",
+      "End-to-end compatibility of padded intermediate projections and every logits consumer was not established.",
+      "The fused-bias observation uses a synthetic unaligned projection; no supplied model checkpoint establishes that exact trigger."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Align linear outputs before quantization",
+        "claims": [
+          {
+            "text": "Linear.__init__ retains the requested width as out_features_unpadded and rounds out_features upward to a multiple of optional pad_to, default 128. That default matches the quantizer's had_n=128 output transform.",
+            "basis": "source",
+            "evidence": [
+              "call_a7662f4f940841bcbcbb6308bfd7f47c",
+              "call_1b82ada99e1a4f9f8a7bcab4c6b1309f"
+            ]
+          },
+          {
+            "text": "pad_out passes through None and already-aligned tensors. Otherwise it allocates zero-filled weights or bias on the original device with the original dtype, copies the existing rows or entries, and returns contiguous storage. Ordinary FP16 loading pads both tensors; fused loading slices weights before padding.",
+            "basis": "source",
+            "evidence": [
+              "call_a7662f4f940841bcbcbb6308bfd7f47c"
+            ]
+          },
+          {
+            "text": "LinearFP16 stores the transpose, so padded weight rows become output columns in the matrix passed by convert_exl3 to quantize_exl3. Existing EXL3 loading is not given a corresponding tensor-padding operation.",
+            "basis": "source",
+            "evidence": [
+              "call_a7f66232ccff4837857bba663ad4e890",
+              "call_56036f33cec94ae0be2eb366f1241dc9",
+              "call_a7662f4f940841bcbcbb6308bfd7f47c"
+            ]
+          },
+          {
+            "text": "A standard-library calculation using the two issue #8 traces gives widths 151665 and 32064. Rounding produces 151680 and 32128, adding 15 and 64 outputs respectively, or 76800 and 196608 weight elements. Both padded widths divide exactly into 128-wide blocks.",
+            "basis": "execution",
+            "evidence": [
+              "call_2d686dff6ce74433937a7d42278ab6c9"
+            ]
+          },
+          {
+            "text": "Padding trades additional storage and computation for fixed-size transform compatibility. Extra logits are not removed by Linear itself; CustomSampler.forward masks positions at and beyond actual_vocab_size when a tokenizer is supplied.",
+            "basis": "source",
+            "evidence": [
+              "call_a7662f4f940841bcbcbb6308bfd7f47c",
+              "call_56036f33cec94ae0be2eb366f1241dc9",
+              "call_849bedb4f13e43d78aea435a774aa99b"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "fused-bias-padding-order",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The fused-weight branch pads bias before slicing it, unlike weights, so slicing can discard the newly added padding.",
+        "trigger": "Linear.load selects the fused FP16 fallback for an unaligned output width with a non-None bias; for example out_features=65 and frange=(0,65).",
+        "expected_behavior": "Slice the logical bias first, then pad it to the same 128-entry width as the weight output.",
+        "actual_behavior": "The helper creates 128 bias entries, but the following slice reduces them to 65. LinearFP16.forward subsequently adds that bias to a 128-wide output, yielding incompatible dimensions.",
+        "locations": [
+          {
+            "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load_fp16"
+          }
+        ],
+        "source_evidence": [
+          "call_a7662f4f940841bcbcbb6308bfd7f47c",
+          "call_a7f66232ccff4837857bba663ad4e890",
+          "call_3a10e20da4d64614938fef1e2cf32a30",
+          "call_161a91f4643b443abb6eda13aa11b2ad"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search found Linear.load as the direct load_fp16 caller. Its fallback is reachable after EXL3 lookup fails. Attention constructs fused projection ranges, including a zero-based Q range; the task diff inserts bias padding before the existing slice.",
+            "evidence": [
+              "call_3a10e20da4d64614938fef1e2cf32a30",
+              "call_56036f33cec94ae0be2eb366f1241dc9",
+              "call_161a91f4643b443abb6eda13aa11b2ad",
+              "call_a7662f4f940841bcbcbb6308bfd7f47c"
+            ],
+            "limits": "Conditional reach only: aligned or bias-free fused projections do not trigger this padding-order case."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled zero-padding and slicing with a Python list: 65 logical bias entries become 128, then return to 65 after slicing.",
+            "evidence": [
+              "call_2d686dff6ce74433937a7d42278ab6c9"
+            ],
+            "limits": "No PyTorch broadcasting or repository implementation was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Pads Linear output weights and biases to 128-wide alignment for unaligned vocabulary conversion; fused bias slicing can undo the padding."
+  },
+  "evidence": {
+    "call_a7662f4f940841bcbcbb6308bfd7f47c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "offset": 165,
+        "max_bytes": 2818
+      },
+      "result_sha256": "5f677a938541e0d05eb7744b0aaea2263a32d2116524337788cf7e1099b6cd3e"
+    },
+    "call_56036f33cec94ae0be2eb366f1241dc9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "219c5d4582104d58c85ab7b2e0f103c152d30c3717fc2df0f3e415a6af1e3a08"
+    },
+    "call_e628dfb3bda7440daab676019e129a1a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 16000
+      },
+      "result_sha256": "eec12dbd521b020f481c50117b01d54e7a4dca066089446b19637fbbcb9c2e5f"
+    },
+    "call_dd2167044579465795903fb7014ca2a8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "aa8cb96ddfb5037ef581d6d9bc1a5386ffff240e0ae6541ca45020c55f09e906"
+    },
+    "call_086ea055af0a49cf8482416e54d6356e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3871f69c28e1ce1417338b1a9ef21d99366831ba61ab9b1aaa62511e43594bde"
+    },
+    "call_b628b6a01855445fb7fcf5ce4c38a2e9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "94c5c99d557e4f7189b22efab5797c2b65d319299067a4be437c9937a028c472"
+    },
+    "call_09c1e00445d24eb6aa7c3dbc4ec6b897": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "9b3be6500f72807c4b4d8d7f1051dbba3a646ef1d6e71ad83b81dff0ac59bc4a"
+    },
+    "call_0c81696bb9ea442faa048933debeedf3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "query": "vocab_size",
+        "limit": 100
+      },
+      "result_sha256": "838c6a2c105ffd4c5a03eb3daf719d6fe623ef7f9b74b5d35f6502bf6103f1bf"
+    },
+    "call_42ef8cb2aa5e4983bf3da29de834ddc8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 18000,
+        "max_bytes": 9000
+      },
+      "result_sha256": "b899bc041be22e53ebfc43442cc4d66798092c4eddd77f2b2bac77984f46de3e"
+    },
+    "call_1b82ada99e1a4f9f8a7bcab4c6b1309f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 7800
+      },
+      "result_sha256": "dabc5aa7bbb798deb8709ce4f0bd3d44ccde8c67b7af3838fc38c85ff92dc7b6"
+    },
+    "call_45587412fc014d64bf7fa5257ecc3ccc": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c8b4bd5454414b046a38344f0aa41b6e1d80d54d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "69ec157600f9d2eae0ee4ae84ab9bede31bb8f7eba45b9b0e45e692c44e2d8c2"
+    },
+    "call_a7f66232ccff4837857bba663ad4e890": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "ab458fc1164d6d2b360cb716e60d37ae2d759dc1ad85362d36e7005f3e1012c2"
+    },
+    "call_099d5238d2a244b191d8a561aaca8da5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/models/llama.py",
+        "offset": 4400,
+        "max_bytes": 2300
+      },
+      "result_sha256": "b31697bdab9d03b2d4d4f28c4e64d6606b48bb8420b7382e299873c8b8329287"
+    },
+    "call_849bedb4f13e43d78aea435a774aa99b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "offset": 8200,
+        "max_bytes": 3500
+      },
+      "result_sha256": "f2a46215f482d2aa7381bd01161b81347e7a25e677899031981d0ecb760f188c"
+    },
+    "call_3a10e20da4d64614938fef1e2cf32a30": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "query": "load_fp16",
+        "limit": 100
+      },
+      "result_sha256": "ee87002fc1ea90f61431dc96314580d6fcf32dd4102447f46b1ca4456afff005"
+    },
+    "call_561c1ad1fa4f4223acb4b88eb5917885": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "query": "frange",
+        "limit": 100
+      },
+      "result_sha256": "b8495cf7ff73879ebe27df8b16aa66b59d1e54026884cb96c957f608a7727940"
+    },
+    "call_161a91f4643b443abb6eda13aa11b2ad": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 5500,
+        "max_bytes": 2200
+      },
+      "result_sha256": "97a3e70dc87b941bc2a314f095f7a90060c7fdf8cc0fee1e32b934a47e2c62c6"
+    },
+    "call_2d686dff6ce74433937a7d42278ab6c9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for total,k in [(776524800,5120),(98500608,3072)]:\n n,r=divmod(total,k); p=(n+127)//128*128\n print(dict(k=k,n=n,remainder=r,mod128=n%128,padded=p,extra=p-n,extra_weights=k*(p-n),blocks=p//128))\nn=65;p=(n+127)//128*128\nbias=list(range(n))+[0]*(p-n)\nprint('fused range (0,65): padded weight rows',p,'bias after slicing',len(bias[0:n]))"
+        ]
+      },
+      "result_sha256": "444d9dc1dc8ffc6140bf24c3e096bb1c341242cdf7181ee7d90f574f63f2be08"
+    }
+  }
+}
