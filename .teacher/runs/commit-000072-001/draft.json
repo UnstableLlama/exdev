@@ -1,0 +1,352 @@
+{
+  "schema_version": 5,
+  "sha": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+  "parent_shas": [
+    "e9a3b6a9256fc59f888b80a7d4a58883954b39de"
+  ],
+  "cutoff_date": "2025-04-18T02:49:19+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "GLM4 checkpoints need an architecture registry entry and a constructor expressing their normalization, projection and rotary-position layout.",
+        "basis": "source",
+        "evidence": [
+          "call_d2f199a5de2149de859feeb25279e582",
+          "call_ae1bbfd8361e46898f3ad771b7d8b4cd"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation composes existing modules rather than introducing GLM-specific kernels. Registry lookup in Config.from_directory now selects Glm4Config, which supplies Glm4Model.",
+        "basis": "source",
+        "evidence": [
+          "call_d2f199a5de2149de859feeb25279e582",
+          "call_63b00422ed69474c98a8cb27eb7953a2",
+          "call_ae1bbfd8361e46898f3ad771b7d8b4cd"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change makes Glm4ForCausalLM discoverable through normal configuration loading; registration alone does not establish successful checkpoint loading or generation.",
+        "basis": "source",
+        "evidence": [
+          "call_d2f199a5de2149de859feeb25279e582",
+          "call_63b00422ed69474c98a8cb27eb7953a2"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent already contains a chat-template description for ChatGLM(4), distinct from the architecture registration added here.",
+        "basis": "source",
+        "evidence": [
+          "call_cb1421d86ec74503ab64d10b831d43ff"
+        ]
+      },
+      {
+        "text": "Inspected discussions have different framing: issue 7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure; issue 15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns low-bitrate quantization; PR 4, \u201cchore: update config.py,\u201d proposes a spelling correction. None reports GLM4 execution.",
+        "basis": "source",
+        "evidence": [
+          "call_959a62639200473a9a952de62ea3f77a",
+          "call_596cf785bfc2406e9af87f71e39c0b63",
+          "call_10f9f04883e04bb984e8079e6532a170"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model execution, checkpoint loading, conversion or GPU testing was performed. The executed check transcribed integer shape arithmetic only.",
+      "Checkpoint configuration compatibility was inspected for all three indexed GLM4 models, but tensor names and stored shapes were not verified against tensor headers.",
+      "The reason for choosing FP32 branch outputs is not documented in the inspected evidence; numerical-quality or performance benefits remain unmeasured."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "GLM4 configuration and decoder composition",
+        "claims": [
+          {
+            "text": "Glm4Config reads head and layer dimensions, requires normalization epsilon and intermediate width, accepts absent hidden_act but rejects a present value other than silu, defaults KV heads to query heads and tied embeddings to false, and derives a missing or zero head_dim as hidden_size // num_attention_heads.",
+            "basis": "source",
+            "evidence": [
+              "call_ae1bbfd8361e46898f3ad771b7d8b4cd",
+              "call_63b00422ed69474c98a8cb27eb7953a2",
+              "call_1b584a7952674089b3f163142aa1beb7"
+            ]
+          },
+          {
+            "text": "Each block performs input RMSNorm \u2192 attention \u2192 post_self_attn_layernorm \u2192 residual addition, followed by post_attention_layernorm \u2192 gated MLP \u2192 post_mlp_layernorm \u2192 residual addition. TransformerBlock explicitly requests FP16 from both input norms; GLM4 requests FP32 from both post-norms and the MLP output, while retaining FP16 gate/up intermediates. Residual additions remain in place on x.",
+            "basis": "source",
+            "evidence": [
+              "call_ae1bbfd8361e46898f3ad771b7d8b4cd",
+              "call_37fd8a400d2a467686c5f132e92530a1",
+              "call_f024acb197be4c4688f255fd7f937778"
+            ]
+          },
+          {
+            "text": "Attention maps separate q_proj, k_proj, v_proj and o_proj keys under each self_attn prefix. The gated MLP maps gate_proj/up_proj/down_proj and additionally supports gate_up_proj through contiguous gate-first, up-second slices. Its fused-key option prohibits intermediate slicing above the inherited 55,296-wide limit, documented as a practical single-GPU quantization limit.",
+            "basis": "source",
+            "evidence": [
+              "call_ae1bbfd8361e46898f3ad771b7d8b4cd",
+              "call_0ec99ef30c1e4c8bbfd9d3f928fb2d93",
+              "call_f024acb197be4c4688f255fd7f937778",
+              "call_ed3407075ddc492388eb76e9faa46d0b",
+              "call_24aacdb56f0549c49f92d1c06b91e212"
+            ]
+          },
+          {
+            "text": "GLM4 selects GPTJ rotary style through the existing settings reader. That reader preserves partial_rotary_factor and rope_theta; the default frequency builder uses dim = int(head_dim * partial_rotary_factor) and inverse frequencies theta^(-2j/dim). Attention calls the native-backed RoPE.apply path, not apply_torch.",
+            "basis": "source",
+            "evidence": [
+              "call_ae1bbfd8361e46898f3ad771b7d8b4cd",
+              "call_63b00422ed69474c98a8cb27eb7953a2",
+              "call_f5b16af16570431ea52e5fd5e7d290d0",
+              "call_0ec99ef30c1e4c8bbfd9d3f928fb2d93"
+            ]
+          },
+          {
+            "text": "zai-org/GLM-4-32B-0414 declares hidden width 6144, 48 query heads, 2 KV heads, 61 layers and intermediate width 23040. Separately, zai-org/GLM-4-32B-Base-0414 declares the same values. zai-org/GLM-4-9B-0414 instead declares width 4096, 32 query heads, 2 KV heads, 40 layers and intermediate width 13696. All three declare the registered architecture, head_dim 128, SiLU, epsilon 1e-5, untied embeddings, rotary factor 0.5 and theta 10000; their explicit values agree with the constructor's configuration mapping.",
+            "basis": "source",
+            "evidence": [
+              "call_fd091dec118344b7aa20e540b933dc95",
+              "call_c2bb36555c7549c590939b1f61bfa1d5",
+              "call_e8de9896e873472aa272c9e97c8715d6",
+              "call_ae1bbfd8361e46898f3ad771b7d8b4cd"
+            ]
+          },
+          {
+            "text": "A scalar transcription gives Q widths 6144 for each 32B model and 4096 for 9B, with K/V widths 256 for all three. Each has 64 rotary channels and 32 frequencies. Fused gate/up widths are 46080, 46080 and 27392 respectively; each intermediate width fits the inherited unsliced-MLP limit.",
+            "basis": "execution",
+            "evidence": [
+              "call_add4e58dea604dcd9326a8161672f7d4"
+            ]
+          },
+          {
+            "text": "The two 32B configurations disable attention_bias, whereas 9B enables it. Glm4Config does not branch on that flag: the shared Linear loader reads optional per-projection bias tensors. Consequently the flag difference alone is not evidence that the 9B bias is omitted.",
+            "basis": "source",
+            "evidence": [
+              "call_fd091dec118344b7aa20e540b933dc95",
+              "call_c2bb36555c7549c590939b1f61bfa1d5",
+              "call_e8de9896e873472aa272c9e97c8715d6",
+              "call_ae1bbfd8361e46898f3ad771b7d8b4cd",
+              "call_ed3407075ddc492388eb76e9faa46d0b"
+            ]
+          },
+          {
+            "text": "The surrounding model sequence is model.embed_tokens, indexed decoder blocks, FP16-output model.norm and lm_head. The output head can fall back to embedding weights when configured as tied. prepare_inputs stores the original IDs and delegates to existing attention preparation, whose default is uncached FlashAttention; cached preparation retains its existing cache-capacity, position and page-alignment requirements.",
+            "basis": "source",
+            "evidence": [
+              "call_ae1bbfd8361e46898f3ad771b7d8b4cd",
+              "call_0ec99ef30c1e4c8bbfd9d3f928fb2d93"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Glm4ForCausalLM registration and a shared-module decoder with four norms per block, GPTJ rotary settings and selected FP32 branch outputs. All three indexed GLM4 configurations were inspected; runtime compatibility remains untested."
+  },
+  "evidence": {
+    "call_d2f199a5de2149de859feeb25279e582": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+        "offset": 155,
+        "max_bytes": 843
+      },
+      "result_sha256": "89561894afb9b674526bb798c3bc374b221101db18023b5d0cb0490705a9c529"
+    },
+    "call_ae1bbfd8361e46898f3ad771b7d8b4cd": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+        "offset": 998,
+        "max_bytes": 5984
+      },
+      "result_sha256": "8131e7b0a32cfb9faa7379da54d22b5cfbf5d1cffa34c043f702efbae9074b9f"
+    },
+    "call_cb1421d86ec74503ab64d10b831d43ff": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "GLM",
+        "limit": 100
+      },
+      "result_sha256": "fd7135c7c162c1a8f435c64bcf423c38807dc074dc53703686738d758cf850cf"
+    },
+    "call_fd091dec118344b7aa20e540b933dc95": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-32B-0414",
+        "revision": "dc842812afac55db3a8aca4484ca6f3c60bd472f",
+        "path": "config.json"
+      },
+      "result_sha256": "5096f15515cbe8b4826ea3a7aaa69a4f5f3804826ce2245c7cbeab30d109958c"
+    },
+    "call_c2bb36555c7549c590939b1f61bfa1d5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-32B-Base-0414",
+        "revision": "7675abea82951aaaedeb19014bab4e8f88c2d7a5",
+        "path": "config.json"
+      },
+      "result_sha256": "94139c31b2718efe77765ddb4315381f2d32797e1d0ddee8b1b796f880aaf2f0"
+    },
+    "call_e8de9896e873472aa272c9e97c8715d6": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-9B-0414",
+        "revision": "645b8482494e31b6b752272bf7f7f273ef0f3caf",
+        "path": "config.json"
+      },
+      "result_sha256": "46cb1d6fabec3f885456f63b5675bafaab7040979b4508f97dbe5ba444e986e6"
+    },
+    "call_b354b47ac454412e89a40a6bda089f20": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/block.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_8f361a630b7d4539bb6d72311a43e8b7": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules",
+        "limit": 50
+      },
+      "result_sha256": "8f879071f3062d0bc28c3e19d0d41904aea4b294b2101fc59a19f101a4469c01"
+    },
+    "call_37fd8a400d2a467686c5f132e92530a1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "58ebfbd34a70bf65c34f6684d714ac96e5a9b5840779f3ffb72e3a0ba938b7b1"
+    },
+    "call_63b00422ed69474c98a8cb27eb7953a2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b92de8817507087fcd534c15ea865b7d5e4729fc8ce45b356f9a32abccdb1b54"
+    },
+    "call_0ec99ef30c1e4c8bbfd9d3f928fb2d93": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "6297da686430deed8d9769832c903107a1a8f36f75765b85a53f97232059111d"
+    },
+    "call_f024acb197be4c4688f255fd7f937778": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "8458c55ab4d2fbec701c5d5189d9aa5ab5e76be996b7854d2e1288a69ed9f5cc"
+    },
+    "call_e22aa5cec11540dca0d3797120ef5d9a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "max_bytes": 16384
+      },
+      "result_sha256": "c4ab5f4f8cea19f65991108bde6f2e1f33b2a832afec7770f20624e74fa92e94"
+    },
+    "call_f5b16af16570431ea52e5fd5e7d290d0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "3d45cc3a491a1fba37dba5ac0087247a823b626b3f937433da94d9ea9308bddf"
+    },
+    "call_1b584a7952674089b3f163142aa1beb7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "read_cfg(",
+        "path": "exllamav3/models",
+        "limit": 250
+      },
+      "result_sha256": "33518271b2d06bf976590034526322b47404db849b29558caeb9641a97216452"
+    },
+    "call_959a62639200473a9a952de62ea3f77a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8ea7e81687b89b032a2361f09fefbe514cee06e468d02b3acf9f9c7c9086ccee"
+    },
+    "call_596cf785bfc2406e9af87f71e39c0b63": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6a2036e67e045834935b91766f9b02787fef102662ea6a4a8ee12a74394fc825"
+    },
+    "call_10f9f04883e04bb984e8079e6532a170": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 8000
+      },
+      "result_sha256": "ea2984ad5f627d275cb2e7fff185bcaffbf9bf6cad83054d7c539ce3eb336fa5"
+    },
+    "call_24aacdb56f0549c49f92d1c06b91e212": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/constants.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "7b376c24e34a6440f12b022b961bd214df5bea91676f30514cae3e39d700a184"
+    },
+    "call_add4e58dea604dcd9326a8161672f7d4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for name,h,q,i,l in [('32B',6144,48,23040,61),('32B-Base',6144,48,23040,61),('9B',4096,32,13696,40)]:\n print(name,dict(head_fallback=h//q,q_width=q*128,kv_width=2*128,queries_per_kv=q//2,rotary_dim=int(128*.5),frequencies=len(range(0,64,2)),fused_gate_up=2*i,mlp_within_limit=i<=55296,modules=l+3))"
+        ]
+      },
+      "result_sha256": "e04a77943abb87283b700d853a6dd66fa6507bcec9f6daeb6e61aca6b0a9ff92"
+    },
+    "call_ed3407075ddc492388eb76e9faa46d0b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "4da55e809adc736e4c0af6c550d0902b47811d985e2e8267b386ea952ed089a5"
+    },
+    "call_2f9cb3d9855d4ee291c4dc1285ac48aa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "rotary",
+        "limit": 100
+      },
+      "result_sha256": "5a10e1e1d46ecc8d68ae3de9c67285ababfb7b444a5a86df3a5f679ddad00aae"
+    }
+  }
+}

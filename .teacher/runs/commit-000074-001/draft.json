@@ -1,0 +1,487 @@
+{
+  "schema_version": 5,
+  "sha": "cf848114852240a51fb6b9e77c686051c39302b2",
+  "parent_shas": [
+    "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca"
+  ],
+  "cutoff_date": "2025-04-22T21:52:33+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "KV storage previously used persistent FP16 tensors. This change adds independently selectable 2\u20138-bit key and value storage while retaining the FP16 attention interface.",
+        "basis": "source",
+        "evidence": [
+          "call_c07cd04b64a34774b29ef310a894da89",
+          "call_10015b634e9844e49dd392f2881b571e",
+          "call_05b5778c22574a8bb297b195df08e7e9"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Compression is placed around cached FlashAttention rather than inside attention: reconstruct existing tokens, let attention consume and extend the FP16 cache, then compress only the newly appended positions.",
+        "basis": "source",
+        "evidence": [
+          "call_05b5778c22574a8bb297b195df08e7e9",
+          "call_10015b634e9844e49dd392f2881b571e",
+          "call_d5a77cbbf026422a95e3b0fd2cfba7a7"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The shared model initializer accepts -cq/--cache_quant as one bitrate for both tensors or a comma-separated K,V pair. Omission retains FP16; the quantized constructor asserts that both rates are between 2 and 8.",
+        "basis": "source",
+        "evidence": [
+          "call_7cba3804b86d4916abd3e9ed8026f0e2",
+          "call_10015b634e9844e49dd392f2881b571e"
+        ]
+      },
+      {
+        "text": "Custom cache layers must accept the expanded get_kv interface and implement update_kv. Whole-parent-tree literal searches found only the built-in get_layer/get_kv calls, which the patch updates.",
+        "basis": "source",
+        "evidence": [
+          "call_cd378533b51148b19ac5ae91aa4eef12",
+          "call_e5ba610e73804e5fb25cc88e26e32c0c",
+          "call_7af81df753d64cc09b81412d6c14b4de",
+          "call_fc46274a05bb4f589c519d1e08eb3342",
+          "call_05b5778c22574a8bb297b195df08e7e9"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #1, \u201cCache Quantization Strategy,\u201d asks about retaining ExLlamaV2's approach; turboderp replies that alternatives remain exploratory. Its relationship to this change is inferred from the shared KV-cache topic, not an explicit commit reference or evidence of a particular paper implementation.",
+        "basis": "inference",
+        "evidence": [
+          "call_c2499d41b6b644c5ae490b913eff6d7e",
+          "call_d5a77cbbf026422a95e3b0fd2cfba7a7"
+        ]
+      },
+      {
+        "text": "The inspected failure discussions concern different mechanisms: #7 reports \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d; #15 reports incoherent cogito output at bpw <= 2.5; #16 reports \u201cRuntimeError: CUDA error: invalid configuration argument\u201d during conversion, subsequently attributed in discussion to tokenizer truncation. They do not establish failures or validation of the new cache codec.",
+        "basis": "source",
+        "evidence": [
+          "call_fda80e3ec10244a4a951ad018f00bce4",
+          "call_ad2eefcfe320462e815345a6db73ec08",
+          "call_ae3df51cc5a34287b1434b2e277ad99a"
+        ]
+      },
+      {
+        "text": "The earlier cache entry records a mismatched-layer detachment diagnostic defect.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_6d14797597764ae994efa7c1110adb9c"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA kernel, PyTorch allocation, FlashAttention call, repository test or model-quality benchmark was executed. Scalar checks use Python arithmetic and binary16 conversion, not GPU execution.",
+      "Peak VRAM savings and throughput are unmeasured; quantized get_kv still allocates full-capacity FP16 K/V temporaries.",
+      "The binary Humaneval image was not interpreted; no quality result is inferred from its addition.",
+      "Literal caller searches do not establish compatibility for external subclasses or dynamically selected calls."
+    ],
+    "links": [
+      "4fa0e6863e130adf7319d4b00293284c4f33296d"
+    ],
+    "chapters": [
+      {
+        "id": "cache",
+        "title": "Paged KV compression around FP16 attention",
+        "claims": [
+          {
+            "text": "Cache forwards constructor keyword arguments to each layer and routes sequence lengths and block tables through get_layer and update_layer. FP16 layers return their persistent tensors and make update_kv a no-op; quantized layers allocate temporary FP16 tensors, decompress into them, and subsequently encode their updated contents.",
+            "basis": "source",
+            "evidence": [
+              "call_7af81df753d64cc09b81412d6c14b4de",
+              "call_fc46274a05bb4f589c519d1e08eb3342",
+              "call_10015b634e9844e49dd392f2881b571e"
+            ]
+          },
+          {
+            "text": "For D = num_kv_heads \u00d7 head_dim, each token stores D/32 groups. Each group has b int32 bitplanes and one FP16 scale per K or V tensor. Page copying transfers compressed keys, values and both scale arrays directly, requiring matching compressed shapes.",
+            "basis": "source",
+            "evidence": [
+              "call_10015b634e9844e49dd392f2881b571e"
+            ]
+          },
+          {
+            "text": "The scalar storage calculation gives b + 0.5 bits per value, including scales: 4-bit payloads therefore use 4.5 bits per value, excluding temporaries and allocation overhead. A scalar transcription also verified bitplane packing/unpacking for rates 2 through 8.",
+            "basis": "execution",
+            "evidence": [
+              "call_15e79daccb92483180100f7340b25074"
+            ]
+          },
+          {
+            "text": "quant_block rotates 32 values with a warp-shuffle Hadamard transform, multiplies by approximately 1/sqrt(32), and stores the maximum absolute transformed value as a half-precision scale. It rounds scaled values to signed levels [-2^(b-1), 2^(b-1)-1], offsets them to unsigned codes and ballots each bitplane. dequant_block reverses packing and scaling, then applies the same rotation.",
+            "basis": "source",
+            "evidence": [
+              "call_d5a77cbbf026422a95e3b0fd2cfba7a7"
+            ]
+          },
+          {
+            "text": "The scalar Hadamard transcription squared to 32 times the input. The source constant 0.17678 approximates 1/sqrt(32) = 0.1767766953; applying that rounded normalization twice gives a gain of approximately 1.00003739 before quantization and floating-point rounding.",
+            "basis": "execution",
+            "evidence": [
+              "call_15e79daccb92483180100f7340b25074"
+            ]
+          },
+          {
+            "text": "Paged encoding maps logical positions starting at cache_seqlens through block_table and writes seq_len new tokens. Decoding maps positions strictly before cache_seqlens back into physical FP16 pages. Native paged wrappers require the flattened token dimension to be divisible by 32 and dispatch separate K/V bitrate specializations; contiguous wrappers instead require the last dimension to be divisible by 32.",
+            "basis": "source",
+            "evidence": [
+              "call_0c1b67ccbc774f94922123500b4d341c",
+              "call_d5a77cbbf026422a95e3b0fd2cfba7a7"
+            ]
+          },
+          {
+            "text": "Keeping the ordinary attention call avoids introducing a compressed-attention implementation, but requires reconstruction of the active prefix and full-capacity temporary buffers on each quantized get_kv. Thus persistent storage reduction should not be equated with the same reduction in peak memory or attention work.",
+            "basis": "inference",
+            "evidence": [
+              "call_10015b634e9844e49dd392f2881b571e",
+              "call_05b5778c22574a8bb297b195df08e7e9",
+              "call_d5a77cbbf026422a95e3b0fd2cfba7a7"
+            ]
+          },
+          {
+            "text": "The added paging test uses cuda:1 and 8-bit payloads, exercises several head dimensions and batch/page layouts, permutes pages and appends five tokens. It compares reconstructed tensors with atol=0.08 and rtol=0.01; it is not evidence of lower-bitrate model accuracy. The exploratory script separately compares integer, rotated, channel-scaled and FP8 alternatives using attention-output NMSE and score-distribution KL divergence.",
+            "basis": "source",
+            "evidence": [
+              "call_c5700dac0f824c4f964b8b47124e77a9",
+              "call_69a7833202514631bdb0fff82814996b"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "zero-block-scale",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The small additive scale floor disappears when converted to FP16, leaving zero-block normalization without a nonzero denominator.",
+        "trigger": "Encode a 32-value block containing only zeros.",
+        "expected_behavior": "Represent the zero block without division by zero or non-finite intermediate quantization values.",
+        "actual_behavior": "quant_block computes a scale near 1e-10, rounds it to half zero, reloads it and evaluates v /= s with zero numerator and denominator before lrintf. Final GPU integer conversion and decoded output were not established.",
+        "locations": [
+          {
+            "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+            "path": "exllamav3/exllamav3_ext/cache/q_cache_kernels.cuh",
+            "symbol": "quant_block"
+          }
+        ],
+        "source_evidence": [
+          "call_d5a77cbbf026422a95e3b0fd2cfba7a7",
+          "call_a82169ffd6df47e4bccd6fbaf732341d",
+          "call_10015b634e9844e49dd392f2881b571e",
+          "call_15e79daccb92483180100f7340b25074"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The new contiguous and paged quantization kernels both call quant_block. Parent-tree search found no existing quant_block; new paged calls are reachable through CacheLayer_quant.update_kv, while the experiment also calls the contiguous API.",
+            "evidence": [
+              "call_d5a77cbbf026422a95e3b0fd2cfba7a7",
+              "call_a82169ffd6df47e4bccd6fbaf732341d",
+              "call_10015b634e9844e49dd392f2881b571e",
+              "call_69a7833202514631bdb0fff82814996b"
+            ],
+            "limits": "Reach is conditional on a zero input block; no model-level failure was reproduced."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Python struct binary16 conversion rounded 1e-10 to 0.0.",
+            "evidence": [
+              "call_15e79daccb92483180100f7340b25074"
+            ],
+            "limits": "This checks scale representability, not CUDA lrintf behavior or end-to-end reconstruction."
+          }
+        ]
+      },
+      {
+        "id": "inherited-detach-diagnostic",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously noted detachment diagnostic is carried over unchanged.",
+        "trigger": "Call Cache.detach_from_model with assertions enabled and a model having a different cache-layer count.",
+        "expected_behavior": "Raise an AssertionError describing the incompatible counts.",
+        "actual_behavior": "The assertion message calls integer model_num_layers as model_num_layers(), producing a TypeError instead. Matching counts bypass this expression.",
+        "locations": [
+          {
+            "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+            "path": "exllamav3/cache/cache.py",
+            "symbol": "Cache.detach_from_model"
+          }
+        ],
+        "source_evidence": [
+          "call_63d001a62d714d479e1f4570f327a1f1",
+          "call_7af81df753d64cc09b81412d6c14b4de",
+          "call_b67c4f836bb54cea9d29bdd96956c51c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent contains the integer call and the task diff leaves it unchanged. Whole-parent-tree search found only the definition and its documentation reference, not direct repository callers.",
+            "evidence": [
+              "call_63d001a62d714d479e1f4570f327a1f1",
+              "call_7af81df753d64cc09b81412d6c14b4de",
+              "call_b67c4f836bb54cea9d29bdd96956c51c"
+            ],
+            "limits": "No detachment workflow was executed; ordinary cache allocation does not itself trigger this diagnostic."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds independently configurable 2\u20138-bit paged KV storage using 32-value Hadamard quantization, with FP16 reconstruction around FlashAttention. Storage arithmetic was checked scalarly; GPU performance and accuracy remain unmeasured."
+  },
+  "evidence": {
+    "call_0398f0739af94023b7fb9805f8bdabc7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 77259,
+        "max_bytes": 28829
+      },
+      "result_sha256": "64ff858a7e0b83a3796bca8c9e95cbfb3d90502b81c311fd6a8bd700cc2b108b"
+    },
+    "call_7af81df753d64cc09b81412d6c14b4de": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 77711,
+        "max_bytes": 16384
+      },
+      "result_sha256": "29161a9a4ad8decfa22860a1fe0f9e8111416c0ef219e73eaec8330b93e57fe4"
+    },
+    "call_fc46274a05bb4f589c519d1e08eb3342": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 79847,
+        "max_bytes": 16384
+      },
+      "result_sha256": "a75de39422e83f3cf3bf1c912622d1c911ec555df019942bfe1d2815919ad640"
+    },
+    "call_10015b634e9844e49dd392f2881b571e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 81233,
+        "max_bytes": 16384
+      },
+      "result_sha256": "8015c4060afc3955c3250010c032b1e5c33b98b770180d8a3bc6b5451a5fcde5"
+    },
+    "call_0c1b67ccbc774f94922123500b4d341c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 86351,
+        "max_bytes": 16384
+      },
+      "result_sha256": "d930becb67a93a1a4de548f7407cd781eab7991bcf7523f16ae85f8a500eb450"
+    },
+    "call_d5a77cbbf026422a95e3b0fd2cfba7a7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 97378,
+        "max_bytes": 16384
+      },
+      "result_sha256": "9279f2a79ef2f5dcaf16b1fed25e34f8991ebdfe8b3c5996cd24ee7697cdb842"
+    },
+    "call_7cba3804b86d4916abd3e9ed8026f0e2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 103091,
+        "max_bytes": 16384
+      },
+      "result_sha256": "4d8ac2f5aba2c3510f288e425207216f3661d427a5da3b638e6778cc485dbf19"
+    },
+    "call_05b5778c22574a8bb297b195df08e7e9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 105061,
+        "max_bytes": 16384
+      },
+      "result_sha256": "e17f5e1c9a96a3a2f4ed02ebdadcb84e6c5f4e3bb1a8844751e7d57b58595195"
+    },
+    "call_77b74a9e0ca64d0bbf8a5ca30baa5cb3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 156,
+        "max_bytes": 16384
+      },
+      "result_sha256": "c7b87eb812748914b71fa1e373df701cb8551b6fbe4ee6108f7f7774b863faf2"
+    },
+    "call_d201f05679ae4970b2fb5d59c227de43": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 85288,
+        "max_bytes": 16384
+      },
+      "result_sha256": "ad068af11326f105d807f3ebafad3339bf2c1a399a47a9d618d9118188b2bea3"
+    },
+    "call_3e48e1f1a04a4e018a79330318fc2911": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 96123,
+        "max_bytes": 16384
+      },
+      "result_sha256": "7c567f0eebf5640d2ba343e1c0e944854048ab11a95558c317bce91b46481908"
+    },
+    "call_69a7833202514631bdb0fff82814996b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 106038,
+        "max_bytes": 16384
+      },
+      "result_sha256": "6a40326d5ddab404c750e53138cff5411d19d03bbea60c9ef94c7525972ffd59"
+    },
+    "call_c5700dac0f824c4f964b8b47124e77a9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "offset": 116688,
+        "max_bytes": 16384
+      },
+      "result_sha256": "f3ae821e357da938ee0f2bbd8ee16ab96f7c192eca99902095176c48294ed51f"
+    },
+    "call_cd378533b51148b19ac5ae91aa4eef12": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "query": "get_layer(",
+        "limit": 100
+      },
+      "result_sha256": "140ffe0190926bf9149459c8af539f273a0602e35fb1c17c439a001f1711cd91"
+    },
+    "call_e5ba610e73804e5fb25cc88e26e32c0c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "query": "get_kv(",
+        "limit": 100
+      },
+      "result_sha256": "06254ccdbd9722f696e52d676bdf597d92a0e949a3dcf0e5fe8cc215bad3b5e4"
+    },
+    "call_c07cd04b64a34774b29ef310a894da89": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "path": "exllamav3/cache/fp16.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "d0e2dc86fff2eebdaf9c6cd18cab45c96d96ddb9c7cb8b516cf8f107df3e89a1"
+    },
+    "call_fda80e3ec10244a4a951ad018f00bce4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "4ddafeb4175930715cc2276d3e7394202c9b6e262ebba8ec024b37c9440c7079"
+    },
+    "call_ad2eefcfe320462e815345a6db73ec08": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16384
+      },
+      "result_sha256": "4dd3905c4f853563751a3183a7f67b3a0f09d8ebbaa8250e1ea161077270a0a8"
+    },
+    "call_ae3df51cc5a34287b1434b2e277ad99a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16384
+      },
+      "result_sha256": "aa12365587344319f95dc22fbc885bc4764fb3aa4b302c7b35febf85c7645704"
+    },
+    "call_c2499d41b6b644c5ae490b913eff6d7e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/1",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9b461ab7044ae696f463b7a4785d6e97b3da60a25862a0b969f4dbf79e07b71c"
+    },
+    "call_a82169ffd6df47e4bccd6fbaf732341d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "query": "quant_block",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_15e79daccb92483180100f7340b25074": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math, struct, json\nc=.17678\nh=lambda x:struct.unpack('e',struct.pack('e',x))[0]\ndef had(v):\n for i in [1,2,4,8,16]:\n  v=[(-v[t] if t&i else v[t])+v[t^i] for t in range(32)]\n return v\nv=list(range(32)); assert had(had(v))==[32*x for x in v]\nfor b in range(2,9):\n q=[t%(1<<b) for t in range(32)]\n p=[sum(((q[t]>>i)&1)<<t for t in range(32)) for i in range(b)]\n assert [sum(((p[i]>>t)&1)<<i for i in range(b)) for t in range(32)]==q\nprint(json.dumps({'had_squared_factor':32,'normalization':1/math.sqrt(32),'rounded_constant_roundtrip_gain':32*c*c,'effective_bits_per_scalar':{b:b+.5 for b in range(2,9)},'zero_block_scale_fp16':h(1e-10),'packing_roundtrips':'2..8 bits passed'}))"
+        ]
+      },
+      "result_sha256": "990966618509a5da886b1832418bf7a059a5838a8f39a4721efac343cb3757ae"
+    },
+    "call_7597d388aaf7490b87078e7d8a915faf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 8500,
+        "max_bytes": 11000
+      },
+      "result_sha256": "142915dab2985d5a2a507719c0eb5da695ffe9dcb37b11e5faf6e1ab67f0c18c"
+    },
+    "call_f495822949554d79926fb7b43b7f6290": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "cache/",
+        "limit": 10,
+        "max_bytes": 4000
+      },
+      "result_sha256": "51c9c8bb828df689d0b56340bef80d0a0008c8ff47df6508d025597ae53a06f2",
+      "catalog_only": true
+    },
+    "call_6d14797597764ae994efa7c1110adb9c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "84d644c6ca6265befdf210ff9153f1a204e9c934ffc0796bd591382048abfc30"
+    },
+    "call_63d001a62d714d479e1f4570f327a1f1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "path": "exllamav3/cache/cache.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "a1e1199354b253b822cafcdc1010ce47cc90c1866db17bbcf0cede7145813965"
+    },
+    "call_b67c4f836bb54cea9d29bdd96956c51c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "query": "detach_from_model",
+        "limit": 100
+      },
+      "result_sha256": "9e3daa89d3c9e67a53577f5b37227477d50db7e13675f8c9db7ef005a7e23f09"
+    }
+  }
+}

@@ -1,0 +1,280 @@
+{
+  "schema_version": 5,
+  "sha": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+  "parent_shas": [
+    "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0"
+  ],
+  "cutoff_date": "2025-04-18T02:48:28+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Linear outputs previously passed through FP16 GEMM storage before any requested output conversion. EXL3 output-channel scaling also required a separate multiplication when unpacked scales were used.",
+        "basis": "source",
+        "evidence": [
+          "call_4d54b1ef030f4ff1bfa2fd369c707130",
+          "call_439deead9ba643e5936176dd3628e156"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change selects output precision before GEMM, carries FP32 through EXL3 reduction and output Hadamard, and folds output-channel multiplication into that Hadamard kernel rather than into GEMM.",
+        "basis": "source",
+        "evidence": [
+          "call_ba7578106be44284803c00cdd2391d16",
+          "call_d99e4c7393a84d179f22f1284462da03",
+          "call_439deead9ba643e5936176dd3628e156"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "FP32 output avoids the explicit half conversion at GEMM output and EXL3 partial-result stores, at the cost of larger output storage. This does not introduce FP32 GEMM inputs or establish measured accuracy or speed improvements.",
+        "basis": "inference",
+        "evidence": [
+          "call_656f40f8a97e459cb2839a26b0f64a36",
+          "call_e5eb0f24de284ba8bf85a6f669d8e7da",
+          "call_ba7578106be44284803c00cdd2391d16"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure and a reporter-supplied environment workaround. Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d discusses quantization regularization. Neither discussion explicitly identifies this change as its fix.",
+        "basis": "source",
+        "evidence": [
+          "call_a684c827cd424a8b9e6862f0c26c5c82",
+          "call_ca2bb4bf554143ae913624739d5503ec"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, repository execution, GPU numerical comparison or performance measurement was performed.",
+      "The scalar Hadamard check uses Python double precision; it does not reproduce CUDA float rounding, half multiplication, warp execution or memory behavior.",
+      "End-to-end compatibility of the new GatedMLP intermediate dtype option with activation kernels and subsequent projections was not established."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Selectable GEMM output precision and fused Hadamard scales",
+        "claims": [
+          {
+            "text": "hgemm retains half inputs and dispatches on the destination dtype. Half output uses cublasHgemm; float output uses cublasGemmEx with CUDA_R_16F inputs, CUDA_R_32F output and CUBLAS_COMPUTE_32F. Both branches reverse operands and use dimensions (n, m, k) for row-major multiplication, with alpha=1 and beta=0.",
+            "basis": "source",
+            "evidence": [
+              "call_656f40f8a97e459cb2839a26b0f64a36"
+            ]
+          },
+          {
+            "text": "EXL3 kernel specialization repurposes bit 0x10 from output-Hadamard selection to output precision; the low four bits still select quantization bits. Float output receives float partial-result loads and stores, while half output retains half2 conversion. Fused output Hadamard is disabled, and the native wrapper explicitly rejects non-null sv.",
+            "basis": "source",
+            "evidence": [
+              "call_e5eb0f24de284ba8bf85a6f669d8e7da",
+              "call_ba7578106be44284803c00cdd2391d16"
+            ]
+          },
+          {
+            "text": "had_r_128 now accepts matching FP16 or FP32 input/output tensors, checking two-dimensional input, matching shapes and a column count divisible by 128. Each 32-thread block handles 128 values: a four-value transform per thread followed by five XOR-shuffle stages across the warp. The multiplier 0.088388347648 approximates 1/sqrt(128), normalizing the transform.",
+            "basis": "source",
+            "evidence": [
+              "call_d99e4c7393a84d179f22f1284462da03",
+              "call_210d3dfa337841c49d217cb77b45c0dc"
+            ]
+          },
+          {
+            "text": "A scalar transcription of the four-value transform and five shuffle stages recovered a 128-element test vector with maximum error 1.78e-15 after two normalized transforms. The normalization literal differs from 1/sqrt(128) by approximately 3.18e-13.",
+            "basis": "execution",
+            "evidence": [
+              "call_eeaf61cbb70242bc9e34afdfcc5586e2"
+            ]
+          },
+          {
+            "text": "Both Hadamard paths consume half pre/post scale vectors. The half path multiplies pre-scales in half, performs the transform in float, rounds back to half and then multiplies post-scales in half. The float path converts scales to float and retains float values throughout. Thus fused scales do not imply identical arithmetic precision between paths.",
+            "basis": "source",
+            "evidence": [
+              "call_d99e4c7393a84d179f22f1284462da03",
+              "call_2f4c3663465640a4b4e93c46f766a2ba"
+            ]
+          },
+          {
+            "text": "LinearEXL3 normalizes legacy packed signs into unpacked half scales at construction and clears su/sv. Both reconstructed-weight hgemm and direct exl3_gemm now feed a separate in-place output Hadamard with svh post-scaling. The existing default reconstruction threshold remains more than 32 flattened input rows; get_inner_weight_tensor still reconstructs a half matrix.",
+            "basis": "source",
+            "evidence": [
+              "call_439deead9ba643e5936176dd3628e156",
+              "call_8b26bb61c2a7402b8aacee41ce520be8"
+            ]
+          },
+          {
+            "text": "Linear forwards its optional output dtype through loading and quantization. Both inner implementations allocate the GEMM destination using call-level override, then constructor preference, then torch.half. They return this result directly rather than casting afterward; EXL3 also stops casting the result to the bias dtype before addition.",
+            "basis": "source",
+            "evidence": [
+              "call_9ba8faefcc194483b4b7bd0fc772ab9a",
+              "call_439deead9ba643e5936176dd3628e156",
+              "call_4d54b1ef030f4ff1bfa2fd369c707130",
+              "call_38fbaf0477be472393e5368770ed880e"
+            ]
+          },
+          {
+            "text": "GatedMLP adds interm_dtype for gate/up projections and passes its existing out_dtype to down projections. Its unchanged forward loop still applies the selected activation to gate/up outputs before invoking down, so these constructor controls affect intermediate computation rather than merely the final return conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_759d2d99fdda438dbea221bb48da87f1",
+              "call_c22214349c7a476cbd470dbaee4f8a76"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds native FP32 GEMM outputs and FP32 Hadamard processing, fuses output scales into Hadamard, and propagates output dtype preferences through linear and gated-MLP construction."
+  },
+  "evidence": {
+    "call_656f40f8a97e459cb2839a26b0f64a36": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 223,
+        "max_bytes": 32000
+      },
+      "result_sha256": "1313ddee374aabc9c304a47e9a5bcc29c48ef35f9619e877ad169ed896a3c8c6"
+    },
+    "call_e5eb0f24de284ba8bf85a6f669d8e7da": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 2854,
+        "max_bytes": 16384
+      },
+      "result_sha256": "1c578c7fe5c48797687c0d29d3dbfc67b601d30f26a6417c74c86abbd903395b"
+    },
+    "call_ba7578106be44284803c00cdd2391d16": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 6580,
+        "max_bytes": 16384
+      },
+      "result_sha256": "736df20da34e500035d7f113983fbe646e1b6b9ab787bf7cb15f4a13bbac8c63"
+    },
+    "call_d99e4c7393a84d179f22f1284462da03": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 14991,
+        "max_bytes": 16384
+      },
+      "result_sha256": "404496b0243f796d19a92d580578bca05138321da380630a988c2d00c4499c6e"
+    },
+    "call_2f4c3663465640a4b4e93c46f766a2ba": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 21347,
+        "max_bytes": 16384
+      },
+      "result_sha256": "f13fb07db5f2924113ff8ae486842ba4f81b10a70801a5add8b75c4111b1c0ba"
+    },
+    "call_9ba8faefcc194483b4b7bd0fc772ab9a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 21954,
+        "max_bytes": 16384
+      },
+      "result_sha256": "959862592330795ed2e2422fcf251f3f277dd1c7f03c7d2951f993a38b021a2b"
+    },
+    "call_759d2d99fdda438dbea221bb48da87f1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 24117,
+        "max_bytes": 16384
+      },
+      "result_sha256": "945203dcb117ae0eda1a79500bf01341842c8f505cc1702157f32e279a7e3834"
+    },
+    "call_439deead9ba643e5936176dd3628e156": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 25601,
+        "max_bytes": 16384
+      },
+      "result_sha256": "a89d58ba27cd916e5c66d216a504685c6ea9956f656d55e4d3c7b2ec31f97266"
+    },
+    "call_4d54b1ef030f4ff1bfa2fd369c707130": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 29308,
+        "max_bytes": 16384
+      },
+      "result_sha256": "d32e180aff89db6e311d3f2ab80051a690c58c102bf826f7b9f6d6f6fa53ac7c"
+    },
+    "call_38fbaf0477be472393e5368770ed880e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "offset": 31272,
+        "max_bytes": 16384
+      },
+      "result_sha256": "8600c1d0a86e6e47b5ef358910e847a958b3c4de434a30aafdb2805c51653d63"
+    },
+    "call_c22214349c7a476cbd470dbaee4f8a76": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "a7fcef3990652aaa67bd2159c3b2c2fdfb5f1bc67967faecab4a1a4a6fe29a45"
+    },
+    "call_8b26bb61c2a7402b8aacee41ce520be8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "c316091f67f4e69e80809d6131e4065aaa3f7a3a5192a9c68f16ae7372f6bcde"
+    },
+    "call_210d3dfa337841c49d217cb77b45c0dc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0",
+        "path": "exllamav3/exllamav3_ext/quant/hadamard.cu",
+        "max_bytes": 12000
+      },
+      "result_sha256": "da98cfcd544ccaf61cbd221e716f26e6dee1303940adec26baaed944990bda32"
+    },
+    "call_a684c827cd424a8b9e6862f0c26c5c82": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f91135c474e661bb53516500a6fedcb7becf4f98bb9a416c2f1ddf26eda93899"
+    },
+    "call_ca2bb4bf554143ae913624739d5503ec": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16384
+      },
+      "result_sha256": "973e253fb0a627389a73ced832ebf3f62f213e558d312039cafb7b044fbb6c4b"
+    },
+    "call_eeaf61cbb70242bc9e34afdfcc5586e2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nx=[float(i%13-6) for i in range(128)]\ndef had(x):\n v=[]\n for t in range(32):\n  a,b,c,d=x[4*t:4*t+4];v.append([a+b+c+d,a-b+c-d,a+b-c-d,a-b-c+d])\n for i in [1,2,4,8,16]:\n  v=[[(-v[t][j] if t&i else v[t][j])+v[t^i][j] for j in range(4)] for t in range(32)]\n return [z/math.sqrt(128) for row in v for z in row]\ny=had(x);z=had(y)\nprint({'normalizer':1/math.sqrt(128),'literal_error':abs(.088388347648-1/math.sqrt(128)),'round_trip_max_error':max(abs(a-b) for a,b in zip(x,z)),'energy_error':abs(sum(a*a for a in x)-sum(a*a for a in y))})"
+        ]
+      },
+      "result_sha256": "fea2788623d9a6bfdf41fdf7e499bb473c86d240ba117093da28232f5e36c350"
+    }
+  }
+}

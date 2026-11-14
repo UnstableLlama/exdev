@@ -1,0 +1,197 @@
+{
+  "schema_version": 5,
+  "sha": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0",
+  "parent_shas": [
+    "f8b9ab72ae9fd4fb00d4aab34302f9eb5edd81f5"
+  ],
+  "cutoff_date": "2025-04-17T22:22:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Both perplexity evaluators formed an out-of-place addition after converting logits to float32. The standalone evaluator also retained log_probs across row boundaries.",
+        "basis": "source",
+        "evidence": [
+          "call_894a23724b734c21b69cec064a71c2f2",
+          "call_17822cb931734a2183763599c7e29dc2",
+          "call_e94dd376169c4bbb863f984c265940b3"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing the addition with += targets a full-sized temporary allocation; deleting log_probs after scoring shortens its lifetime before the next forward pass.",
+        "basis": "inference",
+        "evidence": [
+          "call_894a23724b734c21b69cec064a71c2f2",
+          "call_17822cb931734a2183763599c7e29dc2"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The changes preserve next-token alignment, log-softmax, target gathering and exp(-mean_log_prob). They do not change model selection or the standalone evaluator's max_output_factor=5.",
+        "basis": "source",
+        "evidence": [
+          "call_e94dd376169c4bbb863f984c265940b3",
+          "call_6b986644957b4d9e9376652261f7e938",
+          "call_894a23724b734c21b69cec064a71c2f2",
+          "call_17822cb931734a2183763599c7e29dc2"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "An earlier entry describes per-row cleanup and CUDA cache clearing in compare_q.py. This change extends that memory-lifetime approach rather than adding a new scoring algorithm.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_528d5ba9430b48c7862622fa93c43a4a"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure. Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns quantization quality and discusses regularization. Neither discussion establishes a connection to this evaluator-memory change.",
+        "basis": "source",
+        "evidence": [
+          "call_254530ba02d742a0a861adb1d7ebb88c",
+          "call_b37a7d13fec848c1b8a2f094d927b005"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch evaluator or CUDA workload was executed; peak VRAM savings, allocator behavior and runtime effects remain unmeasured.",
+      "The scalar check uses Python float64, not float32 tensor arithmetic, and does not establish bitwise score equivalence or GPU allocation behavior.",
+      "In-place addition can mutate shared storage when .float() does not require a conversion; backend-specific aliasing effects were not tested."
+    ],
+    "links": [
+      "95b4da216a7e911e0e578c241765f07934aa1f1a"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Reduce temporary storage during perplexity scoring",
+        "claims": [
+          {
+            "text": "Both loops discard the final prediction position, convert remaining logits to float32, and now add the existing 1e-10 offset in place. ppl.py additionally crops to tokenizer.actual_vocab_size; compare_q.py retains the backend's full vocabulary dimension.",
+            "basis": "source",
+            "evidence": [
+              "call_894a23724b734c21b69cec064a71c2f2",
+              "call_17822cb931734a2183763599c7e29dc2",
+              "call_e94dd376169c4bbb863f984c265940b3",
+              "call_6b986644957b4d9e9376652261f7e938"
+            ]
+          },
+          {
+            "text": "The 1e-10 constant is a uniform logit offset, not a probability floor. In exact arithmetic such a shift cancels in log-softmax; its original rationale is not documented in these files.",
+            "basis": "inference",
+            "evidence": [
+              "call_e94dd376169c4bbb863f984c265940b3",
+              "call_6b986644957b4d9e9376652261f7e938"
+            ]
+          },
+          {
+            "text": "For the standalone evaluator's default 2048-token row, a retained float32 scoring tensor has 2047\u00d7V elements, or 8188\u00d7V bytes. A bounded standard-library calculation verified that arithmetic and found zero difference for log-softmax of [-2, 0, 3] with versus without the uniform offset in Python float64.",
+            "basis": "execution",
+            "evidence": [
+              "call_33383f181b664ebab6b1dbb86289b591"
+            ]
+          },
+          {
+            "text": "ppl.py now deletes log_probs after accumulating the gathered target scores and before empty_cache(). Previously the local reference survived into the next iteration. compare_q.py already deleted log_probs immediately after gathering, so its only change is the in-place offset.",
+            "basis": "source",
+            "evidence": [
+              "call_17822cb931734a2183763599c7e29dc2",
+              "call_e94dd376169c4bbb863f984c265940b3",
+              "call_6b986644957b4d9e9376652261f7e938",
+              "call_894a23724b734c21b69cec064a71c2f2"
+            ]
+          },
+          {
+            "text": "The patch favors reusing the converted logits buffer and releasing completed scoring tensors, while retaining the existing out-of-place log-softmax. The standalone file's TODO for an in-place softmax remains an alternative, not an implemented optimization.",
+            "basis": "source",
+            "evidence": [
+              "call_e94dd376169c4bbb863f984c265940b3",
+              "call_17822cb931734a2183763599c7e29dc2"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Reduces perplexity-scoring temporaries through in-place logit offsets and earlier release of standalone log probabilities; actual VRAM savings were not measured."
+  },
+  "evidence": {
+    "call_894a23724b734c21b69cec064a71c2f2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0",
+        "offset": 166,
+        "max_bytes": 670
+      },
+      "result_sha256": "64d4d683050f3b8a2f2e98fbb9d59a3ffbd5ad09ba3c744b9b89b7a5becb50f4"
+    },
+    "call_17822cb931734a2183763599c7e29dc2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0",
+        "offset": 836,
+        "max_bytes": 1019
+      },
+      "result_sha256": "a5520d2a356f459dd600d183584e11ad54ad910dd18341c184392cebb8b87634"
+    },
+    "call_e94dd376169c4bbb863f984c265940b3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f8b9ab72ae9fd4fb00d4aab34302f9eb5edd81f5",
+        "path": "eval/ppl.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "edb98be415341e1ba5546e4e0725c2cac57e88177a40df2b9c0e5f0e7c161a03"
+    },
+    "call_6b986644957b4d9e9376652261f7e938": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f8b9ab72ae9fd4fb00d4aab34302f9eb5edd81f5",
+        "path": "eval/compare_q.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b226a6c3a4abca296276a830f3f5740e03120412eca913f344d553de0b9021c5"
+    },
+    "call_528d5ba9430b48c7862622fa93c43a4a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "95b4da216a7e911e0e578c241765f07934aa1f1a",
+        "max_bytes": 16384
+      },
+      "result_sha256": "778d0327848e8c24e316a9e052c46f1d79d60e7a70ce19502dcfef005d19747a"
+    },
+    "call_254530ba02d742a0a861adb1d7ebb88c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1d6d3b16a10cb694c8c24bd1c9c15e8ca98be70a9613fd4cb6caa0f1e355a285"
+    },
+    "call_b37a7d13fec848c1b8a2f094d927b005": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "60e0961fa33e8876c340c62c8fb0843246b9e6344a521bbca02e606807b9e53f"
+    },
+    "call_33383f181b664ebab6b1dbb86289b591": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nL=2048\nprint('float32 bytes per vocabulary entry:',4*(L-1))\nx=[-2.0,0.0,3.0]\ndef logsoftmax(v):\n m=max(v); z=math.log(sum(math.exp(t-m) for t in v)); return [t-m-z for t in v]\na=logsoftmax(x); b=logsoftmax([t+1e-10 for t in x])\nprint('scalar float64 uniform-shift max difference:',max(abs(u-v) for u,v in zip(a,b)))"
+        ]
+      },
+      "result_sha256": "7be94aeefc1aefd2b428329e15d2e8e72ad7e1f14654f4e7807bf171c74a7dbe"
+    }
+  }
+}

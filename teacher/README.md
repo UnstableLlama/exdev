@@ -152,3 +152,7 @@ python3 -m teacher.assembly --selection reports/root-chapter-selection-001.json 
 ```
 
 Original local packets are required for replay. Candidate output is retained for review, with a separate pending review record. The user-supplied review now accepts root-002 for ancestor use. Canonical promotion remains pending. Bounded retrieval exports prose without the old evidence ledger and supports file/symbol search; see the ancestor-context workflow.
+
+### Official reference discovery
+
+Before recovering references for a new architecture, use `python3 -m teacher.reference_discovery --organization ORG --architecture ARCH --cutoff ISO_DATE --report NEW_REPORT --selection NEW_SELECTION`. It enumerates every visible repository in the official organization, pages each history, and checks the latest pre-cutoff `config.json` for the exact architecture string. Repository-name searches are insufficient. The report records all candidates and unavailable configs; unavailable, deleted or private repositories prevent an exhaustive claim. Selection metadata excludes names without inspected pre-cutoff configs. Feed the resulting selection to `teacher.architecture_evidence` to recover immutable configs and headers without weights. Discovery reports are administrative and never teacher input.

@@ -1,0 +1,475 @@
+{
+  "schema_version": 5,
+  "sha": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+  "parent_shas": [
+    "e9a3b6a9256fc59f888b80a7d4a58883954b39de"
+  ],
+  "cutoff_date": "2025-04-18T02:49:19+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "Glm4ForCausalLM lacked architecture dispatch. The change registers Glm4Config and Glm4Model and supplies the model constructor.",
+        "basis": "source",
+        "evidence": [
+          "call_681cb7cb0a4543188dff5bf4483cd8c9",
+          "call_1c9251074c7444a4ad28297bfad13f5b"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation composes existing attention, normalization and gated-MLP primitives rather than adding GLM-specific kernels. Its distinguishing choices are four norms per block, GPTJ rotary pairing and selected FP32 branch outputs.",
+        "basis": "source",
+        "evidence": [
+          "call_1c9251074c7444a4ad28297bfad13f5b",
+          "call_05df257ecec64e2c9b1b5cc49ec98da4"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Config.from_directory can now select GLM4 instead of rejecting its architecture string. Registration alone does not establish successful checkpoint loading or inference.",
+        "basis": "source",
+        "evidence": [
+          "call_f326325ed085407f8eb9615e83498b1b",
+          "call_681cb7cb0a4543188dff5bf4483cd8c9"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue 7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension-import failure and a reporter-supplied environment workaround. Issue 15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns Qwen quantization. Neither discussion establishes GLM4 compatibility or motivation for this change.",
+        "basis": "source",
+        "evidence": [
+          "call_710ccfbfb5f143e09d55a3f36f11219d",
+          "call_13b13d0b873f4c5abf756bcfcdcfb711"
+        ]
+      }
+    ],
+    "limitations": [
+      "No checkpoint loading, conversion, model inference or GPU kernel execution was performed. Scalar checks covered dimensions and source-level indexing only.",
+      "All six indexed GLM4 configurations were inspected, but tensor headers were not; checkpoint key and tensor-shape compatibility remains unverified.",
+      "The numerical benefit of the FP32 branch outputs was not measured. CUDA compilation may affect whether the suspected unused out-of-range frequency loads execute."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "GLM4 construction, precision and rotary integration",
+        "claims": [
+          {
+            "text": "Glm4Config requires hidden size, query-head count, intermediate width, normalization epsilon and layer count. Missing KV-head count defaults to query-head count; missing or false-valued head_dim falls back to hidden_size // num_attention_heads. hidden_act may be absent, but if present must be silu. Tied embeddings default to false.",
+            "basis": "source",
+            "evidence": [
+              "call_1c9251074c7444a4ad28297bfad13f5b",
+              "call_f326325ed085407f8eb9615e83498b1b"
+            ]
+          },
+          {
+            "text": "The module sequence is model.embed_tokens, indexed transformer blocks, model.norm and lm_head. Each block maps separate q_proj/k_proj/v_proj/o_proj attention weights and up_proj/gate_proj/down_proj MLP weights, with gate_up_proj as a fused-weight fallback. A tied head can fall back to model.embed_tokens when the constructor's lm_head presence check fails.",
+            "basis": "source",
+            "evidence": [
+              "call_1c9251074c7444a4ad28297bfad13f5b",
+              "call_29acc0f0da8749939ee5db438279406e",
+              "call_62c5ccb2fcea41a9b4f1d3f795a624fc"
+            ]
+          },
+          {
+            "text": "TransformerBlock applies input_layernorm before attention and post_self_attn_layernorm before its residual addition; post_attention_layernorm precedes the MLP and post_mlp_layernorm precedes its residual addition. GLM4 requests FP32 post-norm outputs and MLP output, while retaining FP16 gate/up intermediates and final model.norm output. Residual additions remain in-place on x; the constructor does not itself request an FP32 residual stream.",
+            "basis": "source",
+            "evidence": [
+              "call_1c9251074c7444a4ad28297bfad13f5b",
+              "call_05df257ecec64e2c9b1b5cc49ec98da4",
+              "call_29acc0f0da8749939ee5db438279406e"
+            ]
+          },
+          {
+            "text": "The fused MLP fallback interprets rows [0, intermediate_size) as gate weights and the following equally sized range as up weights. GatedMLP forbids combining that fallback with intermediate slicing. Both inspected GLM4 widths, 23040 and 13696, are below the existing 55296 slicing limit, whose source comment identifies single-GPU quantization capacity as its purpose.",
+            "basis": "source",
+            "evidence": [
+              "call_29acc0f0da8749939ee5db438279406e",
+              "call_7bc351c0ac8c444c9cba9fc39c88d8fb",
+              "call_100b148f9e374c82958469624aebeafa",
+              "call_cb3e9c8a8f224a089d5fccb52896a7e1"
+            ]
+          },
+          {
+            "text": "GLM4 selects GPTJ RoPE. The native implementation rotates adjacent channel pairs, whereas the NEOX alternative pairs channels across halves of the rotary region. The shared configuration reader supplies rope_theta, optional scaling and partial_rotary_factor; the default frequency builder uses int(head_dim * partial_rotary_factor) rotary dimensions.",
+            "basis": "source",
+            "evidence": [
+              "call_1c9251074c7444a4ad28297bfad13f5b",
+              "call_f326325ed085407f8eb9615e83498b1b",
+              "call_28b4205dec974a7c8078b9516b2ba157",
+              "call_10e0289e524f4faebbc1413c94c2d931"
+            ]
+          },
+          {
+            "text": "prepare_inputs saves input_ids in params and delegates to prepare_for_attn. Its default is uncached Flash Attention; uncached SDPA is another existing option, while cached Flash Attention requires cache metadata. All three attention implementations call native RoPE.apply, not the Torch rotary alternative.",
+            "basis": "source",
+            "evidence": [
+              "call_1c9251074c7444a4ad28297bfad13f5b",
+              "call_6e81a1b44d8245dd9c88cdd145f6871b"
+            ]
+          },
+          {
+            "text": "zai-org/GLM-4-32B-0414, zai-org/GLM-4-32B-Base-0414 and zai-org/GLM-Z1-32B-0414 each declare Glm4ForCausalLM, hidden size 6144, 61 layers, intermediate width 23040, 48 query heads and 2 KV heads. Each supplies head_dim=128, SiLU and untied embeddings, so the corresponding constructor fallbacks are unused.",
+            "basis": "source",
+            "evidence": [
+              "call_100b148f9e374c82958469624aebeafa",
+              "call_e7004ab8c73b41f08797ac8c8c4009e5",
+              "call_dddbd67ce0794465b67d2a503052149f"
+            ]
+          },
+          {
+            "text": "zai-org/GLM-4-9B-0414 and zai-org/GLM-Z1-9B-0414 each declare the same architecture with hidden size 4096, 40 layers, intermediate width 13696, 32 query heads and 2 KV heads. Both explicitly supply head_dim=128, SiLU and untied embeddings. Their attention_bias=true differs from the inspected 32B variants; Linear loads optional bias tensors by their presence rather than consulting that configuration flag.",
+            "basis": "source",
+            "evidence": [
+              "call_cb3e9c8a8f224a089d5fccb52896a7e1",
+              "call_8f8f1a9ce81440cbaf6fc13236c0e489",
+              "call_62c5ccb2fcea41a9b4f1d3f795a624fc"
+            ]
+          },
+          {
+            "text": "zai-org/GLM-Z1-Rumination-32B-0414 also uses the new architecture mapping, hidden size 6144, 61 layers and intermediate width 23040, but specifies 8 KV heads and max_position_embeddings=131072 rather than 2 and 32768. It explicitly supplies head_dim=128, SiLU and untied embeddings. All six configurations specify partial_rotary_factor=0.5, rope_theta=10000, rms_norm_eps=1e-5 and vocabulary size 151552.",
+            "basis": "source",
+            "evidence": [
+              "call_3d7f06896f82458e9e8fa8f4baaf2fbb",
+              "call_100b148f9e374c82958469624aebeafa",
+              "call_e7004ab8c73b41f08797ac8c8c4009e5",
+              "call_dddbd67ce0794465b67d2a503052149f",
+              "call_cb3e9c8a8f224a089d5fccb52896a7e1",
+              "call_8f8f1a9ce81440cbaf6fc13236c0e489"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription gives Q/KV output widths of 6144/256 for the ordinary 32B configurations, 4096/256 for 9B and 6144/1024 for Rumination. Their query-to-KV head ratios are respectively 24, 16 and 6. The shared rotary settings produce 64 rotated channels and 32 frequencies; the native launch has 64 x-threads.",
+            "basis": "execution",
+            "evidence": [
+              "call_8561102475d14ee4ac2151e783486b0a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "partial-rope-frequency-load",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly selected partial GPTJ path encounters an inherited source-level frequency bounds concern.",
+        "trigger": "Native RoPE runs with the inspected GLM4 settings head_dim=128 and partial_rotary_factor=0.5.",
+        "expected_behavior": "Only threads rotating the first 64 channels should read the 32-element inverse-frequency tensor; remaining threads should copy channels without reading it.",
+        "actual_behavior": "rope_kernel unconditionally evaluates inv_freq[threadIdx.x] before testing the partial rotary boundary. The launch spans indices 0\u201363 although the tensor has 32 elements. This code is unchanged by the task. Whole-parent searches locate RoPE.apply as the Python native caller and all three Attention decode methods as its callers, so the concern reaches GLM4's default and alternative attention modes if execution reaches RoPE. A runtime fault is not established.",
+        "locations": [
+          {
+            "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          },
+          {
+            "commit": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+            "path": "exllamav3/models/glm4.py",
+            "symbol": "Glm4Config.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_10e0289e524f4faebbc1413c94c2d931",
+          "call_28b4205dec974a7c8078b9516b2ba157",
+          "call_1c9251074c7444a4ad28297bfad13f5b",
+          "call_14862b5a245c4337b78d6b7f50a13b7f",
+          "call_5f66387bb5fa4460b04492ae2150b992",
+          "call_6e81a1b44d8245dd9c88cdd145f6871b"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the inspected frequency count and launch width: 32 of 64 x-thread indices exceed the frequency tensor's logical bounds, covering indices 32\u201363.",
+            "evidence": [
+              "call_8561102475d14ee4ac2151e783486b0a"
+            ],
+            "limits": "Integer indexing model only; no CUDA execution or compiler-output inspection. Copy-only threads do not use the computed trigonometric values."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds GLM4 dispatch and a four-norm decoder using existing attention and MLP primitives, partial GPTJ RoPE and selected FP32 outputs. Six model configurations were checked; native partial-RoPE bounds remain a suspected inherited concern."
+  },
+  "evidence": {
+    "call_681cb7cb0a4543188dff5bf4483cd8c9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+        "offset": 155,
+        "max_bytes": 6827
+      },
+      "result_sha256": "89561894afb9b674526bb798c3bc374b221101db18023b5d0cb0490705a9c529"
+    },
+    "call_1c9251074c7444a4ad28297bfad13f5b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+        "offset": 998,
+        "max_bytes": 5984
+      },
+      "result_sha256": "8131e7b0a32cfb9faa7379da54d22b5cfbf5d1cffa34c043f702efbae9074b9f"
+    },
+    "call_1fde8a73b598462dbce7e61d5bd906d6": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "99e6ee85d15e14232eabe0c3b538ff41d340e070c6da0aa4456b8471b6a91cf6",
+      "catalog_only": true
+    },
+    "call_100b148f9e374c82958469624aebeafa": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-32B-0414",
+        "revision": "dc842812afac55db3a8aca4484ca6f3c60bd472f",
+        "path": "config.json"
+      },
+      "result_sha256": "c83cf6d1e75c8b11b47967ae591a0b2f5d133ff488b6eb4cce52cc789a12bc31"
+    },
+    "call_e7004ab8c73b41f08797ac8c8c4009e5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-32B-Base-0414",
+        "revision": "7675abea82951aaaedeb19014bab4e8f88c2d7a5",
+        "path": "config.json"
+      },
+      "result_sha256": "38e89db0f068c06a305c68791065fc5dfb198ce99e3d7f2317240861e0e84976"
+    },
+    "call_cb3e9c8a8f224a089d5fccb52896a7e1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-9B-0414",
+        "revision": "645b8482494e31b6b752272bf7f7f273ef0f3caf",
+        "path": "config.json"
+      },
+      "result_sha256": "f666dacdc53a9460019ae8a799f5b5b5c7e5861e8daf6488e7f2d8e461d2a22b"
+    },
+    "call_dddbd67ce0794465b67d2a503052149f": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-Z1-32B-0414",
+        "revision": "93593a027f03a597582d1db7e84894a0a8fa027e",
+        "path": "config.json"
+      },
+      "result_sha256": "393ab9773844daa503f2359fdd288a8f3408c3528774a9f1dacc6a703c055c28"
+    },
+    "call_8f8f1a9ce81440cbaf6fc13236c0e489": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-Z1-9B-0414",
+        "revision": "66907f8ddffdcdcafb7e8c9e96b7366449176c1a",
+        "path": "config.json"
+      },
+      "result_sha256": "4e6c3ce1601e7ea71ca425be7bb782b7466f10c86485bb484fe7b420bb1ed31e"
+    },
+    "call_3d7f06896f82458e9e8fa8f4baaf2fbb": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-Z1-Rumination-32B-0414",
+        "revision": "6ae9ac6152a7d85761409d6d6ef201d9e8e8aeb1",
+        "path": "config.json"
+      },
+      "result_sha256": "b7045b8ab120fc5b2df20d564766fd52ea82c442084fc4fcb58c5f33745a2505"
+    },
+    "call_5254d281c35d4b7d8b08f0bb71c666ed": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nkeys=['Glm4','GLM4','head_dim','hidden_size','num_attention_heads','num_key_value_heads','hidden_act','intermediate_size','rms_norm_eps','num_hidden_layers','tie_word_embeddings','partial_rotary_factor']\nfor p in Path('exllamav3/models').glob('*.py'):\n s=p.read_text(); hits=[k for k in keys if k in s]\n if hits: print(str(p), ','.join(hits))"
+        ]
+      },
+      "result_sha256": "395a91713e613229f9e7faa1b4d4c8bd4380f644571c1337411c233e97b3e8ac"
+    },
+    "call_36bd26ad4bbb4fc39f7b93ea84d4653a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "GLM",
+        "limit": 30
+      },
+      "result_sha256": "fd7135c7c162c1a8f435c64bcf423c38807dc074dc53703686738d758cf850cf"
+    },
+    "call_f326325ed085407f8eb9615e83498b1b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "b92de8817507087fcd534c15ea865b7d5e4729fc8ce45b356f9a32abccdb1b54"
+    },
+    "call_ca97e25120bb4ee299d2f2cb2aae321e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/block.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_09eea2de709f4b0bab3b92bf7d34ca26": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules"
+      },
+      "result_sha256": "8f879071f3062d0bc28c3e19d0d41904aea4b294b2101fc59a19f101a4469c01"
+    },
+    "call_05df257ecec64e2c9b1b5cc49ec98da4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "58ebfbd34a70bf65c34f6684d714ac96e5a9b5840779f3ffb72e3a0ba938b7b1"
+    },
+    "call_6e81a1b44d8245dd9c88cdd145f6871b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "6297da686430deed8d9769832c903107a1a8f36f75765b85a53f97232059111d"
+    },
+    "call_28b4205dec974a7c8078b9516b2ba157": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "3d45cc3a491a1fba37dba5ac0087247a823b626b3f937433da94d9ea9308bddf"
+    },
+    "call_29acc0f0da8749939ee5db438279406e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "8458c55ab4d2fbec701c5d5189d9aa5ab5e76be996b7854d2e1288a69ed9f5cc"
+    },
+    "call_7bc351c0ac8c444c9cba9fc39c88d8fb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/constants.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "7b376c24e34a6440f12b022b961bd214df5bea91676f30514cae3e39d700a184"
+    },
+    "call_710ccfbfb5f143e09d55a3f36f11219d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8ea7e81687b89b032a2361f09fefbe514cee06e468d02b3acf9f9c7c9086ccee"
+    },
+    "call_13b13d0b873f4c5abf756bcfcdcfb711": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6a2036e67e045834935b91766f9b02787fef102662ea6a4a8ee12a74394fc825"
+    },
+    "call_753144d0203b405483f34995b0cfd7c8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "max_bytes": 16384
+      },
+      "result_sha256": "c4ab5f4f8cea19f65991108bde6f2e1f33b2a832afec7770f20624e74fa92e94"
+    },
+    "call_7e136efd653f4d46af24ec88174f34b6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "head",
+        "path": "exllamav3/models",
+        "limit": 100
+      },
+      "result_sha256": "e62791ed4f6f12039573e6449545726f01dbae2530d3c5f06e3d874d039e9215"
+    },
+    "call_b19e0f820a264cc9bb9cb4c77c17c423": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "read_cfg",
+        "path": "exllamav3/models",
+        "limit": 150
+      },
+      "result_sha256": "33518271b2d06bf976590034526322b47404db849b29558caeb9641a97216452"
+    },
+    "call_10e0289e524f4faebbc1413c94c2d931": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "8e1109d064f993bb81d3c4c6391e77bbd6f5293e2c731c12bd9efa73dd3b798c"
+    },
+    "call_5f66387bb5fa4460b04492ae2150b992": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "rope.apply",
+        "limit": 50
+      },
+      "result_sha256": "f5320c94429a01bb148e7c48d56e772f62902b57ef38ef123fd11f318f75427f"
+    },
+    "call_14862b5a245c4337b78d6b7f50a13b7f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "ext.rope",
+        "limit": 30
+      },
+      "result_sha256": "754c53a166354bd9359f3762c868117bf7e776333271cd0dd357197f9d01b29e"
+    },
+    "call_8561102475d14ee4ac2151e783486b0a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for name,h,q,kv,i,n in [('32B',6144,48,2,23040,61),('9B',4096,32,2,13696,40),('Rumination',6144,48,8,23040,61)]:\n d=128; r=int(d*.5); print(name, 'Q width',q*d,'KV width',kv*d,'group',q//kv,'modules',n+3,'fused gate/up',2*i,'within unsliced limit',i<=55296)\nd=128; freqs=list(range(0,int(d*.5),2)); outside=[t for t in range(d//2) if t>=len(freqs)]; print('frequency_count',len(freqs),'thread_x_count',d//2,'out_of_range',outside[0],outside[-1],len(outside))"
+        ]
+      },
+      "result_sha256": "5bc9eb566003bb40f2a27c1be3a46831733925deff4a8b8eff3199f626c35b20"
+    },
+    "call_62c5ccb2fcea41a9b4f1d3f795a624fc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "4da55e809adc736e4c0af6c550d0902b47811d985e2e8267b386ea952ed089a5"
+    },
+    "call_b67bbb1a72fc4a20b1509ee1d28ce6e4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "query": "hidden_",
+        "limit": 100
+      },
+      "result_sha256": "210523f5d3adae306966ad98220b4b3a4ec6eab0089100faf0776fd6990601f6"
+    }
+  }
+}

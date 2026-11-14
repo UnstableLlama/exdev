@@ -6,31 +6,58 @@ is defined by `docs/ancestor-approval-policy.md`, `docs/ancestor-context.md`
 and `teacher/README.md`; if this file disagrees with those or with the user,
 they win.
 
-## Recorded pause for machine move (2026-11-13)
+## User pause — 2026-11-13
 
-**Paused by the user. Do not author commit 70 until the user restarts the loop.**
-Commit 69/003 is approved for ancestor retrieval only, unassisted, and supersedes
-69/002 for future retrieval. 69/002 stays approved on record; 69/001 stays rejected.
-The salience implementation and all requested replacements are reviewed and closed.
-There is no outstanding review handoff. Fable is handling the commit and push.
+**Paused by user for commit/push/archive. Do not start any teacher run until an
+explicit restart.** Journal status is `paused_by_user`, `next_position: 75`.
+Positions 2–74 have active ancestor-retrieval approvals (including mechanical
+approvals); canonical/training remain false. Latest active entries are 71/002
+(reviewer-assisted), 72/002 and 73/001–74/001 (unassisted). Rejected attempts stay
+rejected. 39/005 remains approved and in force.
 
-Resume at **commit 70, contract 8 / guidance 5 / salience-v2**. Confirm the journal
-and `reports/commit-000069-review-003.json` on the new machine. On explicit restart,
-archive the user pause, clear `advancement_pause`, set status `ready`, and retain
-`next_position: 70`; do not reset approved-entry selection. Prepare cutoff-eligible
-open and closed catalogs before invoking the walk. Preserve historical bound
-bundles: the closed-catalog recovery helper currently regenerates earlier positions,
-so retain their exact bytes when recovering a new position. Prepared packets,
-evidence cache, mirror and store may be ignored local assets; check availability
-on the new machine rather than assuming a Git checkout contains them.
+Owed first: **39/006, unassisted**, under
+`reviews/verdicts/commit-000039-deci-references.decision.md`, then full review,
+then commit 75. No 39/006 teacher run or request exists; commit 75 is unstarted.
+Deci discovery and recovery are saved: five matching repositories have complete
+configs/headers; a sixth, DeciLM-7B-instruct-GGUF, has only config.json and fails
+the accepted evidence validator. The user choice between excluding this derived
+representation and supporting explicitly incomplete config-only evidence is still
+pending. See `reports/commit-000039-reference-recovery-006.json`. Preserve the four
+NVIDIA references and original packets. Dependent readers are listed in
+`reports/commit-000039-replacement-dependents-006.json`; do not re-author them
+without authorization. 39/005 stays in force until 006 is reviewed.
 
-Use Codex 0.167.0 first on PATH (the default binary previously broke wire tests).
-Latest accepted implementation suite: 221 host-enabled tests. Canonical/training
-remain false. Required architecture fixes 1 and 2 are due before position 100;
-five older invalid ledger origins remain open. Check closed-catalog issue 99 at
-position 560 and issue 233 at 1100. Observed parent-file reads through `run` should
-be reported separately from `repo_read`-only metrics. No teacher receives verdicts
-or these administrative notes.
+Resume with contract 8 / guidance 5 / salience-v2 and Codex 0.167.0 first on PATH.
+Reference discovery implementation 001 is accepted; latest full suite: 223
+host-enabled tests passed. Discovery must cover every official publishing
+organization, including the original publisher; record the organizations and why.
+Recover new open/closed catalogs without rewriting historical bound bundles.
+Prepared packets, caches, mirror and store may be local assets; verify them after
+moving machines. On restart archive this pause, retain next_position 75 and
+approved-entry selection, and complete the replacement before advancing the walk.
+
+Open follow-ups from today's verdicts (administrative, never teacher input):
+
+- Discovery: distinguish absent root config from unreadable evidence; organization
+  coverage can span publishers. No further rebuild of 39 beyond the user decision.
+- Count catalogs directly from bundles: 73 and 74 have seven open rows, not six.
+- Report `run` file reads separately from repo_read metrics; binary image sections
+  should be distinguished from incomplete text coverage (74's unread image was
+  accepted explicitly).
+- 71's FP32 MLP-intermediate finding remains suspected and draft-only. Packed-scale
+  parent behavior and tensor truth tests need canonical follow-up, not teacher hints.
+- 72's partial-rope-frequency-load is confirmed at source level, still suspected
+  without execution. Establish its introducing commit before any ledger revision;
+  keep one defect. Canonical use still needs tensor headers and the link to 71.
+- 74's zero-block-scale is an ineffective guard with no wrong output shown; keep
+  suspected. Preserve inherited detachment-diagnostic identity. Canonical follow-up:
+  inspect the Humaneval figure, README removal and paged encoder launch bounds.
+- Required architecture fixes 1 and 2 remain due before position 100; five older
+  invalid ledger origins remain. Check closed-catalog issue 99 at position 560 and
+  issue 233 at 1100. Assisted entries' use beyond ancestor retrieval is undecided.
+
+Fable will commit/push/archive after `reviews/PAUSE-ACK.md`. That ACK is the author's
+last write for this pause; no files may be changed after it until work is restarted.
 
 ## Where things stand
 
