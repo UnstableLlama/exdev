@@ -1,0 +1,358 @@
+{
+  "schema_version": 5,
+  "sha": "de83084184c34cae0aaeca5c8b024de7f148830d",
+  "parent_shas": [
+    "10b95addc0fc32df2f0cc94b820cbc9c83bb53b0"
+  ],
+  "cutoff_date": "2025-04-25T02:18:53+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Linear automatically rounded input widths to pad_to without requiring callers to opt in. Its forward method did not correspondingly pad activations.",
+        "basis": "source",
+        "evidence": [
+          "call_afc10242ccfc4443b53b3272582add27"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change adds allow_input_padding=False and asserts that input rounding leaves the width unchanged unless explicitly permitted. GatedMLP down projections opt in; the padding implementation itself is unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_cd150961e05b4b58bd10fdc710149d30",
+          "call_f0abcd98e16f401ab14e2659eef707ce"
+        ]
+      },
+      {
+        "text": "This is a conservative restriction rather than general activation-padding support: the gated MLP already produces rounded intermediate widths through its gate/up projections, whereas arbitrary Linear callers need not supply expanded inputs.",
+        "basis": "inference",
+        "evidence": [
+          "call_3a1290973f0b4518bd56e14d3560a7f0",
+          "call_afc10242ccfc4443b53b3272582add27",
+          "call_f3d49f1aed7e473fb74ced10eb87ea19"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "With assertions active, non-opted-in layers reject nonaligned inputs during construction, before FP16 or EXL3 loading. Output padding remains allowed. The ordinary MLP.down constructor does not receive the exception; the implementation is narrower than allowing every MLP down projection.",
+        "basis": "source",
+        "evidence": [
+          "call_cd150961e05b4b58bd10fdc710149d30",
+          "call_f0abcd98e16f401ab14e2659eef707ce",
+          "call_3a1290973f0b4518bd56e14d3560a7f0",
+          "call_afc10242ccfc4443b53b3272582add27"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "PR #20, \u201cReka Flash 3 vs padding,\u201d reports incompatible dimensions during Reka quantization. Its connection to this task is inferred from the matching input-padding mechanism and turboderp's discussion of permitting MLP down padding while treating attention cautiously; it is not an explicit task link.",
+        "basis": "inference",
+        "evidence": [
+          "call_14d2cfce02534c7dbcf808e1dc118ef9",
+          "call_cd150961e05b4b58bd10fdc710149d30",
+          "call_f0abcd98e16f401ab14e2659eef707ce"
+        ]
+      },
+      {
+        "text": "Issue #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d concerns vocabulary/output padding and reports earlier successful fixes. Its contextual connection is inferred from the shared Linear conversion path, not evidence that this restriction fixes that issue.",
+        "basis": "inference",
+        "evidence": [
+          "call_3765286bfbf343919f708426d10813a5",
+          "call_afc10242ccfc4443b53b3272582add27"
+        ]
+      },
+      {
+        "text": "The other inspected failure discussions concern an undefined __cxa_call_terminate symbol (#7), incoherent Cogito output at bpw <= 2.5 (#15), and missing torch during requirements installation (#17). Their own accounts discuss environment setup or quantization regularization, not this input-padding guard.",
+        "basis": "source",
+        "evidence": [
+          "call_dd3314f857b748e2ad33efe2ffbee941",
+          "call_e3a7fec80e3447ce8a9709b6bde7a3e3",
+          "call_5c4174daa54a4ef587a7e9e2107488af"
+        ]
+      },
+      {
+        "text": "The earlier input-padding annotation records simultaneous-axis and padding-before-slicing incompatibilities.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_753001a2d2da41f0a85109e7a477926a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, tensor assignment, quantization or GPU kernel was executed. The Python check models integer dimensions only.",
+      "The inspected code establishes 128 as the default alignment, not a universally sufficient backend requirement.",
+      "End-to-end model compatibility and performance were not measured."
+    ],
+    "links": [
+      "b3bd8f614b003d81d8f5f6b56b20a207d901c523"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Restrict input padding to opted-in gated MLP down projections",
+        "claims": [
+          {
+            "text": "The guard compares original and rounded input widths, rather than checking a layer name. Any caller can explicitly opt in; the task adds that opt-in only to GatedMLP's down constructor inside its slice loop.",
+            "basis": "source",
+            "evidence": [
+              "call_cd150961e05b4b58bd10fdc710149d30",
+              "call_f0abcd98e16f401ab14e2659eef707ce",
+              "call_3a1290973f0b4518bd56e14d3560a7f0"
+            ]
+          },
+          {
+            "text": "GatedMLP passes each intermediate slice width to gate/up outputs and down inputs. Forward computes gate and up activations, applies the selected activation/multiplication, then passes the resulting intermediate tensor to down. Input-only weight padding adds zero columns; it does not expand that tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_3a1290973f0b4518bd56e14d3560a7f0",
+              "call_afc10242ccfc4443b53b3272582add27"
+            ]
+          },
+          {
+            "text": "A standard-library transcription verified rounding for widths 1\u20131024: the result is the smallest multiple of 128 not below the input. Width 130 becomes 256 and fails the default guard, while aligned widths 128 and 256 pass.",
+            "basis": "execution",
+            "evidence": [
+              "call_871d1998b9024fd7b61da26ee4e117a9"
+            ]
+          },
+          {
+            "text": "Zero-column padding can preserve the original linear contribution when compatible expanded activations already exist, at the cost of larger matrices. The guard avoids silently assuming that compatibility for all callers; it does not repair the inherited loading-order or simultaneous-axis problems.",
+            "basis": "inference",
+            "evidence": [
+              "call_afc10242ccfc4443b53b3272582add27",
+              "call_cd150961e05b4b58bd10fdc710149d30",
+              "call_f3d49f1aed7e473fb74ced10eb87ea19"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "retained-two-axis-padding",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited simultaneous-axis copy mismatch remains for explicitly opted-in Linear callers; the new default guard blocks it earlier for other callers.",
+        "trigger": "Load a 130-by-130 FP16 weight with pad_to=128 and allow_input_padding=True.",
+        "expected_behavior": "Either reject simultaneous-axis padding explicitly or copy the weight into the leading 130-by-130 region.",
+        "actual_behavior": "pad_out selects the output-padding branch and assigns the 130-by-130 source to a 130-by-256 destination.",
+        "locations": [
+          {
+            "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.pad_out"
+          }
+        ],
+        "source_evidence": [
+          "call_afc10242ccfc4443b53b3272582add27",
+          "call_cd150961e05b4b58bd10fdc710149d30",
+          "call_a1891e4fcc0a4ac7a7fd1042f97ad1da",
+          "call_fe948152bb954066a4ad7950327a5721"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent searches locate pad_out calls in ordinary and fused load_fp16 paths, reached directly from Linear.load. The diff preserves those paths. Reach requires an opted-in two-axis case; normal GatedMLP construction also guards the hidden-size inputs of gate/up.",
+            "evidence": [
+              "call_a1891e4fcc0a4ac7a7fd1042f97ad1da",
+              "call_fe948152bb954066a4ad7950327a5721",
+              "call_3a1290973f0b4518bd56e14d3560a7f0"
+            ],
+            "limits": "No affected model construction or tensor assignment was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Calculated source and destination slice shapes.",
+            "evidence": [
+              "call_871d1998b9024fd7b61da26ee4e117a9"
+            ],
+            "limits": "Integer shape arithmetic, not PyTorch execution."
+          }
+        ]
+      },
+      {
+        "id": "retained-padding-before-slicing",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Padding still precedes feature slicing, so the input guard does not remove the inherited full-weight/local-destination mismatch.",
+        "trigger": "Request 130 outputs from a full 512-by-128 FP16 weight, with 128 inputs and first_out_feature=0.",
+        "expected_behavior": "Select the local feature region before padding it.",
+        "actual_behavior": "The aligned input passes the new guard, but load_fp16 calls pad_out on the full weight, attempting a 512-by-128 copy into a 256-by-128 destination before LinearFP16 can slice.",
+        "locations": [
+          {
+            "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load_fp16"
+          }
+        ],
+        "source_evidence": [
+          "call_afc10242ccfc4443b53b3272582add27",
+          "call_f3d49f1aed7e473fb74ced10eb87ea19",
+          "call_cd150961e05b4b58bd10fdc710149d30"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Linear.load is the direct load_fp16 caller found by whole-parent search. Ordinary loading pads before constructing the slicing backend; neither task hunk changes that ordering.",
+            "evidence": [
+              "call_fe948152bb954066a4ad7950327a5721",
+              "call_afc10242ccfc4443b53b3272582add27",
+              "call_f3d49f1aed7e473fb74ced10eb87ea19"
+            ],
+            "limits": "Conditional on a sliced request needing padding; no specific model workflow was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the full source and bounded destination dimensions for the aligned-input example.",
+            "evidence": [
+              "call_871d1998b9024fd7b61da26ee4e117a9"
+            ],
+            "limits": "Does not execute repository loading or establish an exact runtime exception."
+          }
+        ]
+      }
+    ],
+    "summary": "Makes Linear input padding opt-in and enables it for GatedMLP down projections, retaining existing output padding and conditional loading incompatibilities."
+  },
+  "evidence": {
+    "call_cd150961e05b4b58bd10fdc710149d30": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "offset": 203,
+        "max_bytes": 1053
+      },
+      "result_sha256": "aba108e7e379edb10802452098a24e12ca7e54dd33d4514ef63e98e4b6f2c277"
+    },
+    "call_f0abcd98e16f401ab14e2659eef707ce": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "offset": 1256,
+        "max_bytes": 567
+      },
+      "result_sha256": "58e9596bae5806c971993c089c6afecef5e229a04d31e2851a57c62b3f445dc9"
+    },
+    "call_afc10242ccfc4443b53b3272582add27": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "10b95addc0fc32df2f0cc94b820cbc9c83bb53b0",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "d541941db0f95744bceeaa90113fa2c10695b14a215ab8079e6f41418fcbd276"
+    },
+    "call_3a1290973f0b4518bd56e14d3560a7f0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "10b95addc0fc32df2f0cc94b820cbc9c83bb53b0",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 23000
+      },
+      "result_sha256": "8458c55ab4d2fbec701c5d5189d9aa5ab5e76be996b7854d2e1288a69ed9f5cc"
+    },
+    "call_3765286bfbf343919f708426d10813a5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 16000
+      },
+      "result_sha256": "594bf94181ad731888339796b23a3c4fd0f2a11f16b279b26c4e0ef915bccb57"
+    },
+    "call_5c4174daa54a4ef587a7e9e2107488af": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 16000
+      },
+      "result_sha256": "62de1a6c93811868d25bc3013dd6b038502db14da6af7ecf294da5309676dfdf"
+    },
+    "call_dd3314f857b748e2ad33efe2ffbee941": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d7a321927bb4759e07c73a42fc3c7a55e0e348f81590c9c1181e2e6a089b9924"
+    },
+    "call_e3a7fec80e3447ce8a9709b6bde7a3e3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d247700a26b9fcbfc1ce995f83a68b88d7f876d2c3150bb6e754bc6b25fa62c1"
+    },
+    "call_14d2cfce02534c7dbcf808e1dc118ef9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/20",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f5658c93a9b56089f4dbd56a17b7b867651ea23eedbf90f263b3d72e93fbfdce"
+    },
+    "call_753001a2d2da41f0a85109e7a477926a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1db57a58ac9338fc68cd64d9f2ffaba25ec78b70f5162fbd32a41c0ad94314c4"
+    },
+    "call_a1891e4fcc0a4ac7a7fd1042f97ad1da": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "10b95addc0fc32df2f0cc94b820cbc9c83bb53b0",
+        "query": "pad_out",
+        "limit": 100
+      },
+      "result_sha256": "97fbac44a71c5790fa8dbb371e4264d4e60309f8fc2723870ba291aa3f805135"
+    },
+    "call_fe948152bb954066a4ad7950327a5721": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "10b95addc0fc32df2f0cc94b820cbc9c83bb53b0",
+        "query": "load_fp16",
+        "limit": 100
+      },
+      "result_sha256": "01f98e067abb6939417ebed53290da3bd0e2e4d79c043b51b5b95bac7002d84b"
+    },
+    "call_27eed360c9494163abb3dfad016ff1af": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "10b95addc0fc32df2f0cc94b820cbc9c83bb53b0",
+        "query": "Linear(",
+        "limit": 100
+      },
+      "result_sha256": "b65d51ac16042954c914a2853e408e9bf14e56433383f71cb0c0b08e907edac8"
+    },
+    "call_f3d49f1aed7e473fb74ced10eb87ea19": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "10b95addc0fc32df2f0cc94b820cbc9c83bb53b0",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "dfc7432bc747afe91668d03ce09fd8c08fb03693456b09e274724d710fdca790"
+    },
+    "call_871d1998b9024fd7b61da26ee4e117a9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "p=lambda n:(n+127)//128*128\nfor n in range(1,1025):\n assert p(n)%128==0 and n<=p(n)<n+128\nprint('1024 rounding cases checked')\nfor n in (128,130,256): print(n,p(n),'default_allowed',n==p(n),'opt_in_allowed',True)\nprint('two-axis source',(130,130),'destination',(130,p(130)))\nprint('sliced source',(512,128),'destination',(min(512,p(130)),p(128)))"
+        ]
+      },
+      "result_sha256": "50bd1d31dea698b7ca118c85ab36e1aebcf30eea7974aee2df10efd93ff57bc2"
+    }
+  }
+}

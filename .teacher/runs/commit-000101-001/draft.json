@@ -1,0 +1,228 @@
+{
+  "schema_version": 5,
+  "sha": "cf15bab0733bfecf327281987286b413299d353d",
+  "parent_shas": [
+    "c73467fb7789035d5bc42945733211d9aebf173b"
+  ],
+  "cutoff_date": "2025-04-27T20:29:58+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The Transformers comparison adapter lacked explicit storage accounting for GPTQModel's MarlinQuantLinear modules.",
+        "basis": "source",
+        "evidence": [
+          "call_c228ab6237724b8180ef82ff54c58283",
+          "call_068e61f9ed5045348880d931ffeefa6a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change extends the existing Transformers adapter rather than adding a GPTQ-specific loader or forward path. This lets recognized Marlin modules contribute to the comparison's existing storage metrics.",
+        "basis": "source",
+        "evidence": [
+          "call_068e61f9ed5045348880d931ffeefa6a",
+          "call_c228ab6237724b8180ef82ff54c58283",
+          "call_6a5b08c876a24229b2e5d1ffeb1f2f1d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The new GPTQModel import is unconditional. Because compare_q.py imports the Transformers adapter before backend selection, that comparison entry point now requires the imported Marlin module to be available even when selecting another backend.",
+        "basis": "source",
+        "evidence": [
+          "call_068e61f9ed5045348880d931ffeefa6a",
+          "call_c9924525f37f4a70a2b2d416f311ca19",
+          "call_6a5b08c876a24229b2e5d1ffeb1f2f1d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier evaluation entry characterizes the plotted VRAM metric as calculated weight storage rather than measured peak allocation; the inspected comparison runner retains that distinction.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_3c324e2c753143168eff3529c0876301"
+        ]
+      },
+      {
+        "text": "The reviewed discussions report separate problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns low-bitrate quantization; #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d concerns compilation. None supplies an explicit connection to this adapter change.",
+        "basis": "source",
+        "evidence": [
+          "call_25386cc3fad142cc887ee190037f7634",
+          "call_52572eceec4c491da5fb400299ca8489",
+          "call_f3bcf23b0825490584a57a04b1a35fd9"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, GPTQ inference, GPU allocation measurement or perplexity evaluation was run.",
+      "GPTQModel class inheritance, supported versions and actual tensor layouts were not inspected; accounting applies to modules that reach the new MarlinQuantLinear branch, not necessarily every GPTQ backend.",
+      "The external ExLlamaV2 autosplit implementation was not available in the inspected source; acceptance and allocation semantics of reserve_vram remain unverified."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "GPTQ storage accounting in quantization comparisons",
+        "claims": [
+          {
+            "text": "get_storage_info adds a MarlinQuantLinear branch that sums g_idx, g_idx_sort_indices, qweight, qzeros and scales. get_tensors_size ignores None values and computes eight times element size in bytes times element count. The denominator is the logical dense weight count, in_features \u00d7 out_features, so metadata contributes to effective bits per weight.",
+            "basis": "source",
+            "evidence": [
+              "call_068e61f9ed5045348880d931ffeefa6a",
+              "call_c228ab6237724b8180ef82ff54c58283"
+            ]
+          },
+          {
+            "text": "The new branch contributes to the layer aggregate without a separate head-identification check. Existing ordinary Linear and Linear4bit branches retain their out_features >= 0.9 \u00d7 vocab_size head heuristic. The returned storage total remains head_numel \u00d7 head_bpw + sum_bits, not a scan of all runtime allocations.",
+            "basis": "source",
+            "evidence": [
+              "call_068e61f9ed5045348880d931ffeefa6a",
+              "call_c228ab6237724b8180ef82ff54c58283"
+            ]
+          },
+          {
+            "text": "load_transformers still delegates loading to AutoModelForCausalLM.from_pretrained with half precision and either cuda:0 or automatic device placement. The comparison runner consumes its layer BPW, head BPW and storage-bit results, converts storage to GiB, and evaluates logits through the unchanged forward adapter.",
+            "basis": "source",
+            "evidence": [
+              "call_c228ab6237724b8180ef82ff54c58283",
+              "call_6a5b08c876a24229b2e5d1ffeb1f2f1d",
+              "call_068e61f9ed5045348880d931ffeefa6a"
+            ]
+          },
+          {
+            "text": "The ExLlamaV2 adapter additionally passes reserve_vram=1024**3 to load_autosplit. Its batch-one, 2048-token loading cache and subsequent storage-accounting call are unchanged. Reserving evaluation headroom is a plausible motivation, but the diff does not establish the author's rationale.",
+            "basis": "inference",
+            "evidence": [
+              "call_96a19df5d9b745429cb00a0424c1cb10",
+              "call_910fbb2c30e34d90a8f1619d15a39380"
+            ]
+          },
+          {
+            "text": "An isolated execution of the repository's get_tensors_size helper with synthetic tensor-like objects returned 41,984 bits and 5.125 BPW for 8,192 logical weights, including two index arrays and scales while skipping absent qzeros. Python also evaluated 1024**3 as 1,073,741,824 bytes, or one GiB. This validates helper arithmetic, not a real Marlin layout or GPU behavior.",
+            "basis": "execution",
+            "evidence": [
+              "call_179646b846b04001adc3f7208a4068e4"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Marlin GPTQ storage accounting to the Transformers comparison adapter and requests one GiB of reserved VRAM during ExLlamaV2 autosplit loading."
+  },
+  "evidence": {
+    "call_96a19df5d9b745429cb00a0424c1cb10": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "offset": 156,
+        "max_bytes": 1884
+      },
+      "result_sha256": "6d1c868f9b9fcb373abdfaefe272a89fc0c280546e0327068094a5ca70733749"
+    },
+    "call_068e61f9ed5045348880d931ffeefa6a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "offset": 841,
+        "max_bytes": 1199
+      },
+      "result_sha256": "a3d1e6e5a612e10de3d8e3128c60eae64132915e2c8a70e99d6a44ae6cd60e29"
+    },
+    "call_c228ab6237724b8180ef82ff54c58283": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "path": "eval/compare_q_transformers.py"
+      },
+      "result_sha256": "be94a2f720c138a822b97aa34f7a5b2b019a9522318b2a4e87e0c930a85cfd39"
+    },
+    "call_910fbb2c30e34d90a8f1619d15a39380": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "path": "eval/compare_q_exllamav2.py"
+      },
+      "result_sha256": "af2a0ee61a5c5e1bb634be86730bc7bbc2e42f0da0d39c5d184a6e583500a94d"
+    },
+    "call_6f325c5cce2f41d3b1d54cc7119460bb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "query": "GPTQ",
+        "limit": 100
+      },
+      "result_sha256": "ff95369f0bc8002802b277bbf04672676facbb6366d089e35f9d9c7c53edd9ce"
+    },
+    "call_c9924525f37f4a70a2b2d416f311ca19": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "query": "compare_q_transformers",
+        "limit": 100
+      },
+      "result_sha256": "060f4a71afc590df6a1d95fa910331e5f060017afdaad090397ab31045c2da37"
+    },
+    "call_6a5b08c876a24229b2e5d1ffeb1f2f1d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "path": "eval/compare_q.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "c6bf7a8568e829676ec2c83a1c4244ab340b619fd0fc1340291cafcb8ea7f22d"
+    },
+    "call_3c324e2c753143168eff3529c0876301": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_25386cc3fad142cc887ee190037f7634": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "e8a365b04db04f37d52d12cc20c4f17110f218d9078edd7d73720f3e2aaa94a9"
+    },
+    "call_52572eceec4c491da5fb400299ca8489": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b9ab18b348831458e7ddc7cfbdbee3f3ac66131a467989f6c75049393b97f90a"
+    },
+    "call_f3bcf23b0825490584a57a04b1a35fd9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16384
+      },
+      "result_sha256": "cf4cf96f630157785fe72ceb91acb2c79b205c27641fa28816a9eaf351a4565e"
+    },
+    "call_179646b846b04001adc3f7208a4068e4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\np=pathlib.Path('eval/compare_q_transformers.py')\nt=ast.parse(p.read_text()); f=next(n for n in t.body if isinstance(n,ast.FunctionDef) and n.name=='get_tensors_size'); ns={}; exec(compile(ast.Module(body=[f],type_ignores=[]),str(p),'exec'),ns)\nclass T:\n def __init__(self,n,s): self.n=n; self.s=s\n def numel(self): return self.n\n def element_size(self): return self.s\nx={'g_idx':T(128,4),'g_idx_sort_indices':T(128,4),'qweight':T(1024,4),'qzeros':None,'scales':T(64,2)}\nb=ns['get_tensors_size'](x); print({'illustrative_bits':b,'logical_weights':128*64,'bpw':b/(128*64),'reserve_bytes':1024**3})"
+        ]
+      },
+      "result_sha256": "886dee1b1536a45958cfb7f1e77e5eb0ec52c9e472ec637e6fced29f1b1d7332"
+    }
+  }
+}

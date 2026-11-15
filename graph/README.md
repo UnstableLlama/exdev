@@ -7,7 +7,9 @@ It does not run the full history walk or generate Encyclopedia/training content.
 
 Prerequisites: the existing mined records in `data/exllamav3-v5/records`, the
 bare source repository, a clean detached worktree at `.graph-work/exllamav3`,
-and the Linux amd64 portable backend extracted at `.tools/cbm-v0.12.1`.
+and the native Linux portable backend: amd64 at `.tools/cbm-v0.12.1`,
+or arm64 at `.tools/cbm-v0.12.1-arm64`. The architecture-specific pins are in
+`backend.lock.json`; the historical top-level amd64 pin is preserved.
 Download the asset named in `backend.lock.json` from that repository's v0.12.1
 release and verify its archive checksum before extraction. Keep the bundled
 LICENSE and THIRD_PARTY_NOTICES.md. The validator checks the binary checksum

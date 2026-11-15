@@ -1,0 +1,438 @@
+{
+  "schema_version": 5,
+  "sha": "c73467fb7789035d5bc42945733211d9aebf173b",
+  "parent_shas": [
+    "6c15b8c40f0d28807006ad65d2c9e31382a352b4"
+  ],
+  "cutoff_date": "2025-04-27T19:55:50+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Cohere's parallel decoder supplies the same normalized input to attention and the gated MLP, but their different qmap names caused separate input-Hessian accumulation.",
+        "basis": "source",
+        "evidence": [
+          "call_765d438621e54df28eafbe9ce665e63a",
+          "call_8a4dd16cefa74728952474442ec7090d",
+          "call_a536d815f3a4481ea1471eab163f5496"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change gives both Cohere branches the prefix block.parallel and changes attention Q/K/V and gated-MLP gate/up suffixes to .input. All five projections consequently address one capture record; attention output and MLP down projections retain separate records.",
+        "basis": "source",
+        "evidence": [
+          "call_a9008611ef664582ab000acd7823e036",
+          "call_3d48b1f2c59f4ce5a692aec3062d1b22",
+          "call_bda037cd8dfa474e991ce81a31f32715",
+          "call_25a43f0e15cc454dad2505863b3565e4"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Sharing eliminates one redundant hidden-width-square float32 accumulator per capture pass and permits reuse of its finalized decomposition. This supports a conversion-memory and computation optimization, not a measured inference-speed improvement.",
+        "basis": "inference",
+        "evidence": [
+          "call_a536d815f3a4481ea1471eab163f5496",
+          "call_6e96072a6075412aa7c1827841737610",
+          "call_e6bb2e845414481485ff1b1fb7f0aa86"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d includes the same capture_H addmm_ statement inspected here. Its discussion attributes the reported failure to tokenizer truncation. The source overlap is an inferred contextual connection, not evidence that this patch fixes that issue.",
+        "basis": "inference",
+        "evidence": [
+          "call_18dc192bf9e449b6b190e3f4582451e9",
+          "call_b24574b047f747b28909491b595abc99"
+        ]
+      },
+      {
+        "text": "The other inspected reports concern \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d incoherent cogito-v1-preview-qwen-32B output at bpw <= 2.5, and \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022.\u201d They describe import/toolchain, quantization-quality, and compilation problems respectively; none establishes motivation for this qmap change.",
+        "basis": "source",
+        "evidence": [
+          "call_e47224b4194546779c7457a48bedfb2a",
+          "call_1bd710ad4d3d4a5183a96d3ae85f63da",
+          "call_7d53c9113fbe439db6a9f56e7605561a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository conversion, CUDA execution, numerical-quality comparison, or peak-memory benchmark was run.",
+      "The scalar check models capture grouping with exact small integers; it does not reproduce GPU float32 accumulation or randomized quantization.",
+      "Configuration inspection establishes input widths, not end-to-end model compatibility, checkpoint loading support, or equivalence of converted weights."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Sharing calibration statistics across parallel branches",
+        "claims": [
+          {
+            "text": "ParallelDecoderBlock.forward normalizes x once into y, then passes y to both branches. Attention.project_qkv applies Q, K and V projections to that input; GatedMLP.forward applies gate and up projections to its input before activation. Sharing their input statistic is therefore justified by the data flow, unlike merging statistics across sequential residual branches.",
+            "basis": "source",
+            "evidence": [
+              "call_765d438621e54df28eafbe9ce665e63a",
+              "call_9320dc91b2a34dcaa52d97a166df5485",
+              "call_25a43f0e15cc454dad2505863b3565e4"
+            ]
+          },
+          {
+            "text": "Linear.capture_H allocates H by qmap, remembers the first projection's weight key, and accumulates X\u1d40X and the row count only for that projection. With the new shared name, Q captures the common input and K, V, gate and up skip duplicate accumulation; their contributions are not added five times.",
+            "basis": "source",
+            "evidence": [
+              "call_a536d815f3a4481ea1471eab163f5496",
+              "call_b24574b047f747b28909491b595abc99",
+              "call_9320dc91b2a34dcaa52d97a166df5485",
+              "call_a9008611ef664582ab000acd7823e036",
+              "call_bda037cd8dfa474e991ce81a31f32715",
+              "call_3d48b1f2c59f4ce5a692aec3062d1b22"
+            ]
+          },
+          {
+            "text": "Conversion creates a fresh capture dictionary for each module slice, runs calibration samples, moves captured matrices to CPU, and passes capture_H[linear.qmap] to each linear conversion. Thus the shared string does not combine unrelated decoder layers. Sliced MLP conversion recaptures for each slice rather than sharing one dictionary across all slices.",
+            "basis": "source",
+            "evidence": [
+              "call_b7ccdbf58f244a99abfd1c0e292ebac8"
+            ]
+          },
+          {
+            "text": "finalize_capture_H divides by the sample count, regularizes the diagonal, chooses input sign flips and computes an LDL decomposition. Its finalized flag reuses H, L, su and diag on subsequent calls. Sharing therefore also couples the branches to one set of input sign flips and one preprocessing result; it is more than renaming a diagnostic label.",
+            "basis": "source",
+            "evidence": [
+              "call_6e96072a6075412aa7c1827841737610",
+              "call_e6bb2e845414481485ff1b1fb7f0aa86"
+            ]
+          },
+          {
+            "text": "The common suffix applies globally to Attention and GatedMLP, but other model builders retain distinct block.attn and block.mlp prefixes. The plain MLP class retains .up. The inspected parent-tree qmap search found consumers indexing by each linear's actual qmap rather than hard-coded .qkv or .up capture names.",
+            "basis": "source",
+            "evidence": [
+              "call_29895b09fc734fa99d465512fc54b73a",
+              "call_25a43f0e15cc454dad2505863b3565e4",
+              "call_3d48b1f2c59f4ce5a692aec3062d1b22",
+              "call_bda037cd8dfa474e991ce81a31f32715"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription produced two identical old accumulators and one new accumulator, each with H=[[10,14],[14,20]] and count=2. Arithmetic also gives 64, 256 and 576 MiB for one float32 H at hidden widths 4096, 8192 and 12288 respectively; these are accumulator sizes, not measured total-memory savings.",
+            "basis": "execution",
+            "evidence": [
+              "call_a9c3037a7b134ffba8c64ef1d6ab95eb"
+            ]
+          },
+          {
+            "text": "The inspected CohereLabs configurations give hidden widths 4096 for aya-23-8B and aya-expanse-8b; 8192 for aya-23-35B, aya-expanse-32b, c4ai-command-r-08-2024, c4ai-command-r-v01 and c4ai-command-r-v01-4bit; and 12288 for c4ai-command-r-plus, c4ai-command-r-plus-08-2024 and c4ai-command-r-plus-4bit. For each, CohereModel passes that same explicit width to both branches, so the shared input-H shape agrees. No hidden-width default is involved. The two 4bit configurations additionally declare bitsandbytes quantization; configuration shape agreement alone does not establish that those checkpoints can be converted here.",
+            "basis": "source",
+            "evidence": [
+              "call_ca96c460106b400b9e61717ac000ed2e",
+              "call_4d21bd9d15a648f0a25a1de595ef7122",
+              "call_1637b9f1ce4c43e8bcbe3ddff892df8b",
+              "call_4311a8001dac444f9810306f3f61dc9a",
+              "call_50925ad8644b44d184dc6fcc789ab071",
+              "call_a7fc16a28de6426eb54a55d0288b5e12",
+              "call_b253ea4c6e5944d59f2ffc87fc7fad05",
+              "call_324b708753d64732b5d35105f88d41d0",
+              "call_46f93af844da4e258743ee154191debd",
+              "call_c9f4c438f9f145f49d67bfe8b0d9f307",
+              "call_8a4dd16cefa74728952474442ec7090d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Unifies Cohere parallel-branch input qmaps so attention and gated MLP reuse calibration Hessian accumulation and preprocessing, while retaining separate output-projection statistics."
+  },
+  "evidence": {
+    "call_a9008611ef664582ab000acd7823e036": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "offset": 207,
+        "max_bytes": 3293
+      },
+      "result_sha256": "63575cecf4bf1bf5a6aa83d629af4745be351affecb7b81e7660320058a6208e"
+    },
+    "call_3d48b1f2c59f4ce5a692aec3062d1b22": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "offset": 1133,
+        "max_bytes": 1420
+      },
+      "result_sha256": "9156584418e2114b059c42c27e067ab50a9e0a648940680faf417706dbd9b293"
+    },
+    "call_bda037cd8dfa474e991ce81a31f32715": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "offset": 2553,
+        "max_bytes": 947
+      },
+      "result_sha256": "77cc797bdc5565f44e807a6eb40da9b89b5d5c562035ce59dddd9c4787c35367"
+    },
+    "call_29895b09fc734fa99d465512fc54b73a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "query": "qmap",
+        "limit": 200
+      },
+      "result_sha256": "fbc604b1a4d754e542203d1de4c050be2ca0299ece7d9f7ec0b936df4ca57834"
+    },
+    "call_b24574b047f747b28909491b595abc99": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 8500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "5044db09d6e92ed357d175b598e7e30ac2d25c242da98147ace0a57699e3b0bc"
+    },
+    "call_a536d815f3a4481ea1471eab163f5496": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 7300,
+        "max_bytes": 1500
+      },
+      "result_sha256": "8c25aedccd882b840290f54d79825fa7ec8c4215d81761158944714417ea7b8f"
+    },
+    "call_765d438621e54df28eafbe9ce665e63a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "120ea0ef1dd1039feb5fa9027d3fbfa9d29968d208757e81a642917df2867c58"
+    },
+    "call_b7ccdbf58f244a99abfd1c0e292ebac8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 9500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "25cfcc61a38456afc5b2cb727330651ac4c7d98f08195eeedbf4b24a5562b5a1"
+    },
+    "call_480e24a603fc4f7899d0f19de22ac66a": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "32b1e4c52cf4afd284549bef64124115b39803238a2172f3dda502404ffd79d4",
+      "catalog_only": true
+    },
+    "call_ca96c460106b400b9e61717ac000ed2e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-35B",
+        "revision": "36500dd4d42b63b409803cf220ba1b023d5fda5fcb4d81ef3b6708dd1293c0de",
+        "path": "config.json"
+      },
+      "result_sha256": "b6243b32a11a0486fea3e1d1be955dda0e3d8b98a1060e6e93a593a413c71103"
+    },
+    "call_4d21bd9d15a648f0a25a1de595ef7122": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-8B",
+        "revision": "f80bfe68f01dba0f068111abc911c1f3053bfc08d6a579515d831a93f0b390d3",
+        "path": "config.json"
+      },
+      "result_sha256": "c8e6b4867c6e84b5222ef86b045e6b3a193c039c1a436a1a79657ff58e9d57b9"
+    },
+    "call_1637b9f1ce4c43e8bcbe3ddff892df8b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-32b",
+        "revision": "486da7488c905bf511e4cd4cdfc7c4e939fd156ae21022f18f1b47f5e339307d",
+        "path": "config.json"
+      },
+      "result_sha256": "3f56003d25068c0cd09e3075634d0b7b70ef0daa57ab1e9dd0f82be89c9b2fda"
+    },
+    "call_4311a8001dac444f9810306f3f61dc9a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-8b",
+        "revision": "f0cdb4dc978366148a634945645744b3bdc6280f5f61f5a4d6892285becfe74f",
+        "path": "config.json"
+      },
+      "result_sha256": "51a034482c3ac9ff56bf3fdea856bcc1e8fa1f6fab3c913576407caf008dddde"
+    },
+    "call_50925ad8644b44d184dc6fcc789ab071": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-08-2024",
+        "revision": "5e0338cf217ff8ec27dd5d70bf799f87e58d9194524b41a733ef4a1a6b0f9535",
+        "path": "config.json"
+      },
+      "result_sha256": "96651b8c5733d587b59c596f89170d2787489983d103c4019f9bae1f78595df2"
+    },
+    "call_a7fc16a28de6426eb54a55d0288b5e12": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus",
+        "revision": "ea6af2bd1336d211c5d3002744b3908d3baf6fe3c55ef03f0057f88586345aaa",
+        "path": "config.json"
+      },
+      "result_sha256": "84c4a9e3a76f621bf1fef28723fcd4a73b9c28a42d9a878b0c90e1001dc97774"
+    },
+    "call_b253ea4c6e5944d59f2ffc87fc7fad05": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-08-2024",
+        "revision": "9ccaf7a1a168d85d97c5bfa083f821f674d69c0fb96ab0f68ebff066bd20c689",
+        "path": "config.json"
+      },
+      "result_sha256": "01efa56ec47dad5478f952cc71fc156f9b9497a729b37834f121673be4440e42"
+    },
+    "call_324b708753d64732b5d35105f88d41d0": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-4bit",
+        "revision": "8fe0d0a0fe4e3d0b331690a197be3b0d8ad679e44adfd34d548caf52d1d3c087",
+        "path": "config.json"
+      },
+      "result_sha256": "8932d219ab4e6cbc5ab6d8bf4aef2428f6f2445c65ca8b4e2e6a468cd9adaf7e"
+    },
+    "call_46f93af844da4e258743ee154191debd": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01",
+        "revision": "25bfd60077f17ffb22aaf1aa3aaca00d949f42d81423eef0f9b64687be4fea67",
+        "path": "config.json"
+      },
+      "result_sha256": "0922281383c8eee41c8901ea39088128360fa9d835a75085c89f140060dff0f4"
+    },
+    "call_c9f4c438f9f145f49d67bfe8b0d9f307": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01-4bit",
+        "revision": "23624e8f1164105511e99738152d695f91d2f4bc6eb9574cfe327bde64e03dee",
+        "path": "config.json"
+      },
+      "result_sha256": "8b834529cb8c8de4c42508294fd073f9f6e11a6be9f26e246c1fb8919098ba34"
+    },
+    "call_8a4dd16cefa74728952474442ec7090d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/models/cohere.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "4b199baed30305071a3f6862795bd69ab8c27b49774ab0e59e0c80055ec14dda"
+    },
+    "call_e47224b4194546779c7457a48bedfb2a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d933c6ff4f0bac34418bb9aee384a170c988b885c545fe22c4ef10c59c19df06"
+    },
+    "call_1bd710ad4d3d4a5183a96d3ae85f63da": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c786973cbb4946c390aad62b8208c9729c5b01c8db02232f8bc6bdd708bb405e"
+    },
+    "call_7d53c9113fbe439db6a9f56e7605561a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "69369291f9e246b00a1cec0fd3702e4121458bb2b8e35a3de610f27f5f598b4e"
+    },
+    "call_18dc192bf9e449b6b190e3f4582451e9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3cedc684c96e21df7b14acf8982b9c5bc88495d4aad36b7be06fe3a33c77b13c"
+    },
+    "call_25a43f0e15cc454dad2505863b3565e4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "92b479a98877657d4cbbbe17cb15d613aa35c6923cc06c738e0e52a287c8d71e"
+    },
+    "call_d57a4672f4c843888cc7d3206682eb5a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "query": "finalized",
+        "path": "exllamav3",
+        "limit": 30
+      },
+      "result_sha256": "b508c478ab4a40b3129def4e6e0c092e37332bb0dd91119906eac590c594067b"
+    },
+    "call_e6bb2e845414481485ff1b1fb7f0aa86": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 16000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "697c45299a0e77df129afa638d07a777d91e865c4779722c3ca21f8dcb141b64"
+    },
+    "call_6e96072a6075412aa7c1827841737610": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 14600,
+        "max_bytes": 1500
+      },
+      "result_sha256": "2c16d92858b28f0f7b274b504d96f24db64b718b0b719d4e2312d7bd0feb84fe"
+    },
+    "call_8cfb64257a8040e29ecde00149a9801f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 9500,
+        "max_bytes": 2600
+      },
+      "result_sha256": "ffaefdec3c378654b3fac07bc8f133dcd66d10a1a3f0649bd00a697ff495fc0d"
+    },
+    "call_9320dc91b2a34dcaa52d97a166df5485": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 7700,
+        "max_bytes": 1500
+      },
+      "result_sha256": "83d6438c80ead34e5e043cb921585d990a2a6a9331dc82afedd58c1e54f89809"
+    },
+    "call_a9c3037a7b134ffba8c64ef1d6ab95eb": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "X=[[1,2],[3,4]]\ndef capture(keys):\n d={}\n for key,qmap in keys:\n  if qmap not in d: d[qmap]={'first':key,'H':[[0,0],[0,0]],'count':0}\n  v=d[qmap]\n  if v['first']==key:\n   for i in range(2):\n    for j in range(2): v['H'][i][j]+=sum(r[i]*r[j] for r in X)\n   v['count']+=len(X)\n return d\nold=capture([(k,'attn' if k in 'qkv' else 'mlp') for k in ['q','k','v','gate','up']]); new=capture([(k,'input') for k in ['q','k','v','gate','up']]); print(old,new)\nassert old['attn']['H']==old['mlp']['H']==new['input']['H']; assert new['input']['count']==2\nprint({h:4*h*h//(1024**2) for h in [4096,8192,12288]})"
+        ]
+      },
+      "result_sha256": "dd590e0cc505e5ed363950702b13df70dc3aa714720ecc5e1625a93e54f7adb5"
+    }
+  }
+}

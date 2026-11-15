@@ -1,0 +1,108 @@
+{
+  "defect_id": "exllamav3-gemm-selector-divisibility",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "origin": "reviewer_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Automatic GEMM selection can choose a 256-column tile for a padded width divisible by 128 but not 256, after launch-time divisibility checks were removed.",
+  "trigger": "Direct LinearEXL3 path (32 flattened rows or fewer), padded output width an odd multiple of 128, in an unguarded shape-3 selector branch.",
+  "expected_behavior": "Choose a tile dividing the layer width or reject incompatible dimensions before launching.",
+  "actual_behavior": "The inner routine floors size_n / TILESIZE_N and leaves the last 128 output columns unwritten; fused output Hadamard then processes those uninitialized torch.empty columns.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "paths": [
+        "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh"
+      ],
+      "status": "reviewer_source_supported",
+      "rationale": "Task adds unguarded shape-3 returns and moves divisibility checks into a compatibility query used by the benchmark, not automatic GEMM launch."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000123-001.md",
+      "description": "Source-only reviewer finding, distinct from the teacher Boolean threshold finding."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000129-001.md",
+      "description": "Unguarded 256-column selector returns and unchecked launch persist at129; same defect identity."
+    }
+  ],
+  "fixes": [],
+  "verification": [
+    {
+      "method": "reviewer_source_inspection",
+      "description": "Fable compared parent checks, task selector branches, launch path, inner tile count and Linear padding.",
+      "limits": "No compilation, GPU execution or supported checkpoint demonstration. Reviewer recalled a possible Qwen vocabulary size but did not verify it; no model-specific affected claim is made."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit123-verdict.md",
+      "sha256": "d2c0355fb7bd13790849dff3bb279a5e9c09866ae1e634feab2bfc28ade3e78a"
+    },
+    {
+      "file": "evidence/commit129-verdict.md",
+      "sha256": "d63398c35666f232531115d28d547f0e8b2370e68112ee949ef21e5c1a574f3b"
+    }
+  ],
+  "recorded_at": "2026-11-15T05:09:55.157253+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "5d470a29780927c1c8c874609597823f210ae3b9",
+      "c4867edd0d31ea9fb052668874ae52fad0e91a0f"
+    ],
+    "limits": "Source observations at 123 and 129 only; no descendant range or GPU execution asserted.",
+    "selector_branches_at_123": [
+      "old/Ampere: bits <= 4 and size_n > 2048",
+      "old/Ampere: bits >= 5, size_n <= 4096, size_k > 8192",
+      "Ada: bits <= 4 unless size_n <= 4096 and size_k <= 12288",
+      "Hopper/Blackwell: bits == 8, size_n <= 8192, size_k > 32768"
+    ],
+    "selector_branches_at_129": [
+      "old/Ampere: bits <= 4, unguarded shape-3 return",
+      "old/Ampere: bits > 4, size_n < 4096 and size_k > 8192",
+      "Ada: bits <= 3, unguarded shape-3 return",
+      "Hopper/Blackwell: bits >= 7, size_k > 32768, unguarded shape-3 return"
+    ]
+  },
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "available_at": "2025-05-05T00:54:26+02:00"
+    },
+    {
+      "url": "urn:exdev:reviews:verdicts:commit-000123-001",
+      "source_id": "review:commit-000123-001",
+      "content_sha256": "d2c0355fb7bd13790849dff3bb279a5e9c09866ae1e634feab2bfc28ade3e78a",
+      "available_at": "2026-11-15T04:14:00.626992+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+      "available_at": "2025-05-08T22:44:26+02:00"
+    },
+    {
+      "url": "urn:exdev:reviews:verdicts:commit-000129-001",
+      "source_id": "review:commit-000129-001",
+      "content_sha256": "d63398c35666f232531115d28d547f0e8b2370e68112ee949ef21e5c1a574f3b",
+      "available_at": "2026-11-15T05:09:55.157253+00:00"
+    }
+  ],
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

@@ -57,7 +57,8 @@ class CodexTransport:
                 '--bind',str(state),'/state','--proc','/proc','--dev','/dev',
                 '--tmpfs','/tmp','--tmpfs','/work','--chdir','/work']
             for path in ('/etc/ssl/certs','/etc/resolv.conf','/etc/hosts','/etc/nsswitch.conf',
-                         '/usr/lib/x86_64-linux-gnu','/lib64/ld-linux-x86-64.so.2'):
+                         '/usr/lib/x86_64-linux-gnu','/lib64/ld-linux-x86-64.so.2',
+                         '/usr/lib/aarch64-linux-gnu'):
                 if Path(path).exists():command += ['--ro-bind',path,path]
             command += ['--symlink','usr/lib','/lib','/app/codex','app-server','--stdio','--strict-config']
             self.stderr=tempfile.TemporaryFile()

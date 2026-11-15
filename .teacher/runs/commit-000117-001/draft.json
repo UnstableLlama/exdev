@@ -1,0 +1,136 @@
+{
+  "schema_version": 5,
+  "sha": "04dc55717c499539504b9a3d8454d631de84f7c2",
+  "parent_shas": [
+    "d99acb4dce128b60802c9f02b2b3c26e5a078e8e"
+  ],
+  "cutoff_date": "2025-05-01T05:32:59+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Config.__init__ references undefined expect_arch when formatting an architecture-mismatch assertion, masking the intended diagnostic with NameError.",
+        "basis": "source",
+        "evidence": [
+          "call_753a771dd3cb41ebb2440bca6fa0d1ff",
+          "call_cf22f1a3251542f3a5028783af0d1547"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The replacement uses self.arch_string, the same expected architecture already used by the assertion predicate. Only the failure message changes.",
+        "basis": "source",
+        "evidence": [
+          "call_759115a478584bddbe7e1adab935bfdc"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "An isolated check of the extracted assertion produced NameError before the patch and AssertionError with the actual architecture, config filename and expected architecture afterward. Matching architectures passed both versions.",
+        "basis": "execution",
+        "evidence": [
+          "call_668ac9e2887b4c44b7e737e99f0df113"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d proposes a spelling correction. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure. Their inferred connection here is only the shared config.py filename; neither discussion establishes motivation for this assertion fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_3423991c9dad473581b0481c9e79f8d2",
+          "call_043abbabb3a948498bc3888c06522e76",
+          "call_759115a478584bddbe7e1adab935bfdc"
+        ]
+      }
+    ],
+    "limitations": [
+      "The check executed an extracted assertion and its patched equivalent, not full configuration loading or model initialization."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "config",
+        "title": "Preserving the architecture-mismatch diagnostic",
+        "claims": [
+          {
+            "text": "The constructor reads config.json, requires exactly one architecture, and compares it with self.arch_string before collecting weight files. The patch restores the diagnostic at this early validation boundary without changing accepted architectures.",
+            "basis": "source",
+            "evidence": [
+              "call_753a771dd3cb41ebb2440bca6fa0d1ff",
+              "call_759115a478584bddbe7e1adab935bfdc"
+            ]
+          },
+          {
+            "text": "Config.from_directory independently validates the architecture and selects its registered configuration class before construction. This change therefore repairs the constructor's mismatch path, rather than adding support for unknown architectures.",
+            "basis": "source",
+            "evidence": [
+              "call_753a771dd3cb41ebb2440bca6fa0d1ff"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Fixes architecture-mismatch assertion formatting by replacing undefined expect_arch with self.arch_string."
+  },
+  "evidence": {
+    "call_759115a478584bddbe7e1adab935bfdc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "04dc55717c499539504b9a3d8454d631de84f7c2",
+        "offset": 147,
+        "max_bytes": 694
+      },
+      "result_sha256": "a487cf6c50d96cc8256af2e50f6361a7461864e62a0ab649d8d9fbc4e9c724fa"
+    },
+    "call_753a771dd3cb41ebb2440bca6fa0d1ff": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "b39df005370002561b020bb8715fe0b5ca0c26331cd4541ba548a75db03b0492"
+    },
+    "call_cf22f1a3251542f3a5028783af0d1547": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+        "query": "expect_arch",
+        "limit": 100
+      },
+      "result_sha256": "9a25810e3607255631bfb8dcf46b7bc56dd71649c26d6b90af9ee6d07997b152"
+    },
+    "call_3423991c9dad473581b0481c9e79f8d2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8f4bfb9201c03dc1e7933feefecc730bfc5050b42ecd5350a5aa4dead161afeb"
+    },
+    "call_043abbabb3a948498bc3888c06522e76": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a69b136e83a61ed625f625251d367e70a237807c9ae8e2990e23670d19458701"
+    },
+    "call_668ac9e2887b4c44b7e737e99f0df113": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\ns=Path('exllamav3/models/config.py').read_text(); a=s.index('        assert arch == self.arch_string'); b=s.index('        self.architecture = arch',a); old=s[a:b]; new=old.replace('{expect_arch}', '{self.arch_string}')\nfrom types import SimpleNamespace\nfor label,code in [('parent',old),('patched',new)]:\n for arch in ['Expected','Other']:\n  env={'self':SimpleNamespace(arch_string='Expected',config_filename='/model/config.json'),'arch':arch}\n  try: exec('if True:\\n'+code,env); print(label,arch,'pass')\n  except Exception as e: print(label,arch,type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "9502bb81716d2b9455ef917a332b78a0e3915d2108bb6bcf2482ad020e9e8763"
+    }
+  }
+}

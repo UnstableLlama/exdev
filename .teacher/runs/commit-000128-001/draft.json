@@ -1,0 +1,203 @@
+{
+  "schema_version": 5,
+  "sha": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+  "parent_shas": [
+    "9575f7d8b2afce94122bcf6141a63bfc01f207f2"
+  ],
+  "cutoff_date": "2025-05-07T10:15:29+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Conversion and output compilation retained cached native Safetensors handles across successive module reads. The loader opens multiple FILE handles per source file, so retaining collections also retains those resources.",
+        "basis": "source",
+        "evidence": [
+          "call_7b8de244ee09423b95bf1b302c9ac837",
+          "call_933eeb714bb34bea8a4d91461046c8d6",
+          "call_0498094546444074b5b3a5ccdd87a4af",
+          "call_5f8b44d623154ae58c17f8453601b228"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Release file resources at module boundaries rather than discard the collection: close() clears cached handles but preserves headers and tensor-to-file mappings, allowing later reads to reopen files.",
+        "basis": "source",
+        "evidence": [
+          "call_0498094546444074b5b3a5ccdd87a4af",
+          "call_2be3140ea9e543d8ac27dcb13a68adad",
+          "call_b19622f5119d49d8b137ec72796e28ca"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This should reduce accumulated open-file pressure, at the cost of reopening files shared by successive modules. It does not change quantization calculations or output shard allocation.",
+        "basis": "inference",
+        "evidence": [
+          "call_2be3140ea9e543d8ac27dcb13a68adad",
+          "call_b19622f5119d49d8b137ec72796e28ca",
+          "call_0498094546444074b5b3a5ccdd87a4af"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d reports compilation failing at qtensors_stc.get_tensors with \u201cToo many open files (errno=24).\u201d Its connection to this change is inferred from that exact matching call site and the new adjacent close(); the supplied discussion does not explicitly link the commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_7d0d9ce9b1464f1e8639e49d749a4e68",
+          "call_0db0016c539e4ee59037117267607841",
+          "call_2be3140ea9e543d8ac27dcb13a68adad"
+        ]
+      },
+      {
+        "text": "Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d concerns Cholesky factorization during quantization. Issue #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d concerns extension compilation and was closed without a reported solution. Neither discussion establishes a file-handle failure addressed by this patch.",
+        "basis": "source",
+        "evidence": [
+          "call_7a77b86ef10f415dba5cf4f208110851",
+          "call_1f05be5fc2d940dd828ed7fbedeb7e86"
+        ]
+      }
+    ],
+    "limitations": [
+      "No conversion, native-loader execution, descriptor-count measurement or performance test was run. Successful completion of the reported failing job is unverified.",
+      "The change concerns resource lifetime rather than numerical arithmetic; a standalone scalar computation would not establish native file closure or runtime resource limits."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Release source handles after module reads",
+        "claims": [
+          {
+            "text": "In conversion main(), the new module.config.stc.close() runs after loading each unquantized module or slice and reporting alternate-key clones, before calibration capture and quantization. It therefore also runs for modules without quantization targets.",
+            "basis": "source",
+            "evidence": [
+              "call_b19622f5119d49d8b137ec72796e28ca",
+              "call_7b8de244ee09423b95bf1b302c9ac837"
+            ]
+          },
+          {
+            "text": "In compile_model(), each module's tensors are read from the working qtensors collection, made contiguous and retained in file_dict before the collection is closed. The shard is saved afterward: closing handles does not clear the tensors accumulated for serialization.",
+            "basis": "source",
+            "evidence": [
+              "call_2be3140ea9e543d8ac27dcb13a68adad",
+              "call_933eeb714bb34bea8a4d91461046c8d6",
+              "call_0498094546444074b5b3a5ccdd87a4af"
+            ]
+          },
+          {
+            "text": "The default immediate native loader reads into allocated tensor storage rather than a file-backed mapping. Its close routine calls fclose on every cached native handle and also frees existing pinned staging buffers. The Python loading alternative already scopes each file with a context manager.",
+            "basis": "source",
+            "evidence": [
+              "call_0498094546444074b5b3a5ccdd87a4af",
+              "call_5f8b44d623154ae58c17f8453601b228"
+            ]
+          },
+          {
+            "text": "The additions are normal-path cleanup points, not try/finally guards. They shorten retention between successful module reads without adding exception-path cleanup.",
+            "basis": "source",
+            "evidence": [
+              "call_2be3140ea9e543d8ac27dcb13a68adad",
+              "call_b19622f5119d49d8b137ec72796e28ca"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Closes cached Safetensors handles after each conversion module load and each compilation module read, reducing resource retention while preserving loaded tensors and reusable collection metadata."
+  },
+  "evidence": {
+    "call_2be3140ea9e543d8ac27dcb13a68adad": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "offset": 193,
+        "max_bytes": 680
+      },
+      "result_sha256": "021590112dbbd9f509df5c06751a7d9df5350bee551e2c14af29712aa0e2f143"
+    },
+    "call_b19622f5119d49d8b137ec72796e28ca": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "offset": 873,
+        "max_bytes": 605
+      },
+      "result_sha256": "5dcbbf98fdb8d6a5a9ec9d07c6f66b036dc81cb0157773e9c47540825725b2b6"
+    },
+    "call_0498094546444074b5b3a5ccdd87a4af": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "9d3b589d5177b90239a187ede5aa45dbb08ffce7c494ce9e5a457812e37a216c"
+    },
+    "call_933eeb714bb34bea8a4d91461046c8d6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "90ae2487fad6b508a9435568ef0e1dc052e8fa6eca1afe6246ca95090ca5e639"
+    },
+    "call_7b8de244ee09423b95bf1b302c9ac837": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 0,
+        "max_bytes": 22000
+      },
+      "result_sha256": "a459d7ffa8d563136481f3ff615427b1ebf236e9127f02e3f715be31eaa35a5f"
+    },
+    "call_7d0d9ce9b1464f1e8639e49d749a4e68": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 20000
+      },
+      "result_sha256": "3d026b9dcce98cd379b4d9c9d551493a33e50943e7fcea7f685d0e0e4cbfe583"
+    },
+    "call_0db0016c539e4ee59037117267607841": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 20000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "a7bf1b69f8710566abbe94d45a2bb762f824cb92433e8c1f207ec8dfa4c59f4f"
+    },
+    "call_7a77b86ef10f415dba5cf4f208110851": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d3965ff3d5a00ebd96c8860e7ee0e8068c147fe6e0c392fa2728d69cb275ad2c"
+    },
+    "call_1f05be5fc2d940dd828ed7fbedeb7e86": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ae9e7481990e4f8a64181a73fb0da553e065dbd79af706564e7a3fb3fed88d3a"
+    },
+    "call_5f8b44d623154ae58c17f8453601b228": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "max_bytes": 11000
+      },
+      "result_sha256": "66ff66cbffbf1e5355f9472ee709f356f1c9dc75d45740f82083f9451251cfc7"
+    }
+  }
+}

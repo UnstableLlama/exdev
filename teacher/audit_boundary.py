@@ -2,6 +2,7 @@
 """Administrative end-to-end checks on prepared real historical packets; no model authoring."""
 import hashlib
 import json
+import platform
 from pathlib import Path
 from .runner import Runner
 
@@ -47,7 +48,8 @@ def main():
             checks.append(dict(position=position,tool=name,denial_verified=True))
     report=dict(status='passed',purpose='administrative_boundary_validation',checks=checks,
                 live_model_invoked=False,entries_rewritten=0,training_trace_dry_run=False,
-                runtime='Linux amd64 Bubblewrap; Python stdlib and pinned graph backend; no network; single-process run',
+                python_version=platform.python_version(),machine_architecture=platform.machine(),operating_system=platform.system(),
+                runtime=f'{platform.system()} {platform.machine()} Bubblewrap; Python stdlib and pinned graph backend; no network; single-process run',
                 limitations=['Codex adapter is implemented but no live model authoring has been validated',
                              'No GPU or third-party Python dependency profile',
                              'HF and header tools require curator-approved pinned cache objects',

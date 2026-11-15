@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Trusted export of strict-ancestor graphs; never expose the host timeline to a teacher."""
+from .blob_store import put
 import argparse
 from contextlib import closing
 import hashlib
@@ -17,7 +18,7 @@ def attach_graphs(packet, store):
     graphs = {}
     def blob(data):
         digest = hashlib.sha256(data).hexdigest()
-        (packet/'blobs'/digest).write_bytes(data)
+        put(packet, data)
         return digest
     with closing(sqlite3.connect((store/'timeline.sqlite').as_uri()+'?mode=ro', uri=True)) as db:
         db.row_factory = sqlite3.Row

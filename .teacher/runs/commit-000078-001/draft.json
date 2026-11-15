@@ -1,0 +1,218 @@
+{
+  "schema_version": 5,
+  "sha": "a61801d2785be4721ee948c60c26a41fecd2f261",
+  "parent_shas": [
+    "1f5a43fc72f3c45d6db757c7907d4793ec88f026"
+  ],
+  "cutoff_date": "2025-04-23T21:20:53+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The change attempts to improve Markdown scrollback by reducing the redraw height and taking it from the terminal rather than Rich's console dimensions.",
+        "basis": "source",
+        "evidence": [
+          "call_9f8930b6db994285a6600e2a02fc2f30"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Using terminal rows minus two leaves a two-row margin for redraws. This plausibly avoids rewinding into inaccessible scrollback, but the precise reason for choosing two rows is not documented.",
+        "basis": "inference",
+        "evidence": [
+          "call_9f8930b6db994285a6600e2a02fc2f30",
+          "call_3d94a72f8af8407c9055d5009c249ba8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change affects Markdown answer display through Streamer_rich; basic streaming, full Markdown rendering and accumulated answer text are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_9f8930b6db994285a6600e2a02fc2f30",
+          "call_3d94a72f8af8407c9055d5009c249ba8",
+          "call_159a3bec9f71498bbfbe497e409673b6"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The preceding redraw entry describes the existing height-bounded suffix algorithm and records reasoning-boundary answer loss.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_6b3278d709bb45fd921000d398cd5c43"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension loading failure; issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d reports quantization quality problems. Neither provides terminal-redraw evidence.",
+        "basis": "source",
+        "evidence": [
+          "call_a23adffd07f34339b186e74b50c0715a",
+          "call_651ce75d1e1746c4be341874ce7dfd62"
+        ]
+      }
+    ],
+    "limitations": [
+      "No interactive terminal or Rich execution was performed; successful scrollback correction remains unverified.",
+      "Dimensions remain a construction-time snapshot, so terminal resizing is not accommodated by update.",
+      "The scalar check covers positive redraw heights only and does not model terminal cursor behavior."
+    ],
+    "links": [
+      "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Reserve terminal rows when redrawing Markdown",
+        "claims": [
+          {
+            "text": "MarkdownConsoleStream now stores height = r - 2 from shutil.get_terminal_size(fallback=(80, 24)), rather than unpacking self.console.size. The fallback therefore gives a 22-row redraw budget. The separate two-column reduction for emoji overflow remains unchanged, and the unused self.width assignment disappears.",
+            "basis": "source",
+            "evidence": [
+              "call_9f8930b6db994285a6600e2a02fc2f30",
+              "call_3d94a72f8af8407c9055d5009c249ba8"
+            ]
+          },
+          {
+            "text": "update still renders the entire answer and computes prefix = max(common_prefix, old_count - height, new_count - height). Cursor movement, clearing and printing use the resulting suffixes; the complete new line list is retained. Even a supplied Console now uses the separately queried terminal row budget.",
+            "basis": "source",
+            "evidence": [
+              "call_3d94a72f8af8407c9055d5009c249ba8",
+              "call_9f8930b6db994285a6600e2a02fc2f30"
+            ]
+          },
+          {
+            "text": "A scalar transcription checked 357,216 combinations for the suffix-height bound. With 30 old lines, 31 new lines and no common prefix, changing height from 24 to 22 changes the preserved prefix from 7 to 9 and the old/new suffix lengths from 23/24 to 21/22.",
+            "basis": "execution",
+            "evidence": [
+              "call_22f94c1aa7064e479a253dd387e21381"
+            ]
+          },
+          {
+            "text": "The tradeoff is a smaller redraw region rather than more complete historical correction: changed lines above the selected tail remain unprinted. The margin may help scrolling, but it does not reduce full-answer rendering work.",
+            "basis": "inference",
+            "evidence": [
+              "call_3d94a72f8af8407c9055d5009c249ba8",
+              "call_9f8930b6db994285a6600e2a02fc2f30"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-reasoning-boundary-answer-loss",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously recorded reasoning-boundary answer loss remains unchanged.",
+        "trigger": "Rich reasoning mode receives a chunk containing the closing reasoning tag followed by answer text.",
+        "expected_behavior": "The answer suffix enters the Markdown answer and saved conversation response.",
+        "actual_behavior": "Streamer_rich.stream adds the whole chunk to think_text and calls begin without transferring the answer suffix into all_text. chat.main subsequently saves all_text.strip().",
+        "locations": [
+          {
+            "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+            "path": "examples/chat_console.py",
+            "symbol": "Streamer_rich.stream"
+          }
+        ],
+        "source_evidence": [
+          "call_3d94a72f8af8407c9055d5009c249ba8",
+          "call_159a3bec9f71498bbfbe497e409673b6",
+          "call_9f8930b6db994285a6600e2a02fc2f30"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree .stream( search located the direct chat.main call. Inspection of its streamer selection and response storage, alongside the complete task diff, establishes that this branch is carried over.",
+            "evidence": [
+              "call_84428117392a48b395066960c363a41e",
+              "call_159a3bec9f71498bbfbe497e409673b6",
+              "call_3d94a72f8af8407c9055d5009c249ba8",
+              "call_9f8930b6db994285a6600e2a02fc2f30"
+            ],
+            "limits": "Reach is the inspected Rich reasoning workflow with the specified chunk boundary; dynamic or external callers and runtime reproduction were not established."
+          }
+        ]
+      }
+    ],
+    "summary": "Uses terminal rows minus two as the Markdown redraw budget, attempting to protect scrollback without changing rendering or answer accumulation."
+  },
+  "evidence": {
+    "call_9f8930b6db994285a6600e2a02fc2f30": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "offset": 198,
+        "max_bytes": 567
+      },
+      "result_sha256": "95525ef235cc35d728587c0a7d47813fa512a2ae5f70f9c503b2462c8ae44e62"
+    },
+    "call_3d94a72f8af8407c9055d5009c249ba8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "path": "examples/chat_console.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "34d9dcbaa08bed03c167d72d862f20ca38cb8bb8ba2c44d07500a9c88ba5734f"
+    },
+    "call_6b3278d709bb45fd921000d398cd5c43": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "fc5b39c2bb56be8654db7f4a6a7fd4f56a1db0ca",
+        "max_bytes": 16384
+      },
+      "result_sha256": "76ae4d07c5b607cf9ae10e3b3607dab8fba87838bc436cf834c504267351d5bc"
+    },
+    "call_84428117392a48b395066960c363a41e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "query": ".stream(",
+        "limit": 100
+      },
+      "result_sha256": "b4b429942eaa22373be389625701374a11d4422ec45488db40e5315dd83ec9a0"
+    },
+    "call_159a3bec9f71498bbfbe497e409673b6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "path": "examples/chat.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "3b3c17e0bd653c4d85faf264f7e2e9bee0b2b892eb28a14b7a8478bba814738e"
+    },
+    "call_a23adffd07f34339b186e74b50c0715a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "03ce7a9dc16a7cb3a9bf977851bfb18f1f8c8ee71b526fe11c2639625e0c47bd"
+    },
+    "call_651ce75d1e1746c4be341874ce7dfd62": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fe4ab8ab003e26d013eecfb9a069f5bda8836cc1413219ff8de03ec861a52dc4"
+    },
+    "call_22f94c1aa7064e479a253dd387e21381": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for h in (24,22):\n p=max(0,30-h,31-h)\n print({'height':h,'prefix':p,'old_suffix':30-p,'new_suffix':31-p})\nn=0\nfor r in range(3,51):\n h=r-2\n for a in range(61):\n  for b in range(61):\n   for common in (0,min(a,b)):\n    p=max(common,a-h,b-h)\n    assert max(a-p,b-p)<=h\n    n+=1\nprint('bounded suffix checks',n)"
+        ]
+      },
+      "result_sha256": "346e52c319d26c1fbe2d94d744e043ee976a194344e817ab18c9b4dd966064d3"
+    }
+  }
+}

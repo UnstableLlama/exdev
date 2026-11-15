@@ -1,0 +1,339 @@
+{
+  "schema_version": 5,
+  "sha": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+  "parent_shas": [
+    "f93b0103038c2577abf743a429c45fe448443ff3",
+    "105cafab0e2be1b989f07b820da10f8263b9572e"
+  ],
+  "cutoff_date": "2025-04-25T00:53:21+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "integration",
+    "problem": [
+      {
+        "text": "Relative to the first parent, Linear rounds only output widths and HumanEval has no reka prompt format. The merge incorporates input-width padding and that optional template.",
+        "basis": "source",
+        "evidence": [
+          "call_8748291cbab541d2922b477ae6ade06d",
+          "call_4c6686508f56483abb89ce97d580233b"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Input padding retains the original width and rounds the operational width to a pad_to multiple, default 128. For input-only padding, pad_out copies the original columns into a larger zero-filled matrix; output-only padding retains its row-copy branch.",
+        "basis": "source",
+        "evidence": [
+          "call_8748291cbab541d2922b477ae6ade06d",
+          "call_78e47c24e4584e6798b102bb83ba4359"
+        ]
+      },
+      {
+        "text": "PR #20, \u201cReka Flash 3 vs padding,\u201d plausibly explains these paired changes: it reports Reka quantization dimension mismatches and compares raw/reka HumanEval prompts. This relationship is inferred from those concrete matches, not an explicit PR reference in the merge message.",
+        "basis": "inference",
+        "evidence": [
+          "call_17574189b5ce4d5d907ec2448d83d688",
+          "call_8748291cbab541d2922b477ae6ade06d",
+          "call_4c6686508f56483abb89ce97d580233b"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The padded input width reaches FP16/EXL3 construction, Hessian allocation and weight counts. Neither Linear.forward nor LinearFP16.forward explicitly pads activations, so expanding weights alone does not establish end-to-end shape compatibility.",
+        "basis": "source",
+        "evidence": [
+          "call_78e47c24e4584e6798b102bb83ba4359",
+          "call_76025b02820a4442866780a60d4a78d1",
+          "call_8748291cbab541d2922b477ae6ade06d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "In PR #20, gakada reports the quantization problem and the simultaneous-padding failure. After discussing a two-axis copy alternative, gakada suggests retaining the restriction pending a model needing it, and turboderp agrees. These are participant reports, not independent execution here.",
+        "basis": "source",
+        "evidence": [
+          "call_17574189b5ce4d5d907ec2448d83d688"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns an extension import/environment failure. Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d discusses regularization. Neither report establishes a padding cause.",
+        "basis": "source",
+        "evidence": [
+          "call_9de431bbe87743b487faca4fca333f99",
+          "call_8825209a64e94ef8aaf35b6d6d7a5403"
+        ]
+      },
+      {
+        "text": "The earlier input-padding entry records simultaneous-axis and padding-before-slicing incompatibilities. Inspection of the merge diff and unchanged loading/backend sequence shows both remain present.",
+        "basis": "source",
+        "evidence": [
+          "call_12c3c7b986eb4bb99bc18b98c4dce3eb",
+          "call_8748291cbab541d2922b477ae6ade06d",
+          "call_78e47c24e4584e6798b102bb83ba4359",
+          "call_76025b02820a4442866780a60d4a78d1"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, quantization, HumanEval, PyTorch assignment or CUDA execution was performed. The computation checks integer rounding and modeled slice dimensions only.",
+      "The inspected source establishes 128 as the existing default alignment, not universal sufficiency for every backend. Model-wide activation compatibility and performance remain unmeasured."
+    ],
+    "links": [
+      "b3bd8f614b003d81d8f5f6b56b20a207d901c523"
+    ],
+    "chapters": [
+      {
+        "id": "integration",
+        "title": "Integrate input padding and Reka evaluation prompting",
+        "claims": [
+          {
+            "text": "Ordinary and fused FP16 loading call pad_out for weights and biases. Added zero columns can accommodate an already expanded activation width without adding contributions, at the cost of larger matrices; this is not automatic activation padding.",
+            "basis": "inference",
+            "evidence": [
+              "call_78e47c24e4584e6798b102bb83ba4359",
+              "call_8748291cbab541d2922b477ae6ade06d",
+              "call_76025b02820a4442866780a60d4a78d1"
+            ]
+          },
+          {
+            "text": "A standard-library transcription verified round-up-to-128 invariants for widths 1\u20131024. It also computed the incompatible 130\u00d7130 source versus 130\u00d7256 destination slice when both dimensions require padding.",
+            "basis": "execution",
+            "evidence": [
+              "call_68bd2ffbc69141be895743eeec7607a1"
+            ]
+          },
+          {
+            "text": "The optional -pf reka template requests concise reasoning in comments, places the problem in the human turn and repeats it after an assistant Python-code prefill. The existing selector substitutes both occurrences and retains the four-space completion prefix. Default prompting, sampling and completion extraction are unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_4c6686508f56483abb89ce97d580233b",
+              "call_632bd37218a7402697db6fea04f03cf9"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "simultaneous-padding-restriction",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "The integrated helper supports one-axis padding, not general simultaneous padding; the discussion explicitly accepts retaining this restriction.",
+        "trigger": "Load a 130\u00d7130 FP16 weight with pad_to=128.",
+        "expected_behavior": "General two-axis support would copy into the leading 130\u00d7130 region of a 256\u00d7256 matrix.",
+        "actual_behavior": "The output-padding branch instead selects a 130\u00d7256 destination for the 130\u00d7130 source, skipping the input-padding branch.",
+        "locations": [
+          {
+            "commit": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.pad_out"
+          }
+        ],
+        "source_evidence": [
+          "call_8748291cbab541d2922b477ae6ade06d",
+          "call_17574189b5ce4d5d907ec2448d83d688"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent searches locate calls in ordinary and fused load_fp16 branches; Linear.load invokes load_fp16 after EXL3 lookup. Reach is conditional on both dimensions needing padding.",
+            "evidence": [
+              "call_ca1ab9b26e23429e9f94b5045c96c005",
+              "call_afbe37e3d73a467b9f92500251c82baa",
+              "call_78e47c24e4584e6798b102bb83ba4359"
+            ],
+            "limits": "No affected model load was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed source and destination slice shapes.",
+            "evidence": [
+              "call_68bd2ffbc69141be895743eeec7607a1"
+            ],
+            "limits": "Does not execute tensor assignment or establish its exact exception."
+          }
+        ]
+      },
+      {
+        "id": "padding-before-slicing",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited ordinary-loader ordering pads a full weight before the backend can select a requested feature slice.",
+        "trigger": "Request 130 outputs and 64 inputs from a full 512\u00d764 weight, with full_out_features=512 and first_out_feature=0.",
+        "expected_behavior": "Select the requested feature region before padding the local matrix.",
+        "actual_behavior": "pad_out attempts to copy the full 512\u00d764 source into a 256\u00d7128 destination before LinearFP16 performs slicing.",
+        "locations": [
+          {
+            "commit": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load_fp16"
+          }
+        ],
+        "source_evidence": [
+          "call_78e47c24e4584e6798b102bb83ba4359",
+          "call_8748291cbab541d2922b477ae6ade06d",
+          "call_76025b02820a4442866780a60d4a78d1"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected loading order and backend slicing. Whole-parent search finds Linear.load as the direct load_fp16 caller.",
+            "evidence": [
+              "call_afbe37e3d73a467b9f92500251c82baa",
+              "call_78e47c24e4584e6798b102bb83ba4359",
+              "call_76025b02820a4442866780a60d4a78d1"
+            ],
+            "limits": "Conditional on an explicit sliced request; no existing model construction with this request was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the full source and padded destination slice dimensions.",
+            "evidence": [
+              "call_68bd2ffbc69141be895743eeec7607a1"
+            ],
+            "limits": "Shape arithmetic only, not repository execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Integrates input-only linear padding and an optional Reka HumanEval prompt, retaining the one-axis restriction and padding-before-slicing incompatibility."
+  },
+  "evidence": {
+    "call_4c6686508f56483abb89ce97d580233b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+        "offset": 219,
+        "max_bytes": 2158
+      },
+      "result_sha256": "9eff3e33a4d956cc4ac0adca4df253a8b422f0acada423946c268797a5fbc208"
+    },
+    "call_8748291cbab541d2922b477ae6ade06d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+        "offset": 813,
+        "max_bytes": 1564
+      },
+      "result_sha256": "f3e11e56a09d093242c27e988b9c1b87475fc5ee804f69bc751cfab164737d98"
+    },
+    "call_78e47c24e4584e6798b102bb83ba4359": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f93b0103038c2577abf743a429c45fe448443ff3",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "4da55e809adc736e4c0af6c550d0902b47811d985e2e8267b386ea952ed089a5"
+    },
+    "call_632bd37218a7402697db6fea04f03cf9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f93b0103038c2577abf743a429c45fe448443ff3",
+        "path": "eval/humaneval.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "a7111c0c89dfba0bf1b9796b6935b09bf33da104132cd3216ece6c984751d508"
+    },
+    "call_12c3c7b986eb4bb99bc18b98c4dce3eb": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1db57a58ac9338fc68cd64d9f2ffaba25ec78b70f5162fbd32a41c0ad94314c4"
+    },
+    "call_ca1ab9b26e23429e9f94b5045c96c005": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f93b0103038c2577abf743a429c45fe448443ff3",
+        "query": "pad_out",
+        "limit": 100
+      },
+      "result_sha256": "97ba65b9afe7ea6ce432b7e694f8365d5f126e25727ce459279c72b1378cf87f"
+    },
+    "call_afbe37e3d73a467b9f92500251c82baa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f93b0103038c2577abf743a429c45fe448443ff3",
+        "query": "load_fp16",
+        "limit": 100
+      },
+      "result_sha256": "5d03997e18de30b76446edf8b2641e0cea45be4e3b20716316708d77ab95fbc0"
+    },
+    "call_e1bbf029688f4015a7c12a91d3290727": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f93b0103038c2577abf743a429c45fe448443ff3",
+        "path": "exllamav3/modules/quant/linear_fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_fff7436187674b078d6d271763fe5011": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "f93b0103038c2577abf743a429c45fe448443ff3",
+        "path": "exllamav3/modules/quant"
+      },
+      "result_sha256": "d196d6ab228880b6c60ecc6e1fe154cb3624b11bea698b37391dd3d2bca669e7"
+    },
+    "call_76025b02820a4442866780a60d4a78d1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f93b0103038c2577abf743a429c45fe448443ff3",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "dfc7432bc747afe91668d03ce09fd8c08fb03693456b09e274724d710fdca790"
+    },
+    "call_9de431bbe87743b487faca4fca333f99": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "44a57554b89bc28c6ae22252985328eff56ec73cf45ee8e7de869dcbf1dc34b8"
+    },
+    "call_8825209a64e94ef8aaf35b6d6d7a5403": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "4031c1c8d06bbd0d3db97e6453f14421c63d53dd6689ddcb5922edf9b84f986e"
+    },
+    "call_17574189b5ce4d5d907ec2448d83d688": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/20",
+        "max_bytes": 16000
+      },
+      "result_sha256": "057121df50687983e6cb1a328b072050bd3ac75a48ca0e8d707ce2a39aa946c4"
+    },
+    "call_e6c0634047af4e69b0fe86d0859d6d4d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+        "max_bytes": 3000
+      },
+      "result_sha256": "acb04ae4cfd5feb95156320542fd8b574b2cc8e35dac7d9b640893c72104a329"
+    },
+    "call_68bd2ffbc69141be895743eeec7607a1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nr=lambda n:(n+127)//128*128\nassert all(r(n)%128==0 and n<=r(n)<n+128 for n in range(1,1025))\nprint(json.dumps({'rounding_checked':[1,1024],'input_only':{'source':[128,130],'destination':[128,r(130)] ,'copy':[128,130]},'both_axes':{'source':[130,130],'destination_slice':[130,r(130)]},'sliced_load':{'source':[512,64],'destination_slice':[min(512,r(130)),r(64)]}}))"
+        ]
+      },
+      "result_sha256": "16632aebd90f9b0f8de9824b84fb28158f3a75ab7544fe38a73b77ecdd4a6a8b"
+    }
+  }
+}

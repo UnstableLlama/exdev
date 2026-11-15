@@ -81,7 +81,10 @@ class AncestorContextTests(unittest.TestCase):
     def test_tampered_packet_context_blob_is_rejected_before_session(self):
         run,source=self.run_fixture();approve_run(run,source,'reviewer','note');attach_entries(self.packet,[run])
         manifest=json.loads((self.packet/'manifest.json').read_text())
-        (self.packet/'blobs'/manifest['ancestor_entries'][0]['blob']).write_text('corrupt')
+        # Replace the read-only link to simulate corruption without altering the shared store.
+        target = self.packet/'blobs'/manifest['ancestor_entries'][0]['blob']
+        target.unlink()
+        target.write_text('corrupt')
         with self.assertRaises(ValueError):FreshSession(self.packet)
 
     def test_approved_context_can_support_claim_but_not_execution(self):

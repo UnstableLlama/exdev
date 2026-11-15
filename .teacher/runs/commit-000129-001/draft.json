@@ -1,0 +1,588 @@
+{
+  "schema_version": 5,
+  "sha": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+  "parent_shas": [
+    "4710c012a51fcadbee12be0f3fd6cf64ade2a60b"
+  ],
+  "cutoff_date": "2025-05-08T22:44:26+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "The change targets dequantization instruction overhead and GEMM scheduling through explicit LOP3 instructions, different bit extraction, deeper fragment buffering and revised device-specific shape selection.",
+        "basis": "source",
+        "evidence": [
+          "call_798ae2b2e0064ea59220b9b7e021deaf",
+          "call_e48b3f17507148ef9932b736f5b033d0",
+          "call_ebfc66cc953a4feea4e142006eb8749a",
+          "call_1e7cfa879bb4448caddd20d1ca66e744"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "These edits seek better instruction scheduling rather than a new quantization format: the multiplier, increment, masks and four tile geometries remain unchanged. More fragment buffers trade register storage for scheduling flexibility; their actual performance benefit is unmeasured.",
+        "basis": "inference",
+        "evidence": [
+          "call_798ae2b2e0064ea59220b9b7e021deaf",
+          "call_ebfc66cc953a4feea4e142006eb8749a",
+          "call_351eb755aebc45dda0cde5ae0b5fe241"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The patch also presents suspected correctness and build obstacles: scalar codebook decoding applies the mask/XOR transformation twice, and all eight compilation units include a header absent from the parent tree and not added by the change.",
+        "basis": "source",
+        "evidence": [
+          "call_798ae2b2e0064ea59220b9b7e021deaf",
+          "call_72a6a55a3c1e4b9793061ab2d65b5c54",
+          "call_2dacf31006b844eba57f0e5e642da301",
+          "call_36510c563c5d4681bcd2b230664b701c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier cooperative-GEMM entry records a Boolean-versus-dimension threshold defect in select_gemm_shape.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_54beb44e23614218bded6ae654382131"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d was opened by louiehelm and proposes different codebook parameters. Its discussion separately proposes the same LOP3 mask/XOR instruction used here; turboderp discusses unpacking overhead and kernel refactoring. The task retains the original multiplier and increment.",
+        "basis": "source",
+        "evidence": [
+          "call_8cc35a196ad444ce8e6b14ce95918374",
+          "call_4ee3d0ad8a904596b94eca74ad29d21c",
+          "call_798ae2b2e0064ea59220b9b7e021deaf"
+        ]
+      },
+      {
+        "text": "The matching LOP3 instruction and constants make PR #26 relevant optimization context, but do not establish an explicit upstream link or adoption of its parameter proposal. Its reported speedups are not measurements of this commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_8cc35a196ad444ce8e6b14ce95918374",
+          "call_798ae2b2e0064ea59220b9b7e021deaf"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, GPU execution, assembly inspection or timing benchmark was performed.",
+      "Scalar checks model unsigned 32-bit arithmetic and binary16 rounding with standard-library Python; they do not execute PTX, tensor cores or concurrent memory operations.",
+      "The precise empirical rationale for the device-specific selection thresholds is not established by the inspected sources.",
+      "Caller reach is based on whole-parent literal searches and inspected native call sites; dynamic and external callers were not enumerated."
+    ],
+    "links": [
+      "5d470a29780927c1c8c874609597823f210ae3b9"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Dequantization and GEMM scheduling optimizations",
+        "claims": [
+          {
+            "text": "The existing outer kernel optionally transforms A into A_had, synchronizes the cooperative grid, executes GEMM in 16-row chunks, then optionally transforms C in place. The selected inner kernel asynchronously stages A and packed B through shared memory, decodes B into register fragments, performs tensor-core multiplication and reduces partial outputs using locks. This data flow is retained.",
+            "basis": "source",
+            "evidence": [
+              "call_f24219eee245461d9c9f7b22b401456d",
+              "call_351eb755aebc45dda0cde5ae0b5fe241",
+              "call_a31f42217ddb4790a2426e2ccb28d3d5"
+            ]
+          },
+          {
+            "text": "Shape tuples encode M, K, N, shared stages and fragment stages. Shape 1 changes from one to two fragment stages; shapes 2\u20134 change from two to three. Their (K,N) tiles remain (16,128), (32,128), (32,256), (16,512). The added four-fragment loop cycles load-next/multiply-current across four buffers, but none of the registered shapes selects it.",
+            "basis": "source",
+            "evidence": [
+              "call_ebfc66cc953a4feea4e142006eb8749a",
+              "call_a31f42217ddb4790a2426e2ccb28d3d5",
+              "call_351eb755aebc45dda0cde5ae0b5fe241"
+            ]
+          },
+          {
+            "text": "All eight bitrate-specific compilation units now use one common instantiation macro for both FP16 and FP32 outputs. The macro still registers only four GEMM kernels, not GEMV kernels. Shape count and block dimensions become explicit metadata; the listed 256,512,512,256 threads match the previous 256*K/16 calculation.",
+            "basis": "source",
+            "evidence": [
+              "call_2dacf31006b844eba57f0e5e642da301",
+              "call_5684dba9a42d459dbeb48c85da604fc3",
+              "call_e6ec6c5c924f4d5a9b17039422b20f96",
+              "call_8fd1adc7c0b746b9a95bd6325cce1e3a",
+              "call_d5354cbdfdb946a09e28a0f74f761fef",
+              "call_dd61403a0bbe4b7da185ec71011500d8",
+              "call_6d8534cbece24c7cad35951c8d6b30bb",
+              "call_36510c563c5d4681bcd2b230664b701c",
+              "call_ebfc66cc953a4feea4e142006eb8749a"
+            ]
+          },
+          {
+            "text": "For OLD/Ampere at more than four bits, the narrow-width branch now excludes n=4096, and shape 4 requires 512-column divisibility, k*n>4096\u00b2 and at most six bits. Ada moves four-bit weights out of its low-bitrate branch and makes that branch's 4096 boundary strict. Hopper/Blackwell group seven-bit weights with eight-bit weights, remove automatic shape-1 selection and allow wider tiles at lower bitrates.",
+            "basis": "source",
+            "evidence": [
+              "call_1e7cfa879bb4448caddd20d1ca66e744",
+              "call_b31697eb4e6b4a94a3b6e1afac95a55f"
+            ]
+          },
+          {
+            "text": "The selected callees retain tile divisibility requirements, a 90-KiB shared-memory ceiling and cooperative grid synchronization. Width divisibility gates correspond to the 256- and 512-column tiles. These constraints explain compatibility, not why a particular compatible shape is fastest. Unsupported bitrate switches now explicitly raise an error.",
+            "basis": "source",
+            "evidence": [
+              "call_351eb755aebc45dda0cde5ae0b5fe241",
+              "call_f24219eee245461d9c9f7b22b401456d",
+              "call_b31697eb4e6b4a94a3b6e1afac95a55f",
+              "call_1e7cfa879bb4448caddd20d1ca66e744"
+            ]
+          },
+          {
+            "text": "fshift replaces conditional funnel shifting with a 64-bit concatenation, a in the high word and b in the low word, followed by a right shift and truncation. The scalar comparison agreed for 192 representative word/shift combinations spanning shifts 0\u201363. This checks arithmetic equivalence, not compiler lowering or speed.",
+            "basis": "execution",
+            "evidence": [
+              "call_e48b3f17507148ef9932b736f5b033d0",
+              "call_6c3dd0e5cc0b4fa1bf74522146e9e376",
+              "call_5d2d7372fa3c4965af8dd95f082476e2"
+            ]
+          },
+          {
+            "text": "The paired decoder replaces separate AND/XOR operations with explicit LOP3. The scalar decoder retains a C++ AND/XOR before the new instruction. Python confirmed the binary masks equal 0x8FFF8FFF and 0x3B603B60, and the truth table for (a&b)^c is 0x6A under the modeled operand indexing.",
+            "basis": "execution",
+            "evidence": [
+              "call_798ae2b2e0064ea59220b9b7e021deaf",
+              "call_5d2d7372fa3c4965af8dd95f082476e2"
+            ]
+          },
+          {
+            "text": "The benchmark changes K from one to eight bits per weight, removes m=17 and m=32, and enables cuda:2 and cuda:3 alongside cuda:1. It still times forced compatible shapes and queries automatic selection, using synthetic tensors explicitly not intended for correctness testing. These edits supply no benchmark results. The Hadamard helper also gains an include guard.",
+            "basis": "source",
+            "evidence": [
+              "call_94aecad38804407a898c5912d4eb8457",
+              "call_34808e6db0874dbaaa4480eedee1863f",
+              "call_4358dfe7408d4f5c96db57b7fb2f668e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "scalar-codebook-double-transform",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "decode_3inst applies the same mask/XOR transformation twice, unlike decode_3inst_2.",
+        "trigger": "A scalar decoder call receives a codebook state, including state zero.",
+        "expected_behavior": "Scalar and paired decoders should preserve the original codebook and agree for the same state.",
+        "actual_behavior": "The scalar path performs C++ (x&M)^C and then the corresponding LOP3 again. Scalar transcription differs for 65,502 of 65,536 states; state zero changes from 0.76806640625 to 1.07421875. Inspected callers reach quantization costs, quantized tile output, standalone decode and distribution diagnostics through decode_pcb wrappers. GEMM fragment unpacking uses the singly transformed paired decoder, creating a cross-path mismatch.",
+        "locations": [
+          {
+            "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+            "path": "exllamav3/exllamav3_ext/quant/codebook.cuh",
+            "symbol": "decode_3inst"
+          }
+        ],
+        "source_evidence": [
+          "call_798ae2b2e0064ea59220b9b7e021deaf",
+          "call_b29a7180935e4ca18214a0021f5f5cdb",
+          "call_ee403b4e4a9e4862be3b13fe3d771d95",
+          "call_e3180ff00444473cbaa39b6ddae33bfa",
+          "call_36b1ac7045864e9b92152f1390bca0d0",
+          "call_6c3dd0e5cc0b4fa1bf74522146e9e376"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated all 16-bit states with modulo-2^32 multiply/add, single versus repeated mask/XOR, binary16 reinterpretation and rounded addition.",
+            "evidence": [
+              "call_5d2d7372fa3c4965af8dd95f082476e2"
+            ],
+            "limits": "Python arithmetic model; no compiled decoder or GPU execution."
+          }
+        ]
+      },
+      {
+        "id": "missing-gemv-header",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The eight compilation units introduce an include for an unavailable GEMV header.",
+        "trigger": "Compiling any changed exl3_comp_unit_1.cu through exl3_comp_unit_8.cu from the supplied repository contents.",
+        "expected_behavior": "The relative include ../exl3_gemv_kernel.cuh should resolve to a supplied header.",
+        "actual_behavior": "The parent quant directory has no such header, and the complete task diff adds none. Compilation is therefore expected to fail at include resolution unless an unprovided file supplies it; no GEMV implementation is registered by the new macro.",
+        "locations": [
+          {
+            "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+            "path": "exllamav3/exllamav3_ext/quant/comp_units/exl3_comp_unit_1.cu",
+            "symbol": "../exl3_gemv_kernel.cuh"
+          }
+        ],
+        "source_evidence": [
+          "call_72a6a55a3c1e4b9793061ab2d65b5c54",
+          "call_2dacf31006b844eba57f0e5e642da301",
+          "call_5684dba9a42d459dbeb48c85da604fc3",
+          "call_e6ec6c5c924f4d5a9b17039422b20f96",
+          "call_8fd1adc7c0b746b9a95bd6325cce1e3a",
+          "call_d5354cbdfdb946a09e28a0f74f761fef",
+          "call_dd61403a0bbe4b7da185ec71011500d8",
+          "call_6d8534cbece24c7cad35951c8d6b30bb",
+          "call_36510c563c5d4681bcd2b230664b701c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared parent directory contents with every task diff section.",
+            "evidence": [
+              "call_72a6a55a3c1e4b9793061ab2d65b5c54",
+              "call_ebfc66cc953a4feea4e142006eb8749a"
+            ],
+            "limits": "No build was attempted; externally supplied files are unestablished."
+          }
+        ]
+      },
+      {
+        "id": "inherited-boolean-threshold",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously recorded Boolean threshold defect persists, while removal of the preceding shape-1 branch expands its reach.",
+        "trigger": "Automatic Hopper/Blackwell selection with bits<=6 and n<=4096, for example bits=3, k=16384, n=4096.",
+        "expected_behavior": "A dimensional threshold should be capable of distinguishing dimensions; the intended replacement condition is unestablished.",
+        "actual_behavior": "(size_k && bits >= 3) is Boolean and cannot exceed 8192, so this branch always returns shape 2. select_exl3_gemm_kernel calls it for nonpositive forced indices, and exl3_gemm invokes that dispatcher. Positive forced indices bypass the condition. The benchmark's automatic query is a concrete inspected caller, although its new eight-bit default bypasses this branch.",
+        "locations": [
+          {
+            "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_gemm_shape"
+          }
+        ],
+        "source_evidence": [
+          "call_1e7cfa879bb4448caddd20d1ca66e744",
+          "call_b31697eb4e6b4a94a3b6e1afac95a55f",
+          "call_57e8e26eb5f44e5f9fe9d2df7fcabb2c",
+          "call_94191cc0fb404f2a950122f2af189016",
+          "call_a0d4b898153e40718246c84ee38b0c02",
+          "call_34808e6db0874dbaaa4480eedee1863f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the retained expression, changed preceding branches and native dispatcher callers.",
+            "evidence": [
+              "call_1e7cfa879bb4448caddd20d1ca66e744",
+              "call_a0d4b898153e40718246c84ee38b0c02"
+            ],
+            "limits": "No performance consequence measured."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the Boolean comparison for three representative k values; all returned false.",
+            "evidence": [
+              "call_5d2d7372fa3c4965af8dd95f082476e2"
+            ],
+            "limits": "Expression model, not repository execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Retunes GEMM dispatch and fragment buffering and introduces explicit decoder instructions. Performance remains unmeasured; inspection identifies a scalar decoder mismatch, missing GEMV header and retained selector defect."
+  },
+  "evidence": {
+    "call_798ae2b2e0064ea59220b9b7e021deaf": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 159,
+        "max_bytes": 22016
+      },
+      "result_sha256": "3bf6aa014222eebbc6fa112a9b8c98414f9f1dee602a3b11d99e4b802d78631f"
+    },
+    "call_2dacf31006b844eba57f0e5e642da301": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 1932,
+        "max_bytes": 1227
+      },
+      "result_sha256": "e7bd094898030dcd4c8e83629073893f04149431856ee690217864482cee3a34"
+    },
+    "call_5684dba9a42d459dbeb48c85da604fc3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 3159,
+        "max_bytes": 1227
+      },
+      "result_sha256": "bdee4ca720deb24f2b31d13ee542a1fdb72116615a74091f89a6be08815bc7f8"
+    },
+    "call_e6ec6c5c924f4d5a9b17039422b20f96": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 4386,
+        "max_bytes": 1227
+      },
+      "result_sha256": "058acaf55291c46650ecac794e9655666991f7732d54df5f2337fde9d69f2794"
+    },
+    "call_8fd1adc7c0b746b9a95bd6325cce1e3a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 5613,
+        "max_bytes": 1227
+      },
+      "result_sha256": "8da7100bf463435cdc61f031c76d3b6f8608109128fc2928af9a7124e9ff77c7"
+    },
+    "call_d5354cbdfdb946a09e28a0f74f761fef": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 6840,
+        "max_bytes": 1227
+      },
+      "result_sha256": "ce416fd50245abacecc88e88f190a17ed6b6fb3775be3fb33eccc056e0917b48"
+    },
+    "call_dd61403a0bbe4b7da185ec71011500d8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 8067,
+        "max_bytes": 1223
+      },
+      "result_sha256": "d1d2b6df7fd7944ecf3055aa5d3ce3b34fcbef6e85712f493bbd20d518e3106e"
+    },
+    "call_6d8534cbece24c7cad35951c8d6b30bb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 9290,
+        "max_bytes": 1223
+      },
+      "result_sha256": "9d102309163e361e42badbf8358f38c9b460ef55de5ee9b62524b56c52db5179"
+    },
+    "call_36510c563c5d4681bcd2b230664b701c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 10513,
+        "max_bytes": 1223
+      },
+      "result_sha256": "1ca7224d725e013d3503aa61bca50b8141e1772b07b2bbbfb548cd4a989a2ba8"
+    },
+    "call_e48b3f17507148ef9932b736f5b033d0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 11736,
+        "max_bytes": 925
+      },
+      "result_sha256": "3cd3d35b5a4610d389f8cad0c937c915b6c11789e48bd0fa75654f0f45823a3d"
+    },
+    "call_a31f42217ddb4790a2426e2ccb28d3d5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 12661,
+        "max_bytes": 3234
+      },
+      "result_sha256": "eb8bedc0daef070a6001dc387805d755361010f416fb71d7153ccff6e26ddec2"
+    },
+    "call_1e7cfa879bb4448caddd20d1ca66e744": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 15895,
+        "max_bytes": 3636
+      },
+      "result_sha256": "9cf49af7505ec2d378aa86ffc5c90d1a80c9ba821169b21335e7220d1856379c"
+    },
+    "call_ebfc66cc953a4feea4e142006eb8749a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 19531,
+        "max_bytes": 1533
+      },
+      "result_sha256": "253dbc440a866c983b422f7e859ffea479a9c6efc20fd1b881f364b5f86fc6c9"
+    },
+    "call_4358dfe7408d4f5c96db57b7fb2f668e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 21064,
+        "max_bytes": 446
+      },
+      "result_sha256": "deff8a41ab191968aab32e2e28930cd8f8db9410f5639e0b53cea5bffdba23a8"
+    },
+    "call_94aecad38804407a898c5912d4eb8457": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "offset": 21510,
+        "max_bytes": 665
+      },
+      "result_sha256": "6495bf8fb6967fdb6469cff1a934050e37e2bbe54a7026d018b0f60ba0a72a1f"
+    },
+    "call_f24219eee245461d9c9f7b22b401456d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "max_bytes": 24000
+      },
+      "result_sha256": "f3887fee1ee68219757fb14c5116048f28ee0499f7be1517d6ac83baab89411f"
+    },
+    "call_351eb755aebc45dda0cde5ae0b5fe241": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh",
+        "max_bytes": 33000
+      },
+      "result_sha256": "259320ddfb2dd75f5ebd5db8d7fd644c4d5e21b54d9a4d7a4259c85dabf2ddcf"
+    },
+    "call_b29a7180935e4ca18214a0021f5f5cdb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "query": "decode_3inst",
+        "limit": 100
+      },
+      "result_sha256": "6abfc7775a72cfe5743e71221d4df5573b1acfecb4da51ed802484975afd83ca"
+    },
+    "call_e3180ff00444473cbaa39b6ddae33bfa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/codebook.cuh",
+        "max_bytes": 10000
+      },
+      "result_sha256": "29ab35b5f45b3e037985a90c4ba7160f2b13bbaacd56686e0ed7d69c77b22499"
+    },
+    "call_6c3dd0e5cc0b4fa1bf74522146e9e376": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_dq.cuh",
+        "max_bytes": 16000
+      },
+      "result_sha256": "4f17a3ff262b062a64dee13b9d74673ea222678cf00771fc4ebb750aa1a83dd8"
+    },
+    "call_54beb44e23614218bded6ae654382131": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3aa5d68c832354a9a33eb4f7c4f5ecc80c79b8f944f6dfee62b3b08581859d37"
+    },
+    "call_b31697eb4e6b4a94a3b6e1afac95a55f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "max_bytes": 12000
+      },
+      "result_sha256": "665a1f12562039ebc99b376c19e28d8b1f04b6d29286d673aeaf11a8b09fbf9a"
+    },
+    "call_57e8e26eb5f44e5f9fe9d2df7fcabb2c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "query": "select_gemm_shape",
+        "limit": 100
+      },
+      "result_sha256": "3951879ecd54cc583dd1041c72f4f2980be137adbb54780c07bda50d9dc0164e"
+    },
+    "call_94191cc0fb404f2a950122f2af189016": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "query": "select_exl3_gemm_kernel",
+        "limit": 100
+      },
+      "result_sha256": "ef80e22191dac31caa66900b51eb3bb417c56a2cc99326670fe209ca00817509"
+    },
+    "call_a0d4b898153e40718246c84ee38b0c02": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 12000
+      },
+      "result_sha256": "ebf2f0959001094b3dbea7abc84762092d21baec19acafb462453b28d609b497"
+    },
+    "call_ee403b4e4a9e4862be3b13fe3d771d95": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "query": "decode_pcb",
+        "limit": 100
+      },
+      "result_sha256": "0fec9bb89999f7f364c6c394aafa234c04316085b4e76b1ff4bfb95b122964ee"
+    },
+    "call_36b1ac7045864e9b92152f1390bca0d0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/quantize.cu",
+        "max_bytes": 22000
+      },
+      "result_sha256": "9eaccc52aeebdc775edfc1313a6f506c10403e250eef1bbcb7f2160b04c01292"
+    },
+    "call_f14e4bd5e2854e8d98f78e8d13f8c495": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemv_kernel.cuh",
+        "max_bytes": 10000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_72a6a55a3c1e4b9793061ab2d65b5c54": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "exllamav3/exllamav3_ext/quant",
+        "limit": 100
+      },
+      "result_sha256": "e470328434c9fd61c958ab1b993bc5c9e78d3a8c94392b7780bbc87d486e087f"
+    },
+    "call_34808e6db0874dbaaa4480eedee1863f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4710c012a51fcadbee12be0f3fd6cf64ade2a60b",
+        "path": "science/qgemm_benchmark.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "d2c15615282f35453b1e5a5ff667732744b017ccf4f24744d98f6bfae2e07e69"
+    },
+    "call_5d2d7372fa3c4965af8dd95f082476e2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct\nM=0x8fff8fff; C=0x3b603b60\nf=lambda x:(x&M)^C\nh=lambda x:struct.unpack('<e',struct.pack('<H',x))[0]\nd=lambda x:struct.unpack('<e',struct.pack('<e',h(x&65535)+h(x>>16)))[0]\nmis=0\nfor i in range(65536):\n x=(i*89226354+64248484)&0xffffffff\n mis+=d(f(x))!=d(f(f(x)))\nx=64248484\nprint('mask constants',hex(int('10001111111111111000111111111111',2)),hex(int('00111011011000000011101101100000',2)))\nprint('double versus single transform differing decoded states',mis,'of',65536)\nprint('state 0: old/paired',d(f(x)),'new scalar',d(f(f(x))))\nprint('lut for (a&b)^c',hex(sum((((a&b)^c)<<((a<<2)|(b<<1)|c)) for a in range(2) for b in range(2) for c in range(2))))\npairs=[(0,0),(0xffffffff,0xffffffff),(0x12345678,0xabcdef01)]\nfor a,b in pairs:\n for s in range(64):\n  old=(((b>>s)|(a<<(32-s)))&0xffffffff) if s<32 else a>>(s-32)\n  assert old==((((a<<32)|b)>>s)&0xffffffff)\nprint('shift identities: 192 cases passed; 0..63 only')\nprint('boolean threshold',[(k,int(bool(k and 3>=3))>8192) for k in [4096,16384,32768]])\nprint('block dimensions',[256*k//16 for k in [16,32,32,16]])"
+        ]
+      },
+      "result_sha256": "4742f5c64bf307c5a66f7cec1a701e8ed71d7781a9c752cd3c8ec339f87c3218"
+    },
+    "call_8cc35a196ad444ce8e6b14ce95918374": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "24dedd6322daf6575a31fb696b0aa6c3b8ece85554b655d4ce7fc2b1cb050da8"
+    },
+    "call_4ee3d0ad8a904596b94eca74ad29d21c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16000,
+        "max_bytes": 32000
+      },
+      "result_sha256": "0c57b038027a77661204285a033e4756561fc75d5842ea13e05ccfe5891d73b1"
+    }
+  }
+}

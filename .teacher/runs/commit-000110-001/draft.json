@@ -1,0 +1,511 @@
+{
+  "schema_version": 5,
+  "sha": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+  "parent_shas": [
+    "f97c5ce619feb3aa9f4ceb568c9e350d166df866"
+  ],
+  "cutoff_date": "2025-04-29T22:37:14+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The parent registry does not recognize Qwen3ForCausalLM, so Config.from_directory rejects that architecture before model construction.",
+        "basis": "source",
+        "evidence": [
+          "call_e4ac242afd14444291820d6f2e843515",
+          "call_dc8a9a7252df4999a767e37a9134390c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change adds a dedicated Qwen3 configuration and model builder, reusing existing transformer modules while supplying Q/K normalization and independently configured attention-head dimensions.",
+        "basis": "source",
+        "evidence": [
+          "call_719b4343aa5d495cac49eee49ce9abf9",
+          "call_f3e01fd7da824c7c9c084bfdb500ac00"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Registry dispatch now maps Qwen3ForCausalLM to Qwen3Config and Qwen3Model. No attention kernel or existing architecture mapping is changed.",
+        "basis": "source",
+        "evidence": [
+          "call_f683c92addb041809ab86cf7ebc770ec",
+          "call_e4ac242afd14444291820d6f2e843515",
+          "call_719b4343aa5d495cac49eee49ce9abf9"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, requests automatic or per-request scaling. Its connection to this change is inferred from Qwen3 and RoPE configuration, not an explicit commit reference. The patch delegates to existing RoPE configuration rather than implementing that request.",
+        "basis": "inference",
+        "evidence": [
+          "call_dec14834a34d4134b6610b4f555714f9",
+          "call_719b4343aa5d495cac49eee49ce9abf9",
+          "call_dc8a9a7252df4999a767e37a9134390c"
+        ]
+      },
+      {
+        "text": "Other inspected discussions concern different changes: PR #4, \u201cchore: update config.py\u201d, proposes a spelling correction; issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d, reports a native-extension import failure and the reporter\u2019s toolchain workaround. Neither supplies evidence of Qwen3 execution.",
+        "basis": "source",
+        "evidence": [
+          "call_8a7beb340a6c4b83b42913f2758d046e",
+          "call_72f02de8e60a482aa598ea05d7280c60"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, conversion, generation, or GPU kernel execution was performed. The Python check measures only transcribed dimension arithmetic.",
+      "Configuration compatibility does not establish checkpoint compatibility: tensor headers were not inspected, and the FP8 variants\u2019 quantization metadata was not validated against the loader.",
+      "Long-context accuracy, automatic YaRN scaling, and performance are not established by this change."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Qwen3 registration and normalized attention assembly",
+        "claims": [
+          {
+            "text": "Qwen3Config declares Qwen3ForCausalLM and passes Qwen3Model to the base configuration. Adding Qwen3Model to the registry comprehension makes the existing directory-based architecture lookup select these classes.",
+            "basis": "source",
+            "evidence": [
+              "call_f683c92addb041809ab86cf7ebc770ec",
+              "call_719b4343aa5d495cac49eee49ce9abf9",
+              "call_e4ac242afd14444291820d6f2e843515",
+              "call_dc8a9a7252df4999a767e37a9134390c"
+            ]
+          },
+          {
+            "text": "Configuration preserves an explicit head_dim, falling back to hidden_size // num_attention_heads only when it is absent or falsy. KV-head count defaults to query-head count, tied embeddings default to false, and a supplied hidden_act must be silu. Required dimensions and RMS epsilon are read from the model configuration.",
+            "basis": "source",
+            "evidence": [
+              "call_719b4343aa5d495cac49eee49ce9abf9",
+              "call_dc8a9a7252df4999a767e37a9134390c",
+              "call_b9f3f32663504918b1cbac40bd51e323"
+            ]
+          },
+          {
+            "text": "The model consists of token embedding, sequential pre-normalized attention/MLP blocks, final RMSNorm producing half precision, and a vocabulary projection. Each normal block adds attention to its residual, then normalizes that updated residual for the MLP. Checkpoint keys follow model.layers.{idx}, including self_attn.q_norm and self_attn.k_norm.",
+            "basis": "source",
+            "evidence": [
+              "call_719b4343aa5d495cac49eee49ce9abf9",
+              "call_4f5484a7d2ca4e2a921fd4789d7c20b4"
+            ]
+          },
+          {
+            "text": "Attention projects hidden_size to query_heads \u00d7 head_dim for Q and KV_heads \u00d7 head_dim for K/V. All three existing backends reshape into heads and apply the supplied Q/K RMSNorms before RoPE; V is not normalized. RMSNorm.forward flattens all leading dimensions, invokes the native operation over the final dimension, then restores shape. Thus Q/K normalization is per head, not across the concatenated projection.",
+            "basis": "source",
+            "evidence": [
+              "call_719b4343aa5d495cac49eee49ce9abf9",
+              "call_f3e01fd7da824c7c9c084bfdb500ac00",
+              "call_91a90bfeda5c413c9e9ce46633f3d9cd"
+            ]
+          },
+          {
+            "text": "The builder leaves attention scaling unspecified and uses existing full-attention defaults. prepare_inputs stores input_ids and delegates to prepare_for_attn: absent an explicit mode, this selects uncached FlashAttention; cached FlashAttention requires its existing cache parameters, while the uncached preparation paths reject a cache.",
+            "basis": "source",
+            "evidence": [
+              "call_719b4343aa5d495cac49eee49ce9abf9",
+              "call_f3e01fd7da824c7c9c084bfdb500ac00"
+            ]
+          },
+          {
+            "text": "For tied embeddings, model.embed_tokens becomes the head\u2019s alternate key only when tie_word_embeddings is true and the collection reports no lm_head. The builder also retains calibration mappings block.attn, block.mlp and block, rather than introducing Qwen3-specific quantization machinery.",
+            "basis": "source",
+            "evidence": [
+              "call_719b4343aa5d495cac49eee49ce9abf9"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-0.6B, Qwen/Qwen3-0.6B-Base and Qwen/Qwen3-0.6B-FP8 each match the new architecture string and specify hidden size 1024, intermediate size 3072, 28 layers, 16 query heads, 8 KV heads, head dimension 128 and tied embeddings. Their explicit values override the builder\u2019s dimensional and tying defaults.",
+            "basis": "source",
+            "evidence": [
+              "call_adb85501d6214731a0719d30844405e5",
+              "call_ecfbd56d13de47f885a63337a5cbe7a2",
+              "call_32388148db834fcb961680f29c3b4a3a",
+              "call_719b4343aa5d495cac49eee49ce9abf9"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-1.7B, Qwen/Qwen3-1.7B-Base and Qwen/Qwen3-1.7B-FP8 each match the registration and specify hidden/intermediate sizes 2048/6144, 28 layers, 16 query heads, 8 KV heads, head dimension 128 and tied embeddings.",
+            "basis": "source",
+            "evidence": [
+              "call_1b8085b511554fbbbfa827de23778661",
+              "call_4aea54b9fdf04376b618ce53d5ee4105",
+              "call_d23349c377904d17acdf13bac31f5c37",
+              "call_719b4343aa5d495cac49eee49ce9abf9"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-4B, Qwen/Qwen3-4B-Base and Qwen/Qwen3-4B-FP8 each match the registration and specify hidden/intermediate sizes 2560/9728, 36 layers, 32 query heads, 8 KV heads, head dimension 128 and tied embeddings.",
+            "basis": "source",
+            "evidence": [
+              "call_50574e0db3ca45b7bd3475cb2ba48c1b",
+              "call_44601e77898745c0ba9d727bd5d20bcf",
+              "call_f22b7e267cdb4e1a80e2e8324e029235",
+              "call_719b4343aa5d495cac49eee49ce9abf9"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-8B, Qwen/Qwen3-8B-Base and Qwen/Qwen3-8B-FP8 each match the registration and specify hidden/intermediate sizes 4096/12288, 36 layers, 32 query heads, 8 KV heads, head dimension 128 and untied embeddings.",
+            "basis": "source",
+            "evidence": [
+              "call_feaea1f230dd41118badaa5927039540",
+              "call_c542bac6d4884b949a493c8d35dbe57e",
+              "call_43a00f58b62142898bb11610d73b83ad",
+              "call_719b4343aa5d495cac49eee49ce9abf9"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-14B, Qwen/Qwen3-14B-Base and Qwen/Qwen3-14B-FP8 each match the registration and specify hidden/intermediate sizes 5120/17408, 40 layers, 40 query heads, 8 KV heads, head dimension 128 and untied embeddings.",
+            "basis": "source",
+            "evidence": [
+              "call_54e40a52cbbd492f8d31f4b78a7812e8",
+              "call_51047b8606ff48b49d04dda7c891fa41",
+              "call_9fed277031434e479c3200e6c2a5bba5",
+              "call_719b4343aa5d495cac49eee49ce9abf9"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-32B and Qwen/Qwen3-32B-FP8 each match the registration and specify hidden/intermediate sizes 5120/25600, 64 layers, 64 query heads, 8 KV heads, head dimension 128 and untied embeddings.",
+            "basis": "source",
+            "evidence": [
+              "call_3ea41f164a174134b17a4af7d6d4a727",
+              "call_e467d449ab2340c6807803065c2fd215",
+              "call_719b4343aa5d495cac49eee49ce9abf9"
+            ]
+          },
+          {
+            "text": "A standard-library arithmetic check of these dimensions gives Q widths 2048, 2048, 4096, 4096, 5120 and 8192 for 0.6B through 32B, respectively; every KV width is 1024. The fallback head dimension would instead be 64 for 0.6B and 80 for 4B and 32B, demonstrating why retaining explicit head_dim matters. This is scalar shape arithmetic, not repository or GPU execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_7e1fe7f2a1a441618414d9eadd1cd8ba"
+            ]
+          },
+          {
+            "text": "Reusing the normalized-attention interface avoids a separate Qwen3 kernel implementation, while explicit head dimensions accommodate attention widths unequal to the residual width. This is a design interpretation of the assembly and shape calculations, not a measured performance benefit.",
+            "basis": "inference",
+            "evidence": [
+              "call_719b4343aa5d495cac49eee49ce9abf9",
+              "call_f3e01fd7da824c7c9c084bfdb500ac00",
+              "call_7e1fe7f2a1a441618414d9eadd1cd8ba"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Qwen3ForCausalLM dispatch and model assembly using existing transformer modules, per-head Q/K RMSNorm, explicit head dimensions and conditional tied-head weights."
+  },
+  "evidence": {
+    "call_f683c92addb041809ab86cf7ebc770ec": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "offset": 175,
+        "max_bytes": 684
+      },
+      "result_sha256": "ca5ff7ec44a21f45a9231ebc084360f81feb7478fc29479920d11c731e9b9930"
+    },
+    "call_719b4343aa5d495cac49eee49ce9abf9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "offset": 859,
+        "max_bytes": 5776
+      },
+      "result_sha256": "b3122acf1aae3321b6f37859985acfbe760fd89d3944b754c64b6319f25c3931"
+    },
+    "call_729530019d9047569aafdd652e73be72": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "a3f0240e37add004b1319be2dd9d90c7eef5b5af05991c192eef13c3ea7f4ca2",
+      "catalog_only": true
+    },
+    "call_dc8a9a7252df4999a767e37a9134390c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b39df005370002561b020bb8715fe0b5ca0c26331cd4541ba548a75db03b0492"
+    },
+    "call_f3e01fd7da824c7c9c084bfdb500ac00": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 36000
+      },
+      "result_sha256": "24308e96431cabc08c436215585cc25ce0dc22b2161acc5b35fab11af0ab2a79"
+    },
+    "call_adb85501d6214731a0719d30844405e5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-0.6B",
+        "revision": "6130ef31402718485ca4d80a6234f70d9a4cf362",
+        "path": "config.json"
+      },
+      "result_sha256": "d70cd42a63d7fd83e78a3f4b7ab5527b36d1c73c38718d3bbd4bb9f142c126a3"
+    },
+    "call_ecfbd56d13de47f885a63337a5cbe7a2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-0.6B-Base",
+        "revision": "15c1898c3109c305f9f13cd74555b04ff204dada",
+        "path": "config.json"
+      },
+      "result_sha256": "be5f5a563b03da520c069098781ec59ca54450dc919a9db3bff56958a2e865f5"
+    },
+    "call_32388148db834fcb961680f29c3b4a3a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-0.6B-FP8",
+        "revision": "7765febfc1b4873a0c28e2b268fd436cccac1cd4",
+        "path": "config.json"
+      },
+      "result_sha256": "37535a13c7d58395728767cf4f3b205614d6cfcaa0472629c3e814d240a4a60d"
+    },
+    "call_1b8085b511554fbbbfa827de23778661": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-1.7B",
+        "revision": "d3e258980a49b060055ea9038dad99d75923f7c4",
+        "path": "config.json"
+      },
+      "result_sha256": "72487411364c5465cfa335c0331f49733065c9613ce8f62dc3f04dfc82744496"
+    },
+    "call_4aea54b9fdf04376b618ce53d5ee4105": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-1.7B-Base",
+        "revision": "a0fbe3348c9b61bf686f0d75c05be2b61263b8e8",
+        "path": "config.json"
+      },
+      "result_sha256": "3e5afe01fbf8c9ab0cf4588f87201ce2c5ce4a0094bb1dc8c76218d2798c96d5"
+    },
+    "call_d23349c377904d17acdf13bac31f5c37": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-1.7B-FP8",
+        "revision": "9bfd3ac122a270a6c131d570d6ca0b91d29b5f10",
+        "path": "config.json"
+      },
+      "result_sha256": "9b55589e53309bd03573dc514a7057d9c56db4b65c8920cf4a31ada332f69df1"
+    },
+    "call_54e40a52cbbd492f8d31f4b78a7812e8": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-14B",
+        "revision": "231c69a380487f6c0e52d02dcf0d5456d1918201",
+        "path": "config.json"
+      },
+      "result_sha256": "d293408275ce7280117e6b140cd333cc89979d1e2356fd3cc149165e7d720558"
+    },
+    "call_51047b8606ff48b49d04dda7c891fa41": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-14B-Base",
+        "revision": "ae3040d94d1cad6eba66e4470567e7519ec4da29",
+        "path": "config.json"
+      },
+      "result_sha256": "c54de74af68b3c99a271e02a45356fe324fa4a34a70d602d56c58b738210d2d5"
+    },
+    "call_9fed277031434e479c3200e6c2a5bba5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-14B-FP8",
+        "revision": "b1929466a4961baa91177cad8896d3b057dea12b",
+        "path": "config.json"
+      },
+      "result_sha256": "d6782fa9f0fa0ee423bdf173c8bb821bd4e4a847c429e61fdae12fbed3f87cab"
+    },
+    "call_3ea41f164a174134b17a4af7d6d4a727": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-32B",
+        "revision": "30b8421510892303dc5ddd6cd0ac90ca2053478d",
+        "path": "config.json"
+      },
+      "result_sha256": "c67553cbaff32224036fa739bc5eab52fa3bd741e1f496bae62a09bc5d856b0d"
+    },
+    "call_e467d449ab2340c6807803065c2fd215": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-32B-FP8",
+        "revision": "37f3f67a7a82b002377985796c57f4321b85fb9a",
+        "path": "config.json"
+      },
+      "result_sha256": "ee09d68ab0e458df2ef0d99c83431a2ee302348433533acacac4d8aaaf82a0cb"
+    },
+    "call_50574e0db3ca45b7bd3475cb2ba48c1b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-4B",
+        "revision": "82d62bb073771e7a1ea59435f548908540217d1f",
+        "path": "config.json"
+      },
+      "result_sha256": "687894f798844d6cfd37d9eba8e9436c56e496df99d32dbee08d67d79863612e"
+    },
+    "call_44601e77898745c0ba9d727bd5d20bcf": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-4B-Base",
+        "revision": "ff84294b7f21731d197d58a4a842cf4a37a501fa",
+        "path": "config.json"
+      },
+      "result_sha256": "9a190733c9fc2177f455fc9ad595dcb50877caad6784ce793529e0f3a994c078"
+    },
+    "call_f22b7e267cdb4e1a80e2e8324e029235": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-4B-FP8",
+        "revision": "0dcffbe156de3845a856ca0252929ce021b837a8",
+        "path": "config.json"
+      },
+      "result_sha256": "ba80ea094ca0fca1d964ff9ce6d18b7e171957128c9dd699768138d9a3a37989"
+    },
+    "call_feaea1f230dd41118badaa5927039540": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-8B",
+        "revision": "2069b3fae1114555f3c020c81410e51fa0f656f2",
+        "path": "config.json"
+      },
+      "result_sha256": "c8d925e8b55f42a42b38cd3978fa7aed7c5bdb0eb767d186ba24aeb06e2f1b33"
+    },
+    "call_c542bac6d4884b949a493c8d35dbe57e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-8B-Base",
+        "revision": "b53affe9dcff71ea989116a20abf368cbe4f2bdd",
+        "path": "config.json"
+      },
+      "result_sha256": "421c24cea45c8cfbc72f201b430f9b8b26f718771e39073667ede42341d756de"
+    },
+    "call_43a00f58b62142898bb11610d73b83ad": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-8B-FP8",
+        "revision": "52c6f348a2fa142ec5fc4dfbeeb79245e37d5d80",
+        "path": "config.json"
+      },
+      "result_sha256": "00ee7bd0015158b0c1f156e160342f2f70117fb492d71f6fd0b53cd6c271140c"
+    },
+    "call_0d69b15a9e0e48d6acfb8986654d2cb4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "query": "Qwen3",
+        "limit": 50
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_71ce089673d744ee90491c0e00c2a715": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "query": "head_dim",
+        "path": "exllamav3/models",
+        "limit": 100
+      },
+      "result_sha256": "85d1ada51a4b0b44f737fd2176a63b3022aa0c8c6e1ccac8b7f7a26494561cdf"
+    },
+    "call_d7dde727e15447f4b5469458cb7e8caa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "path": "exllamav3/models/qwen2.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "6c62b7e91cbfe07a47933229152439467431c262f817dc5163aeaac0ddfbe086"
+    },
+    "call_91a90bfeda5c413c9e9ce46633f3d9cd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "22ac1099f892f8299610bb333e75d4a6a78ab117393a77a741501e7aeb05a1da"
+    },
+    "call_e4ac242afd14444291820d6f2e843515": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "path": "exllamav3/models/architectures.py"
+      },
+      "result_sha256": "b42e9356f3c5b907e1fdc761d53f0eaae4d571b99b2c96d0e36c432e25a16fa9"
+    },
+    "call_dec14834a34d4134b6610b4f555714f9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 14000
+      },
+      "result_sha256": "3b05543e48681f1716d37bba7570d073cf2e03cfcc1d1b2380268553400c4423"
+    },
+    "call_8a7beb340a6c4b83b42913f2758d046e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 10000
+      },
+      "result_sha256": "e21cdacd262252a8c27313ce401049f9872d15ca3b200585f5bfd8299d81d3b6"
+    },
+    "call_72f02de8e60a482aa598ea05d7280c60": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 14000
+      },
+      "result_sha256": "94169321ac6d0f1918e27a31f95924c76711a13331705ed2d4c6af5a652e8f07"
+    },
+    "call_b9f3f32663504918b1cbac40bd51e323": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "query": "read_cfg",
+        "limit": 250
+      },
+      "result_sha256": "d8fe13bd237bdc4a7b64dcc44f961550af94cfd4a51e8ff0e6a2dc461b1ffec9"
+    },
+    "call_4f5484a7d2ca4e2a921fd4789d7c20b4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "120ea0ef1dd1039feb5fa9027d3fbfa9d29968d208757e81a642917df2867c58"
+    },
+    "call_7e1fe7f2a1a441618414d9eadd1cd8ba": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for name,h,q in [('0.6B',1024,16),('1.7B',2048,16),('4B',2560,32),('8B',4096,32),('14B',5120,40),('32B',5120,64)]: print(name, 'fallback_head_dim',h//q,'Q_width',q*128,'KV_width',8*128,'Q_per_KV',q//8)"
+        ]
+      },
+      "result_sha256": "5f2b56d4473a748b51116accfbb2df31560c19f8d21d4831de1455eaf24246cd"
+    },
+    "call_5f0097b1b09d4a1cb4653b0bd70940ca": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "7991ec9c93abad719dc441444d2de46b528f26c4645d37e1642558a523da908e",
+      "catalog_only": true
+    }
+  }
+}

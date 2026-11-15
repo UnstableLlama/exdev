@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Trusted approval/export; packet-only reads live in the isolated worker."""
+from .blob_store import put
 import argparse
 import hashlib
 import json
@@ -100,7 +101,7 @@ def attach(packet, runs, manifest):
     def store(value):
         raw = json.dumps(value, ensure_ascii=False).encode()
         digest = hashlib.sha256(raw).hexdigest()
-        (packet/'blobs'/digest).write_bytes(raw)
+        put(packet, raw)
         return digest
     refs, catalog, search = [], [], []
     graph_coverage = []

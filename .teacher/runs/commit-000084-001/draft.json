@@ -1,0 +1,321 @@
+{
+  "schema_version": 5,
+  "sha": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+  "parent_shas": [
+    "1f5a43fc72f3c45d6db757c7907d4793ec88f026"
+  ],
+  "cutoff_date": "2025-04-23T21:57:16+09:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Linear previously rounded only output width. Input widths remained unpadded, and pad_out returned immediately when output padding was unnecessary.",
+        "basis": "source",
+        "evidence": [
+          "call_1bb33e4332a64818abe291d434d85689"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change retains the original input width separately and rounds the operational width to pad_to, defaulting to 128. It extends weight padding to input-only cases without changing the forward method.",
+        "basis": "source",
+        "evidence": [
+          "call_f1df2971d15f478fab23f8a5d8910d55",
+          "call_1bb33e4332a64818abe291d434d85689"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The padded input width propagates to FP16 and EXL3 layer construction, Hessian allocation and weights_numel. Forward still delegates without explicitly padding activations, so compatible activation widths remain a caller-side requirement.",
+        "basis": "source",
+        "evidence": [
+          "call_f1df2971d15f478fab23f8a5d8910d55",
+          "call_1bb33e4332a64818abe291d434d85689",
+          "call_ca69d16cd32e4c5b8b94e01001bf190f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d reports vocabulary/output-padding failures and successful fixes before this task. Its relationship here is contextual inference based on the shared Linear conversion path and padding concern, not evidence that this input-padding change fixed that report.",
+        "basis": "inference",
+        "evidence": [
+          "call_862d7ff9853c469d909843c32f1ee4c0",
+          "call_f1df2971d15f478fab23f8a5d8910d55"
+        ]
+      },
+      {
+        "text": "Issue #7 reports an undefined-symbol import failure and an environment workaround; issue #15 reports incoherent Cogito output at bpw <= 2.5 and discusses regularization. Neither discussion establishes an input-padding cause.",
+        "basis": "source",
+        "evidence": [
+          "call_5026f93b9a094672adbf3acaf1c041b7",
+          "call_2a417809bdcb4d93974e00088730d8f5"
+        ]
+      },
+      {
+        "text": "The earlier slicing entry records padding-before-slicing and default CPU-staging concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_36fa395f638c4beaa747e3a194659ae0"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch assignment, model loading, quantization or CUDA kernel was executed; the executed check models integer dimensions and slice shapes only.",
+      "End-to-end activation-width compatibility, memory cost and performance were not measured.",
+      "The inspected source establishes 128 as the existing padding default, not a universally sufficient alignment for every backend."
+    ],
+    "links": [
+      "8e128ed9040b0fff1107798a1d5e57c8376bb4d5"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Extend linear weight padding to input channels",
+        "claims": [
+          {
+            "text": "For input-only padding, pad_out allocates an output-by-padded-input zero tensor and copies the original columns into its prefix. Existing output-only padding copies rows; one-dimensional biases retain output-width padding. Both ordinary and fused FP16 loading call this helper before constructing LinearFP16.",
+            "basis": "source",
+            "evidence": [
+              "call_f1df2971d15f478fab23f8a5d8910d55",
+              "call_1bb33e4332a64818abe291d434d85689",
+              "call_a668fc70fe9b4392bc5428c2c949cb8b"
+            ]
+          },
+          {
+            "text": "The rounding expression computes the smallest pad_to multiple not below the requested width. A standard-library transcription checked the default-128 invariant for widths 1\u20131024 and matching copy shapes for input-only and output-only examples.",
+            "basis": "execution",
+            "evidence": [
+              "call_2d087df8304f4296af71a97b0d257d1e"
+            ]
+          },
+          {
+            "text": "Zero-filled added weight columns preserve the original contribution when inputs already have the corresponding expanded width. The tradeoff is a larger stored matrix; this helper does not itself expand activation tensors.",
+            "basis": "inference",
+            "evidence": [
+              "call_f1df2971d15f478fab23f8a5d8910d55",
+              "call_ca69d16cd32e4c5b8b94e01001bf190f"
+            ]
+          },
+          {
+            "text": "Inspection of the parent plus task diff shows that padding still precedes feature slicing, preserving the earlier slicing incompatibility. The default is_sliced comparison against optional None dimensions also remains unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_1bb33e4332a64818abe291d434d85689",
+              "call_f1df2971d15f478fab23f8a5d8910d55",
+              "call_ca69d16cd32e4c5b8b94e01001bf190f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "simultaneous-axis-padding",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The output-padding branch prevents simultaneous input padding from copying into a correctly bounded destination.",
+        "trigger": "Load an ordinary 130-by-130 weight with default pad_to=128.",
+        "expected_behavior": "Copy into the leading 130-by-130 region of a zero-filled 256-by-256 matrix.",
+        "actual_behavior": "The output-width condition selects padded[:130, :], a 130-by-256 destination, for the 130-by-130 source; the input-column branch is skipped.",
+        "locations": [
+          {
+            "commit": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.pad_out"
+          }
+        ],
+        "source_evidence": [
+          "call_f1df2971d15f478fab23f8a5d8910d55",
+          "call_a668fc70fe9b4392bc5428c2c949cb8b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent literal searches locate pad_out calls only in ordinary and fused load_fp16 branches; Linear.load directly invokes load_fp16 after EXL3 lookup. The finding concerns weights needing both axes padded, not all model loads.",
+            "evidence": [
+              "call_a668fc70fe9b4392bc5428c2c949cb8b",
+              "call_0d402bd48e0a4f76855d518d88ec01fb",
+              "call_1bb33e4332a64818abe291d434d85689"
+            ],
+            "limits": "No model exhibiting these dimensions was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the incompatible source and destination slice shapes.",
+            "evidence": [
+              "call_2d087df8304f4296af71a97b0d257d1e"
+            ],
+            "limits": "Does not execute tensor assignment or establish its exact exception."
+          }
+        ]
+      },
+      {
+        "id": "inherited-padding-before-slicing",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited full-weight padding-before-slicing incompatibility persists, with input padding now changing the destination width too.",
+        "trigger": "Load a full 512-by-64 weight while requesting 130 outputs and 64 inputs, full_out_features=512 and first_out_feature=0.",
+        "expected_behavior": "Select the requested feature region before padding the local matrix.",
+        "actual_behavior": "pad_out allocates 256-by-128 and attempts to copy the full 512-by-64 source before LinearFP16 can slice it.",
+        "locations": [
+          {
+            "commit": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load_fp16"
+          }
+        ],
+        "source_evidence": [
+          "call_1bb33e4332a64818abe291d434d85689",
+          "call_f1df2971d15f478fab23f8a5d8910d55",
+          "call_ca69d16cd32e4c5b8b94e01001bf190f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The ordinary FP16 loader still pads before constructing the slicing backend. Whole-parent search identifies Linear.load as its direct caller.",
+            "evidence": [
+              "call_0d402bd48e0a4f76855d518d88ec01fb",
+              "call_1bb33e4332a64818abe291d434d85689"
+            ],
+            "limits": "Reach is conditional on an explicit sliced request; no existing model construction with this request was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Checked the full source and padded destination slice dimensions.",
+            "evidence": [
+              "call_2d087df8304f4296af71a97b0d257d1e"
+            ],
+            "limits": "Shape arithmetic, not repository execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds input-width rounding and input-only weight padding, but simultaneous two-axis padding remains incompatible and padding-before-slicing is unchanged."
+  },
+  "evidence": {
+    "call_f1df2971d15f478fab23f8a5d8910d55": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+        "offset": 169,
+        "max_bytes": 1564
+      },
+      "result_sha256": "c4e097db6476906c6c40b589498b2638da00da811a7c400488b53801f38a13c2"
+    },
+    "call_1bb33e4332a64818abe291d434d85689": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "4da55e809adc736e4c0af6c550d0902b47811d985e2e8267b386ea952ed089a5"
+    },
+    "call_862d7ff9853c469d909843c32f1ee4c0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1e7fcb42dd54a41702cbec130adb46bed6d2e03e9d81d01ce01f2e61a0ce0f6c"
+    },
+    "call_5026f93b9a094672adbf3acaf1c041b7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7367e227e34a4ff19c7bc45728eb88120dc501cc3cd22b5a475f45d5814dca97"
+    },
+    "call_2a417809bdcb4d93974e00088730d8f5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "06d958ec1861451a26bf009b0909a9d3c5355a352fdfc477918caf9110b4115f"
+    },
+    "call_a668fc70fe9b4392bc5428c2c949cb8b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "query": "pad_out",
+        "limit": 100
+      },
+      "result_sha256": "97ba65b9afe7ea6ce432b7e694f8365d5f126e25727ce459279c72b1378cf87f"
+    },
+    "call_e0a39fa7f32b4e5da83f94b634f12453": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "path": "exllamav3/modules/quant/linear_fp16.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_8025f2e126d64f38a6d1bcb88ef83322": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "path": "exllamav3/modules/quant",
+        "limit": 80
+      },
+      "result_sha256": "d196d6ab228880b6c60ecc6e1fe154cb3624b11bea698b37391dd3d2bca669e7"
+    },
+    "call_ca69d16cd32e4c5b8b94e01001bf190f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "dfc7432bc747afe91668d03ce09fd8c08fb03693456b09e274724d710fdca790"
+    },
+    "call_dc2be30a08794795bbd04d8d3fa26714": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/linear.py",
+        "limit": 12,
+        "max_bytes": 5000
+      },
+      "result_sha256": "524d93feee5dee251a444a38a00cb753b9f1f026494cf4404c31f686ace38b69",
+      "catalog_only": true
+    },
+    "call_36fa395f638c4beaa747e3a194659ae0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "max_bytes": 16000
+      },
+      "result_sha256": "40fb2658233ba16414d6a583fc6c4fc5a355bb8ffe5d943862e861e63840674a"
+    },
+    "call_0d402bd48e0a4f76855d518d88ec01fb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "query": "load_fp16(",
+        "limit": 100
+      },
+      "result_sha256": "5d03997e18de30b76446edf8b2641e0cea45be4e3b20716316708d77ab95fbc0"
+    },
+    "call_2d087df8304f4296af71a97b0d257d1e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "p=lambda n:(n+127)//128*128\nfor i,o in [(130,256),(128,130),(130,130),(64,130)]:\n I,O=p(i),p(o)\n src=(512,i) if (i,o)==(64,130) else (o,i)\n dst=(min(src[0],O),I) if O!=o else (O,min(src[1],I))\n print({'input':i,'output':o,'padded':(O,I),'source':src,'copy_target':dst,'exact_shape_match':src==dst})\nassert all(n<=p(n)<n+128 and p(n)%128==0 for n in range(1,1025))\nprint('round-up invariant passed for 1..1024')"
+        ]
+      },
+      "result_sha256": "4d60961c41622fe65477475232eb1e95fab0ace9c1f606e4d5a092fb2e1a1f1a"
+    }
+  }
+}

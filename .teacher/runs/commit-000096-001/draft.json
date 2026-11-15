@@ -1,0 +1,378 @@
+{
+  "schema_version": 5,
+  "sha": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+  "parent_shas": [
+    "39e400d16aa506a98f6da102176b3310b95022f0"
+  ],
+  "cutoff_date": "2025-04-27T17:05:21+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The existing TransformerBlock feeds its attention-updated residual into the MLP path. This change adds a separate block whose attention and MLP consume the same normalized input.",
+        "basis": "source",
+        "evidence": [
+          "call_f7a80d59c1b44575af1b82a205af8a0b",
+          "call_cfee53ee09e24b2a90dac2c78294bd03"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Keeping ParallelDecoderBlock separate preserves the sequential block's computation while offering shared-input branch composition. \u201cParallel\u201d describes data dependencies here: the Python implementation calls attention and then MLP, without introducing concurrent scheduling.",
+        "basis": "source",
+        "evidence": [
+          "call_cfee53ee09e24b2a90dac2c78294bd03"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "ParallelDecoderBlock becomes importable from exllamav3.modules. The diff adds no architecture registration or model construction site; it also broadens TransformerBlock.mlp_norm's annotation to include LayerNorm without changing that block's forward implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_dfdb107e8cbb411197c23b61169ec1f1",
+          "call_cfee53ee09e24b2a90dac2c78294bd03"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The immediate ancestor entry describes the preceding addition of the exported LayerNorm component, without model-constructor integration.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_9032c1ab477e4f21be2d09cac68d0b74"
+        ]
+      },
+      {
+        "text": "The inspected discussions report \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d and \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022.\u201d Their framing is extension loading, quantization quality, and compilation respectively; none identifies this parallel decoder addition as a remedy.",
+        "basis": "source",
+        "evidence": [
+          "call_5825b6b521544247b37f5b91bf664491",
+          "call_caba4a8aacb94c4e98d9bb29b25a511f",
+          "call_5413d9db0690498082cf86aa31d90bfc"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository implementation, PyTorch operation, GPU kernel, or model integration test was executed.",
+      "The scalar check models branch dependencies with integer arithmetic and artificial functions; it does not establish tensor aliasing, half-precision rounding, numerical accuracy, or performance.",
+      "Whole-parent-tree searches found no named ParallelDecoderBlock callers; external or dynamically assembled consumers are not established."
+    ],
+    "links": [
+      "39e400d16aa506a98f6da102176b3310b95022f0"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Shared-input parallel decoder composition",
+        "claims": [
+          {
+            "text": "forward computes y = input_norm(x), requesting torch.half, then adds Attention(y) and MLP(y) into x in place. The MLP receives y rather than the attention-updated residual. There are no separate branch normalizers or post-normalizers in the new block.",
+            "basis": "source",
+            "evidence": [
+              "call_cfee53ee09e24b2a90dac2c78294bd03"
+            ]
+          },
+          {
+            "text": "A scalar transcription with x=5, N(x)=2x, A(y)=y+1 and M(y)=3y returned 46, matching x+A(N(x))+M(N(x)); feeding the attention-updated residual through normalization into the MLP instead produced 112. The prefill transcription returned 16 after only the attention residual addition.",
+            "basis": "execution",
+            "evidence": [
+              "call_efe1c5a0acea43e5afad5094fc68d9be"
+            ]
+          },
+          {
+            "text": "A truthy params['prefill'] skips the MLP and final dtype conversion, but only after adding attention's output. Model.prefill sets this flag only at the last cache-affecting module and then stops, rather than setting it throughout prompt ingestion. The old TransformerBlock returns before its attention residual addition.",
+            "basis": "source",
+            "evidence": [
+              "call_cfee53ee09e24b2a90dac2c78294bd03",
+              "call_497c35cb9a05405c92afb4411f88bbee",
+              "call_f7a80d59c1b44575af1b82a205af8a0b",
+              "call_331136b896c14809b798f39bddbf2634"
+            ]
+          },
+          {
+            "text": "On the ordinary return path, to2 gives the forward-call dtype precedence over the constructor dtype, leaving x unchanged when neither is supplied.",
+            "basis": "source",
+            "evidence": [
+              "call_cfee53ee09e24b2a90dac2c78294bd03",
+              "call_0c0848b514514b33b39b5f929a626444"
+            ]
+          },
+          {
+            "text": "Registering the normalizer, attention and MLP connects them to Module's recursive traversal, loading, unloading and weight counting. num_slices is copied from the MLP, or defaults to one. The block-level qmap argument is not forwarded: the base constructor receives None.",
+            "basis": "source",
+            "evidence": [
+              "call_cfee53ee09e24b2a90dac2c78294bd03",
+              "call_3a217a7de7df48c0902c82b567c4004a"
+            ]
+          },
+          {
+            "text": "allocate_q follows TransformerBlock's allocation interface: it forwards the selected bit budget, surplus, attention projections and MLP projection collections to allocate_transformer. Conversion calls allocate_q for each model module before loading and calibration. This is reuse of existing allocation machinery, not a new quantization algorithm.",
+            "basis": "source",
+            "evidence": [
+              "call_cfee53ee09e24b2a90dac2c78294bd03",
+              "call_7a4e377c6b7545ee86df1755ec1655ce",
+              "call_f711a909152143bdad05578ecf833786"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "optional-components-forward",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The constructor permits omitted components, but forward unconditionally dereferences them; even a block named '(no-op)' cannot execute as an identity.",
+        "trigger": "Construct ParallelDecoderBlock with input_norm=None, or omit attention or the MLP and reach its corresponding forward call.",
+        "expected_behavior": "Either reject missing required components during construction or implement the advertised optional/no-op composition.",
+        "actual_behavior": "forward calls .forward on None. With all defaults, failure occurs at self.input_norm.forward before any residual computation.",
+        "locations": [
+          {
+            "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "ParallelDecoderBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_cfee53ee09e24b2a90dac2c78294bd03",
+          "call_7907d74910504b0d9a97c23f42fe340b",
+          "call_497c35cb9a05405c92afb4411f88bbee"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared optional constructor defaults and get_name's no-op label with unconditional forward calls. Whole-parent-tree search found no named users; Model.forward and Model.prefill are generic dispatch sites only if this block is installed.",
+            "evidence": [
+              "call_cfee53ee09e24b2a90dac2c78294bd03",
+              "call_7907d74910504b0d9a97c23f42fe340b",
+              "call_497c35cb9a05405c92afb4411f88bbee"
+            ],
+            "limits": "No concrete integrated model or runtime failure was tested."
+          }
+        ]
+      },
+      {
+        "id": "plain-mlp-allocation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new block copies an existing allocation mismatch for the explicitly accepted plain MLP type.",
+        "trigger": "Call ParallelDecoderBlock.allocate_q with a plain MLP and a valid quantization budget.",
+        "expected_behavior": "Allocate bits for the plain MLP's up and down projections.",
+        "actual_behavior": "Argument evaluation accesses self.mlp.ups and self.mlp.downs, whereas MLP defines singular up and down attributes, so allocation cannot reach allocate_transformer successfully.",
+        "locations": [
+          {
+            "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "ParallelDecoderBlock.allocate_q"
+          }
+        ],
+        "source_evidence": [
+          "call_cfee53ee09e24b2a90dac2c78294bd03",
+          "call_bb8bc2d4f71446d384d4d4fa4fe1e127",
+          "call_f7a80d59c1b44575af1b82a205af8a0b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared MLP attributes with both block allocators. Whole-parent-tree caller search located conversion's generic module.allocate_q call, which runs before calibration; no named ParallelDecoderBlock construction was found. GatedMLP does define the plural collections and is outside this trigger.",
+            "evidence": [
+              "call_bb8bc2d4f71446d384d4d4fa4fe1e127",
+              "call_724b0150170a471993c7c914f28cc1ca",
+              "call_f711a909152143bdad05578ecf833786",
+              "call_7907d74910504b0d9a97c23f42fe340b"
+            ],
+            "limits": "Source-level conditional reach only; conversion was not executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds an exported shared-normalization parallel decoder block, without architecture wiring, while retaining optional-component and plain-MLP allocation inconsistencies."
+  },
+  "evidence": {
+    "call_dfdb107e8cbb411197c23b61169ec1f1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+        "offset": 161,
+        "max_bytes": 493
+      },
+      "result_sha256": "7af9201aee847de20d21745fc40b64388e639eeeb49a76dc30a8bd3442305e1e"
+    },
+    "call_cfee53ee09e24b2a90dac2c78294bd03": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+        "offset": 654,
+        "max_bytes": 3237
+      },
+      "result_sha256": "d0602a603a1b70d8d1fe677dfa6b621277a2253d20517c9cd9a64cd83fa93a5c"
+    },
+    "call_f7a80d59c1b44575af1b82a205af8a0b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "58ebfbd34a70bf65c34f6684d714ac96e5a9b5840779f3ffb72e3a0ba938b7b1"
+    },
+    "call_331136b896c14809b798f39bddbf2634": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "query": "prefill",
+        "limit": 100
+      },
+      "result_sha256": "d20c8d023966c5ed2871b4e2b9673ff38389755afb5766d57965e0cece6d9f4d"
+    },
+    "call_c606924368c84a84a05737cff257e8f7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "5478a43b2d3dbd864c9d5f544eca6f7cfee63783fd69fffdaa0dd9c4b959d79e"
+    },
+    "call_3a217a7de7df48c0902c82b567c4004a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7a7ab484889d836131dbb2daeec67ed52b3dcefdbbddf1b50ac1e6a8008f16c6"
+    },
+    "call_0c0848b514514b33b39b5f929a626444": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/util/tensor.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "8bb5b639fa23043e6f5ee49df0f22e80fea2ecd69072baa4ff51a265d344bc74"
+    },
+    "call_7907d74910504b0d9a97c23f42fe340b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "query": "ParallelDecoderBlock",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_497c35cb9a05405c92afb4411f88bbee": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "9a769ad85b6b97e07a0a68789448cef2c332e2fda78c97e1e8a059454d074262"
+    },
+    "call_5825b6b521544247b37f5b91bf664491": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b92ee1e021c8f0cd37ac770dbc24a0fc5e4e612804150845c4459af55b74dfcc"
+    },
+    "call_caba4a8aacb94c4e98d9bb29b25a511f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7301b0acf454be418c398582b612b26f21282279db535874e96d7a164f079ec6"
+    },
+    "call_5413d9db0690498082cf86aa31d90bfc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1b94872cb262140d88aee4f211968ff23029a9c2e86ae93d69dd8f20b8b12396"
+    },
+    "call_9032c1ab477e4f21be2d09cac68d0b74": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6a4e5f90d3d7233564fe7554e4030d70b4205bec6d8eb645252faf2ade09acb0"
+    },
+    "call_7a4e377c6b7545ee86df1755ec1655ce": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/conversion/allocation.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "6694e2b0aa5ea22a45873de98f36f2f3d66588ddc1386de4a6a8fc3bf0b67efd"
+    },
+    "call_a9a00de5136d46fabd59963c7100c324": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "query": "allocate_transformer(",
+        "limit": 100
+      },
+      "result_sha256": "f9b8008484887d4a6f0e2d564d0cbd8b76eecc35aa2a1af3312ede4c6a516654"
+    },
+    "call_bb8bc2d4f71446d384d4d4fa4fe1e127": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "92b479a98877657d4cbbbe17cb15d613aa35c6923cc06c738e0e52a287c8d71e"
+    },
+    "call_9a11112b0ab04a339e2825e1631530f4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "query": "\"bits\"",
+        "limit": 100
+      },
+      "result_sha256": "6aa4dc23383525fdc2fe74df822c9dc90aa9c2c3c9c00e684fb2f2eee0ced16d"
+    },
+    "call_724b0150170a471993c7c914f28cc1ca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "query": "allocate_q(",
+        "limit": 100
+      },
+      "result_sha256": "585d85304beb91afc838e746ea0eff409247495ef240f2a481ae8c3fac5dfba1"
+    },
+    "call_f711a909152143bdad05578ecf833786": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 8600,
+        "max_bytes": 4000
+      },
+      "result_sha256": "5091ea2be3d76b3e4db2a18f7efa877fd98ecc57f6c71fa8d607c26767c6453c"
+    },
+    "call_efe1c5a0acea43e5afad5094fc68d9be": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def parallel(x, prefill=False):\n y=x*2\n y1=y+1\n x+=y1\n if prefill:return x\n y2=y*3\n x+=y2\n return x\nx=5\nprint({'shared_input_result':parallel(x),'formula':x+(2*x+1)+3*(2*x),'prefill_result':parallel(x,True),'sequential_branch_result':x+(2*x+1)+3*(2*(x+(2*x+1)))})"
+        ]
+      },
+      "result_sha256": "c48d88b7c98d31d1567f8f0f158b7f723cea32e69fd6dd9b703a48bde553d037"
+    }
+  }
+}

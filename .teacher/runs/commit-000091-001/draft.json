@@ -1,0 +1,264 @@
+{
+  "schema_version": 5,
+  "sha": "c7da6b7bb7e45ad06f168594ffb374501ba818cb",
+  "parent_shas": [
+    "40863d0690eb1cb1164bb973c9a22b1155ace172"
+  ],
+  "cutoff_date": "2025-04-27T01:09:46+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Existing presets expose individual sampling policies; this change adds one constructor combining history penalties, temperature and probability filters.",
+        "basis": "source",
+        "evidence": [
+          "call_76855d08aba145afba66aede6b266805",
+          "call_0c1f12314a274aec9acd4e56beaca701"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "ComboSampler delegates to CustomSampler rather than duplicating sampling execution. Its fixed order is repetition penalty, presence/frequency penalties, optional early temperature, min-p, top-k, top-p, optional late temperature, then categorical sampling.",
+        "basis": "source",
+        "evidence": [
+          "call_0c1f12314a274aec9acd4e56beaca701",
+          "call_a0ae0631ddf94841861287e501b4702c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Adding the class resolves the existing sampler-package import of an undefined ComboSampler. It does not make default construction successful: min_p=0.0 violates SS_MinP's constructor assertion.",
+        "basis": "source",
+        "evidence": [
+          "call_103f6452e2354b72a0e646a3f1c1219c",
+          "call_0c1f12314a274aec9acd4e56beaca701",
+          "call_a0ae0631ddf94841861287e501b4702c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent annotation identified the missing ComboSampler export target. The new definition removes that specific inherited problem.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_b4b99d7d21cf4ec4a5590f3e4e1d3049"
+        ]
+      },
+      {
+        "text": "Reviewed discussions report separate problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d; #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5\u201d; and #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022\u201d. None identifies ComboSampler as its subject.",
+        "basis": "source",
+        "evidence": [
+          "call_e95983cfeb69481788029a35ca70994c",
+          "call_4f69563ca204484e9604f60847bc3efa",
+          "call_d6340b05630f4f998a5d7d7cf5c7e52a"
+        ]
+      }
+    ],
+    "limitations": [
+      "Repository imports, tensor operations and CUDA sampling were not executed. The scalar calculation models filter mathematics, not GPU precision or sampling quality.",
+      "Whole-parent-tree literal search found only the ComboSampler export, not construction sites; external callers are unexamined."
+    ],
+    "links": [
+      "40863d0690eb1cb1164bb973c9a22b1155ace172"
+    ],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Combined sampling preset",
+        "claims": [
+          {
+            "text": "temp_last chooses whether temperature changes filter selection or only reweights surviving candidates. SS_Temperature divides logits by temperature or raises probabilities to its reciprocal; SS_MinP compares against the maximum probability times min_p, SS_TopK retains sorted leading entries, and SS_TopP normalizes and sorts before applying its cumulative-probability mask.",
+            "basis": "source",
+            "evidence": [
+              "call_0c1f12314a274aec9acd4e56beaca701",
+              "call_a0ae0631ddf94841861287e501b4702c"
+            ]
+          },
+          {
+            "text": "A scalar illustration with probabilities [0.6, 0.3, 0.1], temperature 0.5 and min_p 0.3 retained only candidate 0 with early temperature, versus candidates 0 and 1 with late temperature. This demonstrates why placement is behaviorally meaningful.",
+            "basis": "execution",
+            "evidence": [
+              "call_88a0c5dd65fe4989b482f744fb84b15b"
+            ]
+          },
+          {
+            "text": "Both penalty stages share the sustain and decay arguments. Their documented meanings are a recent full-strength window and an older fading window; int(10e7) is a finite 100,000,000-token sustain default, with zero decay.",
+            "basis": "source",
+            "evidence": [
+              "call_0c1f12314a274aec9acd4e56beaca701",
+              "call_a0ae0631ddf94841861287e501b4702c"
+            ]
+          },
+          {
+            "text": "Neutral repetition, presence/frequency and temperature settings select SS_NoOp; top_k below one and top_p equal to one also do so. CustomSampler inserts preparation steps and executes the resulting state transformations. However, it records history requirements before no-op substitution, so a successfully constructed ComboSampler requests past IDs even when its penalties are neutral.",
+            "basis": "source",
+            "evidence": [
+              "call_a0ae0631ddf94841861287e501b4702c",
+              "call_0c1f12314a274aec9acd4e56beaca701"
+            ]
+          },
+          {
+            "text": "The convenience interface trades arbitrary step ordering for named parameters. CustomSampler remains the alternative for explicitly chosen ordering; existing CategoricalSampler and TopPSampler also retain explicit zero-temperature argmax branches that ComboSampler does not add.",
+            "basis": "source",
+            "evidence": [
+              "call_76855d08aba145afba66aede6b266805",
+              "call_0c1f12314a274aec9acd4e56beaca701"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "combo-default-min-p",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new preset's default min_p conflicts with the existing step constructor, contradicting its comment that default parameters become no-ops.",
+        "trigger": "Construct ComboSampler() or omit min_p with Python assertions enabled.",
+        "expected_behavior": "Neutral defaults construct a sampler with min-p filtering disabled.",
+        "actual_behavior": "Stack construction calls SS_MinP(0.0), whose assertion requires 0.0 < min_p <= 1.0. AssertionError occurs before CustomSampler initialization; SS_MinP also supplies no no-op alternative. The parent-tree search finds only the package export, so reach is established for callers choosing the new constructor, not every generation workflow.",
+        "locations": [
+          {
+            "commit": "c7da6b7bb7e45ad06f168594ffb374501ba818cb",
+            "path": "exllamav3/generator/sampler/presets.py",
+            "symbol": "ComboSampler.__init__"
+          },
+          {
+            "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_MinP.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_0c1f12314a274aec9acd4e56beaca701",
+          "call_a0ae0631ddf94841861287e501b4702c",
+          "call_61212dc8b6ac4f1ab76eae19308474ab",
+          "call_103f6452e2354b72a0e646a3f1c1219c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the new default and unconditional step construction with SS_MinP's assertion and searched the whole parent tree for ComboSampler references.",
+            "evidence": [
+              "call_0c1f12314a274aec9acd4e56beaca701",
+              "call_a0ae0631ddf94841861287e501b4702c",
+              "call_61212dc8b6ac4f1ab76eae19308474ab"
+            ],
+            "limits": "No repository constructor or package import was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the constructor's scalar predicate at the new default; it returned False.",
+            "evidence": [
+              "call_88a0c5dd65fe4989b482f744fb84b15b"
+            ],
+            "limits": "Checks the predicate only, not repository execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds ComboSampler with ordered penalties and filters and configurable temperature placement, resolving a missing export target but introducing an unusable min_p default."
+  },
+  "evidence": {
+    "call_0c1f12314a274aec9acd4e56beaca701": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c7da6b7bb7e45ad06f168594ffb374501ba818cb",
+        "offset": 158,
+        "max_bytes": 1433
+      },
+      "result_sha256": "a1a54842ea46ec59013254e61432f7e92b946a8ba9e500c0a263832dfea53ed9"
+    },
+    "call_a0ae0631ddf94841861287e501b4702c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 45000
+      },
+      "result_sha256": "b8064795f9461cc2bce9081d1bc1f72c1bd8105a0fad1737a7de1b17dad3f012"
+    },
+    "call_76855d08aba145afba66aede6b266805": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "path": "exllamav3/generator/sampler/presets.py"
+      },
+      "result_sha256": "50342baba83cdae314149323325e9fb9b3241f9fc87f3352db6d735d91b76550"
+    },
+    "call_61212dc8b6ac4f1ab76eae19308474ab": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "query": "ComboSampler",
+        "limit": 100
+      },
+      "result_sha256": "02a8bc7945934edc3709ba5ccb4a902e8eaf57875a656ecb07ce2cda0cc8c740"
+    },
+    "call_103f6452e2354b72a0e646a3f1c1219c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "path": "exllamav3/generator/sampler/__init__.py"
+      },
+      "result_sha256": "19afa6d486389d4984512b816a75333e260d021566e42545ed2ab41d57510df8"
+    },
+    "call_b4b99d7d21cf4ec4a5590f3e4e1d3049": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "max_bytes": 16384
+      },
+      "result_sha256": "2d931c5df3cd8e5482bcb06d0a1a6d540d631c45e27b80803f3a5ea1e3833613"
+    },
+    "call_7ee2d098ffe54e2a92fbf7a2de7e529a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "query": "sampler import",
+        "limit": 100
+      },
+      "result_sha256": "160f9791a292813c204117a4c90cca107de8e85815805d7a0d61f3e126fbb8f6"
+    },
+    "call_e95983cfeb69481788029a35ca70994c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "72dabb2533407498b1ef5762020a16e7af4c75ef86acbc3f576bed20c3d747df"
+    },
+    "call_4f69563ca204484e9604f60847bc3efa": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16384
+      },
+      "result_sha256": "35540cfa7ce6277ad3691b38f0950130195e87410b3de98fbb2857f48344adea"
+    },
+    "call_d6340b05630f4f998a5d7d7cf5c7e52a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16384
+      },
+      "result_sha256": "d862148146d45968a1b2e32a5e4f741bf2a466a810fbcfbd935bd269eb1b3c89"
+    },
+    "call_88a0c5dd65fe4989b482f744fb84b15b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nmin_p=0.0\nprint('default_min_p_satisfies_constructor_assertion:',0.0 < min_p <= 1.0)\nprint('sustain_tokens:',int(10e7))\np=[0.6,0.3,0.1]; t=0.5; m=0.3\nq=[x**(1/t) for x in p]; q=[x/sum(q) for x in q]\nprint('min_p survivors temperature-first:',[i for i,x in enumerate(q) if x>=max(q)*m])\nprint('min_p survivors temperature-last:',[i for i,x in enumerate(p) if x>=max(p)*m])"
+        ]
+      },
+      "result_sha256": "dc66a602947e8916a96fbc51f9cefe2024b1c1118ac202179462f8c0cc7e3dc5"
+    }
+  }
+}

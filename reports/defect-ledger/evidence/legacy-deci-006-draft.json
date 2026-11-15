@@ -1,0 +1,721 @@
+{
+  "schema_version": 5,
+  "sha": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+  "parent_shas": [
+    "29060addb5a3994cec3867e1f2f6b30ecda7b8a3"
+  ],
+  "cutoff_date": "2025-04-12T03:05:05+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The architecture registry lacked DeciLMForCausalLM. The change adds a configuration reader and model builder for its per-block attention and FFN descriptions.",
+        "basis": "source",
+        "evidence": [
+          "call_d63f63edb9594598a23421b219e4dadc",
+          "call_82b608bd302d43ceabfa019039f70570"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation reuses existing attention, gated MLP and optional transformer branches instead of introducing separate inference kernels. Checkpoint layer indices remain unchanged while cache indices advance only for active attention branches.",
+        "basis": "source",
+        "evidence": [
+          "call_82b608bd302d43ceabfa019039f70570",
+          "call_46edc9733bda43638ce5ed943220eac7",
+          "call_ccd753b597d649d78a31f998860bc338"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Registration makes DeciLM selectable through Config.from_directory and Model.from_config, including the converter's get_base_model path. Registration does not establish compatibility with every checkpoint advertising that architecture.",
+        "basis": "source",
+        "evidence": [
+          "call_d63f63edb9594598a23421b219e4dadc",
+          "call_ff1bbf90bdb244eda29f628b8b58ceb7",
+          "call_1161d92cc681419b8d5972ee8d72368c",
+          "call_23f42d72dfb64135bbaec1109461147e"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The inspected discussions concern other changes: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension/toolchain problem; #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d concerns chat mode; #13 concerns tokenizers without bos_token_id; #4, \u201cchore: update config.py,\u201d proposes a spelling correction. None supplies evidence of DeciLM validation.",
+        "basis": "source",
+        "evidence": [
+          "call_4398ee454cb8498a805ef0e6289061d8",
+          "call_364a45b1b7b44f3189af521c75091efa",
+          "call_aafbc46838d44c08846c645b8906f32d",
+          "call_7ac0de69996140ddae5a1ff3c7d68428",
+          "call_c6702aa61e74463f95eb286e938090f2"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, generation, conversion or GPU execution was performed. The Python check transcribed dimension arithmetic only.",
+      "Tensor-shape corroboration is limited to the first Super-49B shard; configuration agreement alone does not establish checkpoint-wide compatibility.",
+      "The source establishes the 2/3 FFN scaling and 256-wide alignment, but not the author's rationale for choosing them.",
+      "For empty blocks, behavior of saving an empty tensor dictionary was not executed; the subsequent zero-denominator bitrate calculation is established by source inspection."
+    ],
+    "links": [
+      "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Build DeciLM from heterogeneous block configurations",
+        "claims": [
+          {
+            "text": "DeciLMConfig requires block_configs and checks its length against num_hidden_layers. It reads global hidden size and query-head count, defaults head_dim to hidden_size // num_attention_heads, accepts only SiLU when hidden_act is supplied, defaults tied embeddings to false, and delegates RoPE settings with NEOX layout. The parent tree has no block_config, n_heads_in_group or ffn_mult matches.",
+            "basis": "source",
+            "evidence": [
+              "call_82b608bd302d43ceabfa019039f70570",
+              "call_ff1bbf90bdb244eda29f628b8b58ceb7",
+              "call_3a59d7fc7b014b29b68517df3cc5f1d3",
+              "call_e1b375e67be7487d95ef5f1be1a47657",
+              "call_de4ae7dc3ad644908690509163d20667"
+            ]
+          },
+          {
+            "text": "Each block requires attention and ffn dictionaries. A truthy no_op omits that branch and its norm. Otherwise attention maps n_heads_in_group directly to num_kv_heads and uses separate q_proj/k_proj/v_proj/o_proj tensors; the FFN uses gate_proj/up_proj/down_proj. Active branches reject linear replacement and sparsification, while attention additionally rejects the listed sink-attention modes. These are explicit support boundaries, not alternate implementations.",
+            "basis": "source",
+            "evidence": [
+              "call_82b608bd302d43ceabfa019039f70570",
+              "call_ccd753b597d649d78a31f998860bc338",
+              "call_25c6f3a140144e778926a62af49a2795"
+            ]
+          },
+          {
+            "text": "The FFN width is int(2 * ffn_mult * hidden_size / 3), rounded upward to a multiple of 256 using +255 before integer division. Existing GatedMLP creates two hidden-to-intermediate projections and one intermediate-to-hidden projection, selecting its SiLU multiplication implementation by default. Quantization-map labels preserve shared input grouping for gate/up and Q/K/V.",
+            "basis": "source",
+            "evidence": [
+              "call_82b608bd302d43ceabfa019039f70570",
+              "call_25c6f3a140144e778926a62af49a2795",
+              "call_ccd753b597d649d78a31f998860bc338"
+            ]
+          },
+          {
+            "text": "The builder surrounds the blocks with model.embed_tokens, model.norm and lm_head. It records the last active attention block for prefill, allowing Model.prefill to stop after that block's cache update. prepare_inputs records input_ids and delegates attention preparation; the existing default is uncached Flash Attention, with separate cached and SDPA preparation paths.",
+            "basis": "source",
+            "evidence": [
+              "call_82b608bd302d43ceabfa019039f70570",
+              "call_1161d92cc681419b8d5972ee8d72368c",
+              "call_ccd753b597d649d78a31f998860bc338"
+            ]
+          },
+          {
+            "text": "The earlier optional-branch entry records missing-norm input handling and direct empty-block allocation defects.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_716c57db2f7d4b0980948e4d79ccd58e"
+            ]
+          },
+          {
+            "text": "Those implementations are unchanged here. DeciLM supplies a norm for every active branch, avoiding the missing-norm trigger. It can construct wholly empty blocks; their ordinary forward path skips both branches. Direct allocation still divides by zero, although the inspected converter guards allocate_q with a nonempty linear list.",
+            "basis": "source",
+            "evidence": [
+              "call_82b608bd302d43ceabfa019039f70570",
+              "call_46edc9733bda43638ce5ed943220eac7",
+              "call_4db4fc16aca243ef9c71654712b7bce7",
+              "call_2d1fe60092fb416e93ecba27461686f5"
+            ]
+          },
+          {
+            "text": "Pinned nvidia/Llama-3_3-Nemotron-Super-49B-v1 uses the expected block schema: hidden size 8192, 64 query heads, active attention entries with n_heads_in_group=8, variable FFN multipliers and attention-only no-ops. Its first shard corroborates separate projection names, K/V shape [1024,8192], and first-layer gate/up shape [14336,8192]. It supplies SiLU, untied embeddings and llama3 RoPE scaling rather than relying on defaults.",
+            "basis": "source",
+            "evidence": [
+              "call_01fce43cee8f4947acd6ceccce7131a0",
+              "call_c74abd2a375c44feaeafda4eae08c0c3",
+              "call_82b608bd302d43ceabfa019039f70570"
+            ]
+          },
+          {
+            "text": "Pinned nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1 and nvidia/Llama-3_1-Nemotron-Ultra-253B-v1 each use hidden size 16384, 128 query heads, active n_heads_in_group=16 entries and 162 block descriptions, including wholly empty blocks. Both supply SiLU, untied embeddings and llama3 RoPE scaling. Their configuration structure fits the new reader, but this does not establish successful conversion of their empty blocks.",
+            "basis": "source",
+            "evidence": [
+              "call_cfb4ac7792c84a42a06fb0d2a03f5516",
+              "call_9537373396d7444bbcb611c787986a71",
+              "call_ee4f3d010e0549278cbcc6d9fc4a2504",
+              "call_727ba4bab7534c67afe19b0d8503a133",
+              "call_82b608bd302d43ceabfa019039f70570",
+              "call_2d1fe60092fb416e93ecba27461686f5"
+            ]
+          },
+          {
+            "text": "Pinned nvidia/Llama-3_1-Nemotron-51B-Instruct supplies the block schema and 8192/64 global dimensions, but includes active attention branches with replace_with_linear=true. The new constructor explicitly rejects those branches, so the commit's Nemotron wording is broader than this checkpoint's supported feature set.",
+            "basis": "source",
+            "evidence": [
+              "call_55d748a2ab324cbea4a4df368fccba9e",
+              "call_82b608bd302d43ceabfa019039f70570"
+            ]
+          },
+          {
+            "text": "The six pinned older configurations\u2014Deci/DeciCoder-6B, Deci/DeciLM-6b, Deci/DeciLM-6b-instruct, Deci/DeciLM-7B, Deci/DeciLM-7B-instruct and Deci/DeciLM-7B-instruct-GGUF\u2014all advertise DeciLMForCausalLM but omit block_configs. Each has hidden size 4096 and 32 attention heads, SiLU and untied embeddings. The first five express per-layer KV counts separately; the GGUF configuration instead supplies a global KV count. None provides the required per-block FFN mapping.",
+            "basis": "source",
+            "evidence": [
+              "call_53a32c6937e9449ba21e936188e03d41",
+              "call_8c8cd2d5731743baab87854cd6978c3e",
+              "call_907a0800b8cb4acab1ededd73fbe79be",
+              "call_2e17b0a704954a409d02ecd121354f69",
+              "call_0c5bb688a8f6466b8be3ae9d7329f8cc",
+              "call_5cb57a6ba4944253ab0b5a328144d862",
+              "call_82b608bd302d43ceabfa019039f70570"
+            ]
+          },
+          {
+            "text": "A standard-library transcription produced head_dim=128 for all three inspected global dimension pairs. For Super-49B, multipliers 0.5, 1, 1.3125, 2.625, 3.28125 and 5.25 produce widths 2816, 5632, 7168, 14336, 17920 and 28672. Its first-layer calculated projection shapes match the inspected header. This checks arithmetic, not model execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_29a2c290b8184d4785c5d2fa90a08fcc"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "legacy-decilm-config",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The newly registered architecture name also identifies older configurations that the new reader cannot consume.",
+        "trigger": "Load any of the six inspected older Deci configurations through the new DeciLMConfig, after base initialization succeeds.",
+        "expected_behavior": "Architecture-wide compatibility would require translating the older per-layer KV and global FFN schema, or explicitly narrowing the supported checkpoint family.",
+        "actual_behavior": "The required block_configs read has no fallback; read_dict raises ValueError when that key is absent.",
+        "locations": [
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/models/decilm.py",
+            "symbol": "DeciLMConfig.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_82b608bd302d43ceabfa019039f70570",
+          "call_a75e97eceda44a8db4501ce0bf785410",
+          "call_53a32c6937e9449ba21e936188e03d41",
+          "call_8c8cd2d5731743baab87854cd6978c3e",
+          "call_907a0800b8cb4acab1ededd73fbe79be",
+          "call_2e17b0a704954a409d02ecd121354f69",
+          "call_0c5bb688a8f6466b8be3ae9d7329f8cc",
+          "call_5cb57a6ba4944253ab0b5a328144d862"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared all six pinned configs with the new required read and read_dict. Whole-parent caller search found Config.from_directory consumers; the inspected converter calls it directly, and the factory selects config_class from the registry.",
+            "evidence": [
+              "call_e883e07ae5b8457695f54f8bc9972750",
+              "call_ff1bbf90bdb244eda29f628b8b58ceb7",
+              "call_23f42d72dfb64135bbaec1109461147e",
+              "call_d63f63edb9594598a23421b219e4dadc"
+            ],
+            "limits": "No checkpoint was loaded. Other factory consumers were located but not individually executed; GGUF weight-format support is not established."
+          }
+        ]
+      },
+      {
+        "id": "empty-block-allocation-carried",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited direct-allocation failure remains applicable to wholly empty DeciLM blocks.",
+        "trigger": "Call TransformerBlock.allocate_q on a block whose attention and FFN both have no_op=true.",
+        "expected_behavior": "Return an empty strategy or reject the empty allocation before dividing by its weight count.",
+        "actual_behavior": "All projections are absent, so allocate_transformer computes budget / numel with numel=0.",
+        "locations": [
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/conversion/allocation.py",
+            "symbol": "allocate_transformer"
+          }
+        ],
+        "source_evidence": [
+          "call_82b608bd302d43ceabfa019039f70570",
+          "call_46edc9733bda43638ce5ed943220eac7",
+          "call_4db4fc16aca243ef9c71654712b7bce7"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked the unchanged allocator and its TransformerBlock wrapper. Whole-parent allocate_q search located the converter consumer, which guards allocation with if linears and therefore avoids this particular failure.",
+            "evidence": [
+              "call_53c0e4a58d95427d80ab4a5b51fb8059",
+              "call_2d1fe60092fb416e93ecba27461686f5"
+            ],
+            "limits": "Direct-call failure inferred from source; not an observed converter failure at allocate_q."
+          }
+        ]
+      },
+      {
+        "id": "empty-block-conversion-bitrate",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Newly constructible empty blocks expose an unguarded converter bitrate denominator.",
+        "trigger": "Convert a wholly empty DeciLM block, such as those in the inspected Ultra configurations, and reach the final bitrate calculation.",
+        "expected_behavior": "Treat the block as a parameter-free identity and skip or specially represent its bitrate.",
+        "actual_behavior": "The converter skips quantization allocation but subsequently divides num_bits by module.weights_numel(); an empty TransformerBlock has no registered submodules and therefore a zero weight count.",
+        "locations": [
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/models/decilm.py",
+            "symbol": "DeciLMModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_82b608bd302d43ceabfa019039f70570",
+          "call_36aecc2578e94b679d981d50d913a3a8",
+          "call_2d1fe60092fb416e93ecba27461686f5",
+          "call_cfb4ac7792c84a42a06fb0d2a03f5516",
+          "call_ee4f3d010e0549278cbcc6d9fc4a2504"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced empty branch construction, None-filtering registration, recursive weight counting and the converter loop. Parent search located convert.py importing this main function; its successful prepare path calls main directly.",
+            "evidence": [
+              "call_46edc9733bda43638ce5ed943220eac7",
+              "call_36aecc2578e94b679d981d50d913a3a8",
+              "call_23f42d72dfb64135bbaec1109461147e",
+              "call_6b2dcc11e4ce4b1ca9802aeed76c2a7f",
+              "call_06ca1e15c41d40a1bd2f17fdb26486b2"
+            ],
+            "limits": "No conversion was run. Empty-tensor serialization precedes this calculation and could fail earlier."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds block-configured DeciLM/Nemotron construction using existing inference modules, with explicit feature restrictions, older-config incompatibility and an empty-block conversion concern."
+  },
+  "evidence": {
+    "call_d63f63edb9594598a23421b219e4dadc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 159,
+        "max_bytes": 860
+      },
+      "result_sha256": "521e55eb45dc84fc2b10dd63d4a8b37a368cf0f6f677a0df1518dd0ec06567b2"
+    },
+    "call_82b608bd302d43ceabfa019039f70570": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 1019,
+        "max_bytes": 6905
+      },
+      "result_sha256": "4dcb34e5872add2bf58d0c4e05daf4431ea645f4adced894d03e2fe6bf090339"
+    },
+    "call_b00e9ab285f8420fb683c22abb0204d9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "Deci",
+        "limit": 100
+      },
+      "result_sha256": "6ff4613a00df6d509842140cd096ecdfbc3f6d2d28ce5eeab6fbcee831e1a1be"
+    },
+    "call_6a7800a7fd3d46b68083c441a460e8fc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "Nemotron",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c3d3f675764d431985535674cbab438b": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "95119645e7fddb00e39d28f61bfabee897eeed2005b9525e4429a2d6ea39cd8a",
+      "catalog_only": true
+    },
+    "call_53a32c6937e9449ba21e936188e03d41": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciCoder-6B",
+        "revision": "c4af0b530b0cf83087d372ca481c0a3675a19ccf",
+        "path": "config.json",
+        "max_bytes": 16384
+      },
+      "result_sha256": "d01f6b710c989493b163356f6d6ad456f491645f9eb8d5283d00692ca13614a3"
+    },
+    "call_8c8cd2d5731743baab87854cd6978c3e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-6b",
+        "revision": "03eb969aed83757e89bbf329bd8ac6b2c9499748",
+        "path": "config.json",
+        "max_bytes": 16384
+      },
+      "result_sha256": "5cf4d067df903956c37968709baaeed79a680b91b821b46e68ae99a7af615a2d"
+    },
+    "call_907a0800b8cb4acab1ededd73fbe79be": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-6b-instruct",
+        "revision": "423fbcaec045b0f4c3917b6ab974bf28605ceb57",
+        "path": "config.json",
+        "max_bytes": 16384
+      },
+      "result_sha256": "e4abe6f7c2d14dc4abade8120d1849b8ffad963dc3303f420c3dc452d2e697f3"
+    },
+    "call_2e17b0a704954a409d02ecd121354f69": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-7B",
+        "revision": "c3c9f4226801dc0433f32aebffe0aac68ee2f051",
+        "path": "config.json",
+        "max_bytes": 16384
+      },
+      "result_sha256": "689a98d73c70c9b418e928cb9cf243c2a1772aa99b0c7eacfec9fbdc04e6c9c9"
+    },
+    "call_0c5bb688a8f6466b8be3ae9d7329f8cc": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-7B-instruct",
+        "revision": "4adc7aa9efe61b47b0a98b2cc94527d9c45c3b4f",
+        "path": "config.json",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b2d40b65bf953f3968ec28c483ce27c7badc0a321b3acac9923312868582e75c"
+    },
+    "call_5cb57a6ba4944253ab0b5a328144d862": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-7B-instruct-GGUF",
+        "revision": "9d724a12bd36e8a884f147751ea207ed56a98035",
+        "path": "config.json",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de894743fc1f773129608c770bf6bc15659fc996dcd4f04704a1370f8a9a2d1"
+    },
+    "call_55d748a2ab324cbea4a4df368fccba9e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-51B-Instruct",
+        "revision": "2e9bdbfa8e1ab73ce98f5960143cf927192d59e7",
+        "path": "config.json",
+        "max_bytes": 30000
+      },
+      "result_sha256": "a4f82797a221141ac15bb74e5cf4675bd0a4da57f9dc9c3d7170bd089c16251a"
+    },
+    "call_cfb4ac7792c84a42a06fb0d2a03f5516": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "max_bytes": 65536
+      },
+      "result_sha256": "b67ca61fd7973f73abb1e7f59d8ac88667a3383c5116d50058df9e05b68f64fe"
+    },
+    "call_9537373396d7444bbcb611c787986a71": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "offset": 65536,
+        "max_bytes": 16384
+      },
+      "result_sha256": "d0776dd67a3faca8133e2d7d612d830ce34b97466182dc0e3ca96c52813471db"
+    },
+    "call_ee4f3d010e0549278cbcc6d9fc4a2504": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "max_bytes": 65536
+      },
+      "result_sha256": "0bbfebb2ddf50cb4c1d350e8dd9347cf541c8438a01789ea0dc6fc20173040e0"
+    },
+    "call_727ba4bab7534c67afe19b0d8503a133": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "offset": 65536,
+        "max_bytes": 16384
+      },
+      "result_sha256": "67f7412fc9b80e15f2982b2b1a63ce91d846c229633b97b5d8f3f27f321cf6ee"
+    },
+    "call_01fce43cee8f4947acd6ceccce7131a0": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1",
+        "revision": "4605d825c59945d6f8a195826ae8ff3366653f83",
+        "path": "config.json",
+        "max_bytes": 48000
+      },
+      "result_sha256": "152fb6676e7b70f89edacf6db15d8028ac67a1b01aea1327584e5adaaee6552b"
+    },
+    "call_46edc9733bda43638ce5ed943220eac7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "50384b5303f4fc1a56d580d948197e7e81cedc753634dd689952b6d3bb74cd56"
+    },
+    "call_ff1bbf90bdb244eda29f628b8b58ceb7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b92de8817507087fcd534c15ea865b7d5e4729fc8ce45b356f9a32abccdb1b54"
+    },
+    "call_3a59d7fc7b014b29b68517df3cc5f1d3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "block_config",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_e1b375e67be7487d95ef5f1be1a47657": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "n_heads_in_group",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_de4ae7dc3ad644908690509163d20667": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "ffn_mult",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_ccd753b597d649d78a31f998860bc338": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "373d4e058f45afa126866cae705d42f7c07a7c4cdc974b4ce262cf7423e1687a"
+    },
+    "call_1ef394999bb149f59d041a297c4ac337": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "400199562228f0d5429251db57b4782c5b874c3397c3e3cb4c13d82bbc6674a8",
+        "max_bytes": 10000
+      },
+      "result_sha256": "c622dc7490e4e867d77bc18ebb76bc0000c0aa622a4ffc33853ac3078bd6ce6b",
+      "catalog_only": true
+    },
+    "call_c74abd2a375c44feaeafda4eae08c0c3": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1",
+        "revision": "4605d825c59945d6f8a195826ae8ff3366653f83",
+        "path": "model-00001-of-00021.safetensors",
+        "limit": 30
+      },
+      "result_sha256": "92c2effb260b6dd27e25da9a89cddd65263f11ca7be867d3c1d29fa26f9abe90"
+    },
+    "call_716c57db2f7d4b0980948e4d79ccd58e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+        "max_bytes": 16384
+      },
+      "result_sha256": "be51116f6301334620090f865d98b48628827369d5e03bb443c2fc71ebe731ad"
+    },
+    "call_53c0e4a58d95427d80ab4a5b51fb8059": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "allocate_q(",
+        "limit": 100
+      },
+      "result_sha256": "fb1fa5ee20249050a8fd86066ced49f0d058a2532842912bebc1fca278378a9c"
+    },
+    "call_4db4fc16aca243ef9c71654712b7bce7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/conversion/allocation.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "a36aae7a1516117ce1b479f3028a3aadbbd8053822ba55dd6241f293fbed57a5"
+    },
+    "call_2d1fe60092fb416e93ecba27461686f5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 9200,
+        "max_bytes": 3300
+      },
+      "result_sha256": "14afca09c393cc1ab9e1054ca8b83bfec1066319594f9431108ffdc78f55f5bb"
+    },
+    "call_36aecc2578e94b679d981d50d913a3a8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "7315e2f2823e85046bb8bac6d2dd4d4a5ee95bbf73604c43362947a3d101f243"
+    },
+    "call_4398ee454cb8498a805ef0e6289061d8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "30c956b1c7d3661433626758ae50715fb5668e8740d369baf730b45ce7866ee7"
+    },
+    "call_364a45b1b7b44f3189af521c75091efa": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d39b8ad33413ff5fddab68a9a11208f763ced9e5e10b0f0ba9065bb398050b52"
+    },
+    "call_aafbc46838d44c08846c645b8906f32d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "e09e9d60b76b92015e3cb668c63133a106466cf4f242859efd57cd1d21c53e2b"
+    },
+    "call_7ac0de69996140ddae5a1ff3c7d68428": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "de277ac22f0cab060dd43c649c60360d8fbecff8ffdeb655a7ac9627b1fb4ff4"
+    },
+    "call_c6702aa61e74463f95eb286e938090f2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8e9ff7fc6f98189b97e6569e2f3ae0f16040de094b965013d02789e79a6f9523"
+    },
+    "call_f2770f4c7f5b464386261de0787f26b5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "model_class",
+        "limit": 100
+      },
+      "result_sha256": "3e17eceb2169ee660d46693ca3e15ca873752798d63941b71a1f163a6e9d118f"
+    },
+    "call_1161d92cc681419b8d5972ee8d72368c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "fc9e6d8f93a11bcc970a6c6b8401293cef15584a27bce2e9e382b6055e31dea2"
+    },
+    "call_23f42d72dfb64135bbaec1109461147e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 6000,
+        "max_bytes": 3200
+      },
+      "result_sha256": "84408ceb0a4aeb26e9cffdf6bb04e6b336a1a14741c10cae749d420f1a83fbfe"
+    },
+    "call_8ab818056ed44969bed47b554a506da4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "head",
+        "path": "exllamav3/models",
+        "limit": 150
+      },
+      "result_sha256": "a77a52b5d99b52c27ab0f99f4cd9757602eb934c1353d999112c0ccf5c4f10cc"
+    },
+    "call_29a2c290b8184d4785c5d2fa90a08fcc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def width(h,m):\n n=int(2*m*h/3); return n,((n+255)//256)*256\nfor h,q,ms in [(8192,64,[0.5,1,1.3125,2.625,3.28125,5.25]),(16384,128,[0.4875,0.975,1.4625,1.95,2.4375,2.925,3.4125,4.875,27.5625,31.40625,36.5625,39])]:\n print('hidden',h,'head_dim',h//q,'widths',[(m,width(h,m)) for m in ms])\nprint('Super first-layer K/V shape:',(8*(8192//64),8192))\nprint('Super first-layer up/gate shape:',(width(8192,2.625)[1],8192))\nprint('legacy head_dim',4096//32)\n"
+        ]
+      },
+      "result_sha256": "f4d48e634e12c9c001f15b95bcacbc32e961e3b7ca852d0a3cb0b611d1faa2bf"
+    },
+    "call_e883e07ae5b8457695f54f8bc9972750": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "Config.from_directory(",
+        "limit": 100
+      },
+      "result_sha256": "4be0706537f8393512bc892c5d6d2573c1b7af91b901562e5acf88b644beef52"
+    },
+    "call_a75e97eceda44a8db4501ce0bf785410": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_25c6f3a140144e778926a62af49a2795": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "11b86d6c5b54aea6ed1e5f0518b6f1c2b244420fc8c6f0605f04c52b4bd83e64"
+    },
+    "call_6b2dcc11e4ce4b1ca9802aeed76c2a7f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "conversion.convert_model",
+        "limit": 100
+      },
+      "result_sha256": "0bafe1b5e24422c6f6843b875e3f51d62c44ae81dc5cb40c8d6dde5a4ee70dfc"
+    },
+    "call_06ca1e15c41d40a1bd2f17fdb26486b2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "convert.py",
+        "max_bytes": 2000
+      },
+      "result_sha256": "005aa3bf1d4e254f82c7c5985334dbfb69de9a398326c807fea79b6970168e52"
+    }
+  }
+}

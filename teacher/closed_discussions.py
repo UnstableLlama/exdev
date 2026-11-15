@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Task-only, cutoff-bound closed discussion navigation (salience-v2)."""
+from .blob_store import put
 import hashlib
 import json
 import re
@@ -101,7 +102,7 @@ def attach(packet, manifest, bundle):
             raise ValueError('Invalid closed discussion matched terms')
         data=item['content'].encode();sha=hashlib.sha256(data).hexdigest()
         if sha!=item['content_sha256']:raise ValueError('Closed discussion checksum mismatch')
-        (Path(packet)/'blobs'/sha).write_bytes(data)
+        put(packet, data)
         fields=('number','kind','title','author_login','created_at','closed_at','state','url','available',
                 'repo_paths_mentioned','repo_paths_mentioned_truncated','matched_terms')
         rows.append({k:item[k] for k in fields})

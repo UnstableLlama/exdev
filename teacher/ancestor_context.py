@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Trusted approval and bounded export of reviewed, strict-ancestor explanations."""
+from .blob_store import put
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -93,7 +94,7 @@ def attach_entries(packet, runs, max_bytes=MAX_CONTEXT_BYTES):
     for entry in ordered:
         data=json.dumps(entry,sort_keys=True).encode()
         digest=hashlib.sha256(data).hexdigest()
-        (packet/'blobs'/digest).write_bytes(data)
+        put(packet, data)
         references.append({'sha':entry['sha'],'blob':digest})
     manifest.update(ancestor_entries=references,ancestor_context_complete=True)
     write_json(packet/'manifest.json',manifest)

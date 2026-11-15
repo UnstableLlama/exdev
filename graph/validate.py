@@ -5,6 +5,7 @@ import collections
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import sqlite3
@@ -13,8 +14,16 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / '.graph-work/exllamav3'
-BIN = ROOT / '.tools/cbm-v0.12.1/codebase-memory-mcp'
-PIN = '77745491f0a9c346d6da23eed4d92b5feaa31a27a883c9faa4fa9f47c8183705'
+def backend(machine=None):
+    machine = machine or platform.machine()
+    lock = json.loads((ROOT / 'graph/backend.lock.json').read_text())
+    if machine not in lock['architectures']:
+        raise RuntimeError('Unsupported graph backend machine: ' + machine)
+    directory = 'cbm-v0.12.1' if machine == 'x86_64' else 'cbm-v0.12.1-arm64'
+    return ROOT / '.tools' / directory / 'codebase-memory-mcp', lock['architectures'][machine]['binary_sha256']
+
+
+BIN, PIN = backend()
 OUT = ROOT / 'data/graph/validation'
 
 

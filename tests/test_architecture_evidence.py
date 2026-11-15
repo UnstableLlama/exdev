@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 import test_teacher_packet
-from teacher.architecture_evidence import trigger,load_bundle
+from teacher.architecture_evidence import trigger,load_bundle,trigger_details,administrative_outcome
 from teacher.root_evidence import choose_revision,recover_hf
 from teacher.walk_inputs import prepare,validate_bundle
 from teacher.session import FreshSession
@@ -52,6 +52,19 @@ class ArchitectureTests(unittest.TestCase):
         self.assertTrue(all(r is not None for u,r in calls if 'safetensors' in u))
         self.assertTrue(all(x['artifact_role'] in ('non_weight','tensor_header') for x in items))
 
+    def test_absent_roles_are_distinct_from_failed_downloads(self):
+        rows=[{'id':'a'*40,'date':'2020-01-01T00:00:00Z'}]
+        tree=[{'type':'file','path':'config.json'}]
+        with patch('teacher.root_evidence.pages',side_effect=[iter([rows]),iter([tree])]),patch('teacher.root_evidence.fetch',return_value=(b'{}',{})):
+            _,report=recover_hf('Demo',self.root,repo='org/demo',cutoff='2021-01-01T00:00:00Z',reference_only=True)
+        self.assertEqual(report['status'],'complete_with_absences')
+        self.assertEqual(set(report['absent_at_revision']),{'tokenizer_config.json','safetensors headers'})
+        tree.append({'type':'file','path':'tokenizer_config.json'})
+        with patch('teacher.root_evidence.pages',side_effect=[iter([rows]),iter([tree])]),patch('teacher.root_evidence.fetch',side_effect=[(b'{}',{}),OSError('unreadable')]):
+            _,report=recover_hf('Demo',self.root,repo='org/demo',cutoff='2021-01-01T00:00:00Z',reference_only=True)
+        self.assertEqual(report['status'],'incomplete')
+        self.assertNotIn('tokenizer_config.json',report['absent_at_revision'])
+
     def test_guidance_legacy_and_new_contract(self):
         old=FreshSession(self.packet).initial[0]['content'];self.assertNotIn('read the selected callee',old)
         directory=self.root/'evidence';directory.mkdir()
@@ -95,6 +108,16 @@ class ArchitectureTests(unittest.TestCase):
         validate_bundle(packet,directory/'000001-eligible.json')
         ref.write_text(ref.read_text()+' ')
         with self.assertRaisesRegex(ValueError,'Reference evidence changed'):validate_bundle(packet,directory/'000001-eligible.json')
+        original=json.loads(json.dumps(bundle))
+        bundle['items']=[x for x in bundle['items'] if x['path']=='config.json']
+        r=bundle['selections'][0]
+        r.update(status='complete_with_absences',missing=['tokenizer_config.json','safetensors headers'],absent_at_revision=['tokenizer_config.json','safetensors headers'],published_files=['config.json'],absence_reason='Not published at pin',failures=[])
+        ref.write_text(json.dumps(bundle));load_bundle(self.repo,sha,ref)
+        r['published_files'].append('model.safetensors');ref.write_text(json.dumps(bundle))
+        with self.assertRaisesRegex(ValueError,'Published reference'):load_bundle(self.repo,sha,ref)
+        r['published_files']=['config.json'];r['failures']=[{'path':'config.json'}];ref.write_text(json.dumps(bundle))
+        with self.assertRaisesRegex(ValueError,'Invalid absent'):load_bundle(self.repo,sha,ref)
+        bundle=original
         bundle['items'][-1]['kind']='hf_file';bundle['items'][-1]['artifact_role']='non_weight'
         ref.write_text(json.dumps(bundle))
         with self.assertRaises(ValueError):load_bundle(self.repo,sha,ref)
@@ -119,3 +142,76 @@ class ArchitectureTests(unittest.TestCase):
         from unittest.mock import patch
         with patch('teacher.architecture_evidence.git',return_value=b''),patch('teacher.architecture_evidence.inventory',return_value=(set(),{})):
             self.assertEqual(trigger(self.repo,'root'),{'architectures':[],'class_files':[]})
+
+
+    def bundle(self,sha,**extra):
+        b=dict(task_sha=sha,cutoff=self.git('show','-s','--format=%cI',sha),trigger=trigger(self.repo,sha),items=[],selections=[])
+        b.update(extra);p=self.root/(sha+'.json');p.write_text(json.dumps(b));return p
+
+    def test_rename_outcome_is_bound_and_registry_cannot_be_waived(self):
+        self.add('exllamav3/models/old.py','class DemoConfig:\n arch_string="Demo"\nclass DemoModel: pass\n')
+        self.git('mv','exllamav3/models/old.py','exllamav3/models/new.py');self.git('commit','-am','Rename')
+        sha=self.git('rev-parse','HEAD');out=administrative_outcome(self.repo,sha)
+        self.assertEqual(out['basis'],'git_renames')
+        p=self.bundle(sha,administrative_outcome=out);self.assertEqual(load_bundle(self.repo,sha,p)['items'],[])
+        b=json.loads(p.read_text());b['administrative_outcome']['renames']={};p.write_text(json.dumps(b))
+        with self.assertRaises(ValueError):load_bundle(self.repo,sha,p)
+        sha=self.add('exllamav3/models/registry.py','R={"New": {"config_class": C,"model_class": M}}')
+        with self.assertRaisesRegex(ValueError,'Registry-key'):administrative_outcome(self.repo,sha,reason='Not new')
+        p=self.bundle(sha,administrative_outcome=out)
+        with self.assertRaisesRegex(ValueError,'Registry-key'):load_bundle(self.repo,sha,p)
+
+    def test_source_identity_and_existing_file_addition(self):
+        path='exllamav3/models/demo.py'
+        sha=self.add(path,'class DemoConfig:\n def __init__(self,directory,**kwargs):\n  super().__init__(directory,kwargs.get("arch_string","DemoForCausalLM"),M)\n')
+        self.assertEqual(trigger(self.repo,sha)['architectures'],['DemoForCausalLM'])
+        with self.assertRaisesRegex(ValueError,'Source-derived'):administrative_outcome(self.repo,sha,reason='Not new')
+        sha=self.add(path,'class DemoConfig:\n arch_string="DemoForCausalLM"\nclass SecondConfig:\n arch_string="SecondForCausalLM"\n')
+        self.assertEqual(trigger(self.repo,sha)['architectures'],['SecondForCausalLM'])
+        self.assertIn(path,trigger(self.repo,sha)['class_files'])
+        p=self.bundle(sha,selections=[dict(architecture='Wrong',status='no_eligible_revision',reason='Fixture',candidates_considered=['org/demo'])])
+        with self.assertRaisesRegex(ValueError,'Missing architecture'):load_bundle(self.repo,sha,p)
+
+    def test_unknown_identity_and_explicit_administrative_reason(self):
+        sha=self.add('exllamav3/models/unknown.py','class UnknownConfig: pass')
+        p=self.bundle(sha,selections=[dict(architecture='CuratorGuess',status='no_eligible_revision',reason='Fixture',candidates_considered=['org/demo'])])
+        with self.assertRaisesRegex(ValueError,'Cannot derive'):load_bundle(self.repo,sha,p)
+        b=json.loads(p.read_text());b['unresolved_architecture_files']=trigger_details(self.repo,sha)['unresolved_class_files'];p.write_text(json.dumps(b))
+        load_bundle(self.repo,sha,p)
+        with self.assertRaisesRegex(ValueError,'requires a reason'):administrative_outcome(self.repo,sha)
+        out=administrative_outcome(self.repo,sha,reason='Administrative helper config; no architecture registration')
+        self.assertEqual(out['basis'],'curator_attestation')
+        p=self.bundle(sha,administrative_outcome=out,unresolved_architecture_files=trigger_details(self.repo,sha)['unresolved_class_files']);load_bundle(self.repo,sha,p)
+
+    def test_merge_requires_bound_branch_reference_coverage(self):
+        import hashlib
+        self.git('checkout','side')
+        sha=self.add('exllamav3/models/demo.py','class DemoConfig:\n arch_string="Demo"\nclass DemoModel: pass\n')
+        p=self.bundle(sha,selections=[dict(architecture='Demo',status='no_eligible_revision',reason='Fixture unavailable before cutoff',candidates_considered=['org/demo'])])
+        proof=dict(bundle_path=str(p),bundle_sha256=hashlib.sha256(p.read_bytes()).hexdigest())
+        self.git('checkout','main');self.git('merge','--no-ff','side','-m','Merge');merge=self.git('rev-parse','HEAD')
+        out=administrative_outcome(self.repo,merge,reason='Branch already recovered',covered_by=[proof]);self.assertEqual(out['basis'],'covered_merge')
+        merged=self.bundle(merge,administrative_outcome=out);load_bundle(self.repo,merge,merged)
+        p.write_text(p.read_text()+' ')
+        with self.assertRaisesRegex(ValueError,'Covered bundle changed'):load_bundle(self.repo,merge,merged)
+
+    def test_known_move_gets_automatic_outcome(self):
+        self.git('mv','exllamav3/models','exllamav3/architecture');self.git('commit','-m','Move')
+        sha=self.git('rev-parse','HEAD');out=administrative_outcome(self.repo,sha)
+        self.assertEqual(out['basis'],'git_renames');p=self.bundle(sha,administrative_outcome=out);load_bundle(self.repo,sha,p)
+
+    def test_administrative_outcome_is_hash_bound_but_not_teacher_input(self):
+        import hashlib
+        self.git('mv','exllamav3/models','exllamav3/architecture');self.git('commit','-m','Move')
+        sha=self.git('rev-parse','HEAD');out=administrative_outcome(self.repo,sha,reason='CURATOR_ONLY_REASON')
+        source=self.bundle(sha,administrative_outcome=out);directory=self.root/'recovery';directory.mkdir()
+        ref=directory/'000001-references.json';ref.write_bytes(source.read_bytes())
+        cutoff=self.git('show','-s','--format=%cI',sha)
+        (directory/'000001-unreferenced.json').write_text(json.dumps(dict(task_sha=sha,cutoff=cutoff,complete=True,limit=100,truncated=False,items=[])))
+        (directory/'000001-closed.json').write_text(json.dumps(dict(task_sha=sha,cutoff=cutoff,complete=True,rule='salience-v2',limit=20,truncated=False,items=[])))
+        packet=self.root/'outcome-packet';m=prepare(self.repo,sha,1,packet,directory)
+        self.assertEqual(m['walk_input_contract']['reference_bundle_sha256'],hashlib.sha256(ref.read_bytes()).hexdigest())
+        self.assertNotIn('CURATOR_ONLY_REASON',json.dumps(m))
+        self.assertFalse(any(b'CURATOR_ONLY_REASON' in p.read_bytes() for p in (packet/'blobs').iterdir()))
+        ref.write_text(ref.read_text()+' ')
+        with self.assertRaisesRegex(ValueError,'Reference evidence changed'):validate_bundle(packet,directory/'000001-eligible.json')

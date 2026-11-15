@@ -4,6 +4,7 @@ import argparse
 from functools import partial
 import json
 import os
+import platform
 from pathlib import Path
 import resource
 import signal
@@ -13,6 +14,9 @@ import tempfile
 from .worker import args_for
 
 ROOT = Path(__file__).resolve().parents[1]
+# machine -> (multiarch library directory, loader path as the dynamic linker expects it)
+RUNTIMES = {'x86_64': ('/usr/lib/x86_64-linux-gnu', '/lib64/ld-linux-x86-64.so.2'),
+            'aarch64': ('/usr/lib/aarch64-linux-gnu', '/usr/lib/ld-linux-aarch64.so.1')}
 
 
 def limits(graph=False):
@@ -29,11 +33,14 @@ def command(packet, graph=False):
     # Linux runtime allowlist, not a bind mount of the host root or /home.
     python = Path('/usr/bin/python3').resolve()
     stdlib = Path('/usr/lib') / f'python{sys.version_info.major}.{sys.version_info.minor}'
-    libraries = Path('/usr/lib/x86_64-linux-gnu')
-    loader = Path('/lib64/ld-linux-x86-64.so.2').resolve()
+    if platform.machine() not in RUNTIMES:
+        raise RuntimeError('Unsupported runtime: this profile requires Linux amd64 or arm64 and system Python')
+    library_dir, loader_path = RUNTIMES[platform.machine()]
+    libraries = Path(library_dir)
+    loader = Path(loader_path).resolve()
     required = (python, stdlib, libraries, loader, Path('/usr/bin/bwrap'))
     if any(not p.exists() for p in required):
-        raise RuntimeError('Unsupported runtime: this profile requires Linux amd64 and system Python')
+        raise RuntimeError('Unsupported runtime: this profile requires Linux amd64 or arm64 and system Python')
     extra = []
     if graph:
         from graph.validate import BIN, PIN
@@ -41,9 +48,9 @@ def command(packet, graph=False):
         if hashlib.sha256(BIN.read_bytes()).hexdigest() != PIN:
             raise ValueError('Graph backend binary checksum mismatch')
         for relative in ('teacher/graph_worker.py', 'graph/tools.py', 'graph/timeline.py',
-                         'graph/validate.py', 'schema/graph-tools-v1.json'):
+                         'graph/validate.py', 'graph/backend.lock.json', 'schema/graph-tools-v1.json'):
             extra.extend(['--ro-bind', str(ROOT/relative), '/app/'+relative])
-        extra.extend(['--ro-bind', str(BIN), '/app/.tools/cbm-v0.12.1/codebase-memory-mcp'])
+        extra.extend(['--ro-bind', str(BIN), '/app/'+str(BIN.relative_to(ROOT))])
     return ['/usr/bin/bwrap', '--unshare-all', '--die-with-parent', '--new-session',
             '--cap-drop', 'ALL', '--clearenv', '--setenv', 'PATH', '/usr/bin',
             '--setenv', 'HOME', '/work', '--setenv', 'TMPDIR', '/tmp',
@@ -51,7 +58,7 @@ def command(packet, graph=False):
             '--ro-bind', str(python), '/usr/bin/python3',
             '--ro-bind', str(stdlib), str(stdlib),
             '--ro-bind', str(libraries), str(libraries),
-            '--symlink', 'usr/lib', '/lib', '--ro-bind', str(loader), '/lib64/ld-linux-x86-64.so.2',
+            '--symlink', 'usr/lib', '/lib', '--ro-bind', str(loader), loader_path,
             *(['--tmpfs', str(stdlib/'site-packages')] if (stdlib/'site-packages').exists() else []),
             '--ro-bind', str(ROOT/'teacher/worker.py'), '/app/teacher/worker.py',
             '--ro-bind', str(ROOT/'schema/repo-tools-v1.json'), '/app/schema/repo-tools-v1.json',

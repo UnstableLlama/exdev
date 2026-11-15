@@ -1,0 +1,225 @@
+{
+  "schema_version": 5,
+  "sha": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+  "parent_shas": [
+    "a7a6681e11d9bb99f5d1b9e8d223cb402ff80969"
+  ],
+  "cutoff_date": "2025-05-01T05:21:23+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Calibration accumulated input Gram matrices without reporting how many incoming activation values were infinite or NaN.",
+        "basis": "source",
+        "evidence": [
+          "call_9740bea99cc34ba2a7e0e5e0e0a1dafe",
+          "call_fae9b1317daa4ecca1738be54959317c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change adds diagnostics rather than numerical remediation: inputs are counted before Gram-matrix accumulation, and conversion prints warnings without aborting or replacing invalid values.",
+        "basis": "source",
+        "evidence": [
+          "call_fae9b1317daa4ecca1738be54959317c",
+          "call_533ba900d061495a840e3ce0986bdf6e",
+          "call_1ce98754924946e380bcd55f69a20b16"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Conversion reports per-qmap infinity and NaN totals after capturing a module or slice, before moving its captured matrix to CPU and proceeding with quantization.",
+        "basis": "source",
+        "evidence": [
+          "call_533ba900d061495a840e3ce0986bdf6e",
+          "call_1ce98754924946e380bcd55f69a20b16"
+        ]
+      }
+    ],
+    "source_notes": [],
+    "limitations": [
+      "No CUDA compilation, kernel execution, or model conversion was performed. The scalar check validates only bounded indexing arithmetic, not reductions, atomics, device placement, or GPU integer-overflow behavior.",
+      "The diagnostic scans incoming activations, not the accumulated Gram matrix; it does not establish that accumulation remains finite.",
+      "The native wrapper checks the output dtype and supports half/float inputs, but does not explicitly validate tensor contiguity, output shape, or matching CUDA devices."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "calibration",
+        "title": "Counting nonfinite calibration activations",
+        "claims": [
+          {
+            "text": "Linear.capture_H initializes a two-element torch.long counter on the layer device and a Python num_total counter for each qmap. Every capture invocation adds x.numel() and calls the new native counter before the existing first_key guard. Consequently, shared-qmap layers contribute repeated activation observations to these diagnostics even though only the first layer contributes to H; the numerator and denominator both follow this broader counting scope.",
+            "basis": "source",
+            "evidence": [
+              "call_fae9b1317daa4ecca1738be54959317c",
+              "call_9740bea99cc34ba2a7e0e5e0e0a1dafe"
+            ]
+          },
+          {
+            "text": "The existing forward path invokes capture_H only when capture parameters are present and the layer has a qmap. The whole-tree search located capture dictionaries in conversion and test_quant_fn.py; both start empty and let Linear construct the records, so these inspected callers receive the added fields automatically.",
+            "basis": "source",
+            "evidence": [
+              "call_339c66a08f2f46febd48c3c0f96e15d8",
+              "call_9740bea99cc34ba2a7e0e5e0e0a1dafe",
+              "call_1ce98754924946e380bcd55f69a20b16",
+              "call_1752d09fd38d4efb9bb4300144441ed4"
+            ]
+          },
+          {
+            "text": "The binding exports count_inf_nan(x, y). Its wrapper selects the input device and current CUDA stream, dispatches half or float inputs, and rejects other input dtypes. Half values are converted to float for classification. The kernel atomically adds infinity counts to y[0] and NaN counts to y[1], preserving totals across capture calls rather than resetting them.",
+            "basis": "source",
+            "evidence": [
+              "call_054bddf5409e48c6a0292e3c0f5615a1",
+              "call_60d6b3ec13be4996a76cb6fa55d2bcfe",
+              "call_964a7d745102466c9c3701625ced4cb3"
+            ]
+          },
+          {
+            "text": "Each block covers up to 32,768 elements using 1,024 threads: a full block assigns 32 strided elements per thread. Counts are reduced within 32-lane warps, then through 32 shared-memory warp totals, leaving thread zero to perform two global atomic additions. This aggregates updates instead of issuing an atomic operation for every nonfinite element.",
+            "basis": "source",
+            "evidence": [
+              "call_964a7d745102466c9c3701625ced4cb3"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription visited every element exactly once for seven sizes around thread and block boundaries, including 32,768 and 32,769 elements.",
+            "basis": "execution",
+            "evidence": [
+              "call_24cad25fa1c047a98ae27f3a0158febc"
+            ]
+          },
+          {
+            "text": "The added scan and host extraction of counters trade extra calibration work for localized warnings that identify the qmap and report both nonfinite counts against the total observations. The patch provides no measured overhead or evidence that the warnings prevent quantization failures.",
+            "basis": "inference",
+            "evidence": [
+              "call_fae9b1317daa4ecca1738be54959317c",
+              "call_533ba900d061495a840e3ce0986bdf6e",
+              "call_964a7d745102466c9c3701625ced4cb3"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds CUDA-backed infinity and NaN counting during calibration and per-qmap warnings before quantization, without sanitizing inputs or stopping conversion."
+  },
+  "evidence": {
+    "call_533ba900d061495a840e3ce0986bdf6e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+        "offset": 199,
+        "max_bytes": 6500
+      },
+      "result_sha256": "df7e6c4d2426cef6f0506ee21cd6b53b913aaad2ac669d625cdb0a8f57f85d7d"
+    },
+    "call_054bddf5409e48c6a0292e3c0f5615a1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+        "offset": 1170,
+        "max_bytes": 873
+      },
+      "result_sha256": "4d563271917aca68df26a0cc85bac73b05ca684e522e08bebbef6ddb59880e5e"
+    },
+    "call_964a7d745102466c9c3701625ced4cb3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+        "offset": 2043,
+        "max_bytes": 3228
+      },
+      "result_sha256": "e454287202ce64e32d826b0484fdbf65b565a20dd0fb9eead004e723272e2c64"
+    },
+    "call_60d6b3ec13be4996a76cb6fa55d2bcfe": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+        "offset": 5271,
+        "max_bytes": 433
+      },
+      "result_sha256": "d65980f599e9ddf4e05f949709412cfe82ad5d70304c95cbe1248f178a4480aa"
+    },
+    "call_fae9b1317daa4ecca1738be54959317c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d99acb4dce128b60802c9f02b2b3c26e5a078e8e",
+        "offset": 5704,
+        "max_bytes": 797
+      },
+      "result_sha256": "77d4934e8f5377352b426adca9a2d0e16bc0dd6d09d7664b0d2f7d37f1d7da8f"
+    },
+    "call_9740bea99cc34ba2a7e0e5e0e0a1dafe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7a6681e11d9bb99f5d1b9e8d223cb402ff80969",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 7000,
+        "max_bytes": 9500
+      },
+      "result_sha256": "de32df68a268af82db88738e2adbd27dad663dc952e0221160eccc49b9ff6a88"
+    },
+    "call_339c66a08f2f46febd48c3c0f96e15d8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7a6681e11d9bb99f5d1b9e8d223cb402ff80969",
+        "query": "\"capture\"",
+        "limit": 100
+      },
+      "result_sha256": "f0259eaa1017f9a46e2c9e11b0ac228eec6d49d21b433e6a11f7cb5fb97556f7"
+    },
+    "call_3a19801ae66e4631a2b5304e34573419": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7a6681e11d9bb99f5d1b9e8d223cb402ff80969",
+        "query": "inf_nan",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_b57eb65b376d4b5281569c80538500b6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7a6681e11d9bb99f5d1b9e8d223cb402ff80969",
+        "query": "num_total",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_1ce98754924946e380bcd55f69a20b16": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7a6681e11d9bb99f5d1b9e8d223cb402ff80969",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 9000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "1e2e82a4392de568dd55586ff803b3c8e0e271bc821651ccaecbab360e858ec1"
+    },
+    "call_1752d09fd38d4efb9bb4300144441ed4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7a6681e11d9bb99f5d1b9e8d223cb402ff80969",
+        "path": "tests/test_quant_fn.py",
+        "offset": 3000,
+        "max_bytes": 2300
+      },
+      "result_sha256": "04c6138cc6b04ec5691915c9271280560b4ae0f32389a69ba19eb7669c7149e2"
+    },
+    "call_24cad25fa1c047a98ae27f3a0158febc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor n in (1,1023,1024,32767,32768,32769,65539):\n seen=[0]*n\n for b in range((n+32767)//32768):\n  for t in range(1024):\n   for i in range(b*32768+t,min(b*32768+32768,n),1024): seen[i]+=1\n assert all(v==1 for v in seen)\nprint('Scalar indexing model: all elements visited exactly once for 7 boundary sizes; 32768/1024 =',32768//1024,'elements/thread in a full block; 1024/32 =',1024//32,'warps/block')"
+        ]
+      },
+      "result_sha256": "1ef1ac4127f3f81278ae0283d1555cd1ef79a5b1d217dde9e3dbbdccc6123eab"
+    }
+  }
+}

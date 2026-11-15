@@ -1,0 +1,172 @@
+{
+  "schema_version": 5,
+  "sha": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+  "parent_shas": [
+    "a2ae48308aa813c67058c01f21bd4ab656a21d7a"
+  ],
+  "cutoff_date": "2025-04-27T17:05:40+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Linear had optional output softcapping but no independent output multiplier.",
+        "basis": "source",
+        "evidence": [
+          "call_e3bedbfffd11417194bf6d4ac68fa6ef"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change adds post_scale to the shared Linear wrapper rather than its individual backends, placing scaling after the inner forward and optional softcap.",
+        "basis": "source",
+        "evidence": [
+          "call_fdb1f5c124994b4eb36b30dbba7a09dc",
+          "call_e3bedbfffd11417194bf6d4ac68fa6ef"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The default 1.0 is the multiplicative identity and skips multiplication entirely. Nondefault values multiply the returned tensor in place; no caller is updated to enable scaling in this commit.",
+        "basis": "source",
+        "evidence": [
+          "call_fdb1f5c124994b4eb36b30dbba7a09dc"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The reviewed discussions report distinct problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns an extension import; #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d discusses quantization regularization; #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d concerns compilation failures. None explicitly identifies this output-multiplier change.",
+        "basis": "source",
+        "evidence": [
+          "call_191b2982b59040318ab994d844b0be1f",
+          "call_d68e0bf8ca36422ea6416c6e2dfff09c",
+          "call_a9dc4ab57980421086737e4a6821b9b7"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository or GPU execution was performed. The scalar check uses Python double precision, not the CUDA softcap implementation or tensor dtype rounding.",
+      "The diff establishes the new mechanism, but not a model-specific motivation, numerical-quality benefit or measured performance cost."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Post-scaling linear outputs",
+        "claims": [
+          {
+            "text": "Linear.__init__ appends the optional float argument post_scale=1.0 and stores it. Linear.forward still captures input statistics before invoking the backend, then softcaps if enabled, then applies post_scale. Thus the new multiplier does not directly scale the input captured by that same layer.",
+            "basis": "source",
+            "evidence": [
+              "call_fdb1f5c124994b4eb36b30dbba7a09dc",
+              "call_e3bedbfffd11417194bf6d4ac68fa6ef"
+            ]
+          },
+          {
+            "text": "For inner output z, scale s and nonzero softcap c, the mathematical operation is s\u00b7c\u00b7tanh(z/c); without softcapping it is s\u00b7z. The inspected softcap implementation supports float32 and float16, and permits in-place operation. The multiplier is a separate wrapper operation, not a change to weight storage or quantization scales.",
+            "basis": "source",
+            "evidence": [
+              "call_37544410955444c4936189ec9b20bc30",
+              "call_e3bedbfffd11417194bf6d4ac68fa6ef",
+              "call_fdb1f5c124994b4eb36b30dbba7a09dc"
+            ]
+          },
+          {
+            "text": "A scalar transcription with z=4, c=2 and s=0.5 produced 0.9640275801 for scaling after softcap versus 1.5231883119 for scaling before it. This demonstrates that moving the multiplier across softcap would change the mathematical result.",
+            "basis": "execution",
+            "evidence": [
+              "call_288e836091524c73badb9faf971c875c"
+            ]
+          },
+          {
+            "text": "Keeping the multiplier outside the backend provides one common implementation for loaded FP16 and EXL3 layers, at the cost of a separate nondefault output operation rather than backend fusion. Its runtime cost is not measured.",
+            "basis": "inference",
+            "evidence": [
+              "call_e3bedbfffd11417194bf6d4ac68fa6ef",
+              "call_fdb1f5c124994b4eb36b30dbba7a09dc"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds optional in-place post-scaling to Linear outputs after softcapping, preserving the default path with post_scale=1.0."
+  },
+  "evidence": {
+    "call_fdb1f5c124994b4eb36b30dbba7a09dc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "offset": 167,
+        "max_bytes": 1214
+      },
+      "result_sha256": "ce270ced0bc0348d447a93e5e0d6c0c174662175dc8dcf9cb656d47608976da7"
+    },
+    "call_e3bedbfffd11417194bf6d4ac68fa6ef": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "c65b5e1c7325a51defd3cc2838850d5ab78f3c189cea7284c1ef57476b598521"
+    },
+    "call_191b2982b59040318ab994d844b0be1f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c522b25805f4d7804c00a44caf91db18fdcee243a4f2aa8164e0bd509331d022"
+    },
+    "call_d68e0bf8ca36422ea6416c6e2dfff09c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9d1dca3e07d3462ad890716de84af846d8a682676cb4cd30941054fe01ff952e"
+    },
+    "call_a9dc4ab57980421086737e4a6821b9b7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "270e92ebacc48100d3c62fcfa39439034c9d10127997f78f6a3a2cf53586eaac"
+    },
+    "call_12e362d10f794e36891b16f29e6a888f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+        "query": "softcap",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 30
+      },
+      "result_sha256": "8bb742f04b370c2775f84c6707695c76cdc23b959478b314f8fb981871b55d80"
+    },
+    "call_37544410955444c4936189ec9b20bc30": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+        "path": "exllamav3/exllamav3_ext/softcap.cu",
+        "max_bytes": 10000
+      },
+      "result_sha256": "243eddc79d7e060174ad687645edf1cb278304d7ef8dc07895cd7e451c08ea8b"
+    },
+    "call_288e836091524c73badb9faf971c875c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nz,c,s=4.0,2.0,0.5\npost=s*c*math.tanh(z/c)\npre=c*math.tanh(s*z/c)\nprint({'post_scale_after_softcap':post,'scale_before_softcap':pre,'difference':pre-post})\nassert not math.isclose(post,pre)\n"
+        ]
+      },
+      "result_sha256": "c9d394278a042cd913c88b2e5c344889fa573e9d41fbae4e4d78b05154a03ed5"
+    }
+  }
+}

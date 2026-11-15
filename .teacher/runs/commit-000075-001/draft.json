@@ -1,0 +1,240 @@
+{
+  "schema_version": 5,
+  "sha": "be19eb55f2f6d13f04ff6003a60dee430f8d2735",
+  "parent_shas": [
+    "cf848114852240a51fb6b9e77c686051c39302b2"
+  ],
+  "cutoff_date": "2025-04-22T22:47:24+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The minimal generation example appended the sampler's device-resident result directly to the tokenized context. With CPU context and CUDA sampling, that concatenation crosses devices.",
+        "basis": "source",
+        "evidence": [
+          "call_a3548486e98a4b619654f1919346f5ff",
+          "call_88109a0a53e94d5f947057053b95757d",
+          "call_4b5cd173ce5d455188c6679d39e80538"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Moving the sampled token to CPU at the append boundary preserves host-side context management without changing where model inference or sampling runs.",
+        "basis": "inference",
+        "evidence": [
+          "call_6e5923199e46465caefccd8c17ccf138",
+          "call_733f6e5e6862439790df08bdad884bf3",
+          "call_0b8c1a71ea574a99a97b325b8ea808f3"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Only the example changes: concatenation now uses sample.cpu(), and the hardcoded model directory switches from eval_models/.../2.0bpw to models/.../4.0bpw. The directory labels do not establish the contents or quality of those local artifacts.",
+        "basis": "source",
+        "evidence": [
+          "call_6e5923199e46465caefccd8c17ccf138"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure; issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d reports quantization-quality problems. Neither discussion identifies this example's token-concatenation change.",
+        "basis": "source",
+        "evidence": [
+          "call_9476092102104188aaf2a020d2faeb44",
+          "call_30719b25dad94e7eb949665a815cf83b"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model inference or CUDA execution was performed; device-transfer correctness and runtime cost were assessed from source only.",
+      "A standard-library scalar computation cannot meaningfully validate PyTorch device placement or concatenation, so no substitute arithmetic test was run.",
+      "The hardcoded replacement model directory's availability and contents remain unverified."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Keep generation context on CPU",
+        "claims": [
+          {
+            "text": "Tokenizer.encode constructs the single-string token tensor without an explicit device. DefaultSampler uses temperature, top-p filtering and sampling; its sampling implementation operates on the logits' device and reshapes the result to the logits' leading dimensions without transferring it to CPU.",
+            "basis": "source",
+            "evidence": [
+              "call_88109a0a53e94d5f947057053b95757d",
+              "call_af8d8ea2be7a4a4eac7e542576e07d51",
+              "call_4b5cd173ce5d455188c6679d39e80538"
+            ]
+          },
+          {
+            "text": "The fix transfers only a non-stop sampled token before appending it along the sequence dimension. Stop-token detection still happens first. The appended token becomes the next iteration's input, while context length continues to determine past_len.",
+            "basis": "source",
+            "evidence": [
+              "call_6e5923199e46465caefccd8c17ccf138",
+              "call_a3548486e98a4b619654f1919346f5ff"
+            ]
+          },
+          {
+            "text": "Keeping context on CPU fits the existing model interface: Model.forward passes each intermediate through prepare_for_device, which moves it to the receiving module's device when necessary. The patch therefore fixes the application-side append rather than changing the sampler's return-device contract.",
+            "basis": "source",
+            "evidence": [
+              "call_733f6e5e6862439790df08bdad884bf3",
+              "call_0b8c1a71ea574a99a97b325b8ea808f3",
+              "call_6e5923199e46465caefccd8c17ccf138"
+            ]
+          },
+          {
+            "text": "The earlier entry describes this script as a low-level cached generation example and identifies the built-in generator as the higher-level alternative. This change retains that educational structure.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_7ed81a707cd9487a93c41b2bf0a3f9f6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Fixes the minimal generation example's device boundary by copying sampled tokens to CPU before appending them, and updates its hardcoded model path."
+  },
+  "evidence": {
+    "call_6e5923199e46465caefccd8c17ccf138": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "be19eb55f2f6d13f04ff6003a60dee430f8d2735",
+        "offset": 145,
+        "max_bytes": 942
+      },
+      "result_sha256": "4c08661473a331ce5ab7c6c204049421f49a0b8ac047b2ee01a35ca7fa04f407"
+    },
+    "call_a3548486e98a4b619654f1919346f5ff": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "examples/generation_loop.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "039947ed589f43438bf62e46bce7baccbfef671fe5bc5246c59421bab08c97d6"
+    },
+    "call_4b1b935a503d498bb6d466007e76a11f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "query": "class DefaultSampler",
+        "limit": 20
+      },
+      "result_sha256": "341116c0c6f52a268fefff1b0e98ea9e33b5b914500263bf3d2a7d627f2909dd"
+    },
+    "call_af8d8ea2be7a4a4eac7e542576e07d51": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/generator/sampler/presets.py"
+      },
+      "result_sha256": "384271c4b3fd48ce94029d48089b60ab5d753ccb081a3ddb3523281d468113f5"
+    },
+    "call_4b5cd173ce5d455188c6679d39e80538": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "01291930478130b72fcc14cd70c7caad75e1689210d56589fe2986a6376b31f4"
+    },
+    "call_34b81b446b5b48c6a86b7e418e180cf0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "query": "torch.tensor"
+      },
+      "result_sha256": "674bcc905fad0a1e3dbe25a5b85aced542172002077b3c359b72bbffe7e2b408"
+    },
+    "call_88109a0a53e94d5f947057053b95757d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "offset": 10500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "2e2dd58b1287b92b94f36ff6d262c79755b0247d65de3561206bb1b2d6fbfa25"
+    },
+    "call_c8af0d58732148da9c4e12f0e94e7da2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/models/model.py",
+        "query": ".to("
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8ecdbff9ad9642bd93fb59dfe28e9491": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/models/model.py",
+        "query": "def forward"
+      },
+      "result_sha256": "d0ceb667afec3780a5fda3a447a35a6de7a38836ad9dfc16c5d49aea0ab0636e"
+    },
+    "call_733f6e5e6862439790df08bdad884bf3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 5800
+      },
+      "result_sha256": "e61cf13a9e2b2d1f151ab203da177c3ff1cd3c9fdd5d1a4c674e6ce6fd470c78"
+    },
+    "call_9476092102104188aaf2a020d2faeb44": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "efc7c6c0bc5a96f0819ddb479c1f1494c284a97795cc4b3e0b96f38d149a750c"
+    },
+    "call_30719b25dad94e7eb949665a815cf83b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "94c68cacc2d204bb99eec8c30e64507fe94c2a7963547dc75315e26c083f25b9"
+    },
+    "call_7ed81a707cd9487a93c41b2bf0a3f9f6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_37f9cc6f0b3c496bba795f47e732928f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/modules",
+        "query": "def prepare_for_device"
+      },
+      "result_sha256": "ebcf7ac9422eab60d98f967609e2a3e246a09becd8d320b591db2c5d5eb01127"
+    },
+    "call_0b8c1a71ea574a99a97b325b8ea808f3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 4200
+      },
+      "result_sha256": "7a7ab484889d836131dbb2daeec67ed52b3dcefdbbddf1b50ac1e6a8008f16c6"
+    }
+  }
+}

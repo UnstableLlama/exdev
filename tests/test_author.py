@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 from contextlib import nullcontext
 import json
+import platform
 import unittest
 from unittest.mock import patch
 from teacher.author import author
@@ -25,6 +26,10 @@ class AuthorTests(unittest.TestCase):
         self.assertEqual(json.loads((out/'status.json').read_text())['status'],'draft')
         self.assertFalse(json.loads((out/'review.json').read_text())['training_eligible'])
         self.assertEqual(json.loads((out/'provenance.json').read_text())['model'],'gpt-6-astra')
+        provenance=json.loads((out/'provenance.json').read_text())
+        self.assertEqual(provenance['machine_architecture'],platform.machine())
+        self.assertEqual(provenance['operating_system'],platform.system())
+        self.assertEqual(provenance['python_version'],platform.python_version())
         self.assertTrue((out/'raw-transcript.json').exists())
         with self.assertRaises(FileExistsError):author(self.packet,out,self.root/'unused')
 

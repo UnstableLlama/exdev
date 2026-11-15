@@ -1,0 +1,223 @@
+{
+  "schema_version": 5,
+  "sha": "39e400d16aa506a98f6da102176b3310b95022f0",
+  "parent_shas": [
+    "b077d49957b9bbc8f6370916cd8df9f273aabed9"
+  ],
+  "cutoff_date": "2025-04-27T17:04:40+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The module package provides RMSNorm but lacks a LayerNorm class. This change adds and exports that reusable component without changing model constructors.",
+        "basis": "source",
+        "evidence": [
+          "call_b3ceeeec537e44b4a9c433af5c90c814",
+          "call_c274b94d3d1747fb967f06a35b1a2b81",
+          "call_b395654445be4d2fb03cb4b31eb60a22"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "LayerNorm follows the custom Module lifecycle while delegating normalization to PyTorch rather than adding a native kernel.",
+        "basis": "source",
+        "evidence": [
+          "call_86ef0dcdffa84b1485c60d1563c26e8c",
+          "call_b395654445be4d2fb03cb4b31eb60a22"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Consumers can import LayerNorm from exllamav3.modules; the diff does not wire it into an architecture or replace existing RMSNorm calls.",
+        "basis": "source",
+        "evidence": [
+          "call_c274b94d3d1747fb967f06a35b1a2b81",
+          "call_b395654445be4d2fb03cb4b31eb60a22"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The inspected discussions concern \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d and \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022.\u201d They report extension-loading, quantization-quality and compilation problems respectively, not a LayerNorm request.",
+        "basis": "source",
+        "evidence": [
+          "call_a08da0ab16f34dc9b4e5e8ab4466ed8e",
+          "call_904154adb8f241b1844cce3218c5453c",
+          "call_3fa1758e9acd40a8990d8a32718c47ed"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository implementation, PyTorch operation or GPU kernel was executed; dtype compatibility and numerical behavior remain untested.",
+      "The scalar precision check models IEEE half rounding with Python struct, not PyTorch device conversion.",
+      "No performance measurements or architecture integration tests establish the cost or model-level effect of this component."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "LayerNorm lifecycle and precision handling",
+        "claims": [
+          {
+            "text": "The constructor requires an epsilon argument, accepts an optional output dtype, and rejects non-null qmap values. Epsilon is forwarded directly to F.layer_norm; this module supplies no numerical default or configuration-key lookup.",
+            "basis": "source",
+            "evidence": [
+              "call_b395654445be4d2fb03cb4b31eb60a22"
+            ]
+          },
+          {
+            "text": "load retrieves <key>.weight and optional <key>.bias on the requested device. Float32 checkpoint tensors are converted to half before float32 working copies are created. Other checkpoint dtypes are retained in the primary copies. Thus the float32 copies do not preserve the original precision of float32 checkpoint values.",
+            "basis": "source",
+            "evidence": [
+              "call_b395654445be4d2fb03cb4b31eb60a22"
+            ]
+          },
+          {
+            "text": "A bounded scalar conversion illustrates that precision consequence: float32 1.000100016593933 becomes 1.0 after half conversion and float32 expansion, losing approximately 0.0001000166.",
+            "basis": "execution",
+            "evidence": [
+              "call_23a5094d8cd746d6aec56efd7ed94430"
+            ]
+          },
+          {
+            "text": "forward and forward_torch are identical: float32 inputs select float32 parameter copies; all other inputs select the primary copies. Both call F.layer_norm with normalized_shape=x.shape[-1:], restricting normalization to the final axis, then apply the call-level output dtype or the constructor-level dtype. Neither method uses params or invokes the imported native extension.",
+            "basis": "source",
+            "evidence": [
+              "call_b395654445be4d2fb03cb4b31eb60a22"
+            ]
+          },
+          {
+            "text": "This differs from the existing RMSNorm implementation, whose ordinary forward calls ext.rms_norm and whose Torch alternative explicitly computes a mean-square normalization without centering. LayerNorm instead has a single delegated implementation shared by both entry points.",
+            "basis": "source",
+            "evidence": [
+              "call_ea0fdbb746f24cfe98bc9519d9f576a3",
+              "call_b395654445be4d2fb03cb4b31eb60a22"
+            ]
+          },
+          {
+            "text": "weights_numel counts logical weight and optional bias elements, not the additional float32 copies. get_tensors exports contiguous primary tensors only. unload clears the device and all tensor references but retains the cached element count.",
+            "basis": "source",
+            "evidence": [
+              "call_b395654445be4d2fb03cb4b31eb60a22"
+            ]
+          },
+          {
+            "text": "Keeping both parameter representations trades additional storage for avoiding parameter conversion inside each forward call. Delegating both entry points to PyTorch also avoids maintaining separate native and reference implementations; no measured speed advantage is established.",
+            "basis": "inference",
+            "evidence": [
+              "call_b395654445be4d2fb03cb4b31eb60a22"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds an exported LayerNorm component with optional bias, cached float32 parameter copies and PyTorch-backed forward paths, without changing model architecture assembly."
+  },
+  "evidence": {
+    "call_c274b94d3d1747fb967f06a35b1a2b81": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "offset": 154,
+        "max_bytes": 3601
+      },
+      "result_sha256": "fff8c7ac390f02393b5433120eccb091a0f9aee83994871a733c1509da2331f8"
+    },
+    "call_b395654445be4d2fb03cb4b31eb60a22": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "offset": 670,
+        "max_bytes": 3085
+      },
+      "result_sha256": "455ff624425182fa526a0b74053be773d30871f970df03bd9adc2fb5d16a3878"
+    },
+    "call_ea0fdbb746f24cfe98bc9519d9f576a3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b077d49957b9bbc8f6370916cd8df9f273aabed9",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "13e789ec8030c0782700a781c83811fed5c8237b1ce2193cff45b83645256ff2"
+    },
+    "call_86ef0dcdffa84b1485c60d1563c26e8c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b077d49957b9bbc8f6370916cd8df9f273aabed9",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7a7ab484889d836131dbb2daeec67ed52b3dcefdbbddf1b50ac1e6a8008f16c6"
+    },
+    "call_777c77fec346485484ed5a497a0f9c10": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b077d49957b9bbc8f6370916cd8df9f273aabed9",
+        "query": "layernorm",
+        "limit": 100
+      },
+      "result_sha256": "41ab955f06b3ca5f8ea353ebd010ef03df4b6b7bf95573dfa487dcfaed450569"
+    },
+    "call_b3ceeeec537e44b4a9c433af5c90c814": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b077d49957b9bbc8f6370916cd8df9f273aabed9",
+        "query": "LayerNorm",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_a08da0ab16f34dc9b4e5e8ab4466ed8e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0f4fedd065d955772bdc270e8b0c7389e99a11ef4b6eeba63944dfb14c17c509"
+    },
+    "call_904154adb8f241b1844cce3218c5453c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3b1c39e0c9ad2a4a216a8737ffadd0fab6ace2541113eec2a2296a09eeb814fe"
+    },
+    "call_3fa1758e9acd40a8990d8a32718c47ed": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16384
+      },
+      "result_sha256": "4d416ca1be82a36f36124c3853f7090b10079f97bcc22e2a0644bfc772b22a9a"
+    },
+    "call_54eb006c684844dfaae4e0a5f55a633b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_23a5094d8cd746d6aec56efd7ed94430": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct\nv=struct.unpack('f',struct.pack('f',1.0001))[0]\nh=struct.unpack('e',struct.pack('e',v))[0]\nf=struct.unpack('f',struct.pack('f',h))[0]\nprint({'float32_checkpoint_value':v,'half_then_float32':f,'lost_difference':v-f})"
+        ]
+      },
+      "result_sha256": "f151710b75e249eafd68a48177410648f8b74198d3a799bd04539b248f8c59c9"
+    }
+  }
+}

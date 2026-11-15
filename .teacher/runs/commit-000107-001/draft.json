@@ -1,0 +1,219 @@
+{
+  "schema_version": 5,
+  "sha": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+  "parent_shas": [
+    "045603ffbdc8cf40a324bdc157c43517bc3a8ca5"
+  ],
+  "cutoff_date": "2025-04-29T22:34:32+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The ChatML template requested an explicit beginning-of-sequence token in addition to its own role delimiters. This change disables that request.",
+        "basis": "source",
+        "evidence": [
+          "call_7902f3291dfc455c8230b4961d7a8623",
+          "call_87fa1f7887bc440e95b6a1e7fa978780"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Keeping the policy in PromptFormat_chatml narrows the adjustment to ChatML rather than changing tokenizer behavior or other prompt formats.",
+        "basis": "inference",
+        "evidence": [
+          "call_7902f3291dfc455c8230b4961d7a8623",
+          "call_606c501e1a3646a79cb3708886c64bda"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "With --mode chatml, chat.py now passes add_bos=False whenever it tokenizes the conversation, including after history trimming. The resulting IDs are passed to Job; formatting and stop conditions are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_7902f3291dfc455c8230b4961d7a8623",
+          "call_606c501e1a3646a79cb3708886c64bda"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d reports using llama3 mode for Qwen; turboderp recommends chatml. Its connection here is inferred from the shared chat.py/template-selection path, not evidence that BOS removal fixes that reported error.",
+        "basis": "inference",
+        "evidence": [
+          "call_d35d3c9db13f4067ad18f4f8d71dcb31",
+          "call_7902f3291dfc455c8230b4961d7a8623"
+        ]
+      },
+      {
+        "text": "PR #22, \u201cOpenAI compatible API example,\u201d contains discussion code forwarding prompt_format.add_bos() to tokenizer.encode. This is an inferred interface connection to the changed method, not an established motivation for this commit or an in-tree API caller.",
+        "basis": "inference",
+        "evidence": [
+          "call_3b7a8589c0de480bb6755406645b8693",
+          "call_8926e591b13f451f8977f6791d961fe2",
+          "call_7902f3291dfc455c8230b4961d7a8623"
+        ]
+      },
+      {
+        "text": "The earlier GLM entry describes the same template-controlled BOS interface, with GLM requesting insertion.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_32cee8bae10e47e18b3630ab466a1548"
+        ]
+      }
+    ],
+    "limitations": [
+      "The author's suggestion that omitting BOS is standard is not established by an authoritative ChatML specification or model-specific tokenizer evidence.",
+      "No real tokenizer or model inference was executed. The scalar check covers only explicit BOS insertion, not backend tokenization or response quality."
+    ],
+    "links": [
+      "2445cab0949fe69c5055bebe9aeefd88e41069e9"
+    ],
+    "chapters": [
+      {
+        "id": "chat",
+        "title": "ChatML without explicit BOS insertion",
+        "claims": [
+          {
+            "text": "PromptFormat_chatml.add_bos changes from True to False. Its format method still begins with <|im_start|>system, separates messages with <|im_end|>, and leaves the unanswered assistant prefix open for generation.",
+            "basis": "source",
+            "evidence": [
+              "call_7902f3291dfc455c8230b4961d7a8623",
+              "call_87fa1f7887bc440e95b6a1e7fa978780"
+            ]
+          },
+          {
+            "text": "The whole-parent add_bos search identifies chat.py as the direct consumer of the template method. main captures its return value and get_input_ids forwards it with encode_special_tokens=True, so disabling BOS does not disable recognition of ChatML delimiters.",
+            "basis": "source",
+            "evidence": [
+              "call_44d82f666daf4ae8bc8cec601085bb6f",
+              "call_606c501e1a3646a79cb3708886c64bda"
+            ]
+          },
+          {
+            "text": "Tokenizer.encode inserts bos_token_id at position zero only when add_bos is true and that ID is not None. The patch therefore skips that explicit insertion; it does not remove tokens already present in the encoded text.",
+            "basis": "source",
+            "evidence": [
+              "call_c1483fc2d6c54a6d9488f7aca5a152cc",
+              "call_7902f3291dfc455c8230b4961d7a8623"
+            ]
+          },
+          {
+            "text": "A scalar transcription using fixed encoded IDs checked BOS values None, 0 and 42: disabling insertion shortened the sequence by one token for both defined IDs and left it unchanged for None. This was not repository tokenizer execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_80829f8eb60d46dda0e112ff23e12c4e",
+              "call_c1483fc2d6c54a6d9488f7aca5a152cc"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Disables explicit BOS insertion for ChatML prompts while preserving message delimiters, stop conditions and other templates."
+  },
+  "evidence": {
+    "call_7902f3291dfc455c8230b4961d7a8623": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+        "offset": 197,
+        "max_bytes": 448
+      },
+      "result_sha256": "c8e26be4bfd5bc0b120154735b1c2dbb3375e5112a5924e94a684bed4abef3dc"
+    },
+    "call_87fa1f7887bc440e95b6a1e7fa978780": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "045603ffbdc8cf40a324bdc157c43517bc3a8ca5",
+        "path": "examples/chat_templates.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "8c393e6031027cd213e020c78a4148c201e25567b460542de55a8201467a659e"
+    },
+    "call_44d82f666daf4ae8bc8cec601085bb6f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "045603ffbdc8cf40a324bdc157c43517bc3a8ca5",
+        "query": "add_bos",
+        "limit": 100
+      },
+      "result_sha256": "833038538df06e9569dcb4500454c033edf43f644616161dafbf3530ba1e0b3e"
+    },
+    "call_606c501e1a3646a79cb3708886c64bda": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "045603ffbdc8cf40a324bdc157c43517bc3a8ca5",
+        "path": "examples/chat.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6ed791e8632edd404d61e6ab9a3df8ce32d6d12aad9ad174be12401435b7fc10"
+    },
+    "call_c1483fc2d6c54a6d9488f7aca5a152cc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "045603ffbdc8cf40a324bdc157c43517bc3a8ca5",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "offset": 10800,
+        "max_bytes": 8500
+      },
+      "result_sha256": "476cc8c12cfc1d75b6d4185916f820319e441a68e316d2816abfb4be987e1daf"
+    },
+    "call_4561f21788ff4e45a2eabe08e01bc201": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "762f2db41e8134d2e88dde744bad49aafacebf6313513081714e0a07cb8abcd2"
+    },
+    "call_d35d3c9db13f4067ad18f4f8d71dcb31": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "7f3d40965dcdf22ac9285147ba0c38c1ed4f8b70902ac4515532c639cb364652"
+    },
+    "call_3b7a8589c0de480bb6755406645b8693": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c27acd8f7e443dcfcb3829ca248d412ca40648311c98f91a813417a22f7fc69f"
+    },
+    "call_8926e591b13f451f8977f6791d961fe2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 16000,
+        "max_bytes": 24000
+      },
+      "result_sha256": "8eb6ff7f3ae3a9f26aa1a95a59d4154514a356527c7712e0cd1511734a7fd6a9"
+    },
+    "call_32cee8bae10e47e18b3630ab466a1548": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "2445cab0949fe69c5055bebe9aeefd88e41069e9",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f10d798eca6e5b88100dde58572b06ab6db0002fd085906543b291c5eb9f7234"
+    },
+    "call_80829f8eb60d46dda0e112ff23e12c4e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\n# Scalar transcription of Tokenizer.encode's explicit prepend branch.\nrows=[]\nfor bos in (None,0,42):\n def encode(add):\n  ids=[101,102,103]\n  if add and bos is not None: ids.insert(0,bos)\n  return ids\n old,new=encode(True),encode(False)\n assert old == ([bos]+new if bos is not None else new)\n rows.append({'bos':bos,'old':old,'new':new,'length_reduction':len(old)-len(new)})\nprint(json.dumps(rows))"
+        ]
+      },
+      "result_sha256": "3b398bd8347bc2a1137057c27da9efcb48a03e40f54a93a3730afc0c7a291137"
+    }
+  }
+}

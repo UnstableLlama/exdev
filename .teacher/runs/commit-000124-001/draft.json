@@ -1,0 +1,252 @@
+{
+  "schema_version": 5,
+  "sha": "3c9ede55404c8ecce54494657f23f7056ea36a1a",
+  "parent_shas": [
+    "5d470a29780927c1c8c874609597823f210ae3b9"
+  ],
+  "cutoff_date": "2025-05-05T12:10:03+09:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "HumanEval previously exposed only temperature and top-p sampling and lacked ChatML and DeepSeek prompt presets.",
+        "basis": "source",
+        "evidence": [
+          "call_ac621791f366490eb081b691ceca7b32",
+          "call_f664c705b2dd4fd98039ee1d6f05ceec"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing TopPSampler with ComboSampler reuses the existing composable sampling implementation rather than adding evaluation-specific filtering logic.",
+        "basis": "source",
+        "evidence": [
+          "call_f664c705b2dd4fd98039ee1d6f05ceec",
+          "call_78febdf5f7374ade9e5dc5fedfec48d6"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The new controls enable repetition penalties, min-p, top-k and temperature-last sampling. Defaults retain temperature 0.6 and top-p 0.6, with the additional filters disabled; enabled top-k has a suspected CLI type mismatch.",
+        "basis": "source",
+        "evidence": [
+          "call_f664c705b2dd4fd98039ee1d6f05ceec",
+          "call_6bb03f55f29e4f8a879e92acf7ee495e"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "PR #20, \u201cReka Flash 3 vs padding,\u201d reports quantization shape failures and HumanEval comparisons. Its relationship here is contextual inference from the shared HumanEval evaluation and the existing reka preset, not evidence that it motivated this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_6fcf97e0c93f423ea23dfc127b414784",
+          "call_ac621791f366490eb081b691ceca7b32"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model generation, CUDA sampling or HumanEval scoring was executed; prompt compatibility and benchmark effects remain unmeasured.",
+      "The scalar check exercises Python argument parsing and list slicing, not PyTorch tensor indexing or the repository sampler."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "HumanEval prompt and sampling controls",
+        "claims": [
+          {
+            "text": "The chatml preset supplies system/user/assistant delimiters; deepseek uses its User and Assistant markers. Both place the problem in the request and again after an assistant-prefilled Python fence. The existing replacement and tokenizer path encodes special tokens and requests BOS; both presets retain a four-space completion prefix.",
+            "basis": "source",
+            "evidence": [
+              "call_f664c705b2dd4fd98039ee1d6f05ceec",
+              "call_ac621791f366490eb081b691ceca7b32"
+            ]
+          },
+          {
+            "text": "ComboSampler places penalties first, then temperature, min-p, top-k, top-p and categorical sampling. temp_last moves temperature after the filters, changing the distribution used to select candidates. Temperature zero instead selects argmax after penalties and bypasses those filters.",
+            "basis": "source",
+            "evidence": [
+              "call_78febdf5f7374ade9e5dc5fedfec48d6",
+              "call_6bb03f55f29e4f8a879e92acf7ee495e"
+            ]
+          },
+          {
+            "text": "Min-p compares each probability against the maximum probability times min_p; zero disables it. Top-k masks sorted positions starting at k and is disabled below one. Repetition penalty 1.0 is neutral. CustomSampler substitutes no-op steps and inserts normalization or sorting prerequisites.",
+            "basis": "source",
+            "evidence": [
+              "call_6bb03f55f29e4f8a879e92acf7ee495e"
+            ]
+          },
+          {
+            "text": "The sampler remains shared by the generated jobs. Completion termination, indentation reconstruction, JSONL writing and optional evaluate_functional_correctness invocation are unchanged; the added presets are opt-in through prompt_format.",
+            "basis": "source",
+            "evidence": [
+              "call_ac621791f366490eb081b691ceca7b32",
+              "call_f664c705b2dd4fd98039ee1d6f05ceec"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "humaneval-top-k-float",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new top-k CLI option parses floats, but the selected sampling step uses its value directly as a slice boundary.",
+        "trigger": "Run HumanEval with --top_k 5 and nonzero temperature, reaching sampling.",
+        "expected_behavior": "Retain the five highest-ranked token candidates.",
+        "actual_behavior": "The parser produces 5.0, which passes the enabled-filter check and reaches SS_TopK.run without integer conversion; its tensor slice is expected to reject that boundary. The default 0.0 is disabled, and temperature zero bypasses top-k.",
+        "locations": [
+          {
+            "commit": "3c9ede55404c8ecce54494657f23f7056ea36a1a",
+            "path": "eval/humaneval.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_TopK.run"
+          }
+        ],
+        "source_evidence": [
+          "call_f664c705b2dd4fd98039ee1d6f05ceec",
+          "call_78febdf5f7374ade9e5dc5fedfec48d6",
+          "call_6bb03f55f29e4f8a879e92acf7ee495e",
+          "call_06f099f6aed74000ac89e3dbc18c17b4",
+          "call_aaa4136c19994d2f8fc18355ae738d89"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the script's __main__ invocation through main, ComboSampler and SS_TopK. Whole-tree SS_TopK construction search found TopKSampler, ComboSampler and an integer-valued test construction. The identified reach is the new HumanEval CLI path, not every sampler user.",
+            "evidence": [
+              "call_06f099f6aed74000ac89e3dbc18c17b4",
+              "call_78febdf5f7374ade9e5dc5fedfec48d6",
+              "call_aaa4136c19994d2f8fc18355ae738d89"
+            ],
+            "limits": "No generation or tensor-indexing execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library reproduction parsed 5 as 5.0 and observed TypeError when using it as a list slice boundary; the default parsed as disabled 0.0.",
+            "evidence": [
+              "call_a08e7a54ea57449badf382ec02976e20"
+            ],
+            "limits": "Models the argument-type mismatch, not repository or GPU execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds ChatML and DeepSeek HumanEval prompts and exposes ComboSampler controls, with a suspected float-versus-integer mismatch in the new top-k option."
+  },
+  "evidence": {
+    "call_f664c705b2dd4fd98039ee1d6f05ceec": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3c9ede55404c8ecce54494657f23f7056ea36a1a",
+        "offset": 184,
+        "max_bytes": 3077
+      },
+      "result_sha256": "79a2a65318ac1049b2509d68b3d261a535f042073956a66b7683be7582f58799"
+    },
+    "call_ac621791f366490eb081b691ceca7b32": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "path": "eval/humaneval.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7a14b3aff12173edab7f2a247f08ece2d3ca1ee95ecd2031936820a9b1005866"
+    },
+    "call_10d911b4a8284989be32e0e87afdc762": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "query": "class ComboSampler",
+        "limit": 20
+      },
+      "result_sha256": "76dfc75d950b5b05f7f503bd4b98e63ca4ac0427c3bce602f9ff95c75ee9a30f"
+    },
+    "call_78febdf5f7374ade9e5dc5fedfec48d6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2eb75c4b807e8574995c5ef23210269293bfeda350572308991a61ff44ba3a46"
+    },
+    "call_6bb03f55f29e4f8a879e92acf7ee495e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "7b20623b795d2482f2987156e2cc2e7a8be1d1725b32a4836243d8f0d671e698"
+    },
+    "call_806658aed53545d79b908d194b861053": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "query": "humaneval",
+        "limit": 60
+      },
+      "result_sha256": "19a5e4c58af18896dd4114265eeeaa3995db3bbf02b1b22f395fc70af6f2266f"
+    },
+    "call_aaa4136c19994d2f8fc18355ae738d89": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "query": "main(",
+        "path": "eval/humaneval.py",
+        "limit": 20
+      },
+      "result_sha256": "f8a237ddda2c8ac603863910c51a118d0b34173f7528fbba3c896f196277f65a"
+    },
+    "call_6fcf97e0c93f423ea23dfc127b414784": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/20",
+        "max_bytes": 16000
+      },
+      "result_sha256": "32ae7548d3fa7c19018ffa3207e6e98835d7c6189ac8656547c9a0966593062c"
+    },
+    "call_06f099f6aed74000ac89e3dbc18c17b4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "query": "SS_TopK(",
+        "limit": 50
+      },
+      "result_sha256": "e7d5dd17e9cd62f372b784c14979cafea8309763f0ded2febe823a8243dae93d"
+    },
+    "call_159625b8b163451b80c74595e263ccb1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "path": "tests/test_sampler.py",
+        "offset": 3500,
+        "max_bytes": 4000
+      },
+      "result_sha256": "19bda763a03f873c2716549d6eef5b495a5d80b968340eb39ec4c592c823b13d"
+    },
+    "call_a08e7a54ea57449badf382ec02976e20": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import argparse\np=argparse.ArgumentParser();p.add_argument('--top_k',type=float,default=0.0)\nfor args in ([],['--top_k','5']):\n k=p.parse_args(args).top_k\n print('k=',repr(k),'disabled=',k<1)\n if k>=1:\n  try: print([1,2,3,4,5,6][k:])\n  except TypeError as e: print(type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "6021bcc7f55fe6fb7a85a02ba600f3b163cd942e2eb2873ace242dc447c977ff"
+    }
+  }
+}

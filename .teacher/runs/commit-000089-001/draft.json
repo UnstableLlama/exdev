@@ -1,0 +1,277 @@
+{
+  "schema_version": 5,
+  "sha": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+  "parent_shas": [
+    "de83084184c34cae0aaeca5c8b024de7f148830d"
+  ],
+  "cutoff_date": "2025-04-25T20:53:46+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The change adds a graphical debugging view of paged-cache allocation, sequence chains and valid KV occupancy.",
+        "basis": "source",
+        "evidence": [
+          "call_a813ca57b0b24810bc753066b51d146d",
+          "call_6ec92c0c7a8744219e525e9c0364354d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The visualizer consumes page-table metadata rather than copying KV tensors: active sequences supply ordered physical page indices, job serial numbers supply colors, and kv_position / PAGE_SIZE supplies occupancy.",
+        "basis": "source",
+        "evidence": [
+          "call_a813ca57b0b24810bc753066b51d146d",
+          "call_e593b9da476549ada4bc14f3a5a162ec"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Window creation is opt-in through show_visualizer=False, but importing tkinter is unconditional. Enabled rendering runs synchronously before iterate returns, after either regular or speculative generation.",
+        "basis": "source",
+        "evidence": [
+          "call_a813ca57b0b24810bc753066b51d146d",
+          "call_6ec92c0c7a8744219e525e9c0364354d",
+          "call_117d42054c024c5ba755dd230d214453"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The inspected discussions concern distinct problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure; #15 reports incoherent cogito output at bpw <= 2.5; #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d concerns conversion and tokenizer truncation. None explicitly connects its problem to cache visualization.",
+        "basis": "source",
+        "evidence": [
+          "call_94a125b656c9446fb3443a66b77cccdd",
+          "call_713b05ff2cb84a9a9b90b10d1449e17e",
+          "call_594df7cbdaec4cb3858bb2b9eae29997"
+        ]
+      }
+    ],
+    "limitations": [
+      "No GUI, model generation or GPU execution was performed. Rendering cost, display availability and Tk lifecycle behavior remain unmeasured.",
+      "The arithmetic check transcribes layout and occupancy formulas in standard-library Python; it does not execute CacheVisualizer."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Optional live cache-map visualization",
+        "claims": [
+          {
+            "text": "Generator constructs CacheVisualizer with pagetable.max_pages only when enabled. Each iteration snapshots every active sequence\u2019s allocated_pages and every physical page\u2019s KV occupancy, then calls update. Pending jobs are not drawn.",
+            "basis": "source",
+            "evidence": [
+              "call_a813ca57b0b24810bc753066b51d146d"
+            ]
+          },
+          {
+            "text": "Page-table allocation can share matching hashed pages across sequences and reserves unique pages for future tokens. The visualization represents these distinctions with multiple horizontal color bands per shared page and darker unused portions. Gray pages mean no active chain references them, not necessarily erased KV data: releasing a page can retain its cached contents.",
+            "basis": "source",
+            "evidence": [
+              "call_e593b9da476549ada4bc14f3a5a162ec",
+              "call_6ec92c0c7a8744219e525e9c0364354d"
+            ]
+          },
+          {
+            "text": "The renderer cycles through 14 colors by job serial number, connects adjacent entries in each sequence\u2019s page list with routed arrows, and darkens arrows whose destination has zero occupancy. Colors therefore identify jobs only modulo 14, rather than uniquely identifying every job or sequence.",
+            "basis": "source",
+            "evidence": [
+              "call_6ec92c0c7a8744219e525e9c0364354d"
+            ]
+          },
+          {
+            "text": "The default 800\u00d7600 canvas uses 25-pixel margins and a gap equal to 0.75 times the square cell width. Grid width follows the square root of page count times usable aspect ratio; height rounds up to fit all pages. Resize events recompute this geometry. Each update deletes and rebuilds overlays and pumps Tk events with root.update.",
+            "basis": "source",
+            "evidence": [
+              "call_6ec92c0c7a8744219e525e9c0364354d"
+            ]
+          },
+          {
+            "text": "Rebuilding canvas objects favors a straightforward debug implementation over rendering efficiency. The source itself calls the implementation slow and suggests drawing onto a bitmap instead; no benchmark establishes the overhead.",
+            "basis": "source",
+            "evidence": [
+              "call_6ec92c0c7a8744219e525e9c0364354d"
+            ]
+          },
+          {
+            "text": "The demo leaves visualization disabled, forwards its toggle to Generator, halves total_context from 32768 to 16384, changes the hard-coded configuration directory, and revises prompts to include repeated long sequences.",
+            "basis": "source",
+            "evidence": [
+              "call_1002897ae66042e8977e5ebdc1f2ca43"
+            ]
+          },
+          {
+            "text": "A scalar calculation using PAGE_SIZE=256 gives 128 pages before the demo change and 64 afterward. For 64 pages, default layout produces 10 columns, 7 rows and approximately 44.776-pixel cells; 128 valid tokens fill half a page.",
+            "basis": "execution",
+            "evidence": [
+              "call_a5b9272c37224eafbb9816064c9fc244",
+              "call_9f4daac40feb4997aca312c43ee5e440",
+              "call_6ec92c0c7a8744219e525e9c0364354d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unconditional-tk-import",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "The optional visualization introduces an unconditional tkinter import along the public package import path.",
+        "trigger": "Import exllamav3 in an environment where tkinter cannot be imported, even without enabling visualization.",
+        "expected_behavior": "Disabling the optional debug window would permit nonvisual use without its GUI module.",
+        "actual_behavior": "generator.py imports visualizer.py at module scope, which imports tkinter before show_visualizer is checked. The package initializers eagerly import Generator, so the failure can reach ordinary exllamav3 imports, assuming earlier imports succeed.",
+        "locations": [
+          {
+            "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+            "path": "exllamav3/generator/visualizer.py",
+            "symbol": "module import tkinter"
+          }
+        ],
+        "source_evidence": [
+          "call_a813ca57b0b24810bc753066b51d146d",
+          "call_6ec92c0c7a8744219e525e9c0364354d",
+          "call_cc72d15f360c486f8b5bbe2e84e749a4",
+          "call_1b36b890610b4fa3bdde9887ceb9177d",
+          "call_fd6f74bdb0e344a299a1b7eeef91d5d4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Searched parent import sites and inspected both public package initializers against the new unconditional import chain.",
+            "evidence": [
+              "call_cc72d15f360c486f8b5bbe2e84e749a4",
+              "call_1b36b890610b4fa3bdde9887ceb9177d",
+              "call_fd6f74bdb0e344a299a1b7eeef91d5d4",
+              "call_6ec92c0c7a8744219e525e9c0364354d"
+            ],
+            "limits": "Conditional source conclusion only; no tkinter-missing environment was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds an opt-in Tk cache map showing active sequence chains, shared pages and KV occupancy, with synchronous rendering and an unconditional tkinter import requirement."
+  },
+  "evidence": {
+    "call_1002897ae66042e8977e5ebdc1f2ca43": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "offset": 161,
+        "max_bytes": 4042
+      },
+      "result_sha256": "26a96614c8061d44174cedb7277138e2df36a7d05da5fb8d5066e7d9b0849952"
+    },
+    "call_a813ca57b0b24810bc753066b51d146d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "offset": 4203,
+        "max_bytes": 2140
+      },
+      "result_sha256": "06fe871b756a79df10e2079589b3d792ec40f1be871140fd01eb785523da987f"
+    },
+    "call_6ec92c0c7a8744219e525e9c0364354d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "offset": 6343,
+        "max_bytes": 8067
+      },
+      "result_sha256": "6adaafa5065c94a314b6bc4c006844a2517318a29b004248332b83889b7217f6"
+    },
+    "call_e593b9da476549ada4bc14f3a5a162ec": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "path": "exllamav3/generator/pagetable.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "8d6a290f06fc737b879e552ac0fc6033004da73be0433b911c43ca980684037f"
+    },
+    "call_9f4daac40feb4997aca312c43ee5e440": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "path": "exllamav3/constants.py",
+        "max_bytes": 3000
+      },
+      "result_sha256": "7b376c24e34a6440f12b022b961bd214df5bea91676f30514cae3e39d700a184"
+    },
+    "call_117d42054c024c5ba755dd230d214453": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "path": "exllamav3/generator/generator.py",
+        "max_bytes": 13500
+      },
+      "result_sha256": "f7e729cf64f1fb4a2f4d357d27c6887f0a7361d517e785f88781fe1b1e4f4820"
+    },
+    "call_94a125b656c9446fb3443a66b77cccdd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9463b55ed08ca84a261fecf7d1766e87069125bc83b81c51828c155db66b3c92"
+    },
+    "call_713b05ff2cb84a9a9b90b10d1449e17e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a5c061a20725c15abe65a1efc1661b41ebeafc1bb2962095b4257d834ffe0c9f"
+    },
+    "call_594df7cbdaec4cb3858bb2b9eae29997": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "84729a3e49e0aa5229996bf101c5b726cf603eb430af7486b7c2fbede040e268"
+    },
+    "call_cc72d15f360c486f8b5bbe2e84e749a4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "query": "generator import",
+        "limit": 100
+      },
+      "result_sha256": "82252a3259fc07a09834235ffdc5d390a524fad2bde686d0dcdce0e6b02e99c8"
+    },
+    "call_1b36b890610b4fa3bdde9887ceb9177d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "path": "exllamav3/__init__.py",
+        "max_bytes": 2000
+      },
+      "result_sha256": "b710fe42d8ac61dc2028299fffc69037d716c48ac12cc1362a644e01e3aad02d"
+    },
+    "call_fd6f74bdb0e344a299a1b7eeef91d5d4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+        "path": "exllamav3/generator/__init__.py",
+        "max_bytes": 2000
+      },
+      "result_sha256": "a5be69b43c0d7d2860b6ab7c104c25050d31bacd9116cc8f4f2c3cdb99f26169"
+    },
+    "call_a5b9272c37224eafbb9816064c9fc244": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nn=16384//256\nw,h=800-50,600-50\na=min(math.ceil(math.sqrt(n*w/h)),n); b=math.ceil(n/a)\ns=min(w/(a+(a-1)*.75),h/(b+(b-1)*.75))\nprint({'pages_before':32768//256,'pages_after':n,'grid':(a,b),'cell_size':s,'usage_128_tokens':128/256})"
+        ]
+      },
+      "result_sha256": "89c0e627615ebd2b8554a8db9b6c4389468f268f766504be40fd27fb952dc841"
+    }
+  }
+}

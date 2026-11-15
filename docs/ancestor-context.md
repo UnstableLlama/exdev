@@ -287,3 +287,119 @@ context, contract validation and replay. The audit reports total known closed di
 and unknown-state exclusions at every position. The commits 2–68 audit is report-only;
 its rows do not authorize re-authoring. Commit 69 waits for implementation review
 before its next unassisted attempt. No commit 70 is authorized before that sequence.
+
+## Hash-verified mirror references
+
+The commit-98 mirror decision permits explicit ModelScope recovery when official
+Hugging Face references are gated and no credential is configured. Selection
+records use `retrieval_source: modelscope_hash_verified_v1`, `repo` (official
+identity), `historical_repo`, and `mirror_repo`. The architecture recovery CLI
+accepts these alongside ordinary Hugging Face selections. There is no automatic
+fallback to arbitrary mirrors.
+
+`teacher.mirror_evidence` compares each downloaded small file's Git blob ID with
+the official public metadata, or SHA-256 for LFS files. It checks downloaded
+non-weight bytes against ModelScope's SHA-256 too. For safetensors it compares
+the two services' full-file SHA-256 metadata, then retrieves only the eight-byte
+length and bounded JSON header with exact HTTP ranges. It does not download or
+locally hash complete weight files; identity of those files relies on both
+services' published metadata and pinned mirror delivery. Missing, masked or
+unequal hashes, missing required files, and post-cutoff file dates fail closed.
+
+Every used file carries its own immutable ModelScope commit and commit date.
+The official repository creation date must also precede the task cutoff. The
+current official revision is recorded solely as the source of identity hashes;
+its history is not represented as inspected. The evidence revision is a SHA-256
+of the verified file set and provenance, not an invented official Git commit.
+The official name remains the model identity. The bound evidence index exposes
+the historical name and a plain mirror-retrieval notice, with individual proofs
+available in object metadata. Original metadata snapshots are retained in the
+administrative recovery cache, never inserted as historical model prose.
+
+The architecture bundle validator rechecks proofs, file-set digests, dates and
+header-only roles. Existing bundles, historical prompts and runs are unchanged.
+The five other gated Cohere architectures allowed by the decision must be
+reported as not inspected at the pin, with their current public architecture
+metadata labeled as such; they are not absent or historically inspected models.
+
+## Architecture-trigger administrative outcomes
+
+New recovery bundles may carry `trigger_details` (version 2) and an
+`administrative_outcome` with status `not_new_architecture`. These fields remain
+curator-only: the packet exports reference objects and binds the bundle hash,
+not the administrative reason. Old authored packets are not rebuilt.
+
+The trigger combines literal registry keys with configuration declarations found
+without executing upstream code: literal `arch_string` class attributes and the
+architecture argument to `super().__init__`, including the historical
+`kwargs.get("arch_string", literal)` form. This also detects new declared
+identities added inside an existing file. If a newly added class file has no
+recoverable declaration, `unresolved_architecture_files` must name it in the
+bundle. A curator's selected configuration is not presented as a source-derived
+identity in that case. Unrecognized dynamic expressions are not evaluated.
+
+Git rename detection (`diff-tree -M`) identifies moves/renames retaining the same
+class names and declared architecture identities. For those triggers the recovery
+CLI automatically creates a reasoned outcome when given an empty selection list.
+An explicit `--not-new-architecture-reason` can document other non-architecture
+changes; it cannot waive a new literal registry key or source-derived architecture.
+Semantic truth of a curator attestation still requires independent review.
+
+A merge of already-covered branch work can use `--covered-by` (a JSON list of
+`bundle_path` and `bundle_sha256`) with a reason. Validation checks each bundle's
+hash, reference coverage and cutoff, ancestry on a non-first-parent branch, and
+byte identity of the relevant merged source files. This path also cannot waive a
+literal registry-key trigger. Branch coverage records are administrative inputs,
+not teacher evidence or approval of prose.
+
+Both `exllamav3/models/` and `exllamav3/architecture/` remain recognized. A non-root
+commit with no model/config classes in either location fails closed. Unknown
+future layouts need a reviewed update rather than silently skipping recovery.
+
+### Historical mirror identity exception
+
+Under the commit-103 mirror ruling, a selection may explicitly supply
+`historical_copies` (distinct ModelScope repositories and immutable snapshot
+revisions). Recovery permits exactly one non-weight reference file to use
+`mirror_historical_unverified_identity` when both mirrors contain identical bytes
+before the cutoff, the current official blob differs, a later mirror copy matches
+that blob after the cutoff, and every other reference at the primary historical
+snapshot passes ordinary identity and cutoff checks. Tensor files cannot use this
+exception. Failure of any check rejects the recovery.
+
+The selection has the same labelled status and retains administrative snapshots,
+the differing official blob, and later matching date for review. Those fields are
+never copied into items. The affected item and model index row state that the
+pre-cutoff mirror file's historical official identity could not be checked because
+the official history is gated. Public proofs contain only pre-cutoff witness
+repositories, revisions, dates and byte hashes. Bundle validation rechecks the
+administrative conditions and their relation to the published items. Name the
+affected file in implementation and commit review requests. Existing bundles are
+not rewritten.
+
+### Shared packet blob storage
+
+Trusted builders publish packet blobs through `teacher.blob_store.put`. All packets
+under `.teacher/` use `.teacher/blob-store/`; standalone packets share a store in
+their containing directory. Each SHA-256-named object and its packet hard links
+have mode 0444. Publication uses a lock and atomic link replacement, never an
+in-place write. Existing objects are checked before reuse; corrupt objects and
+symlinks fail closed. Cross-filesystem linking fails rather than silently copying.
+The store directory permits trusted publication of new objects; read-only file
+permissions protect against accidental writes, not a malicious host owner who
+can chmod. The sandbox mounts only the selected packet read-only, never the store,
+and cannot write, chmod or unlink packet objects.
+
+`python3 -m teacher.blob_store --root .teacher --report REPORT.json` migrates
+existing packets and audits every blob, hard-link identity, read-only mode and
+unchanged manifest hash. It is restartable after interruption. Original run
+artifacts and manifests are not rewritten, so historical provenance retains its
+original implementation hashes. New provenance automatically includes the storage
+module. Do not edit a linked blob to repair corruption; investigate the store and
+restore independently verified content through trusted maintenance.
+
+When moving or backing up this checkout, preserve hard links across the whole
+`.teacher/` tree, including `blob-store` (for example, `rsync -aH` or an archive
+format/tool that preserves hard links). An ordinary recursive copy can expand the
+shared packets back to roughly 38 GB at position 127. Re-run the migration audit
+after a move to verify blob hashes, permissions and store/packet inode sharing.

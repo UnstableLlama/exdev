@@ -1,0 +1,249 @@
+{
+  "schema_version": 5,
+  "sha": "702ebab361d2d07f513bc8702fe46f49dcd69608",
+  "parent_shas": [
+    "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5"
+  ],
+  "cutoff_date": "2025-04-25T00:48:06+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Sampler tests needed access to intermediate distributions and index mappings; CustomSampler.forward previously required a completed sample and returned only reshaped token IDs.",
+        "basis": "source",
+        "evidence": [
+          "call_11fcdc285a134c22b39ceb0e120b402d",
+          "call_b761cdb8b04c4335bffaf8f195b10081"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The testing-only multinomial step preserves probabilities for inspection, unlike SS_Sample's in-place Gumbel transformation of probability buffers.",
+        "basis": "source",
+        "evidence": [
+          "call_11fcdc285a134c22b39ceb0e120b402d",
+          "call_b761cdb8b04c4335bffaf8f195b10081"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Default calls retain the token-tensor return contract. return_state=True exposes the flattened SamplingState and permits incomplete pipelines such as top-k filtering without sampling.",
+        "basis": "source",
+        "evidence": [
+          "call_b761cdb8b04c4335bffaf8f195b10081",
+          "call_11fcdc285a134c22b39ceb0e120b402d",
+          "call_ea02a44b86f249b789ad133dd4d29745"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The inspected discussions concern \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d and \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5\u201d: respectively an extension-loading report and low-bitrate quantization output. Neither supplies evidence of a sampler-test motivation.",
+        "basis": "source",
+        "evidence": [
+          "call_91f04c167985414ab8cc2e06b6dcbf1e",
+          "call_cd342c778e6d4bf2be410030d5b9fd1e"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository tests or CUDA kernels were executed. The tests retain the hardcoded cuda:2 device.",
+      "The scalar check uses Python double-precision arithmetic, not Torch float32 operations, and does not establish assert_close outcomes or multinomial sampling behavior."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Inspect intermediate sampler states with deterministic test cases",
+        "claims": [
+          {
+            "text": "SS_Sample_mn is exported from the sampler package. Its preparation requests normalization for initial logits or unnormalized probabilities; run accepts normalized sorted or unsorted probabilities, calls torch.multinomial with one sample, and marks the state DONE.",
+            "basis": "source",
+            "evidence": [
+              "call_201752e2db0b46ea9be8e35d89d92745",
+              "call_b761cdb8b04c4335bffaf8f195b10081"
+            ]
+          },
+          {
+            "text": "return_state bypasses only the final DONE requirement, not the assertion forbidding steps after completion. Existing presets continue using SS_Sample rather than the new multinomial alternative.",
+            "basis": "source",
+            "evidence": [
+              "call_b761cdb8b04c4335bffaf8f195b10081",
+              "call_11fcdc285a134c22b39ceb0e120b402d",
+              "call_c6e807d111f44dfd8b3f841749e62d5f"
+            ]
+          },
+          {
+            "text": "Four cases check temperature 0.75 followed by top-p 0.95, min-p 0.16 with and without sorting, and top-k 5. Temperature divides logits; min-p retains probabilities at least 16% of the maximum; top-k retains five ranked entries. The top-p fixture follows the existing cumulative-probability <= 0.95 cutoff, retaining the first token regardless.",
+            "basis": "source",
+            "evidence": [
+              "call_ea02a44b86f249b789ad133dd4d29745",
+              "call_11fcdc285a134c22b39ceb0e120b402d"
+            ]
+          },
+          {
+            "text": "A standard-library transcription reproduced top-p probabilities 0.79139147 and 0.20860853, and surviving min-p probabilities 0.10153632, 0.16740510, 0.27600434 and 0.45505423, consistent with the fixture values rounded to five decimal places.",
+            "basis": "execution",
+            "evidence": [
+              "call_594b2c368e9345e79144f646bbf8579a"
+            ]
+          },
+          {
+            "text": "The existing histogram tests now unsqueeze each batch-shaped sample into a column before concatenation. Their sample caps and discrepancy thresholds remain unchanged. New state comparisons inspect only expected-length prefixes; no supplied case specifies expect_sample, and the top-k case does not check the masked tail.",
+            "basis": "source",
+            "evidence": [
+              "call_ea02a44b86f249b789ad133dd4d29745",
+              "call_17fb06ffc1cc43e3bad2ec5e95782b4f",
+              "call_11fcdc285a134c22b39ceb0e120b402d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "multinomial-sorted-token-mapping",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new multinomial step returns sorted column positions rather than original token IDs when its input is sorted.",
+        "trigger": "Use SS_Sample_mn after a sorting or sorted filtering step with a nonidentity indices mapping.",
+        "expected_behavior": "Map the selected column through state.indices, as SS_Sample does for sorted distributions.",
+        "actual_behavior": "SS_Sample_mn stores torch.multinomial's column directly in state.sample. For the sorted min-p fixture, column 0 represents token 5 but is returned as 0. The new tests check probabilities and indices, not sampled token IDs. Parent-tree search found no pre-existing SS_Sample_mn callers; the task introduces three test constructions, two with sorted distributions. Existing presets remain on SS_Sample.",
+        "locations": [
+          {
+            "commit": "702ebab361d2d07f513bc8702fe46f49dcd69608",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Sample_mn.run"
+          }
+        ],
+        "source_evidence": [
+          "call_b761cdb8b04c4335bffaf8f195b10081",
+          "call_11fcdc285a134c22b39ceb0e120b402d",
+          "call_ea02a44b86f249b789ad133dd4d29745",
+          "call_d971603f858e4bd4a9123a066a4dc7ac",
+          "call_49c2a2dda327491d84ddc3a2d5b82978",
+          "call_c6e807d111f44dfd8b3f841749e62d5f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the new multinomial assignment against SS_Sample's explicit per-row index remapping and inspected introduced test callers and existing presets.",
+            "evidence": [
+              "call_b761cdb8b04c4335bffaf8f195b10081",
+              "call_11fcdc285a134c22b39ceb0e120b402d",
+              "call_ea02a44b86f249b789ad133dd4d29745",
+              "call_c6e807d111f44dfd8b3f841749e62d5f"
+            ],
+            "limits": "No Torch sampling execution; reach outside inspected repository callers is unestablished."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds intermediate-state sampler tests, a multinomial validation step and optional state returns; fixes histogram sample shapes. Sorted multinomial samples lack token-index remapping."
+  },
+  "evidence": {
+    "call_201752e2db0b46ea9be8e35d89d92745": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "702ebab361d2d07f513bc8702fe46f49dcd69608",
+        "offset": 156,
+        "max_bytes": 7000
+      },
+      "result_sha256": "dab29ae5601ebf5c50f0119e7f9c93e434a74160ffd758acac06586f19b02810"
+    },
+    "call_b761cdb8b04c4335bffaf8f195b10081": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "702ebab361d2d07f513bc8702fe46f49dcd69608",
+        "offset": 596,
+        "max_bytes": 7000
+      },
+      "result_sha256": "e43c86517e4e1b72938c60f82ca4f987359063407716bf5d1d20ba5ca86dc4ce"
+    },
+    "call_ea02a44b86f249b789ad133dd4d29745": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "702ebab361d2d07f513bc8702fe46f49dcd69608",
+        "offset": 2488,
+        "max_bytes": 7000
+      },
+      "result_sha256": "557dee2468db2ca1b3c68e2e0d0c82d3f2f1d7f782d156ec00845bd389d176e2"
+    },
+    "call_11fcdc285a134c22b39ceb0e120b402d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "9d9fde1b2c6853af5ee75b0577f726bc0685672b53313c6469895d7e3e42df38"
+    },
+    "call_17fb06ffc1cc43e3bad2ec5e95782b4f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+        "path": "tests/test_sampler.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "651c0d306a9766bfc4491e33b7f1a76a6b2602566f2f1feb6450b29b7540482b"
+    },
+    "call_91f04c167985414ab8cc2e06b6dcbf1e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8abe4973637c80f321d7a573e5b5762513992036009939ae2b0174280585a1d1"
+    },
+    "call_cd342c778e6d4bf2be410030d5b9fd1e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c57383fd716a5dd9f6c3cd8759cbe8b23d588fc54c192026d713353a01d82366"
+    },
+    "call_49c2a2dda327491d84ddc3a2d5b82978": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+        "query": "SS_Sample",
+        "limit": 100
+      },
+      "result_sha256": "d3e34db1b9e54c69e9a388441e945a761dcbff9f3e51892a076ae4ca6d6efd2e"
+    },
+    "call_d971603f858e4bd4a9123a066a4dc7ac": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+        "query": "SS_Sample_mn",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c6e807d111f44dfd8b3f841749e62d5f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "50342baba83cdae314149323325e9fb9b3241f9fc87f3352db6d735d91b76550"
+    },
+    "call_594b2c368e9345e79144f646bbf8579a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,json\nx=[5,3,2.5,1,4,2,1.5]; ids=sorted(range(len(x)),key=lambda i:-x[i]); w=[math.exp(x[i]/.75) for i in ids]; p=[a/sum(w) for a in w]; c=0; q=[]\nfor i,a in enumerate(p):\n c+=a;q.append(a if i==0 or c<=.95 else 0)\nq=[a/sum(q) for a in q]\nx2=[3,3.5,4,4.5,5,5.5];w=[math.exp(a-max(x2)) for a in x2];w=[a if a>=.16 else 0 for a in w];r=[a/sum(w) for a in w]\nprint(json.dumps({'top_p_indices':ids,'top_p_probs':q,'min_p_probs':r,'sorted_min_p_indices':list(reversed(range(6))),'sorted_sample_column_0_maps_to_token':5}))"
+        ]
+      },
+      "result_sha256": "04a4f83972708801a91d4b7454ea656388e21e9b0390e8c512f79e6c447466d6"
+    }
+  }
+}

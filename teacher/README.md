@@ -156,3 +156,8 @@ Original local packets are required for replay. Candidate output is retained for
 ### Official reference discovery
 
 Before recovering references for a new architecture, use `python3 -m teacher.reference_discovery --organization ORG --architecture ARCH --cutoff ISO_DATE --report NEW_REPORT --selection NEW_SELECTION`. It enumerates every visible repository in the official organization, pages each history, and checks the latest pre-cutoff `config.json` for the exact architecture string. Repository-name searches are insufficient. The report records all candidates and unavailable configs; unavailable, deleted or private repositories prevent an exhaustive claim. Selection metadata excludes names without inspected pre-cutoff configs. Feed the resulting selection to `teacher.architecture_evidence` to recover immutable configs and headers without weights. Discovery reports are administrative and never teacher input.
+
+When moving the checkout, preserve hard links across the entire `.teacher/` tree,
+including its blob store; ordinary copying can expand the packets back into full
+copies. See [shared packet storage](../docs/ancestor-context.md#shared-packet-blob-storage)
+for migration and verification instructions.

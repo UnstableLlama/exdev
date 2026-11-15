@@ -66,6 +66,9 @@ class GraphPacketTests(unittest.TestCase):
     def test_graph_blob_tampering_is_rejected(self):
         self.prepare()
         manifest=json.loads((self.packet/'manifest.json').read_text())
-        (self.packet/'blobs'/manifest['graphs'][self.first]['snapshot']).write_bytes(b'{}')
+        # Replace the read-only link to simulate corruption without altering the shared store.
+        target = self.packet/'blobs'/manifest['graphs'][self.first]['snapshot']
+        target.unlink()
+        target.write_bytes(b'{}')
         with self.assertRaisesRegex(ValueError,'checksum'):
             dispatch(self.packet,'graph_search',dict(commit=self.first))

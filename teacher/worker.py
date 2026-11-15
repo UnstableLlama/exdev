@@ -4,6 +4,7 @@ from datetime import datetime
 import hashlib
 import base64
 import json
+import platform
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -102,6 +103,8 @@ def single_process_filter():
     try:
         for name in (b'clone', b'clone3', b'fork', b'vfork', b'unshare', b'setns', b'ptrace'):
             number = seccomp.seccomp_syscall_resolve_name(name)
+            if number < 0 and platform.machine() == 'aarch64' and name in (b'fork', b'vfork'):
+                continue  # not a syscall on this architecture (aarch64 has only clone/clone3)
             if number < 0 or seccomp.seccomp_rule_add(context, 0x00050000 | errno.EPERM, number, 0):
                 raise RuntimeError('Cannot configure run syscall filter')
         if seccomp.seccomp_load(context):

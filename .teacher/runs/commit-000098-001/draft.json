@@ -1,0 +1,518 @@
+{
+  "schema_version": 5,
+  "sha": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+  "parent_shas": [
+    "2bc4822f61e3fce361ba56df0ef413c7a16061d1"
+  ],
+  "cutoff_date": "2025-04-27T17:06:11+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "CohereForCausalLM lacked an architecture registration. The change connects that identifier to new CohereConfig and CohereModel classes.",
+        "basis": "source",
+        "evidence": [
+          "call_e559e37aba314bb687df499b91828fa5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation composes existing LayerNorm, parallel decoder, attention, gated MLP and output-scaling components rather than adding a separate execution backend.",
+        "basis": "source",
+        "evidence": [
+          "call_6adb6eef7f674a6e9db3503ee5dc59e3"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Config.from_directory can now select CohereConfig through the architecture registry. This establishes dispatch support, not verified compatibility with every checkpoint carrying that identifier.",
+        "basis": "source",
+        "evidence": [
+          "call_e559e37aba314bb687df499b91828fa5",
+          "call_6dd8b68f3e5840fe83c5dab9ec3f8405"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier parallel-decoder entry records optional-component and plain-MLP allocation inconsistencies.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_d5f9204827cb4f3080d34bf520eb284a"
+        ]
+      },
+      {
+        "text": "Those generic implementations remain unchanged, but the new Cohere constructor supplies all three components and uses GatedMLP, whose plural projection collections satisfy the allocator's interface. These particular inherited triggers are therefore not exercised by this construction.",
+        "basis": "source",
+        "evidence": [
+          "call_f4f59f8ab13e4375bb49d0259a3f8945",
+          "call_2cabdb7c8865433e819ab1e0c4f21c8b",
+          "call_6adb6eef7f674a6e9db3503ee5dc59e3"
+        ]
+      },
+      {
+        "text": "Parent-tree Cohere occurrences include a README roadmap item and a chat template; neither is an architecture implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_de6cdfc4ca2241168e42cd3f4da329ba"
+        ]
+      },
+      {
+        "text": "The inspected discussions concern \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d and \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022.\u201d Their framing is extension loading, quantization quality and compilation, respectively; none identifies this architecture addition as its remedy.",
+        "basis": "source",
+        "evidence": [
+          "call_33591fec5ce54208aad73f8e885a11f1",
+          "call_0515fc8af0d74bddabca79816ec44222",
+          "call_79e37a5524234a408c11abbcc6c7dfae"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, conversion, generation, PyTorch operation or GPU kernel was executed. The scalar calculation checks only integer head-dimension arithmetic.",
+      "Configuration agreement does not establish checkpoint tensor compatibility or numerical equivalence. The two 4bit configurations explicitly describe bitsandbytes storage; this change does not demonstrate support for that format.",
+      "Model configuration bytes came from the supplied hash-verified mirrors; their revision identifiers describe verified file sets rather than official Git commits."
+    ],
+    "links": [
+      "a2ae48308aa813c67058c01f21bd4ab656a21d7a"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Cohere configuration and parallel decoder assembly",
+        "claims": [
+          {
+            "text": "CohereConfig reads hidden width, query and KV head counts, intermediate width and layer count. Missing KV head count defaults to the query count; a missing or false head_dim is derived by integer division of hidden width by query heads. hidden_act may be absent, but when present must be silu.",
+            "basis": "source",
+            "evidence": [
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3",
+              "call_6dd8b68f3e5840fe83c5dab9ec3f8405"
+            ]
+          },
+          {
+            "text": "The external key layer_norm_eps becomes the internal layernorm_eps argument, defaulting to 1e-5 and reaching F.layer_norm. logit_scale defaults to 0.0625, or one sixteenth, and reaches Linear.post_scale: it multiplies projected logits in place, after any softcap, rather than scaling the head's captured input statistics.",
+            "basis": "source",
+            "evidence": [
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3",
+              "call_0885de7eedb74d68b80a82ea56c916c2",
+              "call_d1b66b47e0254c80829c6088bdf6330d",
+              "call_eb4fb4058a9f48e18018d644fc606384",
+              "call_817164ea6edf4a4fb3ed766e7e425fd2",
+              "call_8b5ffadf3ea742f28cabe92af19c0a10",
+              "call_12c0b2407b0746a1b484b312706276e8"
+            ]
+          },
+          {
+            "text": "Each layer computes a shared normalized input y, then adds Attention(y) and GatedMLP(y) to the residual. The MLP does not consume the attention-updated residual. Calls remain sequential in Python: \u201cparallel\u201d describes branch dependencies, not concurrent scheduling. The block's prefill branch returns after the attention residual addition and skips the MLP.",
+            "basis": "source",
+            "evidence": [
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3",
+              "call_f4f59f8ab13e4375bb49d0259a3f8945"
+            ]
+          },
+          {
+            "text": "Checkpoint prefixes are model.embed_tokens, model.layers.<idx>.input_layernorm, self_attn.{q,k,v,o}_proj, mlp.{up,gate,down}_proj, model.norm and lm_head. The final normalization requests half precision. With tie_word_embeddings enabled, the constructor can provide model.embed_tokens as the head's alternative key; Linear searches its primary and alternative loading keys.",
+            "basis": "source",
+            "evidence": [
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3",
+              "call_d1b66b47e0254c80829c6088bdf6330d"
+            ]
+          },
+          {
+            "text": "RoPE settings use the GPTJ style and the existing configuration helper. prepare_inputs records input_ids and delegates attention preparation. The unchanged dispatcher defaults to uncached Flash Attention; uncached modes reject a cache, while cached batch preparation checks page alignment, cache capacity and an exclusive choice of past_len or cache_seqlens.",
+            "basis": "source",
+            "evidence": [
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3",
+              "call_6dd8b68f3e5840fe83c5dab9ec3f8405",
+              "call_8391363c36dd44d0a2a18a0ee948db64"
+            ]
+          },
+          {
+            "text": "All ten inspected CohereLabs configurations select CohereForCausalLM, specify silu, vocabulary size 256000 and layer_norm_eps=1e-5. aya-23-35B has hidden/intermediate widths 8192/22528, 40 layers, Q/KV heads 64/64 and logit_scale=0.0625. aya-23-8B has 4096/14336, 32 layers, 32/8 heads and the same scale. Both explicitly disable Q/K normalization.",
+            "basis": "source",
+            "evidence": [
+              "call_7069668e4d7743d19f36051870af05da",
+              "call_fcec6fed60a34797a8df59351cdde2b5",
+              "call_54609a6bfa9d417faaac2444a6714d61",
+              "call_71399b418044455bab2b225ddacafc18",
+              "call_3bc4f765930148628bbc7c2caa4edd6a",
+              "call_b639267fd3a2461696ba3f058e3e60fa",
+              "call_7fd0e4076f724cf687cb32b1dc9ad44c",
+              "call_8fa1f4c382844862a30c859f7ecf158d",
+              "call_47f72d8ddfdf4ae2a53a58c121781c9e",
+              "call_456a57652aec400499128364558ca884"
+            ]
+          },
+          {
+            "text": "aya-expanse-32b and c4ai-command-r-08-2024 each use 8192/24576 widths, 40 layers, 64/8 heads and scale 0.0625. aya-expanse-8b uses 4096/14336, 32 layers and 32/8 heads, but overrides the scale with 0.125. All three explicitly disable Q/K normalization; the new configuration mapping preserves these dimensional and scaling differences.",
+            "basis": "source",
+            "evidence": [
+              "call_54609a6bfa9d417faaac2444a6714d61",
+              "call_3bc4f765930148628bbc7c2caa4edd6a",
+              "call_71399b418044455bab2b225ddacafc18",
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3"
+            ]
+          },
+          {
+            "text": "c4ai-command-r-v01 and c4ai-command-r-v01-4bit each specify 8192/22528 widths, 40 layers, 64/64 heads and scale 0.0625. The former explicitly enables tied embeddings; the latter omits that key and therefore takes the new True default. Both omit use_qk_norm. Dimensional agreement for the 4bit variant is not a storage-format compatibility result.",
+            "basis": "source",
+            "evidence": [
+              "call_47f72d8ddfdf4ae2a53a58c121781c9e",
+              "call_456a57652aec400499128364558ca884",
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3"
+            ]
+          },
+          {
+            "text": "c4ai-command-r-plus, c4ai-command-r-plus-08-2024 and c4ai-command-r-plus-4bit each specify 12288/33792 widths, 64 layers, 96/8 heads and scale 0.8333333333333334. Those values are read by the new mapping, but all three also require use_qk_norm=true, which this implementation does not consume.",
+            "basis": "source",
+            "evidence": [
+              "call_b639267fd3a2461696ba3f058e3e60fa",
+              "call_7fd0e4076f724cf687cb32b1dc9ad44c",
+              "call_8fa1f4c382844862a30c859f7ecf158d",
+              "call_6adb6eef7f674a6e9db3503ee5dc59e3",
+              "call_8391363c36dd44d0a2a18a0ee948db64"
+            ]
+          },
+          {
+            "text": "A standard-library calculation of the inspected hidden-width/query-head pairs\u20144096/32, 8192/64 and 12288/96\u2014produced head_dim=128 in every case. This checks the fallback shape arithmetic only.",
+            "basis": "execution",
+            "evidence": [
+              "call_0913ebd48a1c48eba8fe6fe72386edf2"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "cohere-qk-normalization",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The architecture registration includes configurations requiring Q/K normalization, but the new assembly neither implements it nor rejects that requirement.",
+        "trigger": "Select a CohereForCausalLM checkpoint with use_qk_norm=true, including the three inspected Command R Plus configurations, and reach attention execution.",
+        "expected_behavior": "Honor the configured Q/K normalization or reject unsupported configurations explicitly.",
+        "actual_behavior": "CohereConfig ignores use_qk_norm. CohereModel constructs ordinary Attention, whose three decode paths project and reshape Q/K, then apply RoPE without normalization; each retains a TODO for Q/K norms.",
+        "locations": [
+          {
+            "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+            "path": "exllamav3/models/cohere.py",
+            "symbol": "CohereModel.__init__"
+          },
+          {
+            "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention"
+          }
+        ],
+        "source_evidence": [
+          "call_6adb6eef7f674a6e9db3503ee5dc59e3",
+          "call_8391363c36dd44d0a2a18a0ee948db64",
+          "call_b639267fd3a2461696ba3f058e3e60fa",
+          "call_7fd0e4076f724cf687cb32b1dc9ad44c",
+          "call_8fa1f4c382844862a30c859f7ecf158d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared all three attention decode paths with the new constructor and checkpoint flags. Whole-parent-tree searches found no use_qk_norm consumer and located existing Attention construction sites; the task adds a direct Cohere construction site reached through registry-based configuration selection. The observation is limited to the newly admitted normalization-requiring configurations, not every existing Attention caller.",
+            "evidence": [
+              "call_9cd8582f657f426d8e6826a1e16b1b18",
+              "call_c878454c4520446fbf4a77a64cb354a5",
+              "call_6dd8b68f3e5840fe83c5dab9ec3f8405",
+              "call_e559e37aba314bb687df499b91828fa5",
+              "call_8391363c36dd44d0a2a18a0ee948db64"
+            ],
+            "limits": "No checkpoint was loaded or evaluated; output degradation and the precise reference normalization formula were not measured."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds Cohere architecture dispatch and shared-input parallel decoder assembly with configurable logit scaling; Command R Plus Q/K-normalization requirements remain unhandled."
+  },
+  "evidence": {
+    "call_e559e37aba314bb687df499b91828fa5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "offset": 157,
+        "max_bytes": 6086
+      },
+      "result_sha256": "45110e4812d2818d52b9d85c65339f36c7f980c9654928e816d9301d9a6a562a"
+    },
+    "call_6adb6eef7f674a6e9db3503ee5dc59e3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "offset": 1007,
+        "max_bytes": 5236
+      },
+      "result_sha256": "eda7f0aa0bd50657854075fadf99489ede797842a1a47a7f57251cbc1af1890e"
+    },
+    "call_61bb872b9efd4e7095759fefbee2c5a8": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "32b1e4c52cf4afd284549bef64124115b39803238a2172f3dda502404ffd79d4",
+      "catalog_only": true
+    },
+    "call_f4f59f8ab13e4375bb49d0259a3f8945": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "120ea0ef1dd1039feb5fa9027d3fbfa9d29968d208757e81a642917df2867c58"
+    },
+    "call_7069668e4d7743d19f36051870af05da": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-35B",
+        "revision": "36500dd4d42b63b409803cf220ba1b023d5fda5fcb4d81ef3b6708dd1293c0de",
+        "path": "config.json"
+      },
+      "result_sha256": "949d22e7c36369c07b01e42066a6642133026ed531b5ba6b38caf79482d86a29"
+    },
+    "call_fcec6fed60a34797a8df59351cdde2b5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-8B",
+        "revision": "f80bfe68f01dba0f068111abc911c1f3053bfc08d6a579515d831a93f0b390d3",
+        "path": "config.json"
+      },
+      "result_sha256": "bcc4b89749ba74fb0556f017ecd082ec6b3036b98b7c2465fa57c0579246d987"
+    },
+    "call_54609a6bfa9d417faaac2444a6714d61": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-32b",
+        "revision": "486da7488c905bf511e4cd4cdfc7c4e939fd156ae21022f18f1b47f5e339307d",
+        "path": "config.json"
+      },
+      "result_sha256": "5e6cac01f0ee069863e70ed59fe47cc375211d1922535fbc5e19353b1973ff2a"
+    },
+    "call_71399b418044455bab2b225ddacafc18": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-8b",
+        "revision": "f0cdb4dc978366148a634945645744b3bdc6280f5f61f5a4d6892285becfe74f",
+        "path": "config.json"
+      },
+      "result_sha256": "1a2a42d008125e760ab3db33858f912f725896d7b79069377b3d569b33857c4a"
+    },
+    "call_3bc4f765930148628bbc7c2caa4edd6a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-08-2024",
+        "revision": "5e0338cf217ff8ec27dd5d70bf799f87e58d9194524b41a733ef4a1a6b0f9535",
+        "path": "config.json"
+      },
+      "result_sha256": "ee61b0515779b3be1be522bfd9288f89c20a2b02024a3d3a354944c5e4e1b2bf"
+    },
+    "call_b639267fd3a2461696ba3f058e3e60fa": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus",
+        "revision": "ea6af2bd1336d211c5d3002744b3908d3baf6fe3c55ef03f0057f88586345aaa",
+        "path": "config.json"
+      },
+      "result_sha256": "3435897433de4cb90f04f1048e0d920d08588f25e790b551affdcba7175533d3"
+    },
+    "call_7fd0e4076f724cf687cb32b1dc9ad44c": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-08-2024",
+        "revision": "9ccaf7a1a168d85d97c5bfa083f821f674d69c0fb96ab0f68ebff066bd20c689",
+        "path": "config.json"
+      },
+      "result_sha256": "b19478e54332a3ab77db527fe5d5cf65f8cd6c9b76f5b0116315aad2ff880735"
+    },
+    "call_8fa1f4c382844862a30c859f7ecf158d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-4bit",
+        "revision": "8fe0d0a0fe4e3d0b331690a197be3b0d8ad679e44adfd34d548caf52d1d3c087",
+        "path": "config.json"
+      },
+      "result_sha256": "4c43c6fa509799d4cc8ac4f5bb97f949382a2bf4fc8d5d26b480a5d894f3b2f5"
+    },
+    "call_47f72d8ddfdf4ae2a53a58c121781c9e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01",
+        "revision": "25bfd60077f17ffb22aaf1aa3aaca00d949f42d81423eef0f9b64687be4fea67",
+        "path": "config.json"
+      },
+      "result_sha256": "a5361dffd760d807b34b1d3544b08c06d0fd5ed63d5a43a61b8d1c56dea672c3"
+    },
+    "call_456a57652aec400499128364558ca884": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01-4bit",
+        "revision": "23624e8f1164105511e99738152d695f91d2f4bc6eb9574cfe327bde64e03dee",
+        "path": "config.json"
+      },
+      "result_sha256": "eba716849253e72c19444beea8e0ed5bf35553c0087c68179c03042397ac43d1"
+    },
+    "call_8391363c36dd44d0a2a18a0ee948db64": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "5478a43b2d3dbd864c9d5f544eca6f7cfee63783fd69fffdaa0dd9c4b959d79e"
+    },
+    "call_0913ebd48a1c48eba8fe6fe72386edf2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nkeys=['head_dim','hidden_size','num_attention_heads','num_key_value_heads','hidden_act','intermediate_size','layer_norm_eps','layernorm_eps','num_hidden_layers','tie_word_embeddings','logit_scale','use_qk_norm']\nfor k in keys:\n print(k, [str(p) for p in Path('.').rglob('*.py') if k in p.read_text()])\nprint('shape checks', [(h,q,h//q) for h,q in [(4096,32),(8192,64),(12288,96)]])"
+        ]
+      },
+      "result_sha256": "02a28759ad4a5fe5f59748c356f73d11e05ba55eef33f5a0b301f4a89ecc09b8"
+    },
+    "call_de6cdfc4ca2241168e42cd3f4da329ba": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "Cohere",
+        "limit": 50
+      },
+      "result_sha256": "f403d68890c0dfc4494834493a096be300eb7738026f5ef1c9c747acc0823938"
+    },
+    "call_9cd8582f657f426d8e6826a1e16b1b18": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "use_qk_norm"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c878454c4520446fbf4a77a64cb354a5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "Attention(",
+        "limit": 50
+      },
+      "result_sha256": "be840feff0ac23af7e73430b46ed98b929747acfc2cc9a938c06316f8fa06716"
+    },
+    "call_6dd8b68f3e5840fe83c5dab9ec3f8405": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b92de8817507087fcd534c15ea865b7d5e4729fc8ce45b356f9a32abccdb1b54"
+    },
+    "call_0885de7eedb74d68b80a82ea56c916c2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "path": "exllamav3/modules/layernorm.py"
+      },
+      "result_sha256": "7ec84c1e38c004ce9890b0d40b458e682c1e2e5d9056c44039ac6da7104bc8cc"
+    },
+    "call_d1b66b47e0254c80829c6088bdf6330d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "44fe30a242d87fda08bd1473ee742ac5ead5774ab8ecdfa05f25f7b7e808d8de"
+    },
+    "call_33591fec5ce54208aad73f8e885a11f1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "17b728ad4493dc23904066deb05bc8d7372c4f27d439dee290f2d2badc529d95"
+    },
+    "call_0515fc8af0d74bddabca79816ec44222": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "234ff636e241aa1c986ea5132aa3b3868b99d9c9075b0feb016e069cdacfc558"
+    },
+    "call_79e37a5524234a408c11abbcc6c7dfae": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1c04f9b95937f37f5085e86d151641bd59d7190c41f34f0ba8f9063cbe36de1a"
+    },
+    "call_d5f9204827cb4f3080d34bf520eb284a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b360eecac3af276d2a24220bdcdf4c523a7baac4cc80e0222089da27b37c2003"
+    },
+    "call_eb4fb4058a9f48e18018d644fc606384": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "layer_norm_eps"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_817164ea6edf4a4fb3ed766e7e425fd2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "layernorm_eps"
+      },
+      "result_sha256": "840b8c9d52786414463507cc8f0bc2d38ef166bc8f0764492ab7367195b40175"
+    },
+    "call_8b5ffadf3ea742f28cabe92af19c0a10": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "logit_scale"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_12c0b2407b0746a1b484b312706276e8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "logits_scale"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_6d12a06b88694ab59939b033251a08e4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "query": "read_cfg(",
+        "limit": 180
+      },
+      "result_sha256": "30dd799b41b77bacc96d0fa8bf055045367b179a5acb6a1e084247cbfffe1ef3"
+    },
+    "call_2cabdb7c8865433e819ab1e0c4f21c8b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2bc4822f61e3fce361ba56df0ef413c7a16061d1",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "92b479a98877657d4cbbbe17cb15d613aa35c6923cc06c738e0e52a287c8d71e"
+    }
+  }
+}

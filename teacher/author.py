@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import platform
 from pathlib import Path
 from .codex_adapter import CodexTeacher, MODEL
 from .codex_transport import CodexTransport, SUPPORTED_VERSION
@@ -33,6 +34,7 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
     provenance={'model':MODEL,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
         'packet_manifest_sha256':hashlib.sha256(manifest).hexdigest(),
         'input_mode':'entry_analysis','published':False,
+        'python_version':platform.python_version(),'machine_architecture':platform.machine(),'operating_system':platform.system(),
         'implementation_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted([*(ROOT/'teacher').glob('*.py'),*(ROOT/'schema').glob('*.json')])}}
     coverage=json.loads(manifest).get('coverage_request')

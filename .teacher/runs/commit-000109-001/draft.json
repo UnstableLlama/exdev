@@ -1,0 +1,200 @@
+{
+  "schema_version": 5,
+  "sha": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+  "parent_shas": [
+    "fd934384c4a750fd5e0744ce1f9c7044f8e982a2"
+  ],
+  "cutoff_date": "2025-04-29T22:36:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Attention stored its constructor out_dtype but did not pass it to the output projection. The requested dtype was applied only after decoding, rather than when allocating the projection result.",
+        "basis": "source",
+        "evidence": [
+          "call_5c8822c954ca4231a9c1d5b505293a59",
+          "call_71702caba2bb41a3a918c2c3e6dd2ad6"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Passing out_dtype into o_proj lets Linear propagate it to both FP16 and EXL3 implementations, whose forward methods use the configured dtype when allocating their output buffers.",
+        "basis": "source",
+        "evidence": [
+          "call_c679d21ed8ce483a9ce928c486c3d647",
+          "call_0864d627f3764d99897a444d98f4ff39",
+          "call_69b03915055f49598dde4ecb546422b3",
+          "call_89f93d59fa12456f8a436f102f370170"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change covers all three attention backends because each calls project_o. With the constructor default of None, projection allocation still defaults to torch.half; Q/K/V projections are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_c679d21ed8ce483a9ce928c486c3d647",
+          "call_5c8822c954ca4231a9c1d5b505293a59",
+          "call_69b03915055f49598dde4ecb546422b3",
+          "call_89f93d59fa12456f8a436f102f370170"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d reports a conversion failure during Hessian capture; its discussion attributes that failure to tokenizer truncation. Its overlapping attention/linear traceback is not evidence that this dtype change fixes that report.",
+        "basis": "source",
+        "evidence": [
+          "call_dee0ea3af2a2419fbef7338dc007cd35"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository or GPU execution was performed; native dtype support, numerical improvements and performance effects were not verified.",
+      "No useful scalar computation establishes this constructor-wiring change's GPU behavior."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Apply the configured dtype inside the attention output projection",
+        "claims": [
+          {
+            "text": "project_o flattens the attention heads to num_q_heads \u00d7 head_dim and projects that dimension back to hidden_size. The patch changes only the projection's configured output dtype, not its dimensions, weight key or calibration qmap.",
+            "basis": "source",
+            "evidence": [
+              "call_5c8822c954ca4231a9c1d5b505293a59",
+              "call_c679d21ed8ce483a9ce928c486c3d647"
+            ]
+          },
+          {
+            "text": "Previously a float output request could widen an already half-precision projection result. Moving the configured dtype into the projection allows a wider destination before the final attention-level conversion, rather than relying on a cast to recover information already lost.",
+            "basis": "inference",
+            "evidence": [
+              "call_69b03915055f49598dde4ecb546422b3",
+              "call_89f93d59fa12456f8a436f102f370170",
+              "call_71702caba2bb41a3a918c2c3e6dd2ad6",
+              "call_c679d21ed8ce483a9ce928c486c3d647"
+            ]
+          },
+          {
+            "text": "Attention.forward's per-call out_dtype remains a final conversion override: it is not forwarded through project_o. The new internal allocation policy follows the constructor argument, while the final returned dtype can still be overridden per call.",
+            "basis": "source",
+            "evidence": [
+              "call_5c8822c954ca4231a9c1d5b505293a59",
+              "call_c679d21ed8ce483a9ce928c486c3d647",
+              "call_71702caba2bb41a3a918c2c3e6dd2ad6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Propagates Attention's configured output dtype into its output projection, instead of applying it only after projection."
+  },
+  "evidence": {
+    "call_c679d21ed8ce483a9ce928c486c3d647": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f97c5ce619feb3aa9f4ceb568c9e350d166df866",
+        "offset": 168,
+        "max_bytes": 1068
+      },
+      "result_sha256": "51e2a1dd0c401efa13448e1cd5a258afdd77f87c008ade779783c45878600b57"
+    },
+    "call_0864d627f3764d99897a444d98f4ff39": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "601c8e075a3f20a2dd32833ef9553c5ef928ee469c1a99f8d6a1d8781be19840"
+    },
+    "call_5c8822c954ca4231a9c1d5b505293a59": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "ac9f50715048622bdd3887de6bab6d38cc5c0a651528661cc737328ed0d75d5c"
+    },
+    "call_bb199dd612ea45e1b3226c4ce1741400": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/modules/quant",
+        "limit": 30
+      },
+      "result_sha256": "d196d6ab228880b6c60ecc6e1fe154cb3624b11bea698b37391dd3d2bca669e7"
+    },
+    "call_69b03915055f49598dde4ecb546422b3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "dfc7432bc747afe91668d03ce09fd8c08fb03693456b09e274724d710fdca790"
+    },
+    "call_89f93d59fa12456f8a436f102f370170": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "66bdae180ffa4cb99e345114bc69be5de12ac8b53e668fe9cf03690200685e0d"
+    },
+    "call_8f9816247fcf4081bb0a2b892f863a66": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "query": "out_dtype =",
+        "path": "exllamav3/models",
+        "limit": 100
+      },
+      "result_sha256": "73f91d1a5f637eb9957065d83a757d6a17db6e025e3dfd7733e5cc8c664eacfe"
+    },
+    "call_bad6bce100694469bea76ccc4640167b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/models/gemma2.py",
+        "offset": 3000,
+        "max_bytes": 4200
+      },
+      "result_sha256": "a3a6ed8877c15aa328d4b172bea1fd7bfca1697ad6e35c30dab7d625783ad878"
+    },
+    "call_c88d873115fa46928fc088ddd370d45a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/models/glm4.py",
+        "offset": 2400,
+        "max_bytes": 3300
+      },
+      "result_sha256": "46bdd0be5ae090475d1ebf6a64397aa345dfe5e879ae7a1efe64e5589a95f5a8"
+    },
+    "call_dee0ea3af2a2419fbef7338dc007cd35": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 14000
+      },
+      "result_sha256": "b85d030cb91adf799c5ccceebf12f61a45d17d2f8e33b0e96596a41da5e4868b"
+    },
+    "call_71702caba2bb41a3a918c2c3e6dd2ad6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "path": "exllamav3/util/tensor.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "ba74803473bc8081ccdccc716939ef5a1ab32f80560705e908cb1108530d679a"
+    }
+  }
+}

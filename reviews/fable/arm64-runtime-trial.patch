@@ -1,0 +1,72 @@
+diff --git a/teacher/codex_transport.py b/teacher/codex_transport.py
+index 004b336..77f894c 100644
+--- a/teacher/codex_transport.py
++++ b/teacher/codex_transport.py
+@@ -57,7 +57,8 @@ class CodexTransport:
+                 '--bind',str(state),'/state','--proc','/proc','--dev','/dev',
+                 '--tmpfs','/tmp','--tmpfs','/work','--chdir','/work']
+             for path in ('/etc/ssl/certs','/etc/resolv.conf','/etc/hosts','/etc/nsswitch.conf',
+-                         '/usr/lib/x86_64-linux-gnu','/lib64/ld-linux-x86-64.so.2'):
++                         '/usr/lib/x86_64-linux-gnu','/lib64/ld-linux-x86-64.so.2',
++                         '/usr/lib/aarch64-linux-gnu'):
+                 if Path(path).exists():command += ['--ro-bind',path,path]
+             command += ['--symlink','usr/lib','/lib','/app/codex','app-server','--stdio','--strict-config']
+             self.stderr=tempfile.TemporaryFile()
+diff --git a/teacher/runner.py b/teacher/runner.py
+index ae974eb..6544a0a 100644
+--- a/teacher/runner.py
++++ b/teacher/runner.py
+@@ -4,6 +4,7 @@ import argparse
+ from functools import partial
+ import json
+ import os
++import platform
+ from pathlib import Path
+ import resource
+ import signal
+@@ -13,6 +14,9 @@ import tempfile
+ from .worker import args_for
+ 
+ ROOT = Path(__file__).resolve().parents[1]
++# machine -> (multiarch library directory, loader path as the dynamic linker expects it)
++RUNTIMES = {'x86_64': ('/usr/lib/x86_64-linux-gnu', '/lib64/ld-linux-x86-64.so.2'),
++            'aarch64': ('/usr/lib/aarch64-linux-gnu', '/usr/lib/ld-linux-aarch64.so.1')}
+ 
+ 
+ def limits(graph=False):
+@@ -29,8 +33,11 @@ def command(packet, graph=False):
+     # Linux runtime allowlist, not a bind mount of the host root or /home.
+     python = Path('/usr/bin/python3').resolve()
+     stdlib = Path('/usr/lib') / f'python{sys.version_info.major}.{sys.version_info.minor}'
+-    libraries = Path('/usr/lib/x86_64-linux-gnu')
+-    loader = Path('/lib64/ld-linux-x86-64.so.2').resolve()
++    if platform.machine() not in RUNTIMES:
++        raise RuntimeError('Unsupported runtime: this profile requires Linux amd64 or arm64 and system Python')
++    library_dir, loader_path = RUNTIMES[platform.machine()]
++    libraries = Path(library_dir)
++    loader = Path(loader_path).resolve()
+     required = (python, stdlib, libraries, loader, Path('/usr/bin/bwrap'))
+     if any(not p.exists() for p in required):
+         raise RuntimeError('Unsupported runtime: this profile requires Linux amd64 and system Python')
+@@ -51,7 +58,7 @@ def command(packet, graph=False):
+             '--ro-bind', str(python), '/usr/bin/python3',
+             '--ro-bind', str(stdlib), str(stdlib),
+             '--ro-bind', str(libraries), str(libraries),
+-            '--symlink', 'usr/lib', '/lib', '--ro-bind', str(loader), '/lib64/ld-linux-x86-64.so.2',
++            '--symlink', 'usr/lib', '/lib', '--ro-bind', str(loader), loader_path,
+             *(['--tmpfs', str(stdlib/'site-packages')] if (stdlib/'site-packages').exists() else []),
+             '--ro-bind', str(ROOT/'teacher/worker.py'), '/app/teacher/worker.py',
+             '--ro-bind', str(ROOT/'schema/repo-tools-v1.json'), '/app/schema/repo-tools-v1.json',
+diff --git a/teacher/worker.py b/teacher/worker.py
+index ac9241a..ce487a4 100644
+--- a/teacher/worker.py
++++ b/teacher/worker.py
+@@ -102,6 +102,8 @@ def single_process_filter():
+     try:
+         for name in (b'clone', b'clone3', b'fork', b'vfork', b'unshare', b'setns', b'ptrace'):
+             number = seccomp.seccomp_syscall_resolve_name(name)
++            if number < 0 and name in (b'fork', b'vfork'):
++                continue  # not a syscall on this architecture (aarch64 has only clone/clone3)
+             if number < 0 or seccomp.seccomp_rule_add(context, 0x00050000 | errno.EPERM, number, 0):
+                 raise RuntimeError('Cannot configure run syscall filter')
+         if seccomp.seccomp_load(context):

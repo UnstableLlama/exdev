@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Compact, packet-bound navigation for task and strict-ancestor evidence."""
+from .blob_store import put
 import hashlib
 import json
 import re
@@ -30,6 +31,8 @@ def build(packet, manifest, ancestor_packets, discussion_directory=None):
                   'representation','content_sha256','kind','repo_id','revision','path',
                   'artifact_role','blob','content_bytes','tensor_count')
         obj = {k:item[k] for k in fields if k in item}
+        if item.get('mirror_provenance',{}).get('scheme')=='modelscope_hash_verified_v1':
+            obj['mirror_provenance']=item['mirror_provenance']
         identity={k:obj.get(k) for k in ('kind','repo_id','revision','path','url','content_sha256')}
         key = digest(identity)
         if key in seen:
@@ -38,7 +41,7 @@ def build(packet, manifest, ancestor_packets, discussion_directory=None):
         obj['attached_by'] = [origin]
         seen[key] = obj
         objects.append(obj)
-        (packet/'blobs'/obj['blob']).write_bytes(raw)
+        put(packet, raw)
     for item in manifest['evidence']:
         if item.get('catalog_origin') not in ('unreferenced_discussion','closed_discussion'): add(item, manifest['task_sha'], packet)
     for source in sorted(map(Path, ancestor_packets)):
@@ -56,6 +59,9 @@ def build(packet, manifest, ancestor_packets, discussion_directory=None):
             key = ('model',obj['repo_id'],obj['revision'])
             row = {'kind':'model','repo_id':obj['repo_id'],'revision':obj['revision'],
                    'revision_at':obj['revision_at']}
+            if obj.get('mirror_provenance',{}).get('scheme')=='modelscope_hash_verified_v1':
+                row['retrieval_note']=obj['mirror_provenance']['notice']
+                row['historical_repo']=obj['mirror_provenance']['historical_repo']
         else:
             match = re.match(r'(https://github\.com/[^/]+/[^/]+/(issues|pull)/(\d+))',obj.get('url',''))
             url = match[1] if match else obj['url']
@@ -79,6 +85,11 @@ def build(packet, manifest, ancestor_packets, discussion_directory=None):
                 if isinstance(title,str): row['title']=title
             except (ValueError,UnicodeDecodeError): pass
         group=groups.setdefault(key,dict(row,index_id=digest(key),attached_by=[],counts={},objects=[]))
+        if obj.get('mirror_provenance',{}).get('scheme')=='modelscope_hash_verified_v1':
+            group['revision_at']=max(group['revision_at'],obj['revision_at'],key=timestamp)
+        if obj.get('mirror_provenance',{}).get('status') == 'mirror_historical_unverified_identity':
+            group['retrieval_note']=obj['mirror_provenance']['notice']
+            group.setdefault('historical_identity_files',[]).append(obj['path'])
         for origin in obj['attached_by']:
             if origin not in group['attached_by']: group['attached_by'].append(origin)
         role='tensor_headers' if obj['kind']=='safetensors_header' else ('configuration_files' if obj['kind']=='hf_file' else ('discussion_objects' if row['kind'] in ('issue','pull_request') else 'documents'))

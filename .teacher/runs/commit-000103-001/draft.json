@@ -1,0 +1,373 @@
+{
+  "schema_version": 5,
+  "sha": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+  "parent_shas": [
+    "151edc00b202b645fcfa2cc2c679d7ef381916fb"
+  ],
+  "cutoff_date": "2025-04-28T04:22:35+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The registry lacked Cohere2 support, and Attention always constructed and applied RoPE. The new architecture needs alternating local attention with RoPE and global attention without it.",
+        "basis": "source",
+        "evidence": [
+          "call_3b30bab5a3cd4a8e98cbc713bb68a5d9",
+          "call_c15fad2552ba4b42a263fed4d4ba37c1",
+          "call_0e83b5766f5d42ce80e20dd0e4f68904"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation reuses Cohere's parallel decoder composition, adding a per-layer window schedule and making positional rotation optional in the shared attention module.",
+        "basis": "source",
+        "evidence": [
+          "call_f6fd7ec61d114465be4b20ac0f80cbdf",
+          "call_c15fad2552ba4b42a263fed4d4ba37c1",
+          "call_0e83b5766f5d42ce80e20dd0e4f68904"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Config.from_directory can now select Cohere2ForCausalLM. Local-window layers require a Flash Attention path: the existing SDPA implementation explicitly rejects sliding-window attention.",
+        "basis": "source",
+        "evidence": [
+          "call_3b30bab5a3cd4a8e98cbc713bb68a5d9",
+          "call_6e4acae5f50e40ee904a70a6788603fe",
+          "call_89628af38f3a4bb69896593a2f7d1eb3"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier shared-Hessian entry explains why parallel attention and MLP branches use the same calibration input group. Cohere2 retains the block.parallel prefixes.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ec1a3361e5304664b297ef6d08c0b045"
+        ]
+      },
+      {
+        "text": "Inspected discussions report \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d and \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022.\u201d PR \u201cchore: update config.py\u201d proposes a spelling correction. None establishes motivation for this architecture addition.",
+        "basis": "source",
+        "evidence": [
+          "call_6a91b405567b40dab9b7760bd435c3e2",
+          "call_cf1733fc20cf41fabeca74cd1aef5ed5",
+          "call_b8d84fa4e80d46c7a6f39d5bf1cf1024",
+          "call_77c96df038d44273ae9f7c594b64955f"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, conversion, GPU execution, output-quality comparison or performance measurement was performed. Configuration agreement does not establish checkpoint compatibility.",
+      "The scalar check transcribes scheduling and dimension arithmetic; it does not execute repository attention or test floating-point kernels.",
+      "The supplied c4ai-command-r7b-12-2024 configuration is a historical mirror whose identity with the official cutoff-time file could not be verified."
+    ],
+    "links": [
+      "c73467fb7789035d5bc42945733211d9aebf173b"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Cohere2 mixed local/global parallel decoder",
+        "claims": [
+          {
+            "text": "Cohere2Config supplies the architecture string and Cohere2Model supplies its config_class to the existing registry comprehension. Model construction creates token embeddings, parallel decoder blocks, final LayerNorm and a scaled vocabulary projection.",
+            "basis": "source",
+            "evidence": [
+              "call_3b30bab5a3cd4a8e98cbc713bb68a5d9",
+              "call_c15fad2552ba4b42a263fed4d4ba37c1"
+            ]
+          },
+          {
+            "text": "Each parallel block normalizes its input once, passes that same normalized tensor to attention and the gated MLP, and adds both outputs to the residual. Cohere2 supplies all three components and uses separate q_proj/k_proj/v_proj/o_proj and gate_proj/up_proj/down_proj checkpoint names.",
+            "basis": "source",
+            "evidence": [
+              "call_021517e2fdcc4e9c9450f4393a0963fc",
+              "call_c15fad2552ba4b42a263fed4d4ba37c1"
+            ]
+          },
+          {
+            "text": "The configuration requires order_of_interleaved_layers='local_attn_first'. For one-based layer number n, n modulo sliding_window_pattern selects a local window unless the remainder is zero; those periodic layers receive -1 and no RoPE. Pattern defaults to 1, therefore selecting all global layers, while sliding_window defaults to -1. The parent contains a different configuration spelling, sliding_window_size, in Gemma2; Cohere2 explicitly reads sliding_window.",
+            "basis": "source",
+            "evidence": [
+              "call_c15fad2552ba4b42a263fed4d4ba37c1",
+              "call_6e4acae5f50e40ee904a70a6788603fe",
+              "call_6cc35aa89b394878a42409519083f573"
+            ]
+          },
+          {
+            "text": "Attention initializes self.rope to None and clears it on unload. Loading now constructs RoPE only when settings are present; SDPA, uncached Flash Attention and cached Flash Attention each guard the rotation call. The Flash paths continue passing the layer's window to their respective kernels, and the cached path still retrieves and updates its KV cache. Disabling RoPE does not disable causality or caching.",
+            "basis": "source",
+            "evidence": [
+              "call_89628af38f3a4bb69896593a2f7d1eb3",
+              "call_0e83b5766f5d42ce80e20dd0e4f68904"
+            ]
+          },
+          {
+            "text": "Local layers use GPTJ-style RoPE settings. With the inspected configurations' null rope_scaling, RoPE selects its default inverse-frequency calculation; RoPE.apply forwards the style to the native extension rather than using apply_torch. Global layers bypass this operation entirely.",
+            "basis": "source",
+            "evidence": [
+              "call_c15fad2552ba4b42a263fed4d4ba37c1",
+              "call_5d36bfad81554b8aa651673115505016",
+              "call_0dc4d904b4bf45008e023c2e84ae454b",
+              "call_ba7d81e1302b452d84ced56cd4f795a2",
+              "call_5eb7063d3ca641e8a6142188c0feec96"
+            ]
+          },
+          {
+            "text": "CohereLabs/c4ai-command-a-03-2025 declares 64 layers, hidden width 12288, intermediate width 36864 and 96 query/8 KV heads. CohereLabs/c4ai-command-r7b-12-2024 and CohereLabs/c4ai-command-r7b-arabic-02-2025 each declare 32 layers, hidden width 4096, intermediate width 14336 and 32 query/8 KV heads. All three match the registered architecture and required ordering, explicitly provide head_dim=128, sliding_window=4096 and pattern=4, and select SiLU.",
+            "basis": "source",
+            "evidence": [
+              "call_c15fad2552ba4b42a263fed4d4ba37c1",
+              "call_0dc4d904b4bf45008e023c2e84ae454b",
+              "call_ba7d81e1302b452d84ced56cd4f795a2",
+              "call_5eb7063d3ca641e8a6142188c0feec96"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription yields 48 local and 16 global layers for Command A, and 24 local and 8 global layers for each R7B configuration. Global layers are every fourth layer. Query projection widths are respectively 12288 and 4096; KV projection width is 1024 for all three. Hidden width divided by query-head count also yields 128 in every case, although their explicit head_dim makes that fallback unnecessary.",
+            "basis": "execution",
+            "evidence": [
+              "call_03dbaf5041a047e0bb632afb59ca206a"
+            ]
+          },
+          {
+            "text": "All three configurations explicitly set logit_scale=0.25, overriding Cohere2's 0.0625 default; Linear.forward multiplies the projection output in place. All omit tie_word_embeddings, so its True default enables an embedding alternative when the constructor's lm_head presence check fails. This is fallback loading, not proof that two runtime modules share one weight allocation.",
+            "basis": "source",
+            "evidence": [
+              "call_c15fad2552ba4b42a263fed4d4ba37c1",
+              "call_ea9740013ae04d3ca417e124bae5b6ff",
+              "call_0dc4d904b4bf45008e023c2e84ae454b",
+              "call_ba7d81e1302b452d84ced56cd4f795a2",
+              "call_5eb7063d3ca641e8a6142188c0feec96"
+            ]
+          },
+          {
+            "text": "Making RoPE optional in the shared Attention implementation avoids duplicating three decode paths for Cohere2. This appears to be the design rationale; the inspected sources establish the mechanism, not an author statement or measured speedup.",
+            "basis": "inference",
+            "evidence": [
+              "call_0e83b5766f5d42ce80e20dd0e4f68904",
+              "call_89628af38f3a4bb69896593a2f7d1eb3"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Cohere2 architecture dispatch and parallel decoder assembly with periodic global, RoPE-free attention among local RoPE layers."
+  },
+  "evidence": {
+    "call_3b30bab5a3cd4a8e98cbc713bb68a5d9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "offset": 158,
+        "max_bytes": 8464
+      },
+      "result_sha256": "b7701c8674044e35b0a012e8585a2f06a4a61192f291cca1836ebbe2860b4ea8"
+    },
+    "call_c15fad2552ba4b42a263fed4d4ba37c1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "offset": 786,
+        "max_bytes": 5761
+      },
+      "result_sha256": "6cd01eb06dd274b8b6544880dc57a94b848dcd6df41fd40f1aa08aafe9df9ecd"
+    },
+    "call_0e83b5766f5d42ce80e20dd0e4f68904": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "offset": 6547,
+        "max_bytes": 2075
+      },
+      "result_sha256": "9e53808ad70bf09234f788db6700ef8b3c13ab6d973f9fdf725b3f46d7a0fc48"
+    },
+    "call_89628af38f3a4bb69896593a2f7d1eb3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "15c747568a638cbd1dc786e3bd5cb5d80fe7b04d21919831209de6853a99d176"
+    },
+    "call_3d77d4a00b08493f928ef4ef8b81bb49": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "be8593c0bdbeec646c048617685f2d101f2aa36f899c8cabe1b91d9f44c12c77",
+      "catalog_only": true
+    },
+    "call_0dc4d904b4bf45008e023c2e84ae454b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-a-03-2025",
+        "revision": "8455317729a01ce5f7960986c9e876366cb9a75c1fdddb0c2bbf15dd807c3aac",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "ea72054afc1a2151d8456b810c285808193c2c2c1864cd6df93c41a412bd65cd"
+    },
+    "call_ba7d81e1302b452d84ced56cd4f795a2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r7b-12-2024",
+        "revision": "d82b44782275d0cb6ea40c5464eb7960edfcf9b23cbacf873bb9ae42389f92a7",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "b6cf0e95d08430ab9211a2c50095f9c6ddda1c9f118bda144a4452f861965eee"
+    },
+    "call_5eb7063d3ca641e8a6142188c0feec96": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r7b-arabic-02-2025",
+        "revision": "3bd966bc615852da2aa9e2563a86b5beed248412743d2d7b6bdd3efe1b72c94b",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "80b557c57b997391799238cc1d46d080b4cc9a630393e158f7226c6c5611d8f5"
+    },
+    "call_6cc35aa89b394878a42409519083f573": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "query": "sliding_window",
+        "limit": 100
+      },
+      "result_sha256": "688f11fa92e1604659ec441e0e10e86989417ea13853f12d09ea8c7c63b26711"
+    },
+    "call_0f2ceecc57974633926a972b3ab3d1d5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "query": "interleaved",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_6e4acae5f50e40ee904a70a6788603fe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b39df005370002561b020bb8715fe0b5ca0c26331cd4541ba548a75db03b0492"
+    },
+    "call_021517e2fdcc4e9c9450f4393a0963fc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "120ea0ef1dd1039feb5fa9027d3fbfa9d29968d208757e81a642917df2867c58"
+    },
+    "call_90a55168766a4550864c93dc0b93769a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "query": "Cohere2",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_4facb5182f1e49fda7642b4615484788": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "query": "logit_scale",
+        "limit": 100
+      },
+      "result_sha256": "3a67e079bb2117c830351540aafa77ce18f7636e36e9ee36ea849f6ab11ad1ce"
+    },
+    "call_f6fd7ec61d114465be4b20ac0f80cbdf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "path": "exllamav3/models/cohere.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2b0c2454c33efc12b5d57f76ebf89cddb53181e373238ee38469aaf9cfa5bbf7"
+    },
+    "call_ea9740013ae04d3ca417e124bae5b6ff": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 0,
+        "max_bytes": 16000
+      },
+      "result_sha256": "44fe30a242d87fda08bd1473ee742ac5ead5774ab8ecdfa05f25f7b7e808d8de"
+    },
+    "call_6a91b405567b40dab9b7760bd435c3e2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f1da63fd0af13649592d8ef0ac9c4cdcfaeddd82bfe40b8ad83792d125c85c5a"
+    },
+    "call_cf1733fc20cf41fabeca74cd1aef5ed5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "333171e3262e7ea41f396b994df3b6c31c0385d50938e1a8049bfd50fad3822b"
+    },
+    "call_b8d84fa4e80d46c7a6f39d5bf1cf1024": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e6b5b8684dcf1dd306cf1d53269db28da867c05a85c7bcf10c91e9f602b6d338"
+    },
+    "call_77c96df038d44273ae9f7c594b64955f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "26de87ae6a56990413c7445e47ccde36da4f9915551e50e2741a93b628f074f4"
+    },
+    "call_ec1a3361e5304664b297ef6d08c0b045": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c73467fb7789035d5bc42945733211d9aebf173b",
+        "max_bytes": 16384
+      },
+      "result_sha256": "86164a659fdf91aebd945b37cdfc503b3bbb729e8675a3871f1644ede379cd4c"
+    },
+    "call_03dbaf5041a047e0bb632afb59ca206a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nout={}\nfor name,n,h,q,k in [('command-a',64,12288,96,8),('r7b',32,4096,32,8),('r7b-arabic',32,4096,32,8)]:\n s=[4096 if (i+1)%4 != 0 else -1 for i in range(n)]\n out[name]={'head_dim_derived':h//q,'q_width':q*128,'kv_width':k*128,'q_heads_per_kv':q//k,'local_layers':sum(x>=0 for x in s),'global_layers_1_based':[i+1 for i,x in enumerate(s) if x<0]}\nout['pattern_default_1']=[4096 if (i+1)%1 != 0 else -1 for i in range(4)]\nout['logit_default']=0.0625\nprint(json.dumps(out))"
+        ]
+      },
+      "result_sha256": "15ca5bb8bdfea9dd9d9819b859f719ebb6ced13385ccffeaf9b90034485eb139"
+    },
+    "call_5d36bfad81554b8aa651673115505016": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "3d45cc3a491a1fba37dba5ac0087247a823b626b3f937433da94d9ea9308bddf"
+    }
+  }
+}

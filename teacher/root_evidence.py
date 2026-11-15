@@ -164,12 +164,19 @@ def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=Fal
     needed=('config.json','tokenizer_config.json') if reference_only else ('config.json','tokenizer_config.json','tokenizer.json')
     missing=[path for path in needed if path not in nonweights]
     if not headers:missing.append('safetensors headers')
+    absent=[]
+    if reference_only:
+        published={r['path'] for r in tree if r['type']=='file'}
+        absent=[p for p in missing if (not any(x.endswith('.safetensors') for x in published) if p=='safetensors headers' else p not in published)]
     for entry in evidence:
         if architecture in MIRRORS:entry['mirror_provenance']=MIRRORS[architecture]
     return evidence,{'architecture':architecture,'repo':repo,'revision':sha,'date':pin['date'],
                      **({'mirror_provenance':MIRRORS[architecture]} if architecture in MIRRORS else {}),
                      'non_weight_files':nonweights,'header_files':headers,'failures':failures,'missing':missing,
-                     'status':'complete' if not failures and not missing else 'incomplete'}
+                     'absent_at_revision':absent,
+                     **({'published_files':sorted(published),'absence_reason':'Files not published in the complete pinned repository tree'} if reference_only else {}),
+                     'status':('complete' if not failures and not missing else
+                               'complete_with_absences' if reference_only and not failures and 'config.json' in nonweights and set(missing)==set(absent) else 'incomplete')}
 
 
 def main():

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 from .evidence import timestamp
+from .blob_store import put
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,11 +29,7 @@ def build_packet(repo, task, destination, evidence=None, discussions=None):
     blobs = destination / 'blobs'
     blobs.mkdir()
     def store(data):
-        digest = hashlib.sha256(data).hexdigest()
-        path = blobs / digest
-        if not path.exists():
-            path.write_bytes(data)
-        return digest
+        return put(destination, data)
     manifest = {'schema_version': 1, 'task_sha': task, 'cutoff_date': cutoff,
                 'base_commit': parents[0] if parents else None, 'task_parents': parents,
                 'commits': {}, 'shows': {}, 'evidence': [], 'history_order': allowed,
