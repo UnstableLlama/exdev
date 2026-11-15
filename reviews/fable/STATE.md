@@ -17,7 +17,14 @@ no hindsight, to generate training data later. Source mirror in `.sources/exllam
   words, pointer-only `commit-N-A.coverage.md`) and my notes under `reviews/fable/`.
 - Approvals are for **ancestor retrieval only**. Canonical and training stay false; never approve those.
 - Do not commit or push unless the user asks. The user asked once, on 2026-11-14 after commit 129: everything up to
-  that point is committed on `main` and pushed ("Walk through commit 129 ..."). Work after it is uncommitted again.
+  that point is committed on `main` and pushed (`3cbf0b9` "Walk through commit 129 ...", then merge `57d0291`). Work
+  after it is uncommitted again.
+- **How to commit and push from this machine.** It has no Git identity and no credential helper. Commit with the
+  identity of the existing history (`git -c user.name="$(git log -1 --format=%an d0a2d08)" -c user.email=... commit`)
+  and push with `git -c credential.helper= -c credential.helper='!gh auth git-credential' push origin main`.
+  `git merge` does not take `-F -`; write the message to a file. The user also pushes to `main` from other checkouts
+  (the graph atlas under `docs/graph-atlas/` arrived that way), so fetch first and merge, never force. Merge rather
+  than rebase: Astra has live files in the tree.
 
 ## Where it runs now (the laptop)
 
@@ -86,8 +93,8 @@ verdict and the check printed the opposite; I had to revise the file and send As
   looked and agree). 113 is attempt **002**; 113/001 failed validation on a garbled evidence call id and stays as a
   failed, unpublished run (recovery verdict `commit-000113-001.md`). A fresh unassisted attempt on the same packet is
   the standing recovery for that kind of failure.
-- **Pending at the save: commit 130** (Astra's teacher session for it started about 21:11; if
-  `reviews/requests/commit-000130-001.md` exists without a verdict, review it first). Its task is `2e7b00d3`
+- **Pending at the save: commit 130.** `reviews/requests/commit-000130-001.md` was filed just after the commit and
+  has no verdict; it and two modified reports are the only uncommitted paths. Review it first. Its task is `2e7b00d3`
   "Generator: Prevent particular failure mode in generator from holding output indefinitely".
 - Still owed by Astra, not blocking: the discussion-history cache (request 2 in `DISK-AND-CACHE-PROPOSAL.md`). Today
   every commit refetches every discussion (about 2 of each 6 minutes; 576 discussions by the tip). When the request
