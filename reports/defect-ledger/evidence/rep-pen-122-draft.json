@@ -1,0 +1,233 @@
+{
+  "schema_version": 5,
+  "sha": "a65386545773f0e1dc66146e7050f6c0f5a9e3e4",
+  "parent_shas": [
+    "3c801c61b01407d13e609524941333c9a9198f80"
+  ],
+  "cutoff_date": "2025-05-04T13:16:41+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Repetition-penalty interpolation can turn a masked negative-infinity logit into NaN when its history factor is zero: the penalized logit remains negative infinity but is multiplied by zero.",
+        "basis": "source",
+        "evidence": [
+          "call_bb8f7c08d7fa47da891dd0eb0d6eb58c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch adds 1e-30 to the history factor before interpolation, avoiding the zero multiplier for tokens receiving no repetition penalty without adding a conditional branch.",
+        "basis": "source",
+        "evidence": [
+          "call_2aa27bc75c6f48969799c55755968ee4"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "A scalar FP32 transcription preserves negative infinity at factor zero after the change, but still produces NaN at factor one. The correction therefore addresses only one endpoint of the interpolation.",
+        "basis": "execution",
+        "evidence": [
+          "call_056567d4201846928f944d9f41a3e7aa"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier penalty entry describes strongest-recency weighting and FP32 output. The current source retains those mechanisms.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_62a3d882cb204d64b8af13dfe1e2b865"
+        ]
+      },
+      {
+        "text": "Issue #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d concerns conversion-time vocabulary padding and reports successful fixes. It does not establish a relationship to this repetition-penalty change.",
+        "basis": "source",
+        "evidence": [
+          "call_9b936f43b9314dc6a5cef19cb6e4391e"
+        ]
+      },
+      {
+        "text": "Whole-parent-tree searching for NaN also finds calibration diagnostics, a quantization utility comment and calibration text; those occurrences do not establish the same sampling failure.",
+        "basis": "source",
+        "evidence": [
+          "call_b35b815975ee4961aa886168f1616da4"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA kernel or repository test was executed. The scalar transcription rounds intermediate operations to FP32 but does not reproduce CUDA compiler contraction, optimization or GPU execution.",
+      "The inspected callers establish reach through SS_RepP, not that every generation workflow supplies masked logits or enables repetition penalties."
+    ],
+    "links": [
+      "40863d0690eb1cb1164bb973c9a22b1155ace172"
+    ],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Preserving masked logits during repetition penalties",
+        "claims": [
+          {
+            "text": "The kernel initializes per-token factors to zero, assigns one for occurrences inside the sustain window, and otherwise takes the maximum linearly decaying contribution. It computes w as v/rep_p for positive logits and v*rep_p otherwise, then interpolates v*(1-f)+w*f. The patch changes only f, not history scanning or the sign-dependent penalty.",
+            "basis": "source",
+            "evidence": [
+              "call_bb8f7c08d7fa47da891dd0eb0d6eb58c",
+              "call_2aa27bc75c6f48969799c55755968ee4"
+            ]
+          },
+          {
+            "text": "The 1e-30 constant is a small positive offset, not a history threshold. The scalar check represents it as approximately 1.000000003e-30 in FP32, above the smallest normal FP32 value, while adding it to 0.5 or 1 rounds back to the original factor.",
+            "basis": "execution",
+            "evidence": [
+              "call_056567d4201846928f944d9f41a3e7aa"
+            ]
+          },
+          {
+            "text": "SS_RepP.run directly invokes the native wrapper either with initial logits and newly allocated FP32 output or in place on existing logits. Its alternative selects a no-op for rep_p=1 or a nonpositive combined history window. The native wrapper supports batch size one and dispatches half-input or float-input kernel specializations; both receive the correction.",
+            "basis": "source",
+            "evidence": [
+              "call_0dde504411cb4a70b1cbd931456db2db",
+              "call_f2ab4dcc06f147adabeeac92a89d4664",
+              "call_bb8f7c08d7fa47da891dd0eb0d6eb58c",
+              "call_2aa27bc75c6f48969799c55755968ee4"
+            ]
+          },
+          {
+            "text": "The offset is a branch-free mitigation rather than complete nonfinite handling. Explicit endpoint selection could avoid evaluating the unused infinity-times-zero term at both endpoints; that alternative is not implemented here.",
+            "basis": "inference",
+            "evidence": [
+              "call_2aa27bc75c6f48969799c55755968ee4",
+              "call_056567d4201846928f944d9f41a3e7aa"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "masked-full-penalty-endpoint",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The existing full-penalty endpoint still permits masked logits to become NaN.",
+        "trigger": "An enabled repetition penalty receives v=-inf for a token appearing within the sustain window, giving factors[i]=1, with a positive finite rep_p.",
+        "expected_behavior": "The masked logit remains negative infinity.",
+        "actual_behavior": "Adding 1e-30 leaves the stored float factor equal to one; v*(1-f) remains negative infinity times zero. The scalar transcription produces NaN before and after the patch.",
+        "locations": [
+          {
+            "commit": "a65386545773f0e1dc66146e7050f6c0f5a9e3e4",
+            "path": "exllamav3/exllamav3_ext/generator/rep_pen.cu",
+            "symbol": "apply_rep_pens_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_bb8f7c08d7fa47da891dd0eb0d6eb58c",
+          "call_2aa27bc75c6f48969799c55755968ee4",
+          "call_0dde504411cb4a70b1cbd931456db2db",
+          "call_f2ab4dcc06f147adabeeac92a89d4664"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected factor construction, the task diff and both SS_RepP.run call sites found by whole-parent-tree search. The endpoint is carried over and reachable through initial-logit and in-place penalty calls.",
+            "evidence": [
+              "call_bb8f7c08d7fa47da891dd0eb0d6eb58c",
+              "call_2aa27bc75c6f48969799c55755968ee4",
+              "call_0dde504411cb4a70b1cbd931456db2db",
+              "call_f2ab4dcc06f147adabeeac92a89d4664"
+            ],
+            "limits": "Search establishes direct callers, not universal workflow reach."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Ran standard-library arithmetic with explicit FP32 rounding for factors zero, one-half and one, using v=-inf and rep_p=1.2.",
+            "evidence": [
+              "call_056567d4201846928f944d9f41a3e7aa"
+            ],
+            "limits": "This models the expression rather than executing the CUDA implementation."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a tiny positive repetition-factor offset to preserve masked logits at zero penalty weight; full-weight masked logits retain a suspected NaN endpoint."
+  },
+  "evidence": {
+    "call_2aa27bc75c6f48969799c55755968ee4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a65386545773f0e1dc66146e7050f6c0f5a9e3e4",
+        "offset": 200,
+        "max_bytes": 617
+      },
+      "result_sha256": "a20d39859f2e84e23755bc34fd0e636f8b0e4c7f1632e10b872ad6a4193cedfe"
+    },
+    "call_bb8f7c08d7fa47da891dd0eb0d6eb58c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3c801c61b01407d13e609524941333c9a9198f80",
+        "path": "exllamav3/exllamav3_ext/generator/rep_pen.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "75afecdd7dddd7c8d51a903b82dab3a70989d7ea2db622a38a1a3a118bd60a64"
+    },
+    "call_0dde504411cb4a70b1cbd931456db2db": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3c801c61b01407d13e609524941333c9a9198f80",
+        "query": "apply_rep_pens",
+        "limit": 100
+      },
+      "result_sha256": "baf1677fddc2bde8f41fa66cb95c3248875eaf58c58ac0adaef38d6f06c66c17"
+    },
+    "call_f2ab4dcc06f147adabeeac92a89d4664": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3c801c61b01407d13e609524941333c9a9198f80",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "offset": 8500,
+        "max_bytes": 7500
+      },
+      "result_sha256": "568acdf66726528b03226844141d12f5bd571f0ad741473e8f19188d7b4ddac3"
+    },
+    "call_62a3d882cb204d64b8af13dfe1e2b865": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "max_bytes": 16384
+      },
+      "result_sha256": "2d931c5df3cd8e5482bcb06d0a1a6d540d631c45e27b80803f3a5ea1e3833613"
+    },
+    "call_b35b815975ee4961aa886168f1616da4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3c801c61b01407d13e609524941333c9a9198f80",
+        "query": "NaN",
+        "limit": 100
+      },
+      "result_sha256": "59f4d9102e7231b5d87d9586e963a497bc3c1c5d302660b4442bd55aed3e19f1"
+    },
+    "call_9b936f43b9314dc6a5cef19cb6e4391e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ca4bb5df83d698e6c1e2a352837f0e4c6365b40aecd6cfb1cc062fbcaa2075e7"
+    },
+    "call_056567d4201846928f944d9f41a3e7aa": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct, math\nf32=lambda x:struct.unpack('f',struct.pack('f',x))[0]\nv=-math.inf; w=v*1.2\nfor a in (0.,0.5,1.):\n for changed in (False,True):\n  f=f32(a+1e-30) if changed else a\n  c=f32(1.-f); o=f32(f32(v*c)+f32(w*f))\n  print(a,changed,'f=',f,'1-f=',c,'output=',o)\nprint('min_normal_f32',2**-126,'epsilon',f32(1e-30))"
+        ]
+      },
+      "result_sha256": "718e5c8f14f6e7591ac9b70431dcbb4ce3aaa7dd01b1e6a849b8552cd277b9f3"
+    }
+  }
+}

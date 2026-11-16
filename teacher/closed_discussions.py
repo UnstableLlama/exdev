@@ -15,6 +15,8 @@ THRESHOLD = Fraction(1)
 CAP = 20
 STOP = frozenset('this that with from into have has been were will would could should does then than when where which their there these those only also some more most such each other same using used use add added adds remove removed update change changed changes fix fixes fixed test tests true false none self return import class void const auto else elif error model models tensor tensors torch cuda exllamav3 file files code function value values input output'.split())
 INSTRUCTION = ('The closed_discussion_catalog lists closed discussions whose cutoff-bound text shares terms with the task (matched terms expose words from that text), not established relationships; apply the existing catalog reading rule to these rows, fetch bodies with web_fetch, page navigation with evidence_index(index_id="closed_discussions"), label any task link as inference with its concrete basis, and report each item’s own title and framing faithfully.')
+PATH_RULE = 'salience-v3-paths'
+PATH_INSTRUCTION = ('The closed_discussion_catalog lists closed discussions qualified by shared terms or by paths named in cutoff-bound text that overlap the task change. matched_paths exposes those repository paths; a bare filename qualifies only when it resolves uniquely. These are navigation hints, not established relationships; fetch bodies with web_fetch, page with evidence_index(index_id="closed_discussions"), label task links as inference with their concrete basis, and report each item’s own title and framing faithfully.')
 
 
 # General prose/scaffolding stop list, extended after inspecting the positions 2–68 audit.
@@ -49,7 +51,29 @@ def message_terms(repo, sha):
     return terms(git(repo,'show','-s','--format=%B',sha).decode())
 
 
-def select(histories, cutoff, task, paths, excluded=(), cap=CAP, *, message):
+def task_paths(repo, sha):
+    """Exact first-parent changed paths, including both sides of a rename."""
+    parents=git(repo,'show','-s','--format=%P',sha).decode().split()
+    revisions=[parents[0],sha] if parents else ['--root',sha]
+    return sorted(set(git(repo,'diff-tree','--no-commit-id','--name-only','--no-renames','-r',*revisions).decode().splitlines()))
+
+
+def path_mentions(row, paths):
+    """Resolve full paths or unambiguous bare filenames in cutoff title/body text."""
+    from .recover_github import repo_path_hints, discussion_text
+    text=row['title']+'\n'+discussion_text(row)
+    probe=dict(row,content=json.dumps({'objects':[{'content':text}]}))
+    found=set(repo_path_hints(probe,paths,limit=len(paths))['repo_paths_mentioned'])
+    names={}
+    for path in paths:names.setdefault(Path(path).name,set()).add(path)
+    for name, matches in names.items():
+        # A bare filename is not a fragment of a different qualified path.
+        if len(matches)==1 and re.search(r'(?<![A-Za-z0-9_./+\\-])'+re.escape(name)+r'(?![A-Za-z0-9_./+\\-])',text):
+            found.update(matches)
+    return found
+
+
+def select(histories, cutoff, task, paths, excluded=(), cap=CAP, *, message, changed_paths=None):
     from .recover_github import repo_path_hints, discussion_text
     candidates=[];closed_count=0;unknown_state_count=0
     for bundle in histories:
@@ -75,22 +99,33 @@ def select(histories, cutoff, task, paths, excluded=(), cap=CAP, *, message):
         candidates.append((row,words))
     frequencies=Counter(t for _,words in candidates for t in words)
     ranked=[]
+    changed=set(changed_paths or [])
+    universe=sorted(set(paths)|changed)
     for row,words in candidates:
         matched=sorted(task & words)
         score=sum((Fraction(1,frequencies[t]**2) for t in message & words),Fraction())
-        if score<THRESHOLD or row['url'] in excluded:continue
+        overlap=sorted(changed & path_mentions(row,universe)) if changed_paths is not None else []
+        if (score<THRESHOLD and not overlap) or row['url'] in excluded:continue
         row.update(repo_path_hints(row,paths));row['matched_terms']=matched;row['state']='closed'
-        ranked.append((score,row))
+        if changed_paths is not None:row['matched_paths']=overlap
+        # Path overlap independently qualifies at the existing threshold; retain
+        # lexical ordering above it, then the existing deterministic tie break.
+        ranked.append((max(score,THRESHOLD) if overlap else score,row))
     ranked.sort(key=lambda x:(-x[0],x[1]['kind'],x[1]['number']))
-    return {'rule':'salience-v2','limit':cap,'truncated':len(ranked)>cap,
+    return {'rule':PATH_RULE if changed_paths is not None else 'salience-v2',
+            **({'task_changed_paths':sorted(changed)} if changed_paths is not None else {}),
+            'limit':cap,'truncated':len(ranked)>cap,
             'items':[r for _,r in ranked[:cap]],'closed_at_cutoff':closed_count,'unknown_state_count':unknown_state_count,'eligible_candidates':len(candidates),
             'qualified_count':len(ranked)}
 
 
 def attach(packet, manifest, bundle):
     if (bundle['task_sha']!=manifest['task_sha'] or timestamp(bundle['cutoff'])!=timestamp(manifest['cutoff_date'])
-        or bundle.get('complete') is not True or bundle.get('rule')!='salience-v2'):
+        or bundle.get('complete') is not True or bundle.get('rule') not in ('salience-v2',PATH_RULE)):
         raise ValueError('Invalid closed discussion recovery')
+    with_paths=bundle['rule']==PATH_RULE
+    if with_paths and bundle.get('task_changed_paths')!=sorted(set(manifest['task_changed_files'])):
+        raise ValueError('Closed discussion changed paths differ from task')
     if bundle['limit']!=CAP or not isinstance(bundle['truncated'],bool) or len(bundle['items'])>CAP:
         raise ValueError('Invalid closed discussion cap')
     rows=[]
@@ -98,18 +133,23 @@ def attach(packet, manifest, bundle):
         if (item['state']!='closed' or not item['available'] or
             any(timestamp(item[k])>timestamp(manifest['cutoff_date']) for k in ('created_at','closed_at','revision_at'))):
             raise ValueError('Invalid closed discussion cutoff')
-        if not item['matched_terms'] or item['matched_terms']!=sorted(set(item['matched_terms'])) or any(t not in terms(t) for t in item['matched_terms']):
+        overlap=item.get('matched_paths',[]) if with_paths else []
+        if with_paths and (not isinstance(overlap,list) or overlap!=sorted(set(overlap)) or not set(overlap)<=set(bundle['task_changed_paths'])):
+            raise ValueError('Invalid closed discussion matched paths')
+        if (not item['matched_terms'] and not overlap) or item['matched_terms']!=sorted(set(item['matched_terms'])) or any(t not in terms(t) for t in item['matched_terms']):
             raise ValueError('Invalid closed discussion matched terms')
         data=item['content'].encode();sha=hashlib.sha256(data).hexdigest()
         if sha!=item['content_sha256']:raise ValueError('Closed discussion checksum mismatch')
         put(packet, data)
         fields=('number','kind','title','author_login','created_at','closed_at','state','url','available',
                 'repo_paths_mentioned','repo_paths_mentioned_truncated','matched_terms')
+        if with_paths:fields+=('matched_paths',)
         rows.append({k:item[k] for k in fields})
         obj={k:item[k] for k in ('author_login','url','source_id','created_at','revision_at','retrieved_at','representation','content_sha256')}
         obj.update(blob=sha,kind='web',content_bytes=len(data),catalog_origin='closed_discussion')
         manifest['evidence'].append(obj)
     manifest['closed_discussion_catalog']={'rows':rows,'limit':bundle['limit'],'truncated':bundle['truncated']}
+    if with_paths:manifest['closed_discussion_catalog']['rule']=PATH_RULE
     manifest['walk_input_contract']['closed_discussions_sha256']=binding(manifest)
 
 

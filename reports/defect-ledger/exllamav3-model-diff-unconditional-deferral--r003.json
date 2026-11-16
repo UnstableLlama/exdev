@@ -1,0 +1,199 @@
+{
+  "defect_id": "exllamav3-model-diff-unconditional-deferral",
+  "revision_id": "r003",
+  "supersedes": "r002",
+  "origin": "reviewer_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "model_diff.py defers module loading without checking can_defer_load, allowing sliced weight construction to copy unread storage.",
+  "trigger": "Run eval/model_diff.py with an unquantized model whose MLP is sliced, using eligible deferred mt_fread weights. From commit 161, the earlier local-padding mismatch no longer masks this path. The usual quantized-versus-original comparison can encounter it on the original model.",
+  "expected_behavior": "Respect module.can_defer_load before entering deferred loading, as the model loaders do.",
+  "actual_behavior": "The script brackets every module without can_defer_load(). From 161, sliced get_tensor has no padding and no no_defer override: deferred loading allocates and queues the full weight, LinearFP16 cuts and copies from unread storage, and the later flush populates the original tensor rather than the retained copied slice. Comparison can silently use uninitialised slice weights. Source inspection only.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "path": "eval/model_diff.py",
+      "status": "reviewer_source_supported",
+      "rationale": "154 introduces unconditional begin/end around both model loads; parent lacks those brackets."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000154-001.md"
+    },
+    {
+      "observer": "artus-dev",
+      "source": "https://github.com/turboderp-org/exllamav3/issues/38",
+      "created_at": "2025-05-14T06:52:25Z",
+      "revision_at": "2025-05-14T09:07:39Z",
+      "description": "Issue 38 identifies a DeciLMForCausalLM checkpoint with an eight-way sliced MLP (49,920 versus 399,360). Such a registered model exists; at this revision unquantized loading fails earlier on the padding mismatch. No local execution or continuous affected range established."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000161-001.md",
+      "description": "161 removes the masking padding failure; unconditional model_diff deferral is now reachable for sliced unquantized MLPs."
+    }
+  ],
+  "fixes": [],
+  "verification": [
+    {
+      "method": "reviewer_source_inspection",
+      "description": "Compared script brackets, model loader eligibility checks and LinearFP16 sliced-weight copying.",
+      "limits": "No model, Torch, native loader or uninitialised-memory execution. Conditional latent behavior only."
+    },
+    {
+      "method": "external_report_correspondence",
+      "description": "Issue 38 body reports padded[...].copy_(tensor) failing with 49,920 versus 399,360 during GatedMLP loading; log names DeciLMForCausalLM and slice 1/8.",
+      "limits": "Reporter runtime revision is not independently pinned. This corroborates the existing identity, not an independently reproduced run or a fix."
+    },
+    {
+      "method": "reviewer_source_inspection",
+      "description": "Fable traced deferred allocation, sliced constructor copying and subsequent flush at 161.",
+      "limits": "Still suspected: no model execution or uninitialised-memory experiment. Reach is eval/model_diff.py with an unquantized model whose MLP is sliced; no continuous affected range asserted."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit154-verdict.md",
+      "sha256": "f390c6e559ce02c60cdd9a7d1c23dee0f1f0d103d72ba7f72b203b023adf6944"
+    },
+    {
+      "file": "evidence/commit154-eval--model_diff.py",
+      "sha256": "21a5ff96c7eca32f566a4afa6744f8eab0fb9bfc38a9edcbb4e0edcf551d0077"
+    },
+    {
+      "file": "evidence/commit154-exllamav3--models--model.py",
+      "sha256": "0fd4db524cbc9f51bbb534c11bcf91f7e3dccdd1d7320b20da4e8e578aeef9d2"
+    },
+    {
+      "file": "evidence/commit154-exllamav3--modules--linear.py",
+      "sha256": "82a4abc7cf4a849f114d29c96b7dca1a6aa152348d7779b1505d519bd877db1e"
+    },
+    {
+      "file": "evidence/commit154-exllamav3--modules--mlp.py",
+      "sha256": "27eddbe79c1d87acb5a248478869c15d07f233b0a201d275bf594aa95f3987ae"
+    },
+    {
+      "file": "evidence/commit154-exllamav3--modules--quant--fp16.py",
+      "sha256": "99d50b911f7acb38fcc4fa4edbbcedde50c42a6e5ce82b7fef6e0842c3da9a47"
+    },
+    {
+      "file": "evidence/commit154-exllamav3--constants.py",
+      "sha256": "d8c4f57c7d4acd41665e2f17e555ab973b1a61a2a28a8e153431b4db51bb5bc7"
+    },
+    {
+      "file": "evidence/commit154-exllamav3--loader--safetensors.py",
+      "sha256": "b2189b1e94d098676ef8c34b052940b2d1df67439da5c83ee87edd8f896dd2e3"
+    },
+    {
+      "file": "evidence/issue38-body-at-155.json",
+      "sha256": "3950944b50cfb71eab49a4dcf91e22bed973fac719915e1323ed4c2d9980f69b"
+    },
+    {
+      "file": "evidence/commit155-verdict.md",
+      "sha256": "3d440a9ef19dff55e1ee9cff9fe7d4b53e8a0ebd274f81083ec0860e0a76b02c"
+    },
+    {
+      "file": "evidence/commit161-verdict.md",
+      "sha256": "d3d32cc7497a4783600c93a15f1d416965998611ebae07521dda5ca8654e9b05"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "available_at": "2025-05-12T21:23:48+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-verdict.md",
+      "source_id": "evidence/commit154-verdict.md",
+      "content_sha256": "f390c6e559ce02c60cdd9a7d1c23dee0f1f0d103d72ba7f72b203b023adf6944",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-eval--model_diff.py",
+      "source_id": "evidence/commit154-eval--model_diff.py",
+      "content_sha256": "21a5ff96c7eca32f566a4afa6744f8eab0fb9bfc38a9edcbb4e0edcf551d0077",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-exllamav3--models--model.py",
+      "source_id": "evidence/commit154-exllamav3--models--model.py",
+      "content_sha256": "0fd4db524cbc9f51bbb534c11bcf91f7e3dccdd1d7320b20da4e8e578aeef9d2",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-exllamav3--modules--linear.py",
+      "source_id": "evidence/commit154-exllamav3--modules--linear.py",
+      "content_sha256": "82a4abc7cf4a849f114d29c96b7dca1a6aa152348d7779b1505d519bd877db1e",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-exllamav3--modules--mlp.py",
+      "source_id": "evidence/commit154-exllamav3--modules--mlp.py",
+      "content_sha256": "27eddbe79c1d87acb5a248478869c15d07f233b0a201d275bf594aa95f3987ae",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-exllamav3--modules--quant--fp16.py",
+      "source_id": "evidence/commit154-exllamav3--modules--quant--fp16.py",
+      "content_sha256": "99d50b911f7acb38fcc4fa4edbbcedde50c42a6e5ce82b7fef6e0842c3da9a47",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-exllamav3--constants.py",
+      "source_id": "evidence/commit154-exllamav3--constants.py",
+      "content_sha256": "d8c4f57c7d4acd41665e2f17e555ab973b1a61a2a28a8e153431b4db51bb5bc7",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-exllamav3--loader--safetensors.py",
+      "source_id": "evidence/commit154-exllamav3--loader--safetensors.py",
+      "content_sha256": "b2189b1e94d098676ef8c34b052940b2d1df67439da5c83ee87edd8f896dd2e3",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+      "source_id": "I_kwDOOU24Gs62gsOF",
+      "content_sha256": "c0fc2d836524a1bfd6fa8df6c9121d6aea06ef9fbba45dcd5dc13ec6b3b51dc7",
+      "available_at": "2025-05-14T09:07:39Z"
+    },
+    {
+      "url": "urn:exdev:review:commit155",
+      "source_id": "review:commit155",
+      "content_sha256": "3d440a9ef19dff55e1ee9cff9fe7d4b53e8a0ebd274f81083ec0860e0a76b02c",
+      "available_at": "2026-11-16T00:50:00.331949+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+      "available_at": "2025-05-14T23:28:24Z"
+    },
+    {
+      "url": "urn:exdev:review:commit161",
+      "source_id": "review:commit161",
+      "content_sha256": "d3d32cc7497a4783600c93a15f1d416965998611ebae07521dda5ca8654e9b05",
+      "available_at": "2026-11-16T02:03:34.354124+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T02:03:34.354124+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "48747ba09dee3ec78964653df0eb926c53f41c2e"
+    ],
+    "limits": "154 introduction was masked by the padding failure; 161 source inspection shows that mask removed. No continuous range or execution verification asserted."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "cutoff_note": "Issue opened 2025-05-14T06:52:25Z; this bound body revision is 2025-05-14T09:07:39Z. Both precede 155 cutoff; no later comment included. Reviewer interpretation remains administrative. Revision r003 includes post-hoc reviewer observation at 161, never teacher input."
+}

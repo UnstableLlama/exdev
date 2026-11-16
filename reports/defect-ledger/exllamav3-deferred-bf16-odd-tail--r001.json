@@ -1,0 +1,148 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The new CUDA BF16 conversion covers pairs only and has no scalar tail, leaving the final element of an odd-length deferred BF16 tensor unconverted.",
+  "trigger": "A file-backed BF16 tensor with an odd element count is loaded to CUDA through the deferred path with allow_bf16 false.",
+  "expected_behavior": "Every BF16 element should be converted to FP16 before the destination is consumed.",
+  "actual_behavior": "inplace_bf16_to_fp16_cuda passes numel / 2 to a kernel that converts two elements per thread. An odd final element retains BF16 bits in storage treated as FP16. A one-element final chunk also computes zero launch blocks; its runtime handling was not tested.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "The parent-tree search finds no pre-existing conversion helper. The task introduces its direct caller in stloader_deferred_cuda, reached through end_deferred_load. Parent get_tensor call sites include embedding, normalization and linear loading; automatic splitting supplies the new broader lifecycle. The finding is conditional on odd-sized BF16 CUDA data, not a claim that every model reaches it.",
+      "evidence": [
+        "call_166786c681a8427990778ecae94733af",
+        "call_c177abcc1f4a4b86a007970300fcb5bb",
+        "call_224f301938ae469187458cff3877948c",
+        "call_6630d3e98d2e43369ae27dc16b6c877d"
+      ],
+      "limits": "No affected model checkpoint or GPU execution was demonstrated."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Python modeled the inspected chunking and pair-count expressions. Counts 1, 3, 2049 and 4194305 each leave one element uncovered, while 2 leaves none. Interpreting the illustrative BF16-one bit pattern 0x3f80 as binary16 yields 1.875 instead of 1.0.",
+      "evidence": [
+        "call_224f301938ae469187458cff3877948c",
+        "call_2f06887d239a406ebdfa34a455e54be0"
+      ],
+      "limits": "This checks finite integer indexing and bit interpretation, not the repository kernel, CUDA launch behavior or floating-point conversion implementation."
+    }
+  ],
+  "defect_id": "exllamav3-deferred-bf16-odd-tail",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "paths": [
+        "exllamav3/exllamav3_ext/stloader.cu",
+        "exllamav3/exllamav3_ext/stloader.cpp"
+      ],
+      "status": "source_supported",
+      "rationale": "Approved finding introduction, or root attribution verified by reviewer; no runtime execution."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "run": ".teacher/runs/commit-000119-001",
+      "finding_id": "deferred-bf16-odd-tail"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "run": ".teacher/runs/commit-000140-001",
+      "finding_id": "inherited-deferred-bf16-tail"
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit119-draft.json",
+      "sha256": "792fcc397f23c30698f69ad0f1e7e5284c0b6e2e5bd2e2b7ea8dc8cbb52fd1ed"
+    },
+    {
+      "file": "evidence/commit119-transcript.json",
+      "sha256": "977cb8f45da70b234b8609a0403f000ee8afd4d8827fabd34fecd43cc1c82e66"
+    },
+    {
+      "file": "evidence/commit119-verdict.md",
+      "sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8"
+    },
+    {
+      "file": "evidence/commit140-draft.json",
+      "sha256": "73c6cfb246e2f136326a7c6a44638aee140731867aa4867cd7c9473fd2088427"
+    },
+    {
+      "file": "evidence/commit140-transcript.json",
+      "sha256": "442bc674e5b63b37010a48efe55b23b9c49d90471739dd0647968c91e0fc7b3a"
+    },
+    {
+      "file": "evidence/commit140-verdict.md",
+      "sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "available_at": "2025-05-03T06:43:44+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit119-draft.json",
+      "source_id": "evidence/commit119-draft.json",
+      "content_sha256": "792fcc397f23c30698f69ad0f1e7e5284c0b6e2e5bd2e2b7ea8dc8cbb52fd1ed",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit119-transcript.json",
+      "source_id": "evidence/commit119-transcript.json",
+      "content_sha256": "977cb8f45da70b234b8609a0403f000ee8afd4d8827fabd34fecd43cc1c82e66",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit119-verdict.md",
+      "source_id": "evidence/commit119-verdict.md",
+      "content_sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "available_at": "2025-05-11T15:35:09+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit140-draft.json",
+      "source_id": "evidence/commit140-draft.json",
+      "content_sha256": "73c6cfb246e2f136326a7c6a44638aee140731867aa4867cd7c9473fd2088427",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit140-transcript.json",
+      "source_id": "evidence/commit140-transcript.json",
+      "content_sha256": "442bc674e5b63b37010a48efe55b23b9c49d90471739dd0647968c91e0fc7b3a",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit140-verdict.md",
+      "source_id": "evidence/commit140-verdict.md",
+      "content_sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-15T06:44:29.495535+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "c6aa83f7e5a5e735c079d41244cbc704eda7e54e"
+    ],
+    "limits": "Exact source-supported observations only; no continuous affected range or runtime effects asserted."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

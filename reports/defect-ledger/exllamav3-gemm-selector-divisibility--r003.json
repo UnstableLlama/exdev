@@ -1,0 +1,152 @@
+{
+  "defect_id": "exllamav3-gemm-selector-divisibility",
+  "revision_id": "r003",
+  "supersedes": "r002",
+  "origin": "reviewer_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Automatic GEMM selection can choose a 256-column tile for a padded width divisible by 128 but not 256, after launch-time divisibility checks were removed.",
+  "trigger": "Direct LinearEXL3 path (32 flattened rows or fewer), padded output width an odd multiple of 128, in an unguarded shape-3 selector branch.",
+  "expected_behavior": "Choose a tile dividing the layer width or reject incompatible dimensions before launching.",
+  "actual_behavior": "The inner routine floors size_n / TILESIZE_N and leaves the last 128 output columns unwritten; fused output Hadamard then processes those uninitialized torch.empty columns.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "paths": [
+        "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh"
+      ],
+      "status": "reviewer_source_supported",
+      "rationale": "Task adds unguarded shape-3 returns and moves divisibility checks into a compatibility query used by the benchmark, not automatic GEMM launch."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000123-001.md",
+      "description": "Source-only reviewer finding, distinct from the teacher Boolean threshold finding."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000129-001.md",
+      "description": "Unguarded 256-column selector returns and unchecked launch persist at 129; same defect identity."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+      "run": ".teacher/runs/commit-000133-001",
+      "finding_id": null,
+      "observer": "Fable",
+      "description": "Unchanged selector defect reaches the new multi-GEMM dispatcher; same identity."
+    }
+  ],
+  "fixes": [],
+  "verification": [
+    {
+      "method": "reviewer_source_inspection",
+      "description": "Fable compared parent checks, task selector branches, launch path, inner tile count and Linear padding.",
+      "limits": "No compilation, GPU execution or supported checkpoint demonstration. Reviewer recalled a possible Qwen vocabulary size but did not verify it; no model-specific affected claim is made."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit123-verdict.md",
+      "sha256": "d2c0355fb7bd13790849dff3bb279a5e9c09866ae1e634feab2bfc28ade3e78a"
+    },
+    {
+      "file": "evidence/commit129-verdict.md",
+      "sha256": "d63398c35666f232531115d28d547f0e8b2370e68112ee949ef21e5c1a574f3b"
+    },
+    {
+      "file": "evidence/commit133-draft.json",
+      "sha256": "324eba314e556124faf3462d110cf9890ae6e585c7c5c2698d8d1eb94aab7d17"
+    },
+    {
+      "file": "evidence/commit133-transcript.json",
+      "sha256": "bd1c30be1da57e785dc98d1179f91f181828ce930cf6e8a3920b428dec90d41f"
+    },
+    {
+      "file": "evidence/commit133-verdict.md",
+      "sha256": "1151b69aa52459792255048dc48b581e5bcc736c3f3d11ecbff4e3525c31884f"
+    }
+  ],
+  "recorded_at": "2026-11-15T05:47:53.638333+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "5d470a29780927c1c8c874609597823f210ae3b9",
+      "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+      "b73d0739044d14ebe12a73bdbd154c1f28b36f19"
+    ],
+    "limits": "Exact source observations at123,129 and133 only; no continuous affected range or GPU execution asserted.",
+    "selector_branches_at_123": [
+      "old/Ampere: bits <= 4 and size_n > 2048",
+      "old/Ampere: bits >= 5, size_n <= 4096, size_k > 8192",
+      "Ada: bits <= 4 unless size_n <= 4096 and size_k <= 12288",
+      "Hopper/Blackwell: bits == 8, size_n <= 8192, size_k > 32768"
+    ],
+    "selector_branches_at_129": [
+      "old/Ampere: bits <= 4, unguarded shape-3 return",
+      "old/Ampere: bits > 4, size_n < 4096 and size_k > 8192",
+      "Ada: bits <= 3, unguarded shape-3 return",
+      "Hopper/Blackwell: bits >= 7, size_k > 32768, unguarded shape-3 return"
+    ]
+  },
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "available_at": "2025-05-05T00:54:26+02:00"
+    },
+    {
+      "url": "urn:exdev:reviews:verdicts:commit-000123-001",
+      "source_id": "review:commit-000123-001",
+      "content_sha256": "d2c0355fb7bd13790849dff3bb279a5e9c09866ae1e634feab2bfc28ade3e78a",
+      "available_at": "2026-11-15T04:14:00.626992+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+      "available_at": "2025-05-08T22:44:26+02:00"
+    },
+    {
+      "url": "urn:exdev:reviews:verdicts:commit-000129-001",
+      "source_id": "review:commit-000129-001",
+      "content_sha256": "d63398c35666f232531115d28d547f0e8b2370e68112ee949ef21e5c1a574f3b",
+      "available_at": "2026-11-15T05:09:55.157253+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+      "available_at": "2025-05-11T00:04:33+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit133-draft.json",
+      "source_id": "evidence/commit133-draft.json",
+      "content_sha256": "324eba314e556124faf3462d110cf9890ae6e585c7c5c2698d8d1eb94aab7d17",
+      "available_at": "2026-11-15T05:47:53.638333+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit133-transcript.json",
+      "source_id": "evidence/commit133-transcript.json",
+      "content_sha256": "bd1c30be1da57e785dc98d1179f91f181828ce930cf6e8a3920b428dec90d41f",
+      "available_at": "2026-11-15T05:47:53.638333+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit133-verdict.md",
+      "source_id": "evidence/commit133-verdict.md",
+      "content_sha256": "1151b69aa52459792255048dc48b581e5bcc736c3f3d11ecbff4e3525c31884f",
+      "available_at": "2026-11-15T05:47:53.638333+00:00"
+    }
+  ],
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

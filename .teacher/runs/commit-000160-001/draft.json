@@ -1,0 +1,165 @@
+{
+  "schema_version": 5,
+  "sha": "7f3096ffd723fd908e1a2b2aa25243b2cc3f727a",
+  "parent_shas": [
+    "d1e3b2b20e7591ee613c049701a46973e9e5bf86"
+  ],
+  "cutoff_date": "2025-05-14T23:55:25+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The EXL2 comparison adapter counted every non-head linear module through q_tensors, without a separate path for ordinary, unquantized weights.",
+        "basis": "source",
+        "evidence": [
+          "call_d5a8356484f5433eae02328240074315"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch selects module.linear.weight when module.linear is truthy, wrapping it in a one-entry dictionary for the existing tensor-size helper. Otherwise it retains quantized-tensor accounting. Both branches retain module.numel() as the logical weight denominator.",
+        "basis": "source",
+        "evidence": [
+          "call_cac8eec522914463abd156188acd3814",
+          "call_d5a8356484f5433eae02328240074315"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The corrected totals flow through load_exllamav2 into comparison results and the layer-BPW or storage-size plot axis. Forward execution and perplexity calculations are unchanged; the reported VRAM value is calculated weight storage, not measured peak GPU allocation.",
+        "basis": "source",
+        "evidence": [
+          "call_d5a8356484f5433eae02328240074315",
+          "call_8b67a9aeb3c34721a53b08356053f62e",
+          "call_cac8eec522914463abd156188acd3814"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier adapter entry distinguishes calculated weight storage from measured allocation and documents the existing autosplit reserve request.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_e7d4c5803d9346ea9daef79cfbcc1109"
+        ]
+      },
+      {
+        "text": "Issue #19, \u201cAny chance of a single model file?\u201d, requests single-file packaging and discusses retaining the HF format. It does not report this EXL2 accounting problem.",
+        "basis": "source",
+        "evidence": [
+          "call_6feaa0f4bf604eef9e08e638c1a9ea6b"
+        ]
+      }
+    ],
+    "limitations": [
+      "External ExLlamaV2 implementation and real block-sparse model layouts were not inspected; the relationship between module.linear, q_tensors and module.numel() remains an external compatibility assumption.",
+      "No model loading, GPU execution or perplexity evaluation was performed. The arithmetic check executed only the isolated existing helper with synthetic tensor-like objects.",
+      "The unchanged lm_head branch still uses q_tensors; this patch establishes no support for an unquantized head."
+    ],
+    "links": [
+      "cf15bab0733bfecf327281987286b413299d353d"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Count unquantized EXL2 linear weights",
+        "claims": [
+          {
+            "text": "The new selection applies to non-head ExLlamaV2Linear instances, not specifically to a block-sparse class. It counts the dense weight alone when present, avoiding simultaneous counting of both representations; quantized modules retain their full q_tensors accounting.",
+            "basis": "source",
+            "evidence": [
+              "call_cac8eec522914463abd156188acd3814",
+              "call_d5a8356484f5433eae02328240074315"
+            ]
+          },
+          {
+            "text": "get_tensor_size multiplies element size by element count and by eight to convert bytes to bits. Layer BPW divides accumulated storage bits by accumulated logical weights, while total storage adds the separately counted head. Thus dense weights contribute their actual dtype width rather than an assumed quantization rate.",
+            "basis": "source",
+            "evidence": [
+              "call_d5a8356484f5433eae02328240074315",
+              "call_cac8eec522914463abd156188acd3814"
+            ]
+          },
+          {
+            "text": "An isolated execution of the repository helper counted 4,096 synthetic two-byte elements as 65,536 bits, or 16 BPW. Combining that count arithmetically with 8,192 weights at four bits yielded eight BPW, illustrating the weighted aggregate rather than an average of module rates.",
+            "basis": "execution",
+            "evidence": [
+              "call_4f089935967446b5b7709e04135c9b28"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Counts ordinary dense weights in the EXL2 comparison adapter while preserving quantized accounting and the existing evaluation interface."
+  },
+  "evidence": {
+    "call_cac8eec522914463abd156188acd3814": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7f3096ffd723fd908e1a2b2aa25243b2cc3f727a",
+        "offset": 206,
+        "max_bytes": 933
+      },
+      "result_sha256": "43d3f0d4f9496ed032c076b974db82a47af885ba7bc04aa40a4bbba9369e8d4f"
+    },
+    "call_d5a8356484f5433eae02328240074315": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d1e3b2b20e7591ee613c049701a46973e9e5bf86",
+        "path": "eval/compare_q_exllamav2.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3adfc4028a36de72c50f98fda7c3e01654edca22a46565fb256e1bffbcd44528"
+    },
+    "call_98ceabf311a04a4195913fdaebc9cc37": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d1e3b2b20e7591ee613c049701a46973e9e5bf86",
+        "query": "EXL2",
+        "limit": 100
+      },
+      "result_sha256": "9043d114684d0435913f21d2cb70c6fcb70ef8ad4b6e85a8c9a1da2236992dab"
+    },
+    "call_8b67a9aeb3c34721a53b08356053f62e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d1e3b2b20e7591ee613c049701a46973e9e5bf86",
+        "path": "eval/compare_q.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "cadb0440b34ccf610463b62dd37eb61f8219b7622db3efca13bf2b04b3cf998e"
+    },
+    "call_e7d4c5803d9346ea9daef79cfbcc1109": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "38928b2e9c562955588e4cc5f2cbf793846b1f0d1a081805d4dac5f4b1cf1c4b"
+    },
+    "call_6feaa0f4bf604eef9e08e638c1a9ea6b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/19",
+        "max_bytes": 16000
+      },
+      "result_sha256": "099ecfcb254deef6334cc31bee78c2a3371f59694a591a72c43abbd26cbd3376"
+    },
+    "call_4f089935967446b5b7709e04135c9b28": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\np=ast.parse(pathlib.Path('eval/compare_q_exllamav2.py').read_text()); f=next(n for n in p.body if isinstance(n,ast.FunctionDef) and n.name=='get_tensor_size'); ns={}; exec(compile(ast.Module(body=[f],type_ignores=[]),'helper','exec'),ns)\nclass T:\n def element_size(self): return 2\n def numel(self): return 4096\nbits=ns['get_tensor_size']({'t':T()}); assert bits==65536\nprint({'dense_bits':bits,'dense_bpw':bits/4096,'mixed_bpw_with_8192_weights_at_4_bits':(bits+8192*4)/(4096+8192)})"
+        ]
+      },
+      "result_sha256": "ebc94acb3ed759ded2b37084b98c6960445df3013d2b50b82ca3c5ade257ef42"
+    }
+  }
+}

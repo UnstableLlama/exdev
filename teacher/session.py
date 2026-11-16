@@ -55,6 +55,36 @@ a run result supports the claim. This is an authoring-boundary candidate, not a
 request to publish or mark an entry reviewed.'''
 
 
+GUIDANCE_6 = '''When a change alters what a function, constructor, attribute or parameter accepts, returns or stores (its type,
+shape, name or meaning), search the whole task and parent trees for every other definition, subclass, caller and
+reader that supplies or consumes it, including files the task diff does not touch. Inspect each one and say, case
+by case, whether it agrees with the changed form; name any that the diff leaves on the old form and state what
+the inspected code would do with it. A search limited to the changed files cannot establish that the change is
+complete.
+
+When the task modifies, copies or closely follows a file, class or function that an earlier commit introduced,
+find that commit's entry with the ancestor tools and read it before finalizing. Say which entries you read and
+what they establish about the code the task relies on, including any guard, precondition or recorded defect; if
+you read none, say so.
+
+When one commit makes several edits, check whether any of them supplies a precondition another needs before
+describing them as independent.'''
+
+GUIDANCE_7 = '''When a change alters what a function, constructor, attribute or parameter accepts, returns or stores (its type,
+shape, name or meaning), search the whole parent tree, read together with the task diff, for every other
+definition, subclass, caller and reader that supplies or consumes it, including files the task diff does not
+touch. Inspect each one and say, case by case, whether it agrees with the changed form; name any that the diff
+leaves on the old form and state what the inspected code would do with it. A search limited to the changed files
+cannot establish that the change is complete.
+
+When the task modifies, copies or closely follows a file, class or function that an earlier commit introduced,
+find that commit's entry with the ancestor tools and read it before finalizing. Say which entries you read and
+what they establish about the code the task relies on, including any guard, precondition or recorded defect; if
+you read none, say so.
+
+When one commit makes several edits, check whether any of them supplies a precondition another needs before
+describing them as independent.'''
+
 class FreshSession:
     def __init__(self, packet):
         self.runner = Runner(packet)
@@ -102,11 +132,14 @@ class FreshSession:
         closed_instruction=''
         if 'closed_discussion_catalog' in manifest:
             from .closed_discussions import page, INSTRUCTION as CLOSED_INSTRUCTION
+            from .closed_discussions import PATH_RULE, PATH_INSTRUCTION
             task['closed_discussion_catalog']=dict(page(manifest,{'max_bytes':8192}), index_id='closed_discussions', limit=manifest['closed_discussion_catalog']['limit'], cap_truncated=manifest['closed_discussion_catalog']['truncated'])
-            closed_instruction='\n'+CLOSED_INSTRUCTION
+            closed_instruction='\n'+(PATH_INSTRUCTION if manifest['closed_discussion_catalog'].get('rule')==PATH_RULE else CLOSED_INSTRUCTION)
         from .coverage_request import INSTRUCTION
         coverage_instruction = ('\n'+INSTRUCTION if 'coverage_request' in manifest else '')
-        self.initial = [{'role':'system','content':SYSTEM+message_instruction+provenance_instruction+merge_instruction+discussion_instruction+dispatch_instruction+config_instruction+coverage_instruction+closed_instruction},
+        additional_guidance = GUIDANCE_7 if manifest.get('guidance_version',1)>=7 else GUIDANCE_6 if manifest.get('guidance_version',1)==6 else ''
+        adopted_instruction = '\n'+additional_guidance if additional_guidance else ''
+        self.initial = [{'role':'system','content':SYSTEM+message_instruction+provenance_instruction+merge_instruction+discussion_instruction+dispatch_instruction+config_instruction+coverage_instruction+closed_instruction+adopted_instruction},
                         {'role':'user','content':json.dumps(task, sort_keys=True)}]
         self.tools = json.loads((ROOT/'schema/repo-tools-v1.json').read_text())['tools']
         if manifest.get('walk_input_contract',{}).get('version',1)<6:

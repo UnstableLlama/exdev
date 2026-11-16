@@ -1,0 +1,194 @@
+{
+  "schema_version": 5,
+  "sha": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+  "parent_shas": [
+    "b73d0739044d14ebe12a73bdbd154c1f28b36f19"
+  ],
+  "cutoff_date": "2025-05-11T02:00:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "LinearFP16.forward previously sent every multiplication through ext.hgemm, including half-precision output, whose native implementation calls cublasHgemm.",
+        "basis": "source",
+        "evidence": [
+          "call_1d039b76157e45c3977d7bf7d049b238",
+          "call_fb1c3408cba04864be7c1d68d95a472a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change selects Torch when the resolved output dtype equals the input dtype, retaining the native route when they differ. This preserves the native half-input, float-output alternative rather than replacing all GEMM calls.",
+        "basis": "source",
+        "evidence": [
+          "call_f889249c48024258b645236cc0c2574c",
+          "call_fb1c3408cba04864be7c1d68d95a472a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Dispatch is dtype-based, not Blackwell-specific: matching input/output dtypes select Torch on every device reaching this method. The condition does not explicitly test the weight dtype.",
+        "basis": "source",
+        "evidence": [
+          "call_f889249c48024258b645236cc0c2574c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent tree also mentions Blackwell in a PTX comment about predicated global-to-shared loads producing incorrect compiled code. That occurrence does not establish a connection to this matmul dispatch change.",
+        "basis": "source",
+        "evidence": [
+          "call_32d6f9c1c0ae48c6aba3e9178825a52f"
+        ]
+      },
+      {
+        "text": "Issue #31, \u201cTypeError with presence penalty,\u201d reports incompatible apply_pres_freq_pens arguments in TabbyAPI and subsequent recovery after TabbyAPI updates; it supplies no matmul performance evidence.",
+        "basis": "source",
+        "evidence": [
+          "call_ff684695bc254e198321516fe2acde4f"
+        ]
+      }
+    ],
+    "limitations": [
+      "The reported Blackwell speed advantage is not established by benchmarks here; Torch's internal selected kernel was not available for inspection.",
+      "No GPU execution or numerical comparison was performed. A scalar arithmetic check would not validate this library-dispatch performance change.",
+      "Numerical equivalence between Torch matmul and the native cuBLAS paths remains unmeasured."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Dtype-based dispatch for unquantized linear multiplication",
+        "claims": [
+          {
+            "text": "Output dtype precedence remains the call's out_dtype, then the instance's out_dtype, then torch.half. The resolved value is now stored once and reused for allocation and dispatch.",
+            "basis": "source",
+            "evidence": [
+              "call_f889249c48024258b645236cc0c2574c",
+              "call_c6d0443b3775451799adf44b69f33c9a"
+            ]
+          },
+          {
+            "text": "The method still flattens leading input dimensions, allocates a zero-filled output on the input device, multiplies by the stored weight, adds bias separately, and restores the leading dimensions. Torch writes directly into that output using out=y; allocation and bias fusion are not optimized by this patch.",
+            "basis": "source",
+            "evidence": [
+              "call_f889249c48024258b645236cc0c2574c",
+              "call_1d039b76157e45c3977d7bf7d049b238"
+            ]
+          },
+          {
+            "text": "The retained native callee requires rank-two half inputs and half or float output, with compatible matrix dimensions. Half output uses cublasHgemm; float output uses cublasGemmEx with CUBLAS_COMPUTE_32F. Both use alpha=1 and beta=0, requesting the product without accumulation of the previous output.",
+            "basis": "source",
+            "evidence": [
+              "call_fb1c3408cba04864be7c1d68d95a472a"
+            ]
+          },
+          {
+            "text": "This is a narrow alternative to replacing the native helper globally: LinearFP16_torch remains unchanged, and the separate ext.hgemm call in exl3.py is outside the patch.",
+            "basis": "source",
+            "evidence": [
+              "call_1d039b76157e45c3977d7bf7d049b238",
+              "call_77e631d700624d4ab6303a00424f0e05",
+              "call_f889249c48024258b645236cc0c2574c"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Routes LinearFP16 multiplication through Torch when input and output dtypes match, retaining native GEMM for mixed output precision. The claimed Blackwell performance improvement is unmeasured."
+  },
+  "evidence": {
+    "call_f889249c48024258b645236cc0c2574c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "offset": 209,
+        "max_bytes": 966
+      },
+      "result_sha256": "b77b0a3ae683a907fea87cf2dad4e4e3082c76da17936202875bdc436ce7e41c"
+    },
+    "call_1d039b76157e45c3977d7bf7d049b238": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "path": "exllamav3/modules/quant/fp16.py"
+      },
+      "result_sha256": "0927ae3553a7c5aa514b0681c8d8c9c410a5dd2ad6a3a9d243c4070b6b765f00"
+    },
+    "call_32d6f9c1c0ae48c6aba3e9178825a52f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "query": "Blackwell"
+      },
+      "result_sha256": "0f33a5017cc152b6ee473f80919ca31f45a66f9ce1336cae6c84e1b1d09c8581"
+    },
+    "call_77e631d700624d4ab6303a00424f0e05": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "query": "hgemm("
+      },
+      "result_sha256": "16f5788a4e50e110ae2cb27aae534ae9bb7e50003989b29e62720209fa243b34"
+    },
+    "call_4a599400d4564f699a69785880506ba8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "query": "hgemm",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 50
+      },
+      "result_sha256": "b3c00ad20d83e6dd1646fddfa436cc36fe16b5989d7975eeff51aa869cc7c1e2"
+    },
+    "call_fb1c3408cba04864be7c1d68d95a472a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu"
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_ff684695bc254e198321516fe2acde4f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/31",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1c72bc1bbc8a43807e3b5130b540b0264f3fb1a5acb1148eda3d431195c45dde"
+    },
+    "call_6ebbaec9613a4c09836fbf335ff2c207": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/quant/fp16.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "086dcfd544a045ccc30a98b1c0295a467daa6d9142ff2623446eaceb56d572d4",
+      "catalog_only": true
+    },
+    "call_0021ea15cec746bba91ccdde445ac4c5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "query": "def first_not_none"
+      },
+      "result_sha256": "7632d9fd9400fedcd77e24a164ae19d29e861c0b1d40d2832b0f76ff2fc0a289"
+    },
+    "call_c6d0443b3775451799adf44b69f33c9a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "path": "exllamav3/util/misc.py",
+        "offset": 1700,
+        "max_bytes": 1600
+      },
+      "result_sha256": "98ffb07baf9924674041a3aeabfb5505d3ae17bce360c7950289ce762316cff9"
+    }
+  }
+}

@@ -1,0 +1,347 @@
+{
+  "schema_version": 5,
+  "sha": "9665ba99989955593d2fb148323c9a96c77d1bea",
+  "parent_shas": [
+    "b728058b20789afd74bdc371428ff1b83bc0b0f2"
+  ],
+  "cutoff_date": "2025-05-14T17:53:33+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "MixtralForCausalLM needs an architecture-specific configuration and checkpoint mapping before Config.from_directory can select it.",
+        "basis": "source",
+        "evidence": [
+          "call_464704546b31427f82bab6b7144bc4fb",
+          "call_a757d578dbe3443d8ca636abaa148ce4"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change reuses existing attention, transformer-block and sparse-expert implementations rather than introducing Mixtral-specific kernels.",
+        "basis": "source",
+        "evidence": [
+          "call_2d5bedc8781a4a6e8f879289e2ab7a60",
+          "call_5e4eb30a7797469492fa3c2cf6db384a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Registers MixtralModel and supplies MixtralConfig, making the architecture selectable through the existing configuration factory.",
+        "basis": "source",
+        "evidence": [
+          "call_464704546b31427f82bab6b7144bc4fb",
+          "call_a757d578dbe3443d8ca636abaa148ce4",
+          "call_2d5bedc8781a4a6e8f879289e2ab7a60"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure and the reporter's environment workaround. Its connection here is only inferred from the traceback's config.py import line; it is not evidence of a Mixtral defect or motivation for this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_eef447a2a45d4b3ab59964fdda7cad9d",
+          "call_a757d578dbe3443d8ca636abaa148ce4"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d proposes \u201ccontaing \u2192 containing.\u201d Its inferred connection is the matching typo in the shared configuration source, not architecture support.",
+        "basis": "inference",
+        "evidence": [
+          "call_d39ef38926ec4b409b580c7cde1cd834",
+          "call_a757d578dbe3443d8ca636abaa148ce4"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, conversion, generation or GPU execution was performed. The Python calculation checks transcribed shape arithmetic only.",
+      "Checkpoint tensor headers were not inspected; configuration compatibility does not establish that every weight is loadable or numerical outputs match a reference implementation."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Mixtral configuration and sparse-expert assembly",
+        "claims": [
+          {
+            "text": "MixtralConfig reads intermediate_size into moe_intermediate_size and num_local_experts into num_experts. These are deliberate checkpoint-key mappings: the existing Qwen3 MoE configuration instead reads moe_intermediate_size and num_experts. num_experts_per_tok controls how many experts are selected.",
+            "basis": "source",
+            "evidence": [
+              "call_2d5bedc8781a4a6e8f879289e2ab7a60",
+              "call_85a6aed28c704fbc88bc39d964a5fcae",
+              "call_688dd32abb7c46359cfc4a171a743b2a",
+              "call_5e4eb30a7797469492fa3c2cf6db384a"
+            ]
+          },
+          {
+            "text": "Missing or false-valued head_dim is derived as hidden_size // num_attention_heads; absent KV-head count defaults to the query-head count. hidden_act may be absent but must equal silu when supplied. The model uses NEOX-style RoPE settings and defaults tied embeddings to false.",
+            "basis": "source",
+            "evidence": [
+              "call_2d5bedc8781a4a6e8f879289e2ab7a60",
+              "call_a757d578dbe3443d8ca636abaa148ce4"
+            ]
+          },
+          {
+            "text": "Assembly is embedding \u2192 repeated pre-normalized attention and MoE residual blocks \u2192 final RMSNorm \u2192 vocabulary projection. Attention maps q_proj/k_proj/v_proj/o_proj. Each block_sparse_moe maps expert w1 to the activation gate, w3 to the up projection and w2 to the down projection; gate is the separate router. Expert intermediates and outputs are explicitly half precision.",
+            "basis": "source",
+            "evidence": [
+              "call_2d5bedc8781a4a6e8f879289e2ab7a60",
+              "call_8f622b80a2934449b891476e0c56881f",
+              "call_5e4eb30a7797469492fa3c2cf6db384a"
+            ]
+          },
+          {
+            "text": "The reused router produces unpadded expert scores, applies softmax, selects top-k experts and renormalizes their weights. Multiple flattened tokens or non-fully-EXL3 experts use the per-expert Torch path; a single token with fully EXL3 experts uses indexed fused projections. MultiLinear additionally requires compatible dimensions and K, no bias or softcap, and unit post-scale.",
+            "basis": "source",
+            "evidence": [
+              "call_5e4eb30a7797469492fa3c2cf6db384a"
+            ]
+          },
+          {
+            "text": "prepare_inputs preserves input_ids in params and delegates attention preparation. The shared default is uncached Flash Attention; SDPA and cached Flash Attention remain explicit alternatives with their existing cache and shape requirements. Mixtral supplies no sliding-window override.",
+            "basis": "source",
+            "evidence": [
+              "call_2d5bedc8781a4a6e8f879289e2ab7a60",
+              "call_146eff0a48954d639c9feb0410880a57"
+            ]
+          },
+          {
+            "text": "The pinned mistralai/Mixtral-8x7B-v0.1 and Mixtral-8x7B-Instruct-v0.1 configurations each match the new configuration mapping: hidden size 4096, intermediate size 14336, 32 layers, 32 query heads, eight KV heads and vocabulary 32000. Both specify eight experts with two selected per token.",
+            "basis": "source",
+            "evidence": [
+              "call_7495decd53d3472996262fbdc094eb3e",
+              "call_03d40aa9e21348cca7f03cc58bd5ef4b",
+              "call_2d5bedc8781a4a6e8f879289e2ab7a60"
+            ]
+          },
+          {
+            "text": "The pinned mistralai/Mixtral-8x22B-v0.1 matches with hidden size 6144, intermediate size 16384, 56 layers, 48 query heads, eight KV heads and vocabulary 32000. Mixtral-8x22B-Instruct-v0.1 has the same dimensions except vocabulary 32768. Both likewise specify eight experts and top-two routing.",
+            "basis": "source",
+            "evidence": [
+              "call_9f301461ccf94971b530aa33aeb00e1e",
+              "call_28cb207946bf4b26baafdf0a1f8b7425",
+              "call_2d5bedc8781a4a6e8f879289e2ab7a60"
+            ]
+          },
+          {
+            "text": "All four configurations omit head_dim, specify silu, untied embeddings, RMS epsilon 1e-5 and null sliding_window. They supply rope_theta 1000000 rather than using the shared 10000 fallback. Their declared bfloat16 dtype does not change this adapter's explicit half-precision MoE intermediates.",
+            "basis": "source",
+            "evidence": [
+              "call_7495decd53d3472996262fbdc094eb3e",
+              "call_03d40aa9e21348cca7f03cc58bd5ef4b",
+              "call_9f301461ccf94971b530aa33aeb00e1e",
+              "call_28cb207946bf4b26baafdf0a1f8b7425",
+              "call_a757d578dbe3443d8ca636abaa148ce4",
+              "call_2d5bedc8781a4a6e8f879289e2ab7a60"
+            ]
+          },
+          {
+            "text": "A standard-library calculation of the inspected dimension formulas gives head dimension 128 and KV projection width 1024 for all four models. Query-head grouping is four per KV head for 8x7B and six for 8x22B; assembled top-level module counts are respectively 35 and 59.",
+            "basis": "execution",
+            "evidence": [
+              "call_4264f4062857485eab50bb5710ad5fd0"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Mixtral registration and configuration-to-module mappings, reusing existing grouped-query attention and sparse-expert execution. Four pinned model configurations match the adapter's principal dimensions and defaults; runtime compatibility remains untested."
+  },
+  "evidence": {
+    "call_464704546b31427f82bab6b7144bc4fb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+        "offset": 158,
+        "max_bytes": 6506
+      },
+      "result_sha256": "ae2f49cd5218750c74330f19f2a26d27aa12025ea3853f4da6b0318460a047dd"
+    },
+    "call_2d5bedc8781a4a6e8f879289e2ab7a60": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+        "offset": 821,
+        "max_bytes": 5843
+      },
+      "result_sha256": "30ce2ca1de5e2df2c730a42cf638519f867632041b9d67e8ac105544be516ca3"
+    },
+    "call_57e082be31bd45c3839d148ffe6228cf": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "fb05df3f0a9aec117ddaf5d51199a74f31b9e9b3f32293ef297bcf69bf57e4bc",
+      "catalog_only": true
+    },
+    "call_bdc81f1500b34743a815e0005a1c3c84": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "26eec13b6e966b8d53b1fcb80e3011f648d8bbafd2f708de0c7d4bf465201caf",
+      "catalog_only": true
+    },
+    "call_7495decd53d3472996262fbdc094eb3e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-v0.1",
+        "revision": "ffe1a706bacbd5abddc5ff99432ee38f7e0662fb",
+        "path": "config.json"
+      },
+      "result_sha256": "15c9bd7f378fce099c3b6adc74902e45fe183d5442c63d9c8d36cb77deca7610"
+    },
+    "call_03d40aa9e21348cca7f03cc58bd5ef4b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "revision": "41bd4c9e7e4fb318ca40e721131d4933966c2cc1",
+        "path": "config.json"
+      },
+      "result_sha256": "580a5a7ad5da0cc1cdc4b8735550dad090f2c3bc839228eb31c303d37f73a35f"
+    },
+    "call_9f301461ccf94971b530aa33aeb00e1e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-v0.1",
+        "revision": "6232b04930322afaa3c8f6edc4fe45a8a0a137a0",
+        "path": "config.json"
+      },
+      "result_sha256": "3322b1ec3f1ebb056cecc6f64c512e2dabf858e2f1a2357f927e441f4fb78973"
+    },
+    "call_28cb207946bf4b26baafdf0a1f8b7425": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-Instruct-v0.1",
+        "revision": "a46959a1a02a9247294f5e141a4f3270059c6b32",
+        "path": "config.json"
+      },
+      "result_sha256": "14c4d87b8827df7864516f7b66a1747cf8c9b0487f598fe57a6addefba73003c"
+    },
+    "call_5e4eb30a7797469492fa3c2cf6db384a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "456701910c9d170ce416b2bdd4782d9e62efaef3a10fedc3c1e3d62ac6c9417e"
+    },
+    "call_48e1e074fea747eb81625a3e465b5a09": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "num_local_experts",
+        "limit": 30
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_688dd32abb7c46359cfc4a171a743b2a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "num_experts",
+        "limit": 100
+      },
+      "result_sha256": "41623c12ff8c8749ffdf543988137ac39339d473f268c8417d09611900ccef2b"
+    },
+    "call_a757d578dbe3443d8ca636abaa148ce4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 23000
+      },
+      "result_sha256": "85e3aa930f1e238a4a27c3f5eb33c55bc3541cfe16f9226b6291529db5d1ec59"
+    },
+    "call_2e70438d2d80447ba7a2be614861f391": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/transformer_block.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_5aea0bcbf80544a2a35eb9ae45063f92": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "self.mlp.forward",
+        "limit": 30
+      },
+      "result_sha256": "f342a7cb4d6f15b0a6dbc961038906b44c7827c4eff16c715f88195f68a43d10"
+    },
+    "call_8f622b80a2934449b891476e0c56881f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "0d3dc93f963edab7063120909cbc2f61569139f0c140144e2dc827c7073b56db"
+    },
+    "call_146eff0a48954d639c9feb0410880a57": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "24308e96431cabc08c436215585cc25ce0dc22b2161acc5b35fab11af0ab2a79"
+    },
+    "call_eef447a2a45d4b3ab59964fdda7cad9d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "46cc18519355b63aac68103a47afcbc231c2dde0fb2b6d27fe7ceef8c3dec6ea"
+    },
+    "call_d39ef38926ec4b409b580c7cde1cd834": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 6000
+      },
+      "result_sha256": "25f049e75276d17ce0f9189ad831395afa88047fd979c6915df93a55839b684c"
+    },
+    "call_85a6aed28c704fbc88bc39d964a5fcae": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "read_cfg(",
+        "path": "exllamav3/models",
+        "limit": 300
+      },
+      "result_sha256": "b02283cff1da66de48a2efe50dd26950883823ae0beb298ecd09effd1d7a7a05"
+    },
+    "call_4543969085cf423a81cc6ea5b0e89d90": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "activate_all_experts",
+        "limit": 30
+      },
+      "result_sha256": "fc943ecf0758989340457e4d3b12bdf5bd353285873f0cb74e1766bb982d1d2d"
+    },
+    "call_4264f4062857485eab50bb5710ad5fd0": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nfor name,h,q,kv,i,l,v in [('8x7B',4096,32,8,14336,32,32000),('8x7B-Instruct',4096,32,8,14336,32,32000),('8x22B',6144,48,8,16384,56,32000),('8x22B-Instruct',6144,48,8,16384,56,32768)]:\n d=h//q\n print(json.dumps(dict(model=name,head_dim=d,q_width=q*d,kv_width=kv*d,q_per_kv=q//kv,modules=l+3,expert_up_shape=[i,h],expert_down_shape=[h,i],head_shape=[v,h])))"
+        ]
+      },
+      "result_sha256": "a18b1de74aef29e0950270e9333bbdd13f988836a411a0b3f098f8df46e8af20"
+    }
+  }
+}

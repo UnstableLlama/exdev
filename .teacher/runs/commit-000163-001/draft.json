@@ -1,0 +1,328 @@
+{
+  "schema_version": 5,
+  "sha": "830b6a018070a327d6d261628dff496f1303cf93",
+  "parent_shas": [
+    "a19538cf1e3b3f46ccdb347ff076fd4838a4910b"
+  ],
+  "cutoff_date": "2025-05-16T00:35:44+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "refactor",
+    "problem": [
+      {
+        "text": "Model construction previously selected one config.model_class, while compilation collected only tensors belonging to the selected model's modules. These interfaces lacked explicit component selection and an additional-tensor preservation hook.",
+        "basis": "source",
+        "evidence": [
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788",
+          "call_975ff533d1af497d8013c0b17e91d71b"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change separates component construction from checkpoint preservation: callers select one component, but compilation queries every registered component class for additional tensors.",
+        "basis": "source",
+        "evidence": [
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+        ]
+      },
+      {
+        "text": "This is consistent with preparation for multimodal checkpoints rather than completed multimodal inference: all supplied registrations remain text components, and Model.from_config explicitly retains a multimodal TODO.",
+        "basis": "inference",
+        "evidence": [
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Model.from_config defaults to component='text', asserts that the component exists, and instantiates its mapped class. The config attribute changes from model_class to model_classes, so external integrations using the old attribute require adaptation.",
+        "basis": "source",
+        "evidence": [
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "PR #25, \u201cLanguage layers for Mistral Small 3.1 and InternVL3,\u201d contains turboderp's concern that language-only support could produce checkpoints incompatible with future component models. Its relationship to this task is inferred from the shared component-model design; the discussion does not explicitly identify this commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_1ec37664549342eeb07aee0c2a51b819",
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+        ]
+      },
+      {
+        "text": "Other matching discussions concern different changes: PR #4, \u201cchore: update config.py,\u201d proposes a spelling correction; issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension loading; issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d reports installation/JIT failure. Their connection here is inferred only from shared config/model paths, not a demonstrated fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_3bd20169df63466387328a0b371340d8",
+          "call_3a4242e04d9e4d57bbc72a59fb7ca293",
+          "call_f588e4dee13f4a6586e252575affcb80",
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d includes a traceback through compile_model's get_tensors call, later identifies too many open files, and subsequently discusses GLM4 output. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d concerns Cholesky failure during quantization. Shared compilation/conversion paths establish contextual overlap only; attributing either issue's resolution to this refactor would be unsupported.",
+        "basis": "inference",
+        "evidence": [
+          "call_422669c498c549c1afde61035c7f7c5d",
+          "call_d9204e5d9ebc4ee9b66991b7d73dba40",
+          "call_65c1e93902be462aa9a52588b3723c7b",
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, GPU inference, safetensors serialization, or filesystem round trip was executed.",
+      "The scalar check models shard allocation only; it does not execute compile_model.",
+      "Pinned model configurations were not inspected, so model-by-model checkpoint compatibility and dimensions remain unestablished.",
+      "External callers and dynamically constructed component mappings were not exhaustively validated."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Component selection and preservation of additional tensors",
+        "claims": [
+          {
+            "text": "Config now stores a component-name-to-class dictionary. Existing architecture constructors supply a text mapping. LlamaConfig accepts an optional derived_model mapping, using the ordinary Llama text mapping when that argument is falsey.",
+            "basis": "source",
+            "evidence": [
+              "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+            ]
+          },
+          {
+            "text": "MistralConfig and Qwen2Config explicitly supply their respective model subclasses through derived_model. Previously their inherited LlamaConfig constructor selected LlamaModel. Both selected subclasses delegate construction to LlamaModel, so the inspected change distinguishes class identity without introducing a separate layer implementation.",
+            "basis": "source",
+            "evidence": [
+              "call_6ff37ba3b83546bfb2d40d1f5ebfc788",
+              "call_53943f2cd71b4698a0c5056345ccb491",
+              "call_906ac06f96db449c8063bd38e982910c",
+              "call_d190dc7f6d794a459403bf94b69319ac"
+            ]
+          },
+          {
+            "text": "Model.get_additional_compiled_tensors defaults to an empty dictionary. compile_model merges each registered class's result, expects an n_bytes entry for each tensor, and appends tensor-name strings after the ordinary module entries in its shard plan. Duplicate extra-tensor keys are resolved by dictionary update order.",
+            "basis": "source",
+            "evidence": [
+              "call_6ff37ba3b83546bfb2d40d1f5ebfc788"
+            ]
+          },
+          {
+            "text": "Writing dispatches on plan-entry type: Module entries load quantized working-directory tensors by prefix and close that collection; string entries load an individual original tensor from config.stc. Both paths request BF16 preservation and contiguous tensors before the existing shard writer and weight-map construction.",
+            "basis": "source",
+            "evidence": [
+              "call_6ff37ba3b83546bfb2d40d1f5ebfc788",
+              "call_975ff533d1af497d8013c0b17e91d71b",
+              "call_cfbd5cf8c0414ba0a7bbcae3664d4e6b"
+            ]
+          },
+          {
+            "text": "Additional tensors use the existing soft shard limit: shard_size is multiplied by 1024\u00b2 bytes, exact fits stay in the current shard, and an oversized item is not split. Reported n_bytes values contribute to total_size and therefore to multi-shard index metadata.",
+            "basis": "source",
+            "evidence": [
+              "call_6ff37ba3b83546bfb2d40d1f5ebfc788",
+              "call_975ff533d1af497d8013c0b17e91d71b"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription verified the allocation boundaries with capacity 10: [6,4] stays together, [6,5] separates, and [11] remains one oversized shard. One shard_size unit evaluates to 1,048,576 bytes.",
+            "basis": "execution",
+            "evidence": [
+              "call_88499189d23a4246876b3c7bbaf6aee2"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "extra-tensor-warning-name",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The additional-tensor oversize warning references the preceding module variable instead of the current tensor key.",
+        "trigger": "An additional tensor reports n_bytes greater than max_shard_bytes.",
+        "expected_behavior": "Identify the oversized additional tensor and continue allocating its shard.",
+        "actual_behavior": "With ordinary modules present, the warning identifies the last module instead. If model.modules is empty, evaluating module.key raises UnboundLocalError before allocation continues.",
+        "locations": [
+          {
+            "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+            "path": "exllamav3/conversion/compile.py",
+            "symbol": "compile_model"
+          }
+        ],
+        "source_evidence": [
+          "call_6ff37ba3b83546bfb2d40d1f5ebfc788",
+          "call_975ff533d1af497d8013c0b17e91d71b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the new extra-tensor loop and the preceding module loop. Whole-parent literal caller search found conversion main calling compile_model after its conversion loop. The supplied default hook returns no additional tensors, so this observation concerns nonempty hook implementations rather than demonstrated failures of current text conversions.",
+            "evidence": [
+              "call_6ff37ba3b83546bfb2d40d1f5ebfc788",
+              "call_8a19b679c9d74f0b8d20e567885deb37",
+              "call_dcb27dee28604e9db803495c3e75131a"
+            ],
+            "limits": "No repository execution; literal search does not establish external or dynamic caller coverage."
+          }
+        ]
+      }
+    ],
+    "summary": "Prepares component-based model construction and preserves hook-selected original tensors during compilation, while retaining text as the default component."
+  },
+  "evidence": {
+    "call_6ff37ba3b83546bfb2d40d1f5ebfc788": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "max_bytes": 12000,
+        "offset": 0
+      },
+      "result_sha256": "2d71af08e706d5898f3d7e3c590244b8b2b0415624e23b26efbd7d21b4951162"
+    },
+    "call_975ff533d1af497d8013c0b17e91d71b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "915deae0808d586aa1ee30bf3a2aab0f407861821d038376f35756b1f13f84bc"
+    },
+    "call_9bd6e8b63e424fdb9ed440a8a12a5aca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "query": "model_class",
+        "limit": 100
+      },
+      "result_sha256": "d581772e179659dc3f4e9d35f0b1f27334b45d1a8d1abbdf73002d5d3938e116"
+    },
+    "call_cfbd5cf8c0414ba0a7bbcae3664d4e6b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "85e3aa930f1e238a4a27c3f5eb33c55bc3541cfe16f9226b6291529db5d1ec59"
+    },
+    "call_53943f2cd71b4698a0c5056345ccb491": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/models/mistral.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "58a532de94f21db19074f986504ff348a6d583893ef23ccf03e43e55f2f292ec"
+    },
+    "call_906ac06f96db449c8063bd38e982910c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/models/qwen2.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6c62b7e91cbfe07a47933229152439467431c262f817dc5163aeaac0ddfbe086"
+    },
+    "call_d190dc7f6d794a459403bf94b69319ac": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/models/llama.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "3a89bc04ea09094ccc776aa776ad0519d861ae51d118d794f22449e691b5e9a4"
+    },
+    "call_3bd20169df63466387328a0b371340d8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 12000
+      },
+      "result_sha256": "95c8d79236a11e9bdc0e9965f8ebf19f32d3e11292a1207eed95d82ca4b14873"
+    },
+    "call_3a4242e04d9e4d57bbc72a59fb7ca293": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 18000
+      },
+      "result_sha256": "7b6ca5aebd2c2382d612521e07760ba3663c49173fb4a625c169bb1b7bd10a3c"
+    },
+    "call_422669c498c549c1afde61035c7f7c5d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 24000
+      },
+      "result_sha256": "c44275c8bda5d00d76ad17f1c42212c015d9fd77e7fa78958de67dd3b6048e29"
+    },
+    "call_d9204e5d9ebc4ee9b66991b7d73dba40": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 24000,
+        "max_bytes": 24000
+      },
+      "result_sha256": "8fce02a90c1d4db729ac47f102c4d0288d4742823ed53259604cccdbfd037596"
+    },
+    "call_f588e4dee13f4a6586e252575affcb80": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 20000
+      },
+      "result_sha256": "9279ea3f55d68ca6774c15eff377848d29a5783cae162bdd01938f62872878a4"
+    },
+    "call_1ec37664549342eeb07aee0c2a51b819": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "max_bytes": 18000
+      },
+      "result_sha256": "56631fea3687b04db500ec6306ededa55e3205be2b70e2c258d37af5c95dcced"
+    },
+    "call_8a19b679c9d74f0b8d20e567885deb37": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "query": "compile_model(",
+        "limit": 100
+      },
+      "result_sha256": "b2f8095cf323f048b9e109cb3d79f0f5d74b42d6f671bf9d270b124949ad5ce2"
+    },
+    "call_dcb27dee28604e9db803495c3e75131a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 18000,
+        "max_bytes": 7000
+      },
+      "result_sha256": "9630e61fa0f31aa23d65e514088e2d843bb7284a3557619ffde4d4c7e95ceaec"
+    },
+    "call_65c1e93902be462aa9a52588b3723c7b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e61032119e810e4dcb04cde0e585b4e1117d78cbcb6c9dae414b986b82291211"
+    },
+    "call_88499189d23a4246876b3c7bbaf6aee2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def shards(sizes, cap):\n out=[[]]; cur=0\n for size in sizes:\n  if cur+size>cap and cur>0: out.append([]); cur=0\n  cur+=size; out[-1].append(size)\n return out\nfor xs in ([6,4],[6,5],[11],[6,4,1]): print(xs, shards(xs,10))\nprint('bytes per shard_size unit:',1024**2)"
+        ]
+      },
+      "result_sha256": "5fbd9042ef0ee06b479ee5304cd0ebeba5613cebfb7b393d3ce50b003da03e87"
+    }
+  }
+}

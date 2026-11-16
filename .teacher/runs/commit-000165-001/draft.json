@@ -1,0 +1,412 @@
+{
+  "schema_version": 5,
+  "sha": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+  "parent_shas": [
+    "966762a32d1eb2c0aa5e01b02451676bca6ca7fd"
+  ],
+  "cutoff_date": "2025-05-16T16:13:26+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The comparison evaluator previously reported perplexity but did not compare output distributions against a reference model.",
+        "basis": "source",
+        "evidence": [
+          "call_f5d2f2aa254f4df5bdc47c07ba21e969"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change reuses the evaluation forward passes to collect reference logits or compare against them, adding a distribution-level metric without replacing next-token perplexity.",
+        "basis": "source",
+        "evidence": [
+          "call_2cab5598aade44d0aaa7ac023b4ac4ad"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "KLD evaluation is activated by an out_logits model specification, not by --kld. The flag selects the plotted metric. Runs without a reference specification encounter an unconditional zero-denominator calculation.",
+        "basis": "source",
+        "evidence": [
+          "call_2cab5598aade44d0aaa7ac023b4ac4ad"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "An earlier entry describes argument-keyed evaluation caching and the then-working --clear_cache path. This change adds an argument to evaluation but not to cache invalidation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_918c09e296d54276a86ba88fc72a88ae"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure and a reporter-supplied environment workaround. Its traceback includes the inspected model.py, but that shared path does not establish a relationship to this evaluation change.",
+        "basis": "inference",
+        "evidence": [
+          "call_3dfdf7dc4a404b25920a8891d8554912",
+          "call_06d9ef803679473da45de6f8449129b6"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model inference, PyTorch KL calculation, GPU memory measurement, or safetensors round trip was executed.",
+      "The added PNG payloads were not inspected; no quantitative benchmark conclusions are drawn from them.",
+      "The ten-row sampling cap and exact choice of memory factor seven have no experimentally established rationale in the inspected evidence.",
+      "The scalar checks model Python arithmetic and cache-key construction, not repository evaluation execution."
+    ],
+    "links": [
+      "a19538cf1e3b3f46ccdb347ff076fd4838a4910b"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Reference-logit comparison alongside perplexity",
+        "claims": [
+          {
+            "text": "main selects the last specification containing out_logits, creates that directory if needed, constructs a filename from SHA-256 of the sorted JSON data specification, and moves the selected reference model first. test_ppl writes a list of CPU logits as tensor.0, tensor.1, and so on; consumers load that same filename. The filename identifies the dataset specification rather than reference-model contents.",
+            "basis": "source",
+            "evidence": [
+              "call_2cab5598aade44d0aaa7ac023b4ac4ad"
+            ]
+          },
+          {
+            "text": "Only the first ten dataset rows contribute to KLD. Each row is one token sequence, and the comparison includes every output position, unlike perplexity, which discards the last position and scores shifted targets. Candidate and reference logits are softmaxed separately, then truncated to their smaller vocabulary width without renormalization. The KL call receives log(candidate probability + 1e-10) and reference probabilities, sums across vocabulary, and averages across positions. The epsilon avoids taking log of zero but perturbs the quantity.",
+            "basis": "source",
+            "evidence": [
+              "call_2cab5598aade44d0aaa7ac023b4ac4ad",
+              "call_f5d2f2aa254f4df5bdc47c07ba21e969"
+            ]
+          },
+          {
+            "text": "Reference collection increments the denominator once per collected row without accumulating divergence, producing a zero reference result rather than performing a self-comparison. Perplexity still processes all dataset rows.",
+            "basis": "source",
+            "evidence": [
+              "call_2cab5598aade44d0aaa7ac023b4ac4ad"
+            ]
+          },
+          {
+            "text": "The new transformers_auto_bf16 loader requests automatic device placement and bfloat16; existing loaders retain float16 by default. The supplied HF reference specification selects transformers_auto, so it remains FP16, not BF16. The unchanged forward adapter transfers input IDs to cuda:0.",
+            "basis": "source",
+            "evidence": [
+              "call_87f9c19575c04147b774498bfac2767e",
+              "call_1c19185d9e46409a927439f1cfb624ac",
+              "call_aee844b71afa4312a9a3f2c4cc504803"
+            ]
+          },
+          {
+            "text": "ExLlamaV3 loading raises max_output_factor from three to seven while retaining a 2048-token output estimate. The autosplit implementation allocates factor-minus-one extra output-shaped tensors during its placement probe; this changes two extra copies to six. It is a placement allowance, not an increase in model dimensions or an observed VRAM measurement.",
+            "basis": "source",
+            "evidence": [
+              "call_11cf49bcecd34bf0abc8e9d2abcc5e9b",
+              "call_06d9ef803679473da45de6f8449129b6"
+            ]
+          },
+          {
+            "text": "The larger placement allowance plausibly accommodates the additional float32 logits and probability tensors used by KLD, trading tighter placement for more temporary-output headroom.",
+            "basis": "inference",
+            "evidence": [
+              "call_2cab5598aade44d0aaa7ac023b4ac4ad",
+              "call_06d9ef803679473da45de6f8449129b6"
+            ]
+          },
+          {
+            "text": "The AQLM, EXL2, EXL3, GGUF, HF and VPTQ example specifications relocate model paths from /mnt/str/eval_models to /mnt/str/models. The HF specification additionally supplies the reference-logit directory.",
+            "basis": "source",
+            "evidence": [
+              "call_c8e90d95e5094050a5f4b01d224ca870",
+              "call_3820e4884a234270aaa73d9db374efb6",
+              "call_7319cd6b15444969b8e173a83df9070f",
+              "call_7fbbd985c2ef43d89d54f1e92d345ec2",
+              "call_1c19185d9e46409a927439f1cfb624ac",
+              "call_b64ca43a07db481eaa528e1dfe8fc0b8"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "no-reference-finalization",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The formerly valid perplexity-only path now reaches an unconditional KLD division with a zero denominator.",
+        "trigger": "An uncached evaluation with nonempty valid data and no model specification containing out_logits.",
+        "expected_behavior": "Return perplexity without requiring a reference model.",
+        "actual_behavior": "main passes None as logits_file; the KLD branch never increments kl_div_count, so finalization evaluates 0.0 / 0.0. collect_logits is also initialized only inside the reference branch, although division fails first.",
+        "locations": [
+          {
+            "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+            "path": "eval/compare_q.py",
+            "symbol": "test_ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_2cab5598aade44d0aaa7ac023b4ac4ad",
+          "call_ac1f3092530b4e15bb47e9075a2a9999",
+          "call_f5d2f2aa254f4df5bdc47c07ba21e969"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search found main as the sole direct test_ppl caller; the task updates it to pass the optional reference filename. The CLI therefore reaches this path independently of --kld.",
+            "evidence": [
+              "call_ac1f3092530b4e15bb47e9075a2a9999",
+              "call_2cab5598aade44d0aaa7ac023b4ac4ad"
+            ],
+            "limits": "Reach is established for the inspected repository caller, not external callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library calculation of the final zero-over-zero expression raised ZeroDivisionError.",
+            "evidence": [
+              "call_166a977fec8244ed9dab00538e161e62"
+            ],
+            "limits": "The evaluation function and model forward pass were not executed."
+          }
+        ]
+      },
+      {
+        "id": "cache-clear-argument-mismatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "--clear_cache no longer targets the keys used by test_ppl.",
+        "trigger": "A cached result exists for the new three-argument test_ppl call and the user requests --clear_cache.",
+        "expected_behavior": "Invalidate the selected result and recompute it.",
+        "actual_behavior": "Invalidation still serializes two arguments, whereas evaluation serializes data_spec, spec and logits_file. The distinct key leaves the new cached result intact.",
+        "locations": [
+          {
+            "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+            "path": "eval/compare_q.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_2cab5598aade44d0aaa7ac023b4ac4ad",
+          "call_890679db394046338e982eb1f2bacb93",
+          "call_9289fad5303b4dc6bef25f5d95ec07b1"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected main and both cache helpers. Whole-parent-tree search found this main call as the only disk_lru_cache_clear caller.",
+            "evidence": [
+              "call_f5d2f2aa254f4df5bdc47c07ba21e969",
+              "call_890679db394046338e982eb1f2bacb93",
+              "call_9289fad5303b4dc6bef25f5d95ec07b1"
+            ],
+            "limits": "No shelve database was opened."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Reimplemented the inspected JSON key construction and verified that two-argument invalidation and three-argument evaluation produce unequal keys.",
+            "evidence": [
+              "call_166a977fec8244ed9dab00538e161e62"
+            ],
+            "limits": "This checks serialization identity, not repository cache execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds persisted reference logits and KLD plotting alongside perplexity, plus loader and example-spec adjustments; inspection identifies regressions in no-reference evaluation and cache invalidation."
+  },
+  "evidence": {
+    "call_2cab5598aade44d0aaa7ac023b4ac4ad": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 469511,
+        "max_bytes": 10000
+      },
+      "result_sha256": "4c8799f5b863d08e351358e33cfb83167593af8cef74ba86f85337af18477a3f"
+    },
+    "call_11cf49bcecd34bf0abc8e9d2abcc5e9b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 476776,
+        "max_bytes": 2000
+      },
+      "result_sha256": "336d68fc584ae021345a212373a153c999a75ce09a61dd9189f3a3dee677397e"
+    },
+    "call_87f9c19575c04147b774498bfac2767e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 477413,
+        "max_bytes": 2000
+      },
+      "result_sha256": "08986d9acdba743fd682a4642e5efe32fb25e3ecb3c8dc98e7a3d082fb87fbf4"
+    },
+    "call_c8e90d95e5094050a5f4b01d224ca870": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 478692,
+        "max_bytes": 5000
+      },
+      "result_sha256": "0e5eda910a7b55dff4b439b6e18f0b9e91bcb65c08a9d05c882587b4faee5e0d"
+    },
+    "call_3820e4884a234270aaa73d9db374efb6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 479874,
+        "max_bytes": 5000
+      },
+      "result_sha256": "e5501ed178a20d5622cf0f9cf31164ba5ccfa738fe4002c372381d5fa39003c4"
+    },
+    "call_7319cd6b15444969b8e173a83df9070f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 482085,
+        "max_bytes": 5000
+      },
+      "result_sha256": "b83117a22536913ebc21100c7a72fd2afe2bdd658ec895b62e2a7f0cf9c76e2a"
+    },
+    "call_7fbbd985c2ef43d89d54f1e92d345ec2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 485666,
+        "max_bytes": 5000
+      },
+      "result_sha256": "14dfb283942ef9aa7df27056f68a17965a92525150f9bc07538ce34879a85b88"
+    },
+    "call_1c19185d9e46409a927439f1cfb624ac": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 490004,
+        "max_bytes": 2000
+      },
+      "result_sha256": "391fdd2363edf55f81606c13f8f8cc46c83826c931462d110460ce3a5c49dad2"
+    },
+    "call_b64ca43a07db481eaa528e1dfe8fc0b8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "offset": 490724,
+        "max_bytes": 2000
+      },
+      "result_sha256": "7d08a0e7af4919827768fcbcfb86b39b827cd5c78759b45ea91e740a2c1115c1"
+    },
+    "call_ac1f3092530b4e15bb47e9075a2a9999": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "query": "test_ppl",
+        "limit": 100
+      },
+      "result_sha256": "883426af6d81e9f43f34a537b76134dbe886aa6cb17134dd666131ea0700c810"
+    },
+    "call_b8b27614f8f94af7bb041a2a2e3010f4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "query": "logits",
+        "path": "eval",
+        "limit": 100
+      },
+      "result_sha256": "d435fba9c1cd25287f5a11707035873faa443679d7d49cf5cde078a42ca5d969"
+    },
+    "call_199a27c8b38b4117a80b184cbe2dbaaa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "query": "out_logits",
+        "limit": 100
+      },
+      "result_sha256": "83b55dd662632a03f59b4ce1042e9cb97d84c2711ad412c3badea3da336501d1"
+    },
+    "call_f5d2f2aa254f4df5bdc47c07ba21e969": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "eval/compare_q.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2fee8e946a79bc529154af0f014e7c4d434af0879c8d4d84e9e237492ea9f2ce"
+    },
+    "call_890679db394046338e982eb1f2bacb93": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_aee844b71afa4312a9a3f2c4cc504803": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "eval/compare_q_transformers.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "92fcf25f7203bfeccd0db4a791c58c4597f3f806831c8d38f94a25205cbe2ce7"
+    },
+    "call_a0ab5333557a4d20a13a949221e06166": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "query": "max_output_factor",
+        "limit": 100
+      },
+      "result_sha256": "2fc5dd58b2014d91009cd22f58d9598fe7b2a2680bfe9628ef9db84f26ad3a93"
+    },
+    "call_06d9ef803679473da45de6f8449129b6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "exllamav3/models/model.py",
+        "offset": 4500,
+        "max_bytes": 11500
+      },
+      "result_sha256": "3eaa6f0d97ad30944e710f29aa091571534e20e8d2860167c347ffff0d159639"
+    },
+    "call_3dfdf7dc4a404b25920a8891d8554912": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "92ec906da3ba514225f3d313c5d48e530c5dcdb9d31bfc833bba08ae0a43689c"
+    },
+    "call_918c09e296d54276a86ba88fc72a88ae": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "max_bytes": 16000
+      },
+      "result_sha256": "239ace70dbf09cf8f651cf4e9c12800cfa48de1025e1c2bafd71485cb9b3c242"
+    },
+    "call_9289fad5303b4dc6bef25f5d95ec07b1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "query": "disk_lru_cache_clear(",
+        "limit": 100
+      },
+      "result_sha256": "9552d66c6f6221e4614cf8f64a0cb77452a91404e13a5269e8ed5274413c5154"
+    },
+    "call_166a977fec8244ed9dab00538e161e62": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nkey=lambda args: str((json.dumps(args,sort_keys=True),json.dumps({},sort_keys=True)))\nprint('clear_matches_call:', key(({'dataset':'wiki2'},{'label':'x'}))==key(({'dataset':'wiki2'},{'label':'x'},'/tmp/ref.safetensors')))\ntry:\n print(0.0/0.0)\nexcept Exception as e: print('no_reference_finalize:',type(e).__name__)\nprint('autosplit_extra_copies:',{n:len(range(n-1)) for n in (3,7)})"
+        ]
+      },
+      "result_sha256": "d5bfb3e4c1c053c048414e1ed5cbc1362b961797c2f82e305ba0d0163a15873c"
+    }
+  }
+}

@@ -1,0 +1,61 @@
+--- a/teacher/cycle.py
++++ b/teacher/cycle.py
+@@ -232,6 +232,16 @@
+     return read(Path(packet) / 'manifest.json')
+ 
+ 
++def replay_result(runner, call, result):
++    """Compare the same error envelope FreshSession records, never skip errors."""
++    try:
++        actual = runner.invoke(call['tool'], call['arguments'])
++    except (ValueError, RuntimeError) as exc:
++        actual = {'ok': False, 'error': str(exc)}
++    if actual != json.loads(result['content']):
++        raise ValueError('Tool replay mismatch: '+result['call_id'])
++
++
+ def validate_run(run, packet, repo, evidence, position):
+     run, packet = Path(run), Path(packet)
+     validate_bundle(packet, Path(evidence) / f'{position:06d}-eligible.json')
+@@ -260,8 +270,7 @@
+         if result.get('role') != 'tool':
+             continue
+         call = calls[result['call_id']]
+-        if runner.invoke(call['tool'], call['arguments']) != json.loads(result['content']):
+-            raise ValueError('Tool replay mismatch: '+result['call_id'])
++        replay_result(runner, call, result)
+         counts[result['name']] += 1
+         replayed += 1
+     cov = read(run/'coverage.json')
+--- a/tests/test_cycle.py
++++ b/tests/test_cycle.py
+@@ -119,6 +119,29 @@
+         self.assertEqual(cycle.read(self.state)['runs'][-1]['status'],'failed')
+         self.assertFalse((self.root/'reviews/requests').exists())
+ 
++    def test_replay_compares_error_envelopes_without_masking_mismatches(self):
++        call = {'tool': 'evidence_index', 'arguments': {'max_bytes': 24000}}
++        result = {'call_id': 'invalid-size', 'content': json.dumps({'ok': False, 'error': 'Invalid max_bytes'})}
++        for error in (ValueError, RuntimeError):
++            runner = Mock()
++            runner.invoke.side_effect = error('Invalid max_bytes')
++            cycle.replay_result(runner, call, result)
++            runner.invoke.side_effect = error('different error')
++            with self.assertRaisesRegex(ValueError, 'Tool replay mismatch: invalid-size'):
++                cycle.replay_result(runner, call, result)
++        runner.invoke.side_effect = None
++        runner.invoke.return_value = {'ok': True, 'result': {}}
++        with self.assertRaisesRegex(ValueError, 'Tool replay mismatch'):
++            cycle.replay_result(runner, call, result)
++        success = dict(result, content=json.dumps(runner.invoke.return_value))
++        cycle.replay_result(runner, call, success)
++        runner.invoke.side_effect = ValueError('Invalid max_bytes')
++        with self.assertRaisesRegex(ValueError, 'Tool replay mismatch'):
++            cycle.replay_result(runner, call, success)
++        runner.invoke.side_effect = OSError('host failure')
++        with self.assertRaises(OSError):
++            cycle.replay_result(runner, call, result)
++
+     def test_tracking_status_updates_without_erasing_obligations(self):
+         cycle.TRACKING.write_text('# Tracking\n\nOwed obligation.\n')
+         cycle.tracking_status(self.ready)

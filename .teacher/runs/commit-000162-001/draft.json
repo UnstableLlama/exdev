@@ -1,0 +1,252 @@
+{
+  "schema_version": 5,
+  "sha": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+  "parent_shas": [
+    "48747ba09dee3ec78964653df0eb926c53f41c2e"
+  ],
+  "cutoff_date": "2025-05-16T00:33:48+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The comparison adapter classified only the exact key lm_head as the output head and passed all output columns into perplexity normalization, including any padding.",
+        "basis": "source",
+        "evidence": [
+          "call_bf44fbdacef24504a44bc0f598d8524d",
+          "call_bc7cad2e5c394690bcc57124c01d5d6e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch broadens head recognition, masks out-of-vocabulary logits, and decorates the comparison entry point with torch.inference_mode(). These address accounting, scoring, and evaluation context independently.",
+        "basis": "source",
+        "evidence": [
+          "call_4f8ca40724b348d3b67b65a6ff50c674",
+          "call_ee6e57891c104570bedcb02034afe839"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Existing cached results can bypass the corrected evaluation: the disk cache keys results by arguments rather than implementation. The existing --clear_cache option clears the selected test_ppl entries before evaluation.",
+        "basis": "source",
+        "evidence": [
+          "call_fa1da573fa4349d5be9c21882e4d156e",
+          "call_bc7cad2e5c394690bcc57124c01d5d6e"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier evaluator entry notes that compare_q.py retained the backend's full vocabulary dimension. This patch changes the ExLlamaV3 adapter's contribution without changing the shared scoring formula.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_e1cc32ee0fbb48269ad94d2fd3d249ac"
+        ]
+      },
+      {
+        "text": "Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports a conversion-time Cholesky failure and includes linear.py in its traceback. That shared source path does not establish a relationship to these evaluation changes.",
+        "basis": "inference",
+        "evidence": [
+          "call_753d61ad76e44f2291e0c7c647bb4f64",
+          "call_ee6e57891c104570bedcb02034afe839"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch or GPU evaluation was executed; inference-mode memory savings and model-level perplexity changes remain unmeasured.",
+      "The numerical check models normalization using Python float64, not tensor execution, CUDA precision, or model outputs.",
+      "Suffix matching supports prefixed head names, but the inspected model declarations use the exact lm_head key; a concrete affected prefixed checkpoint was not established."
+    ],
+    "links": [
+      "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Correct head accounting and vocabulary normalization",
+        "claims": [
+          {
+            "text": "get_storage_info now tests module.key.endswith(\"lm_head\") before its general Linear branch. A prefixed head therefore contributes to head_bpw and head_numel rather than decoder totals. Tensor storage is counted in bits as eight times element size times element count; the returned layer bitrate remains total decoder bits divided by decoder weight count.",
+            "basis": "source",
+            "evidence": [
+              "call_ee6e57891c104570bedcb02034afe839",
+              "call_bf44fbdacef24504a44bc0f598d8524d"
+            ]
+          },
+          {
+            "text": "fwd_exllamav3 retains CPU input transfer and flash_attn_nc forwarding, then overwrites output[..., config.vocab_size:] with negative infinity. It preserves the output shape while excluding those columns from the shared log-softmax denominator. The boundary is the configured vocabulary size, not a tokenizer-derived count.",
+            "basis": "source",
+            "evidence": [
+              "call_ee6e57891c104570bedcb02034afe839",
+              "call_bf44fbdacef24504a44bc0f598d8524d",
+              "call_5fb51071ab834a9690231a5c9b475cc9",
+              "call_bc7cad2e5c394690bcc57124c01d5d6e"
+            ]
+          },
+          {
+            "text": "Linear rounds dimensions upward to multiples of 128 by default; 128 is an alignment unit, not a vocabulary limit. Masking rather than slicing leaves this padded representation intact while preventing finite padded logits from competing with valid tokens.",
+            "basis": "inference",
+            "evidence": [
+              "call_b4df0cb8c2ab4a4e81d82b8cb3a1cfb3",
+              "call_ee6e57891c104570bedcb02034afe839"
+            ]
+          },
+          {
+            "text": "A bounded scalar example used vocabulary size 129, padded width 256, and zero logits. Masking the 127 extra columns changed one-token perplexity from approximately 256 to 129. The same check confirmed that model.lm_head changes classification while lm_head remains recognized.",
+            "basis": "execution",
+            "evidence": [
+              "call_012d5a2d5ace416f94cd1fdba81722f6"
+            ]
+          },
+          {
+            "text": "The inference-mode decorator is applied to main, whose evaluation loop invokes test_ppl for each model specification. It is not added to test_ppl or the adapter itself, so direct calls to those functions do not acquire this new context through their own decorators.",
+            "basis": "source",
+            "evidence": [
+              "call_4f8ca40724b348d3b67b65a6ff50c674",
+              "call_bc7cad2e5c394690bcc57124c01d5d6e",
+              "call_bf44fbdacef24504a44bc0f598d8524d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Corrects ExLlamaV3 comparison head accounting and padded-logit normalization, and runs the comparison entry point in inference mode."
+  },
+  "evidence": {
+    "call_4f8ca40724b348d3b67b65a6ff50c674": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "offset": 158,
+        "max_bytes": 1356
+      },
+      "result_sha256": "c4495fd2d5a871921e52cb10644aca0f3864fa471097080a6c1633378023a7bd"
+    },
+    "call_ee6e57891c104570bedcb02034afe839": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "offset": 559,
+        "max_bytes": 955
+      },
+      "result_sha256": "a4ca4ba16ce7234face7a77754e3acc0433360df4851267e323aad995ad2b69a"
+    },
+    "call_bc7cad2e5c394690bcc57124c01d5d6e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "path": "eval/compare_q.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "cadb0440b34ccf610463b62dd37eb61f8219b7622db3efca13bf2b04b3cf998e"
+    },
+    "call_bf44fbdacef24504a44bc0f598d8524d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "path": "eval/compare_q_exllamav3.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "a8fb921aedc696ac31a268fbbdf98e265807052f499224ae20d77069a41cb057"
+    },
+    "call_5fb51071ab834a9690231a5c9b475cc9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "query": "vocab_size",
+        "path": "exllamav3/models",
+        "limit": 100
+      },
+      "result_sha256": "539b8b1dce91b7495b4fb961fbfe392e00c578f53a87254a097353c8a717a1fb"
+    },
+    "call_489e4b25e3f54ecca7ba85fb30721452": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "query": "vocab",
+        "limit": 120,
+        "path": "exllamav3/models/config.py"
+      },
+      "result_sha256": "8aa9cdd6e3460338a8945c39eb4ba0605665168dd21a627a8fbd92908bb4a183"
+    },
+    "call_837e50e7e048463f9ceddb50f9a74228": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "query": "lm_head",
+        "path": "exllamav3/models",
+        "limit": 50
+      },
+      "result_sha256": "8189be9f535b1bdb96412c8f81d2add6faf19bb997f18e3ade690def4b85ae1f"
+    },
+    "call_b4df0cb8c2ab4a4e81d82b8cb3a1cfb3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "1db087310aa65b5d7a83ee5f69a3ef3da2c981b58069b056950646affc242a8c"
+    },
+    "call_753d61ad76e44f2291e0c7c647bb4f64": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "74c759b82b34b22a30b892d94edad08bff2217d0f675b40ca70554fb73c58681"
+    },
+    "call_e1cc32ee0fbb48269ad94d2fd3d249ac": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0",
+        "max_bytes": 16000
+      },
+      "result_sha256": "07ccb539f86055efb1a349fd1f616cbbb937e2ba43e76d77d5847f8fe20e13c1"
+    },
+    "call_170064cd190a4d7c8648d5234d454c79": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 4200
+      },
+      "result_sha256": "9b6975e0608cb65d65b8e36c780e5328139495f3fea96c99ba250cffafa74a17"
+    },
+    "call_98ea3bf1b4bf48c49ee0901fa9b4a784": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "query": ".key =",
+        "path": "exllamav3",
+        "limit": 60
+      },
+      "result_sha256": "6b67061190e1c58b855dc3847b8770a0151ee0bae2db810cf096a8a01275135b"
+    },
+    "call_fa1da573fa4349d5be9c21882e4d156e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_012d5a2d5ace416f94cd1fdba81722f6": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,json\nv=129;p=(v+127)//128*128\nz=[0.0]*p\nold=math.exp(math.log(sum(math.exp(x) for x in z)))\nnewz=z[:v]+[-math.inf]*(p-v)\nnew=math.exp(math.log(sum(math.exp(x) for x in newz)))\nprint(json.dumps({'vocab':v,'padded_width':p,'padding':p-v,'uniform_one_token_ppl_before':old,'after':new,'suffix_cases':{k:[k=='lm_head',k.endswith('lm_head')] for k in ['lm_head','model.lm_head','layer.up_proj']}}))"
+        ]
+      },
+      "result_sha256": "f017d48bd36de0c9a738c16c0e500501d49fac54b5a8d322eaf650776c358c32"
+    }
+  }
+}

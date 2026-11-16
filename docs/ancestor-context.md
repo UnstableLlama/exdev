@@ -269,6 +269,26 @@ unique among candidates can qualify, while a shared term alone cannot. Ties use
 kind then number. No closure recency contributes. This navigation heuristic can
 miss synonyms and can match unrelated code vocabulary; it does not certify relevance.
 
+An opt-in rule, `salience-v3-paths`, adds cutoff-text path overlap as an independent
+qualifier. Curators select it by passing `changed_paths=task_paths(repo, sha)` to
+`closed_discussions.select`; omitting that argument preserves `salience-v2`.
+`task_paths` uses the exact first-parent change with rename detection disabled, so
+both rename sides are retained. Full paths are resolved against the parent tree
+plus task paths. A bare filename in the historical title or body qualifies only
+when it names exactly one path in that universe; directory-qualified references
+to other files do not count. Current GitHub PR file lists are not used because
+their cutoff state has not been established.
+
+A path-qualified row receives a ranking floor of 1; lexical scores above that
+still rank first, with the same kind/number tie break and cap of 20. Rows show
+`matched_paths`, including when no lexical term matched. Paths and the rule identity
+are bound into the packet; the changed-path inventory must match the task. A
+versioned instruction describes these as navigation hints, not established
+relationships. Legacy packet instructions and rows remain unchanged. Unknown
+state, missing historical bodies, future edits/comments, reopenings and explicit
+reference exclusions use the same fail-closed handling as v2. Historical bound
+bundles must not be overwritten to adopt the new rule.
+
 Rows expose kind/number, title, author, created/closed times, `state: closed`, URL,
 existing parent-tree path hints and matched terms. **Matched terms expose words
 from discussion text.** They contain no score, body or excerpt. Initial navigation

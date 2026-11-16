@@ -58,7 +58,10 @@ def validate_contract(manifest):
     if not isinstance(manifest.get('task_commit_message'),str):
         raise ValueError('Walk packet lacks task commit message')
     if contract.get('version',1)>=5:
-        if manifest.get('guidance_version')!=(5 if contract.get('version',1)>=8 else 4 if contract.get('version',1)>=7 else 3 if contract.get('version',1)>=6 else 2):raise ValueError('Missing dispatch guidance version')
+        expected_guidance = 5 if contract.get('version',1)>=8 else 4 if contract.get('version',1)>=7 else 3 if contract.get('version',1)>=6 else 2
+        allowed_guidance = (5, 6, 7) if expected_guidance == 5 else (expected_guidance,)
+        if manifest.get('guidance_version') not in allowed_guidance:
+            raise ValueError('Missing dispatch guidance version')
         actual_refs=signatures([i for i in manifest['evidence'] if i['source_id'] in contract['reference_source_ids']])
         if actual_refs!=[tuple(x) for x in contract['reference_signatures']]:raise ValueError('Reference evidence missing or changed')
     if contract.get('version',1)>=8:
@@ -163,7 +166,7 @@ def prepare(repo,sha,position,packet,evidence_directory,*,ancestor_packets=None,
     combined['items']=[*combined['items'],*ref_items]
     if len({i['source_id'] for i in combined['items']})!=len(combined['items']):raise ValueError('Duplicate evidence IDs')
     manifest=build_packet(repo,sha,packet,evidence=combined,discussions=filtered)
-    manifest.update(guidance_version=5,editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1,
+    manifest.update(guidance_version=7,editorial_schema_version=5,ancestor_context_mode='retrieval_v1',ancestor_matches_version=1,
         walk_input_contract={'version':8,'reference_source_ids':[i['source_id'] for i in ref_items],
             'reference_signatures':signatures(ref_items),
             'reference_bundle_sha256':hashlib.sha256(ref_path.read_bytes()).hexdigest() if ref else None,'recovery_marker':marker,

@@ -1,0 +1,529 @@
+{
+  "schema_version": 5,
+  "sha": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+  "parent_shas": [
+    "830b6a018070a327d6d261628dff496f1303cf93"
+  ],
+  "cutoff_date": "2025-05-16T12:14:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "Gemma3ForConditionalGeneration was not registered. Its nested text configuration and alternating local/global attention require architecture-specific assembly.",
+        "basis": "source",
+        "evidence": [
+          "call_d7be3529fb7044769f9d5c2cdb41fb37",
+          "call_a308eb9de1684b5b9773c3cc7fcace34",
+          "call_fc0157278e8c4f0a9d731cd00d27d144"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change reuses existing transformer modules and extends the RoPE configuration helper to accept a separate dictionary and caller-specific defaults. This permits globally scaled RoPE and independent, unscaled local RoPE without changing the previous helper defaults.",
+        "basis": "source",
+        "evidence": [
+          "call_4a342866b5dd4a02906ef2cc832c1149",
+          "call_a308eb9de1684b5b9773c3cc7fcace34",
+          "call_1ba8c576e4244387bde5150872b02799"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Directory-based dispatch can now select Gemma3's text model. Vision is represented separately, but its load and unload methods explicitly raise NotImplementedError; this is not multimodal inference support.",
+        "basis": "source",
+        "evidence": [
+          "call_562ade57beef4a6f953d5fac5033c368",
+          "call_db35e6b199614f8ea7d3333427b22e58",
+          "call_d7be3529fb7044769f9d5c2cdb41fb37",
+          "call_a308eb9de1684b5b9773c3cc7fcace34"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The preceding entry describes the component dictionary and additional-tensor compilation hook that this adapter uses.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_a7a30ffe1a2d402f8464a76fc7d2a910"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d proposes a spelling correction. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension loading failure; issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d reports a build-time assertion. Their connection to this change is inferred only from the shared config.py path and matching RoPE import traceback, not evidence that this architecture addition fixes them.",
+        "basis": "inference",
+        "evidence": [
+          "call_96b66b0a197944e1a03f5837d2ef0bbf",
+          "call_8b7d7c4324ff4daf950b304a9e8640b9",
+          "call_ad3377f5a8c243b295503940e9952f56",
+          "call_562ade57beef4a6f953d5fac5033c368"
+        ]
+      },
+      {
+        "text": "Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, discusses request-dependent scaling and its cache/batching complications. Its relationship here is inferred from shared RopeSettings and rope.py references; Gemma3's two fixed settings do not implement that proposal.",
+        "basis": "inference",
+        "evidence": [
+          "call_75594ade985c4279b3c2bbf1d591e3e9",
+          "call_a308eb9de1684b5b9773c3cc7fcace34"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, generation, conversion or GPU execution was performed. Configuration agreement does not establish tensor-layout compatibility or numerical correctness.",
+      "The Python computation transcribed layer scheduling and attention-scale arithmetic; it did not execute the model or attention kernels.",
+      "Model configurations were supplied as hash-verified historical mirror files. Omitted configuration values establish which adapter defaults apply, not independent validation of those defaults."
+    ],
+    "links": [
+      "830b6a018070a327d6d261628dff496f1303cf93"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Gemma3 text assembly and separate positional settings",
+        "claims": [
+          {
+            "text": "Gemma3Config registers Gemma3ForConditionalGeneration and supplies text and vision component classes. The existing factory defaults to text. Configuration reads dimensions from text_config, requires num_hidden_layers, and supplies vocabulary size 262208 when the base configuration finds neither top-level nor nested vocab_size.",
+            "basis": "source",
+            "evidence": [
+              "call_a308eb9de1684b5b9773c3cc7fcace34",
+              "call_562ade57beef4a6f953d5fac5033c368",
+              "call_db35e6b199614f8ea7d3333427b22e58"
+            ]
+          },
+          {
+            "text": "read_rope_settings_default now distinguishes an omitted dictionary from an explicitly empty one. Global settings read text_config with theta defaulting to 1,000,000; local settings read {}, yielding theta 10,000, full rotary dimensions and no scaling. Both use NEOX layout. Existing calls that supply only rope_style retain top-level configuration and the previous defaults.",
+            "basis": "source",
+            "evidence": [
+              "call_4a342866b5dd4a02906ef2cc832c1149",
+              "call_a308eb9de1684b5b9773c3cc7fcace34",
+              "call_edf1a0b2c34e4d6d9ac284d82b92c461"
+            ]
+          },
+          {
+            "text": "Layer locality is bool((idx + 1) % sliding_window_pattern): with the default period 6, every sixth layer is global. Local layers receive the configured sliding_window, while global layers receive -1. The adapter's fallback window is 4096, but every inspected model explicitly supplies 1024. FlashAttention consumers forward the window and query_pre_attn_scalar**(-0.5); the SDPA path explicitly rejects sliding-window attention.",
+            "basis": "source",
+            "evidence": [
+              "call_a308eb9de1684b5b9773c3cc7fcace34",
+              "call_f8357c9e9daf4439afda25ce234c453f",
+              "call_251ef966e09540a9ba0a600bc2eafe72"
+            ]
+          },
+          {
+            "text": "The inspected RoPE implementation computes inverse frequencies from theta and rotary dimension. Linear scaling divides them by the configured factor. Consequently the inspected checkpoints' factor 8 applies to global attention only; the empty local dictionary deliberately bypasses it.",
+            "basis": "source",
+            "evidence": [
+              "call_1ba8c576e4244387bde5150872b02799",
+              "call_a308eb9de1684b5b9773c3cc7fcace34",
+              "call_ecb6693a84564e20b0b235f545bd8667"
+            ]
+          },
+          {
+            "text": "Text tensor keys retain the language_model prefix. Assembly comprises a normalized embedding, sequential attention and GELU-gated MLP residual branches with pre/post RMSNorm, a final half-precision norm, and a vocabulary projection with the embedding key as an alternative. Q and K receive RMSNorm before RoPE. Norms use constant_bias=1; branch post-norms request float output.",
+            "basis": "source",
+            "evidence": [
+              "call_a308eb9de1684b5b9773c3cc7fcace34",
+              "call_2b1721e94dc84799b91750c1d1cfc3b7",
+              "call_f8357c9e9daf4439afda25ce234c453f"
+            ]
+          },
+          {
+            "text": "google/gemma-3-4b-it and google/gemma-3-4b-pt each map to hidden/intermediate widths 2560/10240 and 34 layers, overriding the adapter's width defaults. Both omit head counts and head_dim, so the adapter supplies 8 query heads, 4 KV heads and dimension 256. google/gemma-3-4b-it-qat-int4-unquantized and google/gemma-3-4b-it-qat-q4_0-unquantized explicitly supply those same dimensions, counts and query scalar 256.",
+            "basis": "source",
+            "evidence": [
+              "call_ecb6693a84564e20b0b235f545bd8667",
+              "call_bda781bf93704452a8f796745c57ac17",
+              "call_1ebe29c11667467a97b76e4908137c57",
+              "call_d8c518950237414da8a906815134dbbc",
+              "call_a308eb9de1684b5b9773c3cc7fcace34"
+            ]
+          },
+          {
+            "text": "google/gemma-3-12b-it and google/gemma-3-12b-pt each supply widths 3840/15360, 48 layers and 16/8 query/KV heads; the adapter supplies omitted head_dim and query scalar as 256. google/gemma-3-12b-it-qat-int4-unquantized and google/gemma-3-12b-it-qat-q4_0-unquantized explicitly confirm those dimensions and scalar. Thus none of these four uses the adapter's default widths or head counts.",
+            "basis": "source",
+            "evidence": [
+              "call_645d5d5f1f3642338809235d6a27712d",
+              "call_7c26c059040c4785b91a3e9bae0f67eb",
+              "call_92052473970a4ffba44b75b92fa0e7e2",
+              "call_3647a2df32f84e6aaac7b29490a2b4e9",
+              "call_a308eb9de1684b5b9773c3cc7fcace34"
+            ]
+          },
+          {
+            "text": "google/gemma-3-27b-it, google/gemma-3-27b-pt and google/gemma-3-27b-it-qat-q4_0-unquantized each supply widths 5376/21504, 62 layers, 32/16 query/KV heads, head_dim 128 and query scalar 168. The adapter reads these overrides rather than deriving the attention scale from head_dim.",
+            "basis": "source",
+            "evidence": [
+              "call_6e714ddc05184d71a0a2f519fb24ff2d",
+              "call_2ce5fa2a843447a4b824017e7437432d",
+              "call_46fe15e33a254bbbaae9e7098d7e5e24",
+              "call_a308eb9de1684b5b9773c3cc7fcace34"
+            ]
+          },
+          {
+            "text": "All eleven inspected configurations use the registered architecture and nested text_config, with linear RoPE factor 8 and window 1024. The five QAT configurations explicitly specify period 6, theta 1,000,000, local base frequency 10,000 and vocabulary 262208. Their null attention/output softcaps fall through read_dict to the adapter's 0.0 defaults. Local base frequency is not read by this adapter, but its fixed 10,000 agrees with those files.",
+            "basis": "source",
+            "evidence": [
+              "call_a308eb9de1684b5b9773c3cc7fcace34",
+              "call_51da57dbe0e54d518eb83754702729cf",
+              "call_1ebe29c11667467a97b76e4908137c57",
+              "call_d8c518950237414da8a906815134dbbc",
+              "call_92052473970a4ffba44b75b92fa0e7e2",
+              "call_3647a2df32f84e6aaac7b29490a2b4e9",
+              "call_46fe15e33a254bbbaae9e7098d7e5e24",
+              "call_ecb6693a84564e20b0b235f545bd8667",
+              "call_bda781bf93704452a8f796745c57ac17",
+              "call_645d5d5f1f3642338809235d6a27712d",
+              "call_7c26c059040c4785b91a3e9bae0f67eb",
+              "call_6e714ddc05184d71a0a2f519fb24ff2d",
+              "call_2ce5fa2a843447a4b824017e7437432d"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription produced local/global layer counts of 29/5, 40/8 and 52/10 for 34, 48 and 62 layers. The corresponding query scales are 0.0625 for scalar 256 and approximately 0.077151675 for scalar 168. These are schedule and scalar checks, not model execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_2483a2d4a92f4a0f97880f7f6cd435ee"
+            ]
+          },
+          {
+            "text": "The vision class's additional-tensor hook returns the union of source entries under vision_tower and multi_modal_projector. This preserves a separation between text execution and additional checkpoint tensors without implementing a vision forward path.",
+            "basis": "source",
+            "evidence": [
+              "call_a308eb9de1684b5b9773c3cc7fcace34"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Gemma3 text-model dispatch and assembly with separate local/global RoPE settings; vision remains a stub with an additional-tensor hook."
+  },
+  "evidence": {
+    "call_d7be3529fb7044769f9d5c2cdb41fb37": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "offset": 164,
+        "max_bytes": 12000
+      },
+      "result_sha256": "1ceb8ae47b193ec24e53ed9c6cf78f79e25bc241cf399887b938b9947e335861"
+    },
+    "call_4a342866b5dd4a02906ef2cc832c1149": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "offset": 885,
+        "max_bytes": 12000
+      },
+      "result_sha256": "e3b0333bef855b76b178a107b9bcd7ba210be3c24c16b63c0f686bb832bdc85b"
+    },
+    "call_a308eb9de1684b5b9773c3cc7fcace34": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "offset": 2630,
+        "max_bytes": 12000
+      },
+      "result_sha256": "295529164dcda7d1a622e8ec38910a8020eb5e0957a59991f34f0fde57e23391"
+    },
+    "call_47082b474cf448dfbf638df47c0bf8f1": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 24000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9",
+      "catalog_only": true
+    },
+    "call_62c11251efd64b3c87221dcef7f4833f": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "fb05df3f0a9aec117ddaf5d51199a74f31b9e9b3f32293ef297bcf69bf57e4bc",
+      "catalog_only": true
+    },
+    "call_441ee0b1733e4966beae18b8fb8503a6": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "2123541d6e6c91579d185d51bc2b5a9ff8beb600e6c6eb456c14227c08f8538b",
+      "catalog_only": true
+    },
+    "call_ecb6693a84564e20b0b235f545bd8667": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it",
+        "revision": "68d0dd42f002fd8304ea8af6335c656e254697df9d260550874186f0a7975022",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "d06d1d16ff660aff2b5d70c2069d980be31c1576cf05369d3eedd81c417109fd"
+    },
+    "call_bda781bf93704452a8f796745c57ac17": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-pt",
+        "revision": "10aa25f11b7f97ccaab63ebcb85b264d9ab0eea57a06bddf83003c017c2cb034",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "7fb849249267bda954ac6fed9cceda9e26b22e9ff1b9f0597c32bfa6de956a64"
+    },
+    "call_1ebe29c11667467a97b76e4908137c57": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it-qat-int4-unquantized",
+        "revision": "545141ed13e0aba86542ce589599306c21773b9a572d62d3ed311601202cdbe7",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "c673977b7a251bc85c739059078a864e131e67a475ccd32919c7b81a65dc2148"
+    },
+    "call_d8c518950237414da8a906815134dbbc": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it-qat-q4_0-unquantized",
+        "revision": "1c4d825a9b2f731f62bb1a4f7e6822e93dc6a85f64b2a0ecf0ca988dd8bff872",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "268e936eaf2c5194f2796566c5118a4b79e79ddcefa3a9700b8720c9b132c885"
+    },
+    "call_645d5d5f1f3642338809235d6a27712d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it",
+        "revision": "bfa370037dad85e96e27f383482eb642490d94caffa7a8d5261374380476e826",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "d4002c271cc5d7d438bd2eb7349e58bf507388e49713537019ace5bb43fe581a"
+    },
+    "call_7c26c059040c4785b91a3e9bae0f67eb": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-pt",
+        "revision": "405f9ea391f2687827846f3bf9bdfb95ba36315ec04d609c41f1cedc5797a787",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "4f07d4c6c58ca9ecc82f027d0f1cafc6c2954741d7c73dd2c235ca326f8da0f7"
+    },
+    "call_92052473970a4ffba44b75b92fa0e7e2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it-qat-int4-unquantized",
+        "revision": "e7f83727dbceb78288d03a5be9306732d65e9c1ec236559e23ecca95c50bc600",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "4c7c0d1e9bf45a4612ed7059a3156daf4275fd3ba26c32558a222075ab39820f"
+    },
+    "call_3647a2df32f84e6aaac7b29490a2b4e9": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it-qat-q4_0-unquantized",
+        "revision": "5a13093554eadc575b7e22dabb83ce11de7aa4fe5c326473f8338d4b2e124751",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "eec7a263817f63bcc4ce4cdc8d809a0997decc5d64cf4613826553d02cbb99ae"
+    },
+    "call_6e714ddc05184d71a0a2f519fb24ff2d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-it",
+        "revision": "7c1934e18aba594d8726189f95245f86215b8ba095aadd7396fb063ebe362531",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "1b18a693e2a1927720516141becc65c2150081e1a05ea1531fa1f8ba9cc2e650"
+    },
+    "call_2ce5fa2a843447a4b824017e7437432d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-pt",
+        "revision": "78896a1322ea631148a290906354880f3c9f3d20c7dd93459de4630e13ba6c5f",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "d1abd90300275888d253e9cad11dc5932c9abaf836f7e7e2da703ce3961e75fa"
+    },
+    "call_46fe15e33a254bbbaae9e7098d7e5e24": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-it-qat-q4_0-unquantized",
+        "revision": "9298cefe01f299638bab3696e5368cbb041d8ec78674f10545fe2d93c10ad37e",
+        "path": "config.json",
+        "max_bytes": 4000
+      },
+      "result_sha256": "dfd936c07fc344ce124e9d348402c206de1ddb982349b6be937133b8079479a7"
+    },
+    "call_562ade57beef4a6f953d5fac5033c368": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "d7e35d245a7d807d12c227ed21aa7ee8dfc64e53f877fbf505467e1422e41728"
+    },
+    "call_51da57dbe0e54d518eb83754702729cf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_edf1a0b2c34e4d6d9ac284d82b92c461": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "query": "rope",
+        "limit": 200,
+        "path": "exllamav3/models"
+      },
+      "result_sha256": "9efba593be71f441f05fa2d63e6f3fe2b43df552efb462488f21e2a165e3909c"
+    },
+    "call_f8357c9e9daf4439afda25ce234c453f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "24308e96431cabc08c436215585cc25ce0dc22b2161acc5b35fab11af0ab2a79"
+    },
+    "call_1ba8c576e4244387bde5150872b02799": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "3d45cc3a491a1fba37dba5ac0087247a823b626b3f937433da94d9ea9308bddf"
+    },
+    "call_96b66b0a197944e1a03f5837d2ef0bbf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 10000
+      },
+      "result_sha256": "e65068d491889e84827a7d4cb71ad8acc719d2d072a60d1d3ae7fea9aef9c392"
+    },
+    "call_8b7d7c4324ff4daf950b304a9e8640b9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "72efaba7dd34f433353781910e2cebb9bf322688987f885170ceadaa119e3b62"
+    },
+    "call_ad3377f5a8c243b295503940e9952f56": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "88bf5364b5583b0e1700e92b1badeb60edbc6e556f23650d4780b9611243820e"
+    },
+    "call_75594ade985c4279b3c2bbf1d591e3e9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 12000
+      },
+      "result_sha256": "9d09fd1e14cd95c8e16577cb6dc2cae7ab591c2e9bb6e13d95c56a5e7f1dc30d"
+    },
+    "call_a7a30ffe1a2d402f8464a76fc7d2a910": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7e9206989c587b27d376f2997d021ce6e95b9c2ff1b79ccc7fc39e5da68dfac1"
+    },
+    "call_fc0157278e8c4f0a9d731cd00d27d144": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "query": "Gemma3",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_2483a2d4a92f4a0f97880f7f6cd435ee": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nkeys=['text_config','head_dim','hidden_size','num_attention_heads','num_key_value_heads','query_pre_attn_scalar','attn_logit_softcapping','sliding_window','sliding_window_pattern','intermediate_size','rms_norm_eps','num_hidden_layers','tie_word_embeddings','final_logit_softcapping','partial_rotary_factor','max_position_embeddings','original_max_position_embeddings','rope_theta','rope_scaling']\nfor k in keys:\n hits=[]\n for p in Path('.').rglob('*.py'):\n  for i,l in enumerate(p.read_text().splitlines(),1):\n   if ('\"'+k+'\"') in l or ('\"text_config->'+k+'\"') in l: hits.append(f'{p}:{i}: {l.strip()}')\n print(k, '\\n'.join(hits))\nprint('SCHEDULE',[(n,sum(bool((i+1)%6) for i in range(n)),n//6) for n in [34,48,62]])\nprint('SCALES',256**-.5,168**-.5)\n"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "c5616210fd92a4541a9cf2080db5466c9a5736789790bb73dfd8432619952164"
+    },
+    "call_6ec994adc9684e879b03f64d36905737": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "query": "text_config",
+        "limit": 100
+      },
+      "result_sha256": "1b8dade10c5b48524b3a00df75421391c36e7ffccb0e985e5de11b1a5c65c9ea"
+    },
+    "call_251ef966e09540a9ba0a600bc2eafe72": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "query": "sliding_window",
+        "limit": 100
+      },
+      "result_sha256": "8db558fe256db16085fd9ef4d65981a4b2e58b85af97a32ca9b911b5bcf90923"
+    },
+    "call_db35e6b199614f8ea7d3333427b22e58": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "2fbc28ec8588ebd89b5b89a6b1af072efaa86dd803e445b802148e707028b0cb"
+    },
+    "call_c8b06611a10e48c2903bf816f4476cb3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/modules/transformer_block.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_47d6f57087264d5aa9842ec705eaf2e4": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/modules",
+        "limit": 50
+      },
+      "result_sha256": "d22ba72ca3e5d42cb9aed4aef5873fae14f293b5eba667e8fd4828a0da7582aa"
+    },
+    "call_2b1721e94dc84799b91750c1d1cfc3b7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "0d3dc93f963edab7063120909cbc2f61569139f0c140144e2dc827c7073b56db"
+    }
+  }
+}

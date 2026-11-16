@@ -1,0 +1,63 @@
+diff --git a/teacher/README.md b/teacher/README.md
+index 36f37f6..1aa44ab 100644
+--- a/teacher/README.md
++++ b/teacher/README.md
+@@ -30,6 +30,8 @@ Each tool call gets fresh Bubblewrap namespaces, no network, a cleared environme
+ 
+ Repository reads allow ancestor trees only; `git_show` additionally permits the explicit task change. External fetch tools serve only curator-approved cached objects, with no live retrieval fallback. HF artifacts require immutable revision identifiers and approved non-weight/header roles. Header tools expose bounded tensor-header data rather than weights. Blob hashes, paths, request sizes and output sizes are checked.
+ 
++Official Hugging Face recovery bounds both raw and normalized safetensors headers at 16 MiB; the runtime applies the same limit to cached headers and returns only the requested tensor page. Recovery fetches the eight-byte length prefix and the exact header range, never weight payloads. ModelScope mirror recovery retains its separate 4 MiB bound.
++
+ `run` materializes the first-parent source tree and applies optional disposable file replacements. It runs isolated standard-library Python only, with time, memory, file-size and output limits. A seccomp filter denies process/thread creation and namespace changes. This profile cannot execute Torch, GPU workloads or threaded tests. Those require a separately reviewed runtime profile.
+ 
+ `FreshSession.run(model)` accepts a stateless provider callback and starts with only its generic instructions, task metadata and approved evidence catalog. It exposes nine source tools, `ancestor_read` for retrieval packets, and five graph tools when a graph packet is attached. It rejects reuse of the session object. The callback must not attach prior conversations or remote session IDs. The driver returns an unpublished draft/transcript; it does not save corpus entries. Tests use explicit fixtures, not fabricated model outputs.
+diff --git a/teacher/root_evidence.py b/teacher/root_evidence.py
+index 51d3067..29a42d5 100644
+--- a/teacher/root_evidence.py
++++ b/teacher/root_evidence.py
+@@ -27,6 +27,7 @@ MIRRORS={'gemma2': {'upstream_repo':'google/gemma-2-2b',
+ PAPERS={'qtip':('2406.11235v3','2024-10-29T18:55:48Z'),
+         'quip-sharp':('2402.04396v2','2024-06-04T04:51:52Z')}
+ WEIGHTS=('.safetensors','.bin','.pt','.pth','.gguf','.ckpt','.h5','.hdf5','.npz','.npy','.msgpack','.onnx','.ot')
++MAX_HEADER_BYTES=16*1024**2
+ 
+ 
+ class Redirect(HTTPRedirectHandler):
+@@ -142,7 +143,7 @@ def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=Fal
+             if path.endswith('.safetensors'):
+                 prefix,_=fetch(url,byte_range=(0,7))
+                 length=struct.unpack('<Q',prefix)[0]
+-                if not 2<=length<=4*1024**2:raise ValueError('Tensor header length outside allowed bounds')
++                if not 2<=length<=MAX_HEADER_BYTES:raise ValueError('Tensor header length outside allowed bounds')
+                 # Distinct query avoids intermediaries incorrectly reusing the first range.
+                 data,_=fetch(url+'?header=metadata',byte_range=(8,7+length))
+                 parsed=json.loads(data)
+@@ -151,6 +152,7 @@ def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=Fal
+                     if name!='__metadata__' and not {'dtype','shape','data_offsets'}<=set(value):
+                         raise ValueError('Invalid tensor metadata')
+                 data=json.dumps(parsed,sort_keys=True).encode()
++                if len(data)>MAX_HEADER_BYTES:raise ValueError('Normalized tensor header exceeds runtime budget')
+                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='safetensors_header',
+                                      repo_id=repo,revision=sha,path=path,artifact_role='tensor_header'))
+                 headers.append(path)
+diff --git a/teacher/worker.py b/teacher/worker.py
+index 33c212d..bfb2671 100644
+--- a/teacher/worker.py
++++ b/teacher/worker.py
+@@ -11,6 +11,7 @@ import subprocess
+ import sys
+ import tempfile
+ 
++MAX_HEADER_BYTES=16*1024**2
+ 
+ def safe_path(value, root_allowed=False):
+     if not isinstance(value, str) or '\x00' in value or '\\' in value:
+@@ -293,7 +294,7 @@ def dispatch(packet, name, supplied):
+         item=evidence_item(manifest,args,kind)
+         data=load_blob(packet,item['blob'])
+         if name=='safetensors_header':
+-            if len(data)>4*1024**2:
++            if len(data)>MAX_HEADER_BYTES:
+                 raise ValueError('Approved header exceeds runtime budget')
+             header=json.loads(data)
+             if not isinstance(header,dict) or any(k!='__metadata__' and (not isinstance(v,dict) or not {'dtype','shape','data_offsets'}<=set(v)) for k,v in header.items()):

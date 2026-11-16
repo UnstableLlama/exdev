@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 
+MAX_HEADER_BYTES=16*1024**2
 
 def safe_path(value, root_allowed=False):
     if not isinstance(value, str) or '\x00' in value or '\\' in value:
@@ -208,8 +209,9 @@ def ancestor_read(packet, manifest, args):
 
 def evidence_index_page(manifest, args):
     if args.get('index_id')=='closed_discussions':
-        from .closed_discussions import page
-        return page(manifest,args)
+        if 'closed_discussion_catalog' not in manifest:
+            raise ValueError('No closed discussion catalog')
+        return excerpt(json.dumps(manifest['closed_discussion_catalog']['rows'],sort_keys=True).encode(),args)
     index=manifest.get('evidence_index')
     if index is None:raise ValueError('No evidence index in this packet')
     if args.get('index_id'):
@@ -293,7 +295,7 @@ def dispatch(packet, name, supplied):
         item=evidence_item(manifest,args,kind)
         data=load_blob(packet,item['blob'])
         if name=='safetensors_header':
-            if len(data)>4*1024**2:
+            if len(data)>MAX_HEADER_BYTES:
                 raise ValueError('Approved header exceeds runtime budget')
             header=json.loads(data)
             if not isinstance(header,dict) or any(k!='__metadata__' and (not isinstance(v,dict) or not {'dtype','shape','data_offsets'}<=set(v)) for k,v in header.items()):

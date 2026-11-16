@@ -1,0 +1,241 @@
+{
+  "schema_version": 5,
+  "sha": "b5fb1827dae8ee8a642ce5c83fca7ccfd905a3fe",
+  "parent_shas": [
+    "769ddb34b02769e9a8189d4f4b9653784f2516ba"
+  ],
+  "cutoff_date": "2025-05-17T16:41:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Model.get_storage_info recognized only the exact key lm_head. Gemma3's language_model.lm_head therefore entered the ordinary Linear totals, leaving reported head BPW at zero.",
+        "basis": "source",
+        "evidence": [
+          "call_9a74f57d9c2b4b40ac5f875de9ac286d",
+          "call_167e82e7f6744813a065d654e47c10fd"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch replaces equality with endswith(\"lm_head\"), recognizing component-prefixed heads without changing model declarations or the accounting formulas.",
+        "basis": "source",
+        "evidence": [
+          "call_1211bcb0ff7d46269bbdced3fa681580"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "eval/ppl.py directly calls this method and prints its decoder/head bitrates. The comparison adapter has a separate helper already using suffix matching, so that helper is unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_c1c9f914520b456183c838f93445d266",
+          "call_d3d895e1d03d42629a8215f1d3975291",
+          "call_6ae292e3408249f49997f7dd2d0d3aef"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "An earlier entry describes the same suffix-recognition correction in the comparison adapter; this change applies it to the Model method.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_d0e6ed81e2ce4288a6ee7fbceb5bc374"
+        ]
+      },
+      {
+        "text": "Issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d and #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d contain model.py import tracebacks. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d contains a linear.py conversion traceback. Their shared paths are only an inferred contextual connection, not evidence that this accounting patch fixes those failures.",
+        "basis": "inference",
+        "evidence": [
+          "call_4287fb8417af4a5e9140d52066617771",
+          "call_a4f4199377764fae9577fb7c679948d7",
+          "call_4dda43c2ea064d2e89b0c3deee338ae5",
+          "call_1211bcb0ff7d46269bbdced3fa681580"
+        ]
+      }
+    ],
+    "limitations": [
+      "Validation used scalar accounting examples, not repository execution with loaded tensors or a GPU.",
+      "The storage estimate counts selected Linear tensors, not total runtime GPU memory. Model-level BPW values were not measured."
+    ],
+    "links": [
+      "a19538cf1e3b3f46ccdb347ff076fd4838a4910b"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Recognize component-prefixed output heads",
+        "claims": [
+          {
+            "text": "Head classification precedes the general Linear branch. Matching a prefixed head now removes both its storage bits and weight count from the decoder average and assigns them to head accounting. Bare lm_head remains recognized.",
+            "basis": "source",
+            "evidence": [
+              "call_1211bcb0ff7d46269bbdced3fa681580",
+              "call_9a74f57d9c2b4b40ac5f875de9ac286d"
+            ]
+          },
+          {
+            "text": "Storage bits are eight times the sum of tensor element sizes in bytes multiplied by element counts. Linear.get_tensors delegates to its loaded inner implementation, or returns an empty dictionary when unloaded; weights_numel returns in_features \u00d7 out_features. Thus BPW is storage per weight, not simply a configured quantization width.",
+            "basis": "source",
+            "evidence": [
+              "call_9a74f57d9c2b4b40ac5f875de9ac286d",
+              "call_67ae5ef156f54b45936cbe9d2da8fd21"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription used 400 decoder bits over 100 weights and 320 head bits over 20 weights. For language_model.lm_head, the old/new results were (6, 0, 720) and (4, 16, 720): decoder BPW and head BPW change, while combined counted bits remain constant. The bare-head case remained (4, 16, 720).",
+            "basis": "execution",
+            "evidence": [
+              "call_ac58ed73d0ba453c93d33a2ea573f722"
+            ]
+          },
+          {
+            "text": "Suffix matching is a lightweight naming convention rather than explicit head metadata: it accommodates language_model.lm_head but accepts any key ending in lm_head. The patch changes reporting classification, not quantization or forward computation.",
+            "basis": "source",
+            "evidence": [
+              "call_1211bcb0ff7d46269bbdced3fa681580",
+              "call_167e82e7f6744813a065d654e47c10fd"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Corrects component-prefixed output-head BPW reporting by separating those heads from ordinary Linear storage totals."
+  },
+  "evidence": {
+    "call_1211bcb0ff7d46269bbdced3fa681580": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b5fb1827dae8ee8a642ce5c83fca7ccfd905a3fe",
+        "offset": 175,
+        "max_bytes": 614
+      },
+      "result_sha256": "c917b29e4b86066a68e456cacfc7435e663e0c6b0d1b2266718772071e06dc19"
+    },
+    "call_9a74f57d9c2b4b40ac5f875de9ac286d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "path": "exllamav3/models/model.py",
+        "offset": 14500,
+        "max_bytes": 10000
+      },
+      "result_sha256": "3cae93e861508d77cfd9de9412e12414b28d722ac97bd687fed63211db16591f"
+    },
+    "call_d66b43a1a2bf4a94972dfea0ed293734": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "query": "lm_head",
+        "path": "exllamav3/models",
+        "limit": 100
+      },
+      "result_sha256": "66e52f3e63f1b281b9a104a845e4d18e1eaea3e473a3f2e819f1f4d86261a485"
+    },
+    "call_c1c9f914520b456183c838f93445d266": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "query": "get_storage_info",
+        "limit": 100
+      },
+      "result_sha256": "b2e0d380d425614b66d8c7dbcde1d3e08a08744574aa29027a2f00db1328ced1"
+    },
+    "call_167e82e7f6744813a065d654e47c10fd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 6500,
+        "max_bytes": 4000
+      },
+      "result_sha256": "52b608f4f50060dcae8a95e208873b311a97a3fb10832bd86ed28a2f6e622d05"
+    },
+    "call_d3d895e1d03d42629a8215f1d3975291": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "path": "eval/ppl.py",
+        "max_bytes": 4200
+      },
+      "result_sha256": "019092a39f34c44861dc413e2df080683b9a336832e8c6f887e5a0afc6e15f1e"
+    },
+    "call_6ae292e3408249f49997f7dd2d0d3aef": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "path": "eval/compare_q_exllamav3.py",
+        "max_bytes": 2300
+      },
+      "result_sha256": "9c222a016964a1d009b31ad03b27e1ab3394100b7bbfc4022d3dc62a105edb2b"
+    },
+    "call_a4f4199377764fae9577fb7c679948d7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d27b8236e1dcfcce2469194be1b29b0c3dcae9d45dd4d1822075c6eb682490ab"
+    },
+    "call_4287fb8417af4a5e9140d52066617771": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1ddafc60aae70f7d689a7628cf97df4374293101f54da6da87d0645ea285a084"
+    },
+    "call_5c2f90d1027848329d439e0c933aa70d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "path": "exllamav3/modules/linear.py",
+        "query": "def ",
+        "limit": 100
+      },
+      "result_sha256": "4cae2f7a8300c572576c8c0b667a6dc0390e6569bd134dd88171f950cee2bb16"
+    },
+    "call_67ae5ef156f54b45936cbe9d2da8fd21": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 7300,
+        "max_bytes": 3800
+      },
+      "result_sha256": "4de8ba0a8f7b3d05110ffa4dacf04bcdd1e2d42cf1c84d8bf192c1c6a716cb4b"
+    },
+    "call_4dda43c2ea064d2e89b0c3deee338ae5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a7516fbf1be660c46da63e1bf4c4f6455cd1c452dc38d7a529b5c14c59dd1d06"
+    },
+    "call_d0e6ed81e2ce4288a6ee7fbceb5bc374": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "max_bytes": 8000
+      },
+      "result_sha256": "239ace70dbf09cf8f651cf4e9c12800cfa48de1025e1c2bafd71485cb9b3c242"
+    },
+    "call_ac58ed73d0ba453c93d33a2ea573f722": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def estimate(suffix,key):\n    bits=n=hb=hn=0\n    for k,b,w in [('layer',400,100),(key,320,20)]:\n        if (k.endswith('lm_head') if suffix else k=='lm_head'): hb=b/w;hn=w\n        else: bits+=b;n+=w\n    return bits/n,hb,hn*hb+bits\nfor key in ['lm_head','language_model.lm_head']:\n    print(key,estimate(False,key),estimate(True,key))\nassert estimate(False,'lm_head')==estimate(True,'lm_head')\nassert estimate(True,'language_model.lm_head')==(4,16,720)\n"
+        ]
+      },
+      "result_sha256": "c20d45c1ae0b41b59d1e5f926e7bd10e236319076d108405d381226c4e9e7768"
+    }
+  }
+}

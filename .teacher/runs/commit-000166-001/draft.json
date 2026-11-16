@@ -1,0 +1,349 @@
+{
+  "schema_version": 5,
+  "sha": "08858bc8e35b6350516507a4f01435bd4e76e25b",
+  "parent_shas": [
+    "3873d40ae2734261f72aa85261ac06b6e307c1e4"
+  ],
+  "cutoff_date": "2025-05-16T22:25:14+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Qwen3MoeConfig still supplied a bare model class, while Config stored it as model_classes and its consumers expected a component dictionary.",
+        "basis": "source",
+        "evidence": [
+          "call_63b78b662a92465bae992a9684af6d96",
+          "call_9bb71336784143b6812caa9e0327327f",
+          "call_64b8f3a954b34fb6a8f8bc37c066d280",
+          "call_79f1d99ee304425cbf688ee62bdf7d7d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Wrapping Qwen3MoeModel in {\"text\": Qwen3MoeModel} satisfies both factory lookup and compilation's component enumeration without changing the model implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_39cd9b8a2dca4a6da47fa26e21f1dc3f",
+          "call_64b8f3a954b34fb6a8f8bc37c066d280",
+          "call_79f1d99ee304425cbf688ee62bdf7d7d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The default text factory can now select Qwen3MoeModel. Compilation can enumerate its inherited additional-tensor hook, which returns an empty dictionary; this fix adds no auxiliary tensors or vision component.",
+        "basis": "source",
+        "evidence": [
+          "call_39cd9b8a2dca4a6da47fa26e21f1dc3f",
+          "call_64b8f3a954b34fb6a8f8bc37c066d280",
+          "call_63b78b662a92465bae992a9684af6d96",
+          "call_69e695dc25fa4c6e94f475ad4594257c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier component-refactor entry recorded the omitted Qwen3 MoE migration and its factory/compiler failures.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_73d5591f804e4241bc973c2e6ab3661d"
+        ]
+      },
+      {
+        "text": "Comparing the parent implementation with the complete patch shows that this specific inherited interface mismatch is removed.",
+        "basis": "source",
+        "evidence": [
+          "call_39cd9b8a2dca4a6da47fa26e21f1dc3f",
+          "call_63b78b662a92465bae992a9684af6d96",
+          "call_64b8f3a954b34fb6a8f8bc37c066d280"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d concerns spelling; issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading. Their association here is only an inference from shared inspected config.py/model.py paths, not evidence of this regression.",
+        "basis": "inference",
+        "evidence": [
+          "call_5528d915b7a04221af8096fd51ebfa81",
+          "call_4e18c7768e5b445e98ca15e7867f5e11",
+          "call_39cd9b8a2dca4a6da47fa26e21f1dc3f"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d reports a file-opening failure later identified as too many open files, then tracks GLM4 exclamation-mark output. Its association is inferred from the matching compile_model tensor-loading call, not from evidence that this dictionary fix addresses either report.",
+        "basis": "inference",
+        "evidence": [
+          "call_bb2545ad1339429888a43ebbd9ecb7b1",
+          "call_002ceed65aaa4d04a1b9a54e6268f1f2",
+          "call_79f1d99ee304425cbf688ee62bdf7d7d",
+          "call_39cd9b8a2dca4a6da47fa26e21f1dc3f"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model loading, conversion or GPU inference was executed. The Python check used a stand-in class and transcribed dictionary operations.",
+      "Checkpoint configuration inspection establishes architecture identity, not weight-format compatibility or successful inference, particularly for FP8 and GPTQ variants."
+    ],
+    "links": [
+      "830b6a018070a327d6d261628dff496f1303cf93"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Restore Qwen3 MoE component registration",
+        "claims": [
+          {
+            "text": "Config retains its model_classes argument verbatim. Model.from_config defaults component to \"text\", checks membership, then invokes the selected class with config and forwarded kwargs. The patch repairs the producer rather than adding a bare-class compatibility branch to these consumers.",
+            "basis": "source",
+            "evidence": [
+              "call_9bb71336784143b6812caa9e0327327f",
+              "call_64b8f3a954b34fb6a8f8bc37c066d280",
+              "call_39cd9b8a2dca4a6da47fa26e21f1dc3f"
+            ]
+          },
+          {
+            "text": "The selected Qwen3MoeModel constructor remains unchanged: it assembles embeddings, attention and sparse-expert transformer blocks, final normalization and the output head, and enables all-expert calibration. The change repairs access to that constructor, not its numerical computation.",
+            "basis": "source",
+            "evidence": [
+              "call_63b78b662a92465bae992a9684af6d96",
+              "call_39cd9b8a2dca4a6da47fa26e21f1dc3f"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription produced TypeError for bare-class membership and AttributeError for bare-class .items(); the text dictionary selected the stand-in constructor and collected an empty additional-tensor result. This checks the interface mechanism, not repository execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_0b70f52e1c144cf0b90fe4b68ea89ed8"
+            ]
+          },
+          {
+            "text": "The inspected config.json files for Qwen/Qwen3-235B-A22B, Qwen/Qwen3-235B-A22B-FP8 and Qwen/Qwen3-235B-A22B-GPTQ-Int4 each declare Qwen3MoeForCausalLM, matching Qwen3MoeConfig.arch_string. The same repaired text-component mapping applies to each; the patch changes no dimensions or configuration defaults.",
+            "basis": "source",
+            "evidence": [
+              "call_c34fd210765b447b89e48a29a425aac2",
+              "call_14911a94c7904b25baf1e2bd038e9672",
+              "call_8512db9f07214d13b9a1ec21b82b3363",
+              "call_63b78b662a92465bae992a9684af6d96",
+              "call_39cd9b8a2dca4a6da47fa26e21f1dc3f"
+            ]
+          },
+          {
+            "text": "The inspected config.json files for Qwen/Qwen3-30B-A3B, Qwen/Qwen3-30B-A3B-Base, Qwen/Qwen3-30B-A3B-FP8 and Qwen/Qwen3-30B-A3B-GPTQ-Int4 also each declare Qwen3MoeForCausalLM. Each therefore matches the same repaired mapping, independently of its unchanged dimensions and checkpoint quantization metadata.",
+            "basis": "source",
+            "evidence": [
+              "call_ae4407bc5cde44ab8904f13a2618b951",
+              "call_72229f9132414c6f9bf035637b66cd98",
+              "call_2d9796f8b3b743d19e618923f8063625",
+              "call_1070f62c4d2245dba506973d13d96fb1",
+              "call_63b78b662a92465bae992a9684af6d96",
+              "call_39cd9b8a2dca4a6da47fa26e21f1dc3f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Repairs Qwen3 MoE's component-interface regression by registering its model class under the existing \"text\" key."
+  },
+  "evidence": {
+    "call_39cd9b8a2dca4a6da47fa26e21f1dc3f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08858bc8e35b6350516507a4f01435bd4e76e25b",
+        "offset": 148,
+        "max_bytes": 451
+      },
+      "result_sha256": "d6b2b6dedd2b98e4b5f0b12743fb690d030a23d6140541d2ea2cd3a697f288e2"
+    },
+    "call_9bb71336784143b6812caa9e0327327f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "31dadc6d2dfa9f82c9444116a18c76b558264751a966842c6a76977f1360167f"
+    },
+    "call_63b78b662a92465bae992a9684af6d96": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "dc956337bd1b8e673d70ed16619489a386656ca795dc2cb8424566f0a28b0c0e"
+    },
+    "call_498386e9a5e749ed98a2bcde83af0e7a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "query": "model_classes",
+        "limit": 100
+      },
+      "result_sha256": "7f5b61fea98307b4b54fa60cd0781ebe957fd1fe9982117b0ae9b30bbaf9bc3b"
+    },
+    "call_64b8f3a954b34fb6a8f8bc37c066d280": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 4200
+      },
+      "result_sha256": "6fecf362b7ee3d346995cf53ac1909d88ff53ea11cfbdfae25df3ecb659304fd"
+    },
+    "call_79f1d99ee304425cbf688ee62bdf7d7d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "687e5531b1122ef0c49aecca21fda67326b63120b199f6c420ef3715163cda05"
+    },
+    "call_73d5591f804e4241bc973c2e6ab3661d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7e9206989c587b27d376f2997d021ce6e95b9c2ff1b79ccc7fc39e5da68dfac1"
+    },
+    "call_0c35b450c59344d78b6cb920ba1d7fbb": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "fb05df3f0a9aec117ddaf5d51199a74f31b9e9b3f32293ef297bcf69bf57e4bc",
+      "catalog_only": true
+    },
+    "call_c34fd210765b447b89e48a29a425aac2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "config.json"
+      },
+      "result_sha256": "14c3a8aefdea5d01ba21e3f5d36cf8953f6aca90643662cab744c4df9f46f7ef"
+    },
+    "call_14911a94c7904b25baf1e2bd038e9672": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-FP8",
+        "revision": "bae6646ab86923752d1ae45a4bd660794daeafab",
+        "path": "config.json"
+      },
+      "result_sha256": "5de52bd2969c2408a5832ba46c8e7ec77250dc515fdbb3d9cea285cd5553a318"
+    },
+    "call_8512db9f07214d13b9a1ec21b82b3363": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "revision": "db337e1a1eac79928ddea88d43615bbce753d8a7",
+        "path": "config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "74d4c122eb0b863b8206c6de800ee5eaa9a843404fc6229f319c76397e66cabe"
+    },
+    "call_ae4407bc5cde44ab8904f13a2618b951": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "config.json"
+      },
+      "result_sha256": "0ee7773b398aa369a5c0d039b06ed07150e9ca3432e0c16615aba559a4bb4952"
+    },
+    "call_72229f9132414c6f9bf035637b66cd98": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-Base",
+        "revision": "89e5e822ba31507f5f79dc3422c7c5345c422737",
+        "path": "config.json"
+      },
+      "result_sha256": "48b64b85b7629034ac91f9069f65e5fc2b81a3486f9566041569088ac0cebe19"
+    },
+    "call_2d9796f8b3b743d19e618923f8063625": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-FP8",
+        "revision": "4504c1329df104a4b299f0db05882e84da88830b",
+        "path": "config.json"
+      },
+      "result_sha256": "918563c851dc069ce4b65cbcbb377eccb469cf96a625ff29fd18a6dcdf8f3ce8"
+    },
+    "call_1070f62c4d2245dba506973d13d96fb1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "revision": "5b78b1b5f244a39334307aed060c27aa8d21e068",
+        "path": "config.json"
+      },
+      "result_sha256": "d1a2f3a2370dc544ad00c0562fc92086aefa535d93f58ea54df1d548fa3b4737"
+    },
+    "call_5528d915b7a04221af8096fd51ebfa81": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 5000
+      },
+      "result_sha256": "9944fd3da54b4b3717b9237f9f2d16d33d2d0f2301ae40af7d444cbd842509dc"
+    },
+    "call_4e18c7768e5b445e98ca15e7867f5e11": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 14000
+      },
+      "result_sha256": "1395262067afaaaaa078d6ff9cbaa65976048b86fded08fbb409f3a263cb6312"
+    },
+    "call_bb2545ad1339429888a43ebbd9ecb7b1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "14cd57a6c56b6e72b03f6f6ffe9d647ba055f94d4cbee26889b8f7f7c542748a"
+    },
+    "call_002ceed65aaa4d04a1b9a54e6268f1f2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 32000
+      },
+      "result_sha256": "a145a08cd561ab23c3c1550df9b98d0680cc5bd710521255fd5bc3d2fda867f7"
+    },
+    "call_e5a00a1049c7410895036612dc865df0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "query": "get_additional_compiled_tensors",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "bb8c7e35f4b72ab91b5306c3542a78bf9dbe0f7e96cade10763ab9a563c9314f"
+    },
+    "call_69e695dc25fa4c6e94f475ad4594257c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "path": "exllamav3/models/model.py",
+        "offset": 16200,
+        "max_bytes": 2500
+      },
+      "result_sha256": "d0c6a3377b7fb8dfded903d6bf00b87149ebef5b2b690325372cdefee1c0562d"
+    },
+    "call_0b70f52e1c144cf0b90fe4b68ea89ed8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "class StandIn:\n def __init__(self, config, **kwargs): self.config=config\n @staticmethod\n def get_additional_compiled_tensors(config): return {}\nfor label, classes in [('before', StandIn), ('after', {'text':StandIn})]:\n for operation in ['factory','hooks']:\n  try:\n   if operation=='factory':\n    assert 'text' in classes\n    result=classes['text'](None)\n    print(label,operation,type(result).__name__)\n   else:\n    extra={}\n    for _,cls in classes.items(): extra.update(cls.get_additional_compiled_tensors(None))\n    print(label,operation,extra)\n  except Exception as e: print(label,operation,type(e).__name__)\n"
+        ]
+      },
+      "result_sha256": "7ae844c450b5c8e6f74f3d51cb48368aa659ff58b6d91fb86ac9cdb2e97f2b4b"
+    }
+  }
+}

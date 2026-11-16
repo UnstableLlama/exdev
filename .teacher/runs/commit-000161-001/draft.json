@@ -1,0 +1,265 @@
+{
+  "schema_version": 5,
+  "sha": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+  "parent_shas": [
+    "7f3096ffd723fd908e1a2b2aa25243b2cc3f727a"
+  ],
+  "cutoff_date": "2025-05-15T01:28:24+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Sliced FP16 linears requested loader padding to their local dimensions before LinearFP16 could extract the slice from the full checkpoint tensor. The loader allocates exactly pad_to, then copies the entire source into it; padding therefore cannot accommodate a source wider than that destination.",
+        "basis": "source",
+        "evidence": [
+          "call_0c83d1331ee2407d93c6f472f022d1a9",
+          "call_0f908f8c675745d2b05d3d608208012a",
+          "call_ea5b8081f9a54f6789da70cfbf0b090a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The fix passes pad_to=None for both weight and optional bias when is_sliced is true. This preserves checkpoint dimensions until the existing LinearFP16 constructor selects the requested rows or columns.",
+        "basis": "source",
+        "evidence": [
+          "call_286a242cc5f44b679662f0b48bd08438",
+          "call_ea5b8081f9a54f6789da70cfbf0b090a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Unsliced linears retain loader-side padding. FP16 conversion, weight transposition, CPU staging for slices and subsequent device transfer remain unchanged; EXL3 loading and the fused-weight fallback are not edited.",
+        "basis": "source",
+        "evidence": [
+          "call_286a242cc5f44b679662f0b48bd08438",
+          "call_0c83d1331ee2407d93c6f472f022d1a9"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports a 49,920-versus-399,360 copy failure. Its relationship to this fix is inferred from the traceback through GatedMLP.load, Linear.load_fp16 and the loader's padded copy, matching the inspected data flow; the supplied commit does not explicitly cite the issue.",
+        "basis": "inference",
+        "evidence": [
+          "call_fab156415fb745848b95e48276ab68a4",
+          "call_286a242cc5f44b679662f0b48bd08438",
+          "call_f7d5bd53cc3b4e688342a41b9d9b96b3",
+          "call_0f908f8c675745d2b05d3d608208012a"
+        ]
+      },
+      {
+        "text": "Other overlapping discussions describe distinct failures: #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d concerns quantization padding; #11, \u201cAssertionError: bias is wrong datatype,\u201d concerns bias dtype; #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d was attributed in discussion to tokenizer truncation. Shared linear.py paths do not establish that this patch addresses those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_0b0a620b2b7c43bcbe15c049280c3ff0",
+          "call_c5562210f040491dbd1a377fcd6bc0cd",
+          "call_e75ee99bb7de4f118c5d29f39b5453e0",
+          "call_286a242cc5f44b679662f0b48bd08438"
+        ]
+      },
+      {
+        "text": "#34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports Cholesky failure. #33, \u201cError converting model,\u201d initially reports file-opening failure, later identified as too many open files, and subsequently discusses repetitive GLM4 output. Their overlap with inspected loading/conversion files is not evidence of the same padding failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_74e6840f0358438f9e4098332d3fb2cd",
+          "call_802bc4425b89444cbb8ecce50ee2368c",
+          "call_1cc1faa9b97c481bb29000179e42ead7",
+          "call_286a242cc5f44b679662f0b48bd08438"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository implementation, PyTorch tensor copy, GPU operation or complete model conversion was executed. The bounded Python check models dimensions and slicing only.",
+      "Compatibility of every sliced checkpoint shape, including dimensions requiring additional alignment padding, was not established."
+    ],
+    "links": [
+      "647bb7d549b8485ad052ac0650148bd35fcee6d4"
+    ],
+    "chapters": [
+      {
+        "id": "loading",
+        "title": "Slice before imposing local tensor dimensions",
+        "claims": [
+          {
+            "text": "Linear determines is_sliced by comparing its padded local dimensions with full_in_features and full_out_features. Its default alignment of 128 rounds dimensions upward; it is not a slice-count threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_0c83d1331ee2407d93c6f472f022d1a9"
+            ]
+          },
+          {
+            "text": "GatedMLP builds gate/up slices along output features and down slices along input features, preserving full dimensions and offsets. Alternate keys let these sliced modules load the original unsliced checkpoint tensors. Loading a selected MLP slice directly loads its gate, up and down linears.",
+            "basis": "source",
+            "evidence": [
+              "call_f7d5bd53cc3b4e688342a41b9d9b96b3"
+            ]
+          },
+          {
+            "text": "With padding disabled for sliced loads, LinearFP16 receives the transposed full weight on CPU. It slices dimensions that match the declared full dimensions, slices bias alongside output columns, copies the selected weight into independent storage, and then the existing unswap_cpu path transfers it to the requested device. This is not partial file I/O: the loader still reads the complete tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_286a242cc5f44b679662f0b48bd08438",
+              "call_0c83d1331ee2407d93c6f472f022d1a9",
+              "call_ea5b8081f9a54f6789da70cfbf0b090a",
+              "call_0f908f8c675745d2b05d3d608208012a"
+            ]
+          },
+          {
+            "text": "A standard-library shape check using issue #38's dimensions gives exactly eight 49,920-wide slices of 399,360 columns, with each slice divisible by 128. The old destination slice remains only 49,920 columns despite a 399,360-column source; slicing the full source instead yields eight correctly sized intervals.",
+            "basis": "execution",
+            "evidence": [
+              "call_7218dfa36fac420a9d23c7b35012c869"
+            ]
+          },
+          {
+            "text": "The earlier deferred-loading entry describes moving ordinary FP16 transposition and padding into the loader and excluding sliced linears from deferral. This patch narrows that padding policy without replacing the existing CPU slicing mechanism.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_b0af4c7d65914f6e921dd80548f81107"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Disables loader-side weight and bias padding for sliced FP16 linears, allowing existing CPU slicing to operate on full checkpoint tensors while preserving padding for unsliced loads."
+  },
+  "evidence": {
+    "call_286a242cc5f44b679662f0b48bd08438": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "offset": 207,
+        "max_bytes": 1062
+      },
+      "result_sha256": "fd9c7bce4660eb7aef80946a76a7ae56e7fabada7f4a75b7a32f5138f6f19e93"
+    },
+    "call_0c83d1331ee2407d93c6f472f022d1a9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7f3096ffd723fd908e1a2b2aa25243b2cc3f727a",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "a0d92050bdf4de0d280646e3157cdfb3bbb5eb11b83cf527d890eb81427a30ed"
+    },
+    "call_ea5b8081f9a54f6789da70cfbf0b090a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7f3096ffd723fd908e1a2b2aa25243b2cc3f727a",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_0f908f8c675745d2b05d3d608208012a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7f3096ffd723fd908e1a2b2aa25243b2cc3f727a",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_fab156415fb745848b95e48276ab68a4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "f578d1d5325f0faf863d97ca8facc20ff17fb4e4c520b1b16cb8e465283f0e6f"
+    },
+    "call_74e6840f0358438f9e4098332d3fb2cd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "6130db4fd45900e50c81ba88b60666b98a5ba27aab580bc213b0f9f5948bc9f7"
+    },
+    "call_802bc4425b89444cbb8ecce50ee2368c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 18000
+      },
+      "result_sha256": "f5632841b997c0fdade078959ec299cec48f23dccccce8bcecb41b2c4a967c77"
+    },
+    "call_1cc1faa9b97c481bb29000179e42ead7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 18000,
+        "max_bytes": 30000
+      },
+      "result_sha256": "abfdbde7800b3b0165608243e74a3fafd83d016c8c6914479f2eed4901ceb028"
+    },
+    "call_0b0a620b2b7c43bcbe15c049280c3ff0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 20000
+      },
+      "result_sha256": "d787c84d55e3924af046e31b06515300039cd2edb3af7706740b9ad5a69879f1"
+    },
+    "call_c5562210f040491dbd1a377fcd6bc0cd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 20000
+      },
+      "result_sha256": "430f54e4cc678ecbd18a30ee10df2439daac8fe6d61d512233e04be7940583b1"
+    },
+    "call_e75ee99bb7de4f118c5d29f39b5453e0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2e6c2f2f6fce33d1016797e03e30c1f30dd074a6a6075053d562490a0c845c7e"
+    },
+    "call_b0ffa4e194454e189dc974f7d209079c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/linear.py",
+        "limit": 4,
+        "max_bytes": 4000
+      },
+      "result_sha256": "50dec3d5e0ed9405d0b3415a6ca65087ee668c1c12f1551df087a79a943670ee",
+      "catalog_only": true
+    },
+    "call_f7d5bd53cc3b4e688342a41b9d9b96b3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7f3096ffd723fd908e1a2b2aa25243b2cc3f727a",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "a1c16bb72d2d4764984b833fa71b6ef0120ffbf6d858dc2a5d6f9f87e09adcbb"
+    },
+    "call_b0af4c7d65914f6e921dd80548f81107": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "061e4dce54d3bb9055e5308e37b95f431258d57cae23de19023d4c772984212d"
+    },
+    "call_7218dfa36fac420a9d23c7b35012c869": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "full=399360; part=49920; print({'slices':full//part,'remainder':full%part,'part_alignment_128':part%128,'old_copy_source_width':full,'old_destination_slice_width':len(range(part)[0:full]),'new_slice_widths':[len(range(full)[i*part:(i+1)*part]) for i in range(full//part)]})"
+        ]
+      },
+      "result_sha256": "8f5c0d1b51a1d9c8c2687073004e97d498f45ded6e093ecc4d89a112c4f5f43b"
+    }
+  }
+}

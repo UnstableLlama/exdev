@@ -1,0 +1,143 @@
+{
+  "defect_id": "exllamav3-logits-padding-width-mismatch",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Commit 1d77c05 pads Linear heads to a multiple of 128 while the return_logits path sizes held logits to a multiple of 32, creating a source-level width mismatch for vocabularies divisible by 32 but not 128.",
+  "trigger": "Use return_logits with a vocabulary whose size is a multiple of 32 but not 128.",
+  "expected_behavior": "The model head output and held-logits storage use compatible padded widths.",
+  "actual_behavior": "The head emits the 128-aligned width while generator/job storage remains 32-aligned; SeqTensor.append behavior for this mismatch was not assessed.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+      "paths": [
+        "exllamav3/modules/linear.py",
+        "exllamav3/generator/generator.py",
+        "exllamav3/generator/job.py"
+      ],
+      "status": "source_verified_introduction",
+      "scope": "The task diff changes Linear's default output alignment from exact width to 128; the existing held-logits alignment remains 32."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+      "run": ".teacher/runs/commit-000032-001",
+      "source": "Independent Fable mailbox review of head padding and logits consumers.",
+      "reach": "The sampler masks columns beyond actual_vocab_size when a tokenizer is supplied. The separate return_logits storage path retains 32-based sizing.",
+      "limits": "SeqTensor.append and runtime return_logits behavior were not traced or executed."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+      "origin": "reviewer_observation",
+      "source": "Fable commit-000164-001 reviewer-only notes",
+      "reach": "Eleven reference Gemma3 configurations: vocabulary 262208, Linear head aligned to 128 gives 262272, generator logits buffer aligned to 32 stays 262208. return_logits path affected; sampler masks beyond tokenizer vocabulary.",
+      "limits": "Reviewer-confirmed source comparison, not model execution. No tensor append runtime claim."
+    }
+  ],
+  "fixes": [],
+  "verification": {
+    "method": "source_inspection",
+    "repository_execution": false,
+    "tree_scope": "Commit 1d77c05 introduction and task-tree logits consumers. Gemma3 affected case at 966762a3 per reviewer source comparison.",
+    "limits": [
+      "No generation, sampling or tensor append was executed.",
+      "SeqTensor.append behavior for mismatched widths is unassessed.",
+      "The record is suspected because runtime effect is not established."
+    ]
+  },
+  "evidence": [
+    {
+      "file": "evidence/commit32-linear-padding-source-scan.json",
+      "sha256": "019b83461b18918db8188e1ed78891073544a60bf3e6df3b07301c4b73435aa4",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+        "artifact": "Commit-32 Linear padding and logits-width source scan"
+      },
+      "retrieved_at": "2026-11-11T21:46:34Z"
+    },
+    {
+      "file": "evidence/commit164-verdict.md",
+      "sha256": "778536404f0fc74518d9dd742cb2244cedd9fd03a606815e57703f1f9eaf8ede",
+      "source": {
+        "artifact": "Fable reviewer-only affected-case observation",
+        "sha": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd"
+      },
+      "retrieved_at": "2026-11-16T03:03:10.068743+00:00"
+    },
+    {
+      "file": "evidence/commit164-exllamav3--models--gemma3.py",
+      "sha256": "48b7b8cabbe4070f4c728f70999ad1406acf752b3cd5442510757d6c55b0eaed",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "exllamav3/models/gemma3.py"
+      },
+      "retrieved_at": "2026-11-16T03:03:10.068743+00:00"
+    },
+    {
+      "file": "evidence/commit164-exllamav3--modules--linear.py",
+      "sha256": "bf219f055bd33f21a0c4650bc6397e7a4af79f80efef0ebcbbf0109d43011800",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "exllamav3/modules/linear.py"
+      },
+      "retrieved_at": "2026-11-16T03:03:10.068743+00:00"
+    },
+    {
+      "file": "evidence/commit164-exllamav3--generator--generator.py",
+      "sha256": "3e6eb1c67357a83fb171b835e2e25cb1ec83364bd662badbe77bbf52645699d9",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "exllamav3/generator/generator.py"
+      },
+      "retrieved_at": "2026-11-16T03:03:10.068743+00:00"
+    },
+    {
+      "file": "evidence/commit164-exllamav3--generator--job.py",
+      "sha256": "1365ca4f3c27f9ca8a915738cc8eb352131dc135a7ed120a7a57e01583bbc912",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "path": "exllamav3/generator/job.py"
+      },
+      "retrieved_at": "2026-11-16T03:03:10.068743+00:00"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1d77c0525ab2b1e716de6147023a48041496110c",
+      "available_at": "2025-04-11T01:51:14+02:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T03:03:10.068723+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "1d77c0525ab2b1e716de6147023a48041496110c",
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd"
+    ],
+    "unaffected_checked_shas": [
+      "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c"
+    ]
+  },
+  "impact": {
+    "level": "medium",
+    "domain": "generation_output_shapes",
+    "rationale": "The source widths disagree on a concrete vocabulary class, but the append consumer and runtime effect remain unassessed."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "r002 pending: reviewer-observation Gemma3 affected case requested by commit-000164-001; never teacher input."
+}

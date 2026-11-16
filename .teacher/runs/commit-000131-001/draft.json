@@ -1,0 +1,197 @@
+{
+  "schema_version": 5,
+  "sha": "456f14f95f7f0a840922128e571345124973ed15",
+  "parent_shas": [
+    "2e7b00d3b0d1731e86d127b992ae6298dd70a504"
+  ],
+  "cutoff_date": "2025-05-09T00:40:22+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The scalar 3INST decoder applied its mask/XOR transformation twice: once in C++ and again through inline LOP3. The paired decoder applied it only once.",
+        "basis": "source",
+        "evidence": [
+          "call_629e58a3187744048a9e366da658c973"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Removing the redundant C++ expression preserves the inline-instruction optimization while restoring the scalar decoder's agreement with the paired decoder; the multiplier and increment remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_db12bf5fbd204f1abb86c59723d47b40",
+          "call_629e58a3187744048a9e366da658c973"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The corrected scalar function feeds quantization error costs, reconstructed quantization tiles, standalone decoding and codebook-distribution diagnostics. Paired decoding is unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_2c942ba41f274d2f8d573a76717b9c54",
+          "call_629e58a3187744048a9e366da658c973",
+          "call_db12bf5fbd204f1abb86c59723d47b40"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier GEMM optimization entry recorded the duplicated scalar transformation. Inspection of the parent and this deletion shows that specific defect is removed.",
+        "basis": "source",
+        "evidence": [
+          "call_00792455bb7341b0ac81568f36c95cb2",
+          "call_629e58a3187744048a9e366da658c973",
+          "call_db12bf5fbd204f1abb86c59723d47b40"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d was opened by louiehelm to propose different codebook parameters and also discusses combining mask/XOR with LOP3. Its connection here is inferred from the matching instruction and constants, not an explicit upstream link. This fix does not adopt the proposed parameters.",
+        "basis": "inference",
+        "evidence": [
+          "call_a9f8df0e1cc649d08db31cefd03f7996",
+          "call_6855c913cf3d42dba1597ab7d572ff85",
+          "call_db12bf5fbd204f1abb86c59723d47b40"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, GPU execution, model-quality evaluation or timing measurement was performed.",
+      "The Python check models modulo-2^32 arithmetic, the LOP3 truth table and binary16 rounding; it does not execute repository kernels.",
+      "Caller reach is established for inspected native call sites, not every external or dynamic workflow."
+    ],
+    "links": [
+      "c4867edd0d31ea9fb052668874ae52fad0e91a0f"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Restore single-pass scalar codebook decoding",
+        "claims": [
+          {
+            "text": "decode_3inst first mixes the state using 89226354*x + 64248484 in uint32 arithmetic. Mask 0x8FFF8FFF and XOR constant 0x3B603B60 then shape two binary16 bit patterns, whose halves are added. LOP3 immediate 0x6A encodes the combined AND/XOR operation; applying it after the equivalent C++ expression changes the codebook rather than merely repeating harmless work.",
+            "basis": "source",
+            "evidence": [
+              "call_629e58a3187744048a9e366da658c973",
+              "call_db12bf5fbd204f1abb86c59723d47b40"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription enumerated all 65,536 16-bit states. The modeled LOP3 matched a single mask/XOR for every state, while the old double transformation changed rounded decoder outputs for 65,502 states. For state zero, the old result was 1.07421875 and the corrected result was 0.76806640625.",
+            "basis": "execution",
+            "evidence": [
+              "call_f566f7e67a004f25bb2cdb291e8ceb61"
+            ]
+          },
+          {
+            "text": "The 16-bit enumeration matches the standalone decoder's uint16 input and the distribution diagnostic's complete state sweep. Packed-weight helper dq also extracts a 16-bit state for scalar decoding; dq2 and dq4 use the unchanged paired decoder. The deletion therefore repairs a shared scalar primitive rather than changing packed-state extraction or introducing another quantization format.",
+            "basis": "source",
+            "evidence": [
+              "call_2c942ba41f274d2f8d573a76717b9c54",
+              "call_b11f04d78e8f4a689c77cfaf54052c19",
+              "call_db12bf5fbd204f1abb86c59723d47b40"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Removes a duplicated mask/XOR operation from scalar 3INST decoding, restoring agreement with the unchanged paired decoder while retaining inline LOP3."
+  },
+  "evidence": {
+    "call_db12bf5fbd204f1abb86c59723d47b40": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "456f14f95f7f0a840922128e571345124973ed15",
+        "offset": 148,
+        "max_bytes": 599
+      },
+      "result_sha256": "9f13875a8f4a0439129b876ef7508a830da5693cc9e45503559820493b56f21e"
+    },
+    "call_629e58a3187744048a9e366da658c973": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+        "path": "exllamav3/exllamav3_ext/quant/codebook.cuh",
+        "max_bytes": 16000
+      },
+      "result_sha256": "efd83eef731651b3688378e78bc2c45ad41a235f0f78508333869e1633aaf972"
+    },
+    "call_00792455bb7341b0ac81568f36c95cb2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3abe6a4e1eb86396a653d4340435f7d7cd9a986a49066000043d64aaf88d62cd"
+    },
+    "call_edfecb5968ed4a11b906d2afbb88c5ca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+        "query": "decode_pcb",
+        "limit": 100
+      },
+      "result_sha256": "c4781257c27dc6df5a0db48c806716a21e23773e30c0abd346b85b564d473b6d"
+    },
+    "call_c8e36c6b84f9420b8ed8ff89fdafb730": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+        "query": "decode_3inst",
+        "limit": 100
+      },
+      "result_sha256": "3faab21defb09196d9d1e4b1fbc6e2aab918299207fa62ae50ac83aac8e412a6"
+    },
+    "call_2c942ba41f274d2f8d573a76717b9c54": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+        "path": "exllamav3/exllamav3_ext/quant/quantize.cu",
+        "max_bytes": 24000
+      },
+      "result_sha256": "9eaccc52aeebdc775edfc1313a6f506c10403e250eef1bbcb7f2160b04c01292"
+    },
+    "call_b11f04d78e8f4a689c77cfaf54052c19": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_dq.cuh",
+        "max_bytes": 4500
+      },
+      "result_sha256": "642acc58d2cd5f3432f02fffe9ad0f6e3d02178c7c2299d410c77b9d9a5cfa3d"
+    },
+    "call_a9f8df0e1cc649d08db31cefd03f7996": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0303a7a9ca3e5cb17fe08654131cd7547deff42dac813286e3906169c8fa5ef4"
+    },
+    "call_6855c913cf3d42dba1597ab7d572ff85": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16000,
+        "max_bytes": 33000
+      },
+      "result_sha256": "5a06c4de0d427ad51eb025ca2da474b22ebe257adfec8659fe0b414545941bda"
+    },
+    "call_f566f7e67a004f25bb2cdb291e8ceb61": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct\nM=0x8fff8fff; C=0x3b603b60\nT=lambda x:(x&M)^C\ndef lop(a,b,c):\n return sum(((0x6a>>((((a>>i)&1)<<2)|(((b>>i)&1)<<1)|((c>>i)&1)))&1)<<i for i in range(32))\ndef val(x):\n a,b=struct.unpack('<ee',struct.pack('<I',x)); return struct.unpack('<e',struct.pack('<e',a+b))[0]\nn=0\nfor s in range(65536):\n x=(s*89226354+64248484)&0xffffffff\n y=lop(x,M,C)\n assert y==T(x)\n n+=val(T(y))!=val(y)\nx=64248484\nprint({'states':65536,'old_new_value_mismatches':n,'state_0_old':val(T(T(x))),'state_0_fixed':val(T(x)),'lop_matches_single_transform':True})"
+        ]
+      },
+      "result_sha256": "71d3103f9758ec39acbc3eacdcb66eb84db536d75bec715eacee07076ebd0c74"
+    }
+  }
+}

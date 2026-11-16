@@ -1,0 +1,69 @@
+{
+  "defect_id": "exllamav3-block-sparse-fused-intermediate-dtype",
+  "revision_id": "r001",
+  "supersedes": null,
+  "origin": "reviewer_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The fused BlockSparseMLP path allocates intermediate buffers with the caller dtype but passes them to activation kernels that reinterpret bytes as FP16.",
+  "trigger": "One flattened token and fully EXL3 experts select the fused path, with interm_dtype unset under the ordinary float32 default or explicitly a supported non-half output dtype such as float32.",
+  "expected_behavior": "Resolve or validate intermediate dtype so activation kernels receive FP16 buffers, or use activation implementations matching the actual dtype.",
+  "actual_behavior": "With interm_dtype=None and default float32, torch.empty produces float32 buffers and multi-GEMM writes float32 outputs; silu_mul/gelu_mul read those bytes as half without dtype checks. Source reading predicts wrong results. Passing torch.half avoids this mismatch.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+      "path": "exllamav3/modules/block_sparse_mlp.py",
+      "status": "reviewer_source_supported",
+      "rationale": "139 introduces the fused path and allocates intermediates using interm_dtype, whose default is None."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000139-001.md",
+      "description": "Reviewer traced buffer allocation, native output dtype and activation half reinterpretation."
+    }
+  ],
+  "fixes": [],
+  "verification": [
+    {
+      "method": "reviewer_source_inspection",
+      "description": "Compared fused allocation and native multi-GEMM output acceptance with the unchecked FP16 activation kernels.",
+      "limits": "No GPU execution or numerical comparison. Model-specific construction not established; condition is caller-dependent. Other non-half types may fail earlier rather than silently produce wrong values."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit139-verdict.md",
+      "sha256": "5c7282f76a8ea8dc1cb28495334368787efe253a65190f567e06f7d84636febb"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+      "available_at": "2025-05-11T15:34:50+02:00"
+    },
+    {
+      "url": "urn:exdev:reviews:verdicts:commit-000139-001",
+      "source_id": "review:commit-000139-001",
+      "content_sha256": "5c7282f76a8ea8dc1cb28495334368787efe253a65190f567e06f7d84636febb",
+      "available_at": "2026-11-15T06:35:05.604686+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-15T06:35:05.604686+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "limits": "Reviewer source observation at139 only; no continuous affected range."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

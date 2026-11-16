@@ -1,0 +1,241 @@
+{
+  "schema_version": 5,
+  "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+  "parent_shas": [
+    "a905cffb1a3f66792ea000e9b589557aac3f9d14"
+  ],
+  "cutoff_date": "2025-05-12T21:23:48+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "The comparison loop loaded each module directly and unloaded its weights without closing the safetensors collection's cached file handles.",
+        "basis": "source",
+        "evidence": [
+          "call_0fe00079c22144258410593fe80c740f",
+          "call_fd7693fb847a4c8f90e1f0a7e3209a4c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Bracketing each module load with deferred loading batches its eligible tensor reads, while closing the collection after the forward pass bounds handle retention to the current module.",
+        "basis": "source",
+        "evidence": [
+          "call_b9d29b07e3c6416d925c2ad1bee977cd",
+          "call_fd7693fb847a4c8f90e1f0a7e3209a4c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both model branches receive the same lifecycle change. Device selection, activation propagation and comparison formulas remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_b9d29b07e3c6416d925c2ad1bee977cd"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d proposes decoder changes and discusses using model_diff.py for KLD evaluation. Its relationship to this loading change is inferred only from the shared script; the discussion does not establish the motivation for deferred loading or handle closure.",
+        "basis": "inference",
+        "evidence": [
+          "call_e6cc336afb4840da8ff3add387dccd84",
+          "call_0a32af90f6b541a9bb5dc4e6f0423b81",
+          "call_b9d29b07e3c6416d925c2ad1bee977cd"
+        ]
+      },
+      {
+        "text": "The earlier metrics entry recorded a suspected vocabulary-versus-sequence bound error in the perplexity helper.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_2018820d6c27499dbcf474a9d1bf694f"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model inference, native loader execution, file-descriptor measurement or performance benchmark was run. Faster loading and numerical equivalence remain unmeasured.",
+      "The scalar checks model integer chunking and slice coverage only, not Torch empty-tensor behavior, native I/O or CUDA synchronization."
+    ],
+    "links": [
+      "9575f7d8b2afce94122bcf6141a63bfc01f207f2"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Module-scoped deferred loading and handle cleanup",
+        "claims": [
+          {
+            "text": "For each paired module, main now begins deferred loading, calls load on CPU or cuda:0 according to prefer_cpu, and ends deferred loading before prepare_for_device and forward. After unload it closes that model's collection, then calls free_mem. A completes this sequence before B starts.",
+            "basis": "source",
+            "evidence": [
+              "call_b9d29b07e3c6416d925c2ad1bee977cd"
+            ]
+          },
+          {
+            "text": "SafetensorsCollection.get_tensor defers only the mt_fread path when deferred_mode is active and no_defer is false. It allocates destination tensors and queues read descriptions; end_deferred_load groups requests by file and CPU/CUDA destination, sorts by descending byte size, dispatches chunked native workloads, applies temporary-tensor copies for transformations, then clears deferred state. The Python loader and explicit no_defer requests retain immediate reads.",
+            "basis": "source",
+            "evidence": [
+              "call_fd7693fb847a4c8f90e1f0a7e3209a4c"
+            ]
+          },
+          {
+            "text": "The existing chunk limit is 2 MiB, not a module-size limit. A standard-library arithmetic check evaluated it as 2,097,152 bytes and showed that a 5 MiB tensor requires three jobs.",
+            "basis": "execution",
+            "evidence": [
+              "call_fd7693fb847a4c8f90e1f0a7e3209a4c",
+              "call_633af64282284d17af3a782557b7ef83"
+            ]
+          },
+          {
+            "text": "close calls the native closer for every cached open handle and resets those entries to None without discarding tensor metadata. Subsequent loads can reopen the same shard. The tradeoff is shorter handle lifetimes versus repeated opens when successive modules share files; any net speed benefit is an inference, not a measured result.",
+            "basis": "inference",
+            "evidence": [
+              "call_fd7693fb847a4c8f90e1f0a7e3209a4c",
+              "call_b9d29b07e3c6416d925c2ad1bee977cd"
+            ]
+          },
+          {
+            "text": "Cleanup is placed on the normal sequential path rather than in try/finally. The change does not add exception recovery or alter the inherited perplexity helper's indexing.",
+            "basis": "source",
+            "evidence": [
+              "call_b9d29b07e3c6416d925c2ad1bee977cd",
+              "call_0fe00079c22144258410593fe80c740f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-ppl-axis-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited perplexity helper bounds sequence slicing by vocabulary size; this change leaves it intact.",
+        "trigger": "The number of prediction positions exceeds the vocabulary size.",
+        "expected_behavior": "Accumulate every next-token prediction exactly once.",
+        "actual_behavior": "With 2047 prediction positions and vocabulary size 1024, the loop covers only 1024 positions. Larger vocabularies can instead cause trailing empty slices.",
+        "locations": [
+          {
+            "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_0fe00079c22144258410593fe80c740f",
+          "call_b9d29b07e3c6416d925c2ad1bee977cd",
+          "call_580ce6ac52af472293306bcbab3a3ab2"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The nested helper slices axis zero but bounds its loop with shape[1]. Whole-parent-tree search found its direct call in main's per-model metrics loop; the other matches name the distinct test_ppl function. The inspected CLI guard invokes main. The task diff changes only loading and closure.",
+            "evidence": [
+              "call_580ce6ac52af472293306bcbab3a3ab2",
+              "call_0fe00079c22144258410593fe80c740f",
+              "call_b9d29b07e3c6416d925c2ad1bee977cd"
+            ],
+            "limits": "Reach is established for the script's two-model metrics loop, not external or dynamic callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A Python integer-bound model covered 1024 of 2047 positions for vocabulary 1024, and all 2047 positions in four iterations for vocabulary 32000.",
+            "evidence": [
+              "call_633af64282284d17af3a782557b7ef83"
+            ],
+            "limits": "This did not execute the repository helper or Torch operations."
+          }
+        ]
+      }
+    ],
+    "summary": "Uses deferred tensor loading for each compared module and closes cached file handles afterward, without changing comparison formulas or correcting the inherited perplexity bound issue."
+  },
+  "evidence": {
+    "call_b9d29b07e3c6416d925c2ad1bee977cd": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "offset": 205,
+        "max_bytes": 1142
+      },
+      "result_sha256": "0c5be039ca011f79b4a7c61502f0bbfb66f553202db5c7c92c3bc7550d8396b8"
+    },
+    "call_0fe00079c22144258410593fe80c740f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "eval/model_diff.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "2080d5ab198d4f4f7c2e0c10d4298ee777b4ab6a0626eed7e9ec2ea039510459"
+    },
+    "call_a6c6509fe5e74de8974310cdbed45245": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "query": "def begin_deferred_load",
+        "limit": 20
+      },
+      "result_sha256": "4fe5b94cdca6091e75c9ccdb35a5e250e14a355249e49e1261c05ccad3b4a320"
+    },
+    "call_fd7693fb847a4c8f90e1f0a7e3209a4c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_2018820d6c27499dbcf474a9d1bf694f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9074ff680208193b56d7a0f8296f7897f41a0eda1be10d33026d0152b41a2d7a"
+    },
+    "call_e6cc336afb4840da8ff3add387dccd84": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16384
+      },
+      "result_sha256": "a7b4836d77f3166ffe0dae96515c6f76ffb2d3d826e27dbeba35098af88845d4"
+    },
+    "call_0a32af90f6b541a9bb5dc4e6f0423b81": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16384,
+        "max_bytes": 40000
+      },
+      "result_sha256": "b3face7df718ef4bee043dcaf2557be03d54310dc2f0717d8eebbd1466239e37"
+    },
+    "call_580ce6ac52af472293306bcbab3a3ab2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "query": "ppl(",
+        "limit": 100
+      },
+      "result_sha256": "6f72ca5379609c973d616e625a32f60656bcd6e709da161f3a5cebc08d64cd37"
+    },
+    "call_633af64282284d17af3a782557b7ef83": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for vocab in (1024,32000):\n n=2047; chunk=vocab*10240//vocab; b=0; count=0; passes=0\n while b<vocab:\n  a=b; b=min(b+chunk,vocab); count+=max(0,min(n,b)-min(n,a)); passes+=1\n print({'prediction_positions':n,'vocabulary':vocab,'covered':count,'passes':passes})\nc=2*1024**2\nprint({'loader_chunk_bytes':c,'jobs_for_5_MiB':(5*1024**2+c-1)//c})"
+        ]
+      },
+      "result_sha256": "920e4b4275f8d11079f7571c593843c6d5dbf01c4af9f0e3628e40b6bafa7334"
+    }
+  }
+}

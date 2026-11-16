@@ -1,0 +1,292 @@
+{
+  "schema_version": 5,
+  "sha": "ce58d99c710900b0fe78229e8b193ab50b60234a",
+  "parent_shas": [
+    "5c3ff204c4c5c64dc2bd897582143b116a82b767"
+  ],
+  "cutoff_date": "2025-05-14T14:46:33+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The routing projection inherited Linear's 128-feature padding, although its output is interpreted directly as expert scores without trimming to num_experts.",
+        "basis": "source",
+        "evidence": [
+          "call_999508332534471e827e25bbb0f22c06",
+          "call_eedd372e2f084e73805a9b505e1ef4dd"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Setting pad_to=1 preserves the router's exact hidden-size input and num_experts output dimensions. It fixes the projection boundary rather than adding a slice before softmax.",
+        "basis": "source",
+        "evidence": [
+          "call_3e6719f08eda4ad886acf8fd10a60d1b",
+          "call_999508332534471e827e25bbb0f22c06"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Expert projections retain their existing padding. Router dtype, top-k selection, weight renormalization and execution-path selection are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_3e6719f08eda4ad886acf8fd10a60d1b",
+          "call_eedd372e2f084e73805a9b505e1ef4dd"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports Cholesky failure; issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports a sliced-weight loading size mismatch. Their relevance is only inferred shared-file context through linear.py; neither report establishes motivation for this router change.",
+        "basis": "inference",
+        "evidence": [
+          "call_ba38dae416b94fd69f720d54ca85d569",
+          "call_61548de4b3924f3d9b8b0586e1a1d88a",
+          "call_3e6719f08eda4ad886acf8fd10a60d1b"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository tensor operations, GPU kernels or end-to-end model workflows were executed; the computation checks integer dimensions only.",
+      "No model-specific accuracy or performance improvement is established."
+    ],
+    "links": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "block-sparse-mlp",
+        "title": "Keep routing dimensions equal to the expert count",
+        "claims": [
+          {
+            "text": "Linear rounds each dimension using (dimension + pad_to - 1) // pad_to * pad_to. The default 128 is an alignment multiple, not an expert-count limit; 1 makes this rounding an identity.",
+            "basis": "source",
+            "evidence": [
+              "call_999508332534471e827e25bbb0f22c06",
+              "call_3e6719f08eda4ad886acf8fd10a60d1b"
+            ]
+          },
+          {
+            "text": "The FP16 loading path passes the rounded dimensions to tensor loading, and LinearFP16.forward allocates and returns out_features columns without removing padding. BlockSparseMLP then applies softmax and top-k across every returned column, using the resulting indices for expert dispatch.",
+            "basis": "source",
+            "evidence": [
+              "call_999508332534471e827e25bbb0f22c06",
+              "call_b0eae653417141f8bd7b3a06cf7834c6",
+              "call_eedd372e2f084e73805a9b505e1ef4dd"
+            ]
+          },
+          {
+            "text": "The likely correctness rationale is to exclude artificial routing candidates at their source. Exact router dimensions avoid both unnecessary projection columns and the need to mask or slice them downstream.",
+            "basis": "inference",
+            "evidence": [
+              "call_3e6719f08eda4ad886acf8fd10a60d1b",
+              "call_eedd372e2f084e73805a9b505e1ef4dd"
+            ]
+          },
+          {
+            "text": "A standard-library transcription gives old/new output widths of 128/8, 128/64, 128/128 and 256/129 for illustrative expert counts 8, 64, 128 and 129. Counts already divisible by 128 have unchanged output width.",
+            "basis": "execution",
+            "evidence": [
+              "call_b0f38acbded741acb65233def17da6a9"
+            ]
+          },
+          {
+            "text": "The earlier BlockSparseMLP entry records an all-expert fused-buffer cardinality mismatch.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_7824008344b6457a9d71d687795f4b87"
+            ]
+          },
+          {
+            "text": "That mismatch is carried over: the patch changes only router construction, while all-expert routing and fused allocations still use different expert counts under the recorded trigger.",
+            "basis": "source",
+            "evidence": [
+              "call_3e6719f08eda4ad886acf8fd10a60d1b",
+              "call_eedd372e2f084e73805a9b505e1ef4dd"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-all-expert-fused-shape",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The router-padding fix leaves the inherited all-expert fused-path shape mismatch intact.",
+        "trigger": "One flattened token, fully EXL3 expert projections, activate_all_experts=True, and num_experts different from num_experts_per_tok.",
+        "expected_behavior": "Allocate for every selected expert or use the ordinary execution path.",
+        "actual_behavior": "Routing selects num_experts indices, but fused intermediates and outputs retain num_experts_per_tok entries. Whole-tree searches found Qwen3 MoE construction and decoder self.mlp.forward calls; inspected decoder calls pass params through. This establishes conditional reach, not that ordinary conversion triggers the single-token fused case.",
+        "locations": [
+          {
+            "commit": "ce58d99c710900b0fe78229e8b193ab50b60234a",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_eedd372e2f084e73805a9b505e1ef4dd",
+          "call_3e6719f08eda4ad886acf8fd10a60d1b",
+          "call_29c76e44b47c4846a2b4a38b6559ff2b",
+          "call_11fb12255ac64e6bb8af85a8a4e53f04",
+          "call_0b36b9726d8b4c898cc3bd61d4f314e9",
+          "call_fa9d96a259994fe5bae544fdfc8f5acc"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared routing cardinality with unchanged fused allocations and inspected decoder forwarding and Qwen3 MoE construction.",
+            "evidence": [
+              "call_eedd372e2f084e73805a9b505e1ef4dd",
+              "call_0b36b9726d8b4c898cc3bd61d4f314e9",
+              "call_fa9d96a259994fe5bae544fdfc8f5acc"
+            ],
+            "limits": "No native kernel execution or end-to-end reproduction."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled eight all-expert indices against a fused output expert dimension of two.",
+            "evidence": [
+              "call_b0f38acbded741acb65233def17da6a9"
+            ],
+            "limits": "Integer shape arithmetic, not repository execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Disables routing-gate padding so expert selection receives exactly num_experts scores; expert projection padding and the inherited all-expert fused-shape mismatch remain unchanged."
+  },
+  "evidence": {
+    "call_3e6719f08eda4ad886acf8fd10a60d1b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ce58d99c710900b0fe78229e8b193ab50b60234a",
+        "offset": 182,
+        "max_bytes": 517
+      },
+      "result_sha256": "a08f48d75f60243a9846b0fa44782e1b7059c779fbfd12128b62ba7490005dac"
+    },
+    "call_999508332534471e827e25bbb0f22c06": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "a0d92050bdf4de0d280646e3157cdfb3bbb5eb11b83cf527d890eb81427a30ed"
+    },
+    "call_eedd372e2f084e73805a9b505e1ef4dd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "06a985b2271062ad94c7a8a4407ea8d5e4903f8e79c51d7895c83308a05d5eb4"
+    },
+    "call_7490b77f23bb4b93a818719d379d2e6d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "path": "exllamav3/modules/quant/linear_fp16.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_53a1c7d316e04f268dde156032e6e029": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "query": "class LinearFP16",
+        "limit": 20
+      },
+      "result_sha256": "e1232f83548500dd9ef3df6001652e149a09105950ffbf824a50de018185d94f"
+    },
+    "call_b0eae653417141f8bd7b3a06cf7834c6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_ba38dae416b94fd69f720d54ca85d569": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "21d92760611a7d8bd1c9e16d3da17bb7441cb10eaf88e5092d1079066368e687"
+    },
+    "call_61548de4b3924f3d9b8b0586e1a1d88a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1ff596f2c0857cf459693269e5792bd1919e3b41da48777f9232dbc13cfdd194"
+    },
+    "call_7824008344b6457a9d71d687795f4b87": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_29c76e44b47c4846a2b4a38b6559ff2b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "query": "BlockSparseMLP",
+        "limit": 50
+      },
+      "result_sha256": "54667b10de5af3e9016021f5cdb2d005bc24421918dfc302259708708736bbaf"
+    },
+    "call_11fb12255ac64e6bb8af85a8a4e53f04": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "query": "self.mlp.forward",
+        "limit": 50
+      },
+      "result_sha256": "f342a7cb4d6f15b0a6dbc961038906b44c7827c4eff16c715f88195f68a43d10"
+    },
+    "call_0b36b9726d8b4c898cc3bd61d4f314e9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "0d3dc93f963edab7063120909cbc2f61569139f0c140144e2dc827c7073b56db"
+    },
+    "call_fa9d96a259994fe5bae544fdfc8f5acc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "offset": 4000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "a60c9d3e44b2d6952780fa577f13046b74eb36543f79f3f4b0601a396b834670"
+    },
+    "call_b0f38acbded741acb65233def17da6a9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nprint(json.dumps({'router_widths':[{ 'experts':n,'old':(n+127)//128*128,'new':(n+1-1)//1*1} for n in [8,64,128,129]],'all_expert_example':{'selected_indices':8,'fused_output_expert_dimension':2,'match':8==2}}))"
+        ]
+      },
+      "result_sha256": "bbf2392303366ac10e09e3e14e5b7704ac166f8d980f121218fbd18cda6dc17b"
+    }
+  }
+}

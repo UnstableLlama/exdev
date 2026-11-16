@@ -1,0 +1,298 @@
+{
+  "schema_version": 5,
+  "sha": "81a0a7d2409ae682522b7cf051b066b6baa6f471",
+  "parent_shas": [
+    "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+    "beb7bcd96d0d54ee2511a84f63632d0fe3590050"
+  ],
+  "cutoff_date": "2025-05-11T20:47:03+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "integration",
+    "problem": [
+      {
+        "text": "HumanEval parsed top_k as a float, although the enabled sampling step uses it as a slice boundary.",
+        "basis": "source",
+        "evidence": [
+          "call_ee8744b53f3f4426a165e51595abbadc",
+          "call_786328ad23c94f3e892c521eec7126b8"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The merge corrects the CLI type rather than changing the shared sampler, removes HumanEval's repetition-penalty control, and adds a Qwen3-specific prompt prefill.",
+        "basis": "source",
+        "evidence": [
+          "call_785911ba0b1e45aa9cc52df3cd01e39a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Integer top-k values now reach the sampler; decimal spellings such as 5.0 are rejected. Removing rep_p preserves the neutral default but removes this script's ability to request non-neutral repetition penalties.",
+        "basis": "source",
+        "evidence": [
+          "call_785911ba0b1e45aa9cc52df3cd01e39a",
+          "call_1dbcf10eb1f846ae80750bc3784c252f",
+          "call_786328ad23c94f3e892c521eec7126b8"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "In PR #35, gakada reports both the index-type mistake and zero scores with several repetition-penalty settings. Later discussion reports prompt-dependent scores and repetitive completions; these are contributor reports, not independently reproduced results.",
+        "basis": "source",
+        "evidence": [
+          "call_13e04284b3fd49f788c8d068cea44f73",
+          "call_198cc568265c4cef805b789057e0293a",
+          "call_1bb95b027220414b8c985d6d131daf8e",
+          "call_68b64b44f7a44a41b596dba29ff7a37c"
+        ]
+      },
+      {
+        "text": "Turboderp attributes the penalty failure to interpolation involving masked negative-infinity logits producing NaN, and subsequently says penalties can be tested on dev. This HumanEval diff itself contains no penalty-kernel repair.",
+        "basis": "source",
+        "evidence": [
+          "call_d158a15bc8654bc3ab3a9f83f0030551",
+          "call_bfcd135c25034774994906297afef6fc",
+          "call_7b64c18f482e416fade4d226f351ab8a",
+          "call_785911ba0b1e45aa9cc52df3cd01e39a"
+        ]
+      },
+      {
+        "text": "Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, concerns context scaling; its connection is only inferred shared Qwen3 terminology. PR #36, \u201cadded max_total_tokens variable to class Generator, fixed type assert\u2026\u201d, reports a TabbyAPI missing-attribute failure. Shared generator terminology does not establish that this HumanEval change addresses it.",
+        "basis": "inference",
+        "evidence": [
+          "call_2591a795d69b417a8e7404fdba47d82f",
+          "call_a163edee3f3c4dc496fdc0f11c341cd6",
+          "call_785911ba0b1e45aa9cc52df3cd01e39a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model generation, CUDA sampling, PyTorch indexing or HumanEval scoring was executed. The bounded check exercises argparse and Python list slicing only.",
+      "The discussion's penalty-kernel diagnosis and reported scoring differences were not independently validated; the kernel was not inspected."
+    ],
+    "links": [
+      "beb7bcd96d0d54ee2511a84f63632d0fe3590050"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Integrate HumanEval sampling and Qwen3 prompting changes",
+        "claims": [
+          {
+            "text": "The second-parent annotation describes the same three changes: integer top-k parsing, removal of the repetition-penalty control, and an empty-thinking-block Qwen3 preset.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_87a78f6c5ec44b2fb97ab3d37533e249"
+            ]
+          },
+          {
+            "text": "main passes top_k directly into ComboSampler. For nonzero temperature, SS_TopK sorts candidates and masks positions starting at k; values below one become a no-op. Changing the parser and default from float/0.0 to int/0 removes the CLI mismatch. Temperature zero instead selects argmax and bypasses top-k.",
+            "basis": "source",
+            "evidence": [
+              "call_ee8744b53f3f4426a165e51595abbadc",
+              "call_785911ba0b1e45aa9cc52df3cd01e39a",
+              "call_1dbcf10eb1f846ae80750bc3784c252f",
+              "call_786328ad23c94f3e892c521eec7126b8"
+            ]
+          },
+          {
+            "text": "A standard-library transcription parsed 5 as float before the change and encountered TypeError when using it for list slicing. The revised parser produced integer 5 and a valid slice, rejected 5.0, and retained the disabled default.",
+            "basis": "execution",
+            "evidence": [
+              "call_cb34b83966144aa1a2bf5c86ca581145"
+            ]
+          },
+          {
+            "text": "Omitting rep_p selects ComboSampler's existing default of 1.0, which SS_RepP replaces with a no-op. The underlying penalty API remains available elsewhere; this is removal of a HumanEval control, not removal or repair of the shared implementation.",
+            "basis": "source",
+            "evidence": [
+              "call_785911ba0b1e45aa9cc52df3cd01e39a",
+              "call_1dbcf10eb1f846ae80750bc3784c252f",
+              "call_786328ad23c94f3e892c521eec7126b8"
+            ]
+          },
+          {
+            "text": "The opt-in qwen3 preset follows ChatML but inserts an already-closed <think> block before the assistant's code prefill. The existing path substitutes the problem into both the user request and Python fence, encodes special tokens with BOS requested, and saves generated function bodies with a four-space prefix. It does not change the default prompt selection.",
+            "basis": "source",
+            "evidence": [
+              "call_785911ba0b1e45aa9cc52df3cd01e39a",
+              "call_ee8744b53f3f4426a165e51595abbadc"
+            ]
+          },
+          {
+            "text": "The prefill steers toward immediate code completion rather than generating a reasoning stage. Discussion explicitly contrasts it with /no_think and proposes generating reasoning before injecting the function header as an alternative; that staged pipeline is not implemented here.",
+            "basis": "inference",
+            "evidence": [
+              "call_785911ba0b1e45aa9cc52df3cd01e39a",
+              "call_68b64b44f7a44a41b596dba29ff7a37c",
+              "call_d158a15bc8654bc3ab3a9f83f0030551"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Integrates HumanEval's integer top-k correction, removes its repetition-penalty option, and adds an opt-in Qwen3 empty-thinking-block prompt."
+  },
+  "evidence": {
+    "call_785911ba0b1e45aa9cc52df3cd01e39a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "81a0a7d2409ae682522b7cf051b066b6baa6f471",
+        "offset": 274,
+        "max_bytes": 2313
+      },
+      "result_sha256": "eeb3390a8cafd37c77eee9612176511ab44ad5e2c7ad4828ac9d0b337f5c83f4"
+    },
+    "call_ee8744b53f3f4426a165e51595abbadc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "eval/humaneval.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "2301d7beddbea63d4a2debfe27d4bd8ea87ec8c00a35837ee3e128d33908c23a"
+    },
+    "call_5e562078f1214609ace6b71c44e5a908": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "query": "class ComboSampler",
+        "limit": 20
+      },
+      "result_sha256": "76dfc75d950b5b05f7f503bd4b98e63ca4ac0427c3bce602f9ff95c75ee9a30f"
+    },
+    "call_1dbcf10eb1f846ae80750bc3784c252f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2eb75c4b807e8574995c5ef23210269293bfeda350572308991a61ff44ba3a46"
+    },
+    "call_eee5398837fa44389378bb0af4784ad2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "query": "class SS_TopK",
+        "limit": 10
+      },
+      "result_sha256": "1d316fc8c07bb64cf195f4137ef5daafbdf6a3d777dc14a8f7aeb88ca14aabac"
+    },
+    "call_786328ad23c94f3e892c521eec7126b8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "7b20623b795d2482f2987156e2cc2e7a8be1d1725b32a4836243d8f0d671e698"
+    },
+    "call_87a78f6c5ec44b2fb97ab3d37533e249": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "beb7bcd96d0d54ee2511a84f63632d0fe3590050",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0f9dbbb8286ba2ad0a0ba0be240006b2590cb1b23add3e86914bfbaa9eeefa4b"
+    },
+    "call_13e04284b3fd49f788c8d068cea44f73": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35",
+        "max_bytes": 10000
+      },
+      "result_sha256": "0985012b59b8319df64f8805b6bf4f4cc8b4512afb4531ef6eab21910eb2d411"
+    },
+    "call_198cc568265c4cef805b789057e0293a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869495750",
+        "max_bytes": 10000
+      },
+      "result_sha256": "60903af28306b06a4c629704616164a1e05a9d9011e08be567a94a12f3995065"
+    },
+    "call_1bb95b027220414b8c985d6d131daf8e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869651452",
+        "max_bytes": 10000
+      },
+      "result_sha256": "a8ace6c6e309cf9fbab8d825db87aee90f429a592b4a8639587be0b7a54e2f72"
+    },
+    "call_d158a15bc8654bc3ab3a9f83f0030551": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869932280",
+        "max_bytes": 10000
+      },
+      "result_sha256": "5e2fe5b3aec051569d80d65df3543ec76f091592408ea3076514c35025b40d57"
+    },
+    "call_bfcd135c25034774994906297afef6fc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869941750",
+        "max_bytes": 10000
+      },
+      "result_sha256": "95d9ee918c0452a747ab50520a28877333c7dff2eede1ac13bb7cca8fed75f5c"
+    },
+    "call_68b64b44f7a44a41b596dba29ff7a37c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2870031996",
+        "max_bytes": 10000
+      },
+      "result_sha256": "7659d435cf1d9d25ac5f903ac92412b2531c935f70b2ab9cd25918741b5f8cac"
+    },
+    "call_7b64c18f482e416fade4d226f351ab8a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2870046981",
+        "max_bytes": 10000
+      },
+      "result_sha256": "f13dc127d737eb26c98e688973c0bd4b0054e7d9bda5bf1cb3f907a34aba1bfe"
+    },
+    "call_c893c7efd63d4d2cbfae33767fe47c3b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "query": "qwen3",
+        "limit": 60
+      },
+      "result_sha256": "f7098108b3b0dac13f3a42fb11016835130b1a0a3b79e563d1baee7a13880a5a"
+    },
+    "call_2591a795d69b417a8e7404fdba47d82f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 12000
+      },
+      "result_sha256": "4988501734357d28c39bcbb4dca120f1e378d6e83339fb325bb3265aa6997f0b"
+    },
+    "call_a163edee3f3c4dc496fdc0f11c341cd6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/36",
+        "max_bytes": 12000
+      },
+      "result_sha256": "7c1ecea79aaa0ed8e634871e520d261dec3af01d3653bc3d74e29de18c1feac2"
+    },
+    "call_cb34b83966144aa1a2bf5c86ca581145": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import argparse, contextlib, io\nfor typ, default in [(float,0.0),(int,0)]:\n p=argparse.ArgumentParser();p.add_argument('--top_k',type=typ,default=default)\n for args in [[],['--top_k','5'],['--top_k','5.0']]:\n  try:\n   with contextlib.redirect_stderr(io.StringIO()): k=p.parse_args(args).top_k\n   try: r='disabled' if k<1 else str(list(range(8))[k:])\n   except TypeError: r='TypeError'\n   print(typ.__name__,args,repr(k),r)\n  except SystemExit: print(typ.__name__,args,'rejected')"
+        ]
+      },
+      "result_sha256": "c5256548122aea5f9c3b05b543991e7623b704ba44f5386f6332d96ab8fadab0"
+    }
+  }
+}

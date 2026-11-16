@@ -1,0 +1,242 @@
+--- a/teacher/closed_discussions.py
++++ b/teacher/closed_discussions.py
+@@ -15,6 +15,8 @@
+ CAP = 20
+ STOP = frozenset('this that with from into have has been were will would could should does then than when where which their there these those only also some more most such each other same using used use add added adds remove removed update change changed changes fix fixes fixed test tests true false none self return import class void const auto else elif error model models tensor tensors torch cuda exllamav3 file files code function value values input output'.split())
+ INSTRUCTION = ('The closed_discussion_catalog lists closed discussions whose cutoff-bound text shares terms with the task (matched terms expose words from that text), not established relationships; apply the existing catalog reading rule to these rows, fetch bodies with web_fetch, page navigation with evidence_index(index_id="closed_discussions"), label any task link as inference with its concrete basis, and report each item’s own title and framing faithfully.')
++PATH_RULE = 'salience-v3-paths'
++PATH_INSTRUCTION = ('The closed_discussion_catalog lists closed discussions qualified by shared terms or by paths named in cutoff-bound text that overlap the task change. matched_paths exposes those repository paths; a bare filename qualifies only when it resolves uniquely. These are navigation hints, not established relationships; fetch bodies with web_fetch, page with evidence_index(index_id="closed_discussions"), label task links as inference with their concrete basis, and report each item’s own title and framing faithfully.')
+ 
+ 
+ # General prose/scaffolding stop list, extended after inspecting the positions 2–68 audit.
+@@ -49,7 +51,29 @@
+     return terms(git(repo,'show','-s','--format=%B',sha).decode())
+ 
+ 
+-def select(histories, cutoff, task, paths, excluded=(), cap=CAP, *, message):
++def task_paths(repo, sha):
++    """Exact first-parent changed paths, including both sides of a rename."""
++    parents=git(repo,'show','-s','--format=%P',sha).decode().split()
++    revisions=[parents[0],sha] if parents else ['--root',sha]
++    return sorted(set(git(repo,'diff-tree','--no-commit-id','--name-only','--no-renames','-r',*revisions).decode().splitlines()))
++
++
++def path_mentions(row, paths):
++    """Resolve full paths or unambiguous bare filenames in cutoff title/body text."""
++    from .recover_github import repo_path_hints, discussion_text
++    text=row['title']+'\n'+discussion_text(row)
++    probe=dict(row,content=json.dumps({'objects':[{'content':text}]}))
++    found=set(repo_path_hints(probe,paths,limit=len(paths))['repo_paths_mentioned'])
++    names={}
++    for path in paths:names.setdefault(Path(path).name,set()).add(path)
++    for name, matches in names.items():
++        # A bare filename is not a fragment of a different qualified path.
++        if len(matches)==1 and re.search(r'(?<![A-Za-z0-9_./+\\-])'+re.escape(name)+r'(?![A-Za-z0-9_./+\\-])',text):
++            found.update(matches)
++    return found
++
++
++def select(histories, cutoff, task, paths, excluded=(), cap=CAP, *, message, changed_paths=None):
+     from .recover_github import repo_path_hints, discussion_text
+     candidates=[];closed_count=0;unknown_state_count=0
+     for bundle in histories:
+@@ -75,22 +99,33 @@
+         candidates.append((row,words))
+     frequencies=Counter(t for _,words in candidates for t in words)
+     ranked=[]
++    changed=set(changed_paths or [])
++    universe=sorted(set(paths)|changed)
+     for row,words in candidates:
+         matched=sorted(task & words)
+         score=sum((Fraction(1,frequencies[t]**2) for t in message & words),Fraction())
+-        if score<THRESHOLD or row['url'] in excluded:continue
++        overlap=sorted(changed & path_mentions(row,universe)) if changed_paths is not None else []
++        if (score<THRESHOLD and not overlap) or row['url'] in excluded:continue
+         row.update(repo_path_hints(row,paths));row['matched_terms']=matched;row['state']='closed'
+-        ranked.append((score,row))
++        if changed_paths is not None:row['matched_paths']=overlap
++        # Path overlap independently qualifies at the existing threshold; retain
++        # lexical ordering above it, then the existing deterministic tie break.
++        ranked.append((max(score,THRESHOLD) if overlap else score,row))
+     ranked.sort(key=lambda x:(-x[0],x[1]['kind'],x[1]['number']))
+-    return {'rule':'salience-v2','limit':cap,'truncated':len(ranked)>cap,
++    return {'rule':PATH_RULE if changed_paths is not None else 'salience-v2',
++            **({'task_changed_paths':sorted(changed)} if changed_paths is not None else {}),
++            'limit':cap,'truncated':len(ranked)>cap,
+             'items':[r for _,r in ranked[:cap]],'closed_at_cutoff':closed_count,'unknown_state_count':unknown_state_count,'eligible_candidates':len(candidates),
+             'qualified_count':len(ranked)}
+ 
+ 
+ def attach(packet, manifest, bundle):
+     if (bundle['task_sha']!=manifest['task_sha'] or timestamp(bundle['cutoff'])!=timestamp(manifest['cutoff_date'])
+-        or bundle.get('complete') is not True or bundle.get('rule')!='salience-v2'):
++        or bundle.get('complete') is not True or bundle.get('rule') not in ('salience-v2',PATH_RULE)):
+         raise ValueError('Invalid closed discussion recovery')
++    with_paths=bundle['rule']==PATH_RULE
++    if with_paths and bundle.get('task_changed_paths')!=sorted(set(manifest['task_changed_files'])):
++        raise ValueError('Closed discussion changed paths differ from task')
+     if bundle['limit']!=CAP or not isinstance(bundle['truncated'],bool) or len(bundle['items'])>CAP:
+         raise ValueError('Invalid closed discussion cap')
+     rows=[]
+@@ -98,18 +133,23 @@
+         if (item['state']!='closed' or not item['available'] or
+             any(timestamp(item[k])>timestamp(manifest['cutoff_date']) for k in ('created_at','closed_at','revision_at'))):
+             raise ValueError('Invalid closed discussion cutoff')
+-        if not item['matched_terms'] or item['matched_terms']!=sorted(set(item['matched_terms'])) or any(t not in terms(t) for t in item['matched_terms']):
++        overlap=item.get('matched_paths',[]) if with_paths else []
++        if with_paths and (not isinstance(overlap,list) or overlap!=sorted(set(overlap)) or not set(overlap)<=set(bundle['task_changed_paths'])):
++            raise ValueError('Invalid closed discussion matched paths')
++        if (not item['matched_terms'] and not overlap) or item['matched_terms']!=sorted(set(item['matched_terms'])) or any(t not in terms(t) for t in item['matched_terms']):
+             raise ValueError('Invalid closed discussion matched terms')
+         data=item['content'].encode();sha=hashlib.sha256(data).hexdigest()
+         if sha!=item['content_sha256']:raise ValueError('Closed discussion checksum mismatch')
+         put(packet, data)
+         fields=('number','kind','title','author_login','created_at','closed_at','state','url','available',
+                 'repo_paths_mentioned','repo_paths_mentioned_truncated','matched_terms')
++        if with_paths:fields+=('matched_paths',)
+         rows.append({k:item[k] for k in fields})
+         obj={k:item[k] for k in ('author_login','url','source_id','created_at','revision_at','retrieved_at','representation','content_sha256')}
+         obj.update(blob=sha,kind='web',content_bytes=len(data),catalog_origin='closed_discussion')
+         manifest['evidence'].append(obj)
+     manifest['closed_discussion_catalog']={'rows':rows,'limit':bundle['limit'],'truncated':bundle['truncated']}
++    if with_paths:manifest['closed_discussion_catalog']['rule']=PATH_RULE
+     manifest['walk_input_contract']['closed_discussions_sha256']=binding(manifest)
+ 
+ 
+--- a/teacher/session.py
++++ b/teacher/session.py
+@@ -102,8 +102,9 @@
+         closed_instruction=''
+         if 'closed_discussion_catalog' in manifest:
+             from .closed_discussions import page, INSTRUCTION as CLOSED_INSTRUCTION
++            from .closed_discussions import PATH_RULE, PATH_INSTRUCTION
+             task['closed_discussion_catalog']=dict(page(manifest,{'max_bytes':8192}), index_id='closed_discussions', limit=manifest['closed_discussion_catalog']['limit'], cap_truncated=manifest['closed_discussion_catalog']['truncated'])
+-            closed_instruction='\n'+CLOSED_INSTRUCTION
++            closed_instruction='\n'+(PATH_INSTRUCTION if manifest['closed_discussion_catalog'].get('rule')==PATH_RULE else CLOSED_INSTRUCTION)
+         from .coverage_request import INSTRUCTION
+         coverage_instruction = ('\n'+INSTRUCTION if 'coverage_request' in manifest else '')
+         self.initial = [{'role':'system','content':SYSTEM+message_instruction+provenance_instruction+merge_instruction+discussion_instruction+dispatch_instruction+config_instruction+coverage_instruction+closed_instruction},
+--- a/teacher/worker.py
++++ b/teacher/worker.py
+@@ -209,8 +209,9 @@
+ 
+ def evidence_index_page(manifest, args):
+     if args.get('index_id')=='closed_discussions':
+-        from .closed_discussions import page
+-        return page(manifest,args)
++        if 'closed_discussion_catalog' not in manifest:
++            raise ValueError('No closed discussion catalog')
++        return excerpt(json.dumps(manifest['closed_discussion_catalog']['rows'],sort_keys=True).encode(),args)
+     index=manifest.get('evidence_index')
+     if index is None:raise ValueError('No evidence index in this packet')
+     if args.get('index_id'):
+--- a/tests/test_closed_path_overlap.py
++++ b/tests/test_closed_path_overlap.py
+@@ -0,0 +1,78 @@
++# SPDX-License-Identifier: MIT
++import copy
++import json
++import os
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++import test_closed_discussions as fixtures
++CUTOFF=fixtures.CUTOFF
++from teacher.closed_discussions import select,terms,attach,validate,page,task_paths,PATH_RULE
++from teacher.session import FreshSession
++
++
++class ClosedPathOverlapTests(unittest.TestCase):
++    bundle=fixtures.ClosedDiscussionTests.bundle
++
++    def selected(self,bundles,paths=('eval/humaneval.py',),changed=('eval/humaneval.py',),cap=20):
++        return select(bundles,CUTOFF,terms('ordinary'),list(paths),message=terms('ordinary'),changed_paths=list(changed),cap=cap)
++
++    def test_unique_filename_title_qualifies_without_lexical_score(self):
++        b=self.bundle(text='No matching words');b['title']='humaneval.py: correction'
++        r=self.selected([b]);self.assertEqual(r['rule'],PATH_RULE)
++        self.assertEqual(r['items'][0]['matched_paths'],['eval/humaneval.py'])
++        self.assertEqual(r['items'][0]['matched_terms'],[])
++        self.assertEqual(select([b],CUTOFF,terms('ordinary'),['eval/humaneval.py'],message=terms('ordinary'))['items'],[])
++
++    def test_ambiguous_and_foreign_paths_do_not_qualify(self):
++        for text,paths in [('humaneval.py',['eval/humaneval.py','other/humaneval.py']),
++                           ('other/humaneval.py',['eval/humaneval.py']),
++                           ('myhumaneval.py',['eval/humaneval.py']),
++                           ('humaneval.py.bak',['eval/humaneval.py'])]:
++            self.assertEqual(self.selected([self.bundle(text=text)],paths=paths)['items'],[])
++        self.assertEqual(self.selected([self.bundle(text='eval/humaneval.py')],paths=['eval/humaneval.py','other/humaneval.py'])['items'][0]['matched_paths'],['eval/humaneval.py'])
++
++    def test_cutoff_title_comments_state_and_unavailable_stay_closed(self):
++        b=self.bundle(text='unrelated');b['title']='humaneval.py';b['title_events']=[dict(createdAt='2025-01-03T00:00:00Z',previousTitle='unrelated',currentTitle='humaneval.py')]
++        o=copy.deepcopy(b['objects'][0]);o.update(id='future',url=b['url']+'#future',createdAt='2025-01-03T00:00:00Z',body='eval/humaneval.py');b['objects'].append(o)
++        self.assertEqual(self.selected([b])['items'],[])
++        for variant in ('reopened','unknown','missing_body'):
++            b=self.bundle(text='eval/humaneval.py')
++            if variant=='reopened':b['state_events'].append(dict(kind='reopened',createdAt='2025-01-01T13:00:00Z'))
++            elif variant=='unknown':b['timeline_complete']=False
++            else:b['objects'][0].pop('lastEditedAt')
++            self.assertEqual(self.selected([b])['items'],[])
++
++    def test_cap_exclusions_and_order(self):
++        bs=[self.bundle(i,text='eval/humaneval.py') for i in reversed(range(25))]
++        r=self.selected(bs);self.assertEqual([x['number'] for x in r['items']],list(range(20)));self.assertTrue(r['truncated']);self.assertEqual(r['qualified_count'],25)
++        r=select(bs,CUTOFF,set(),['eval/humaneval.py'],excluded=[bs[0]['url']],message=set(),changed_paths=['eval/humaneval.py'])
++        self.assertEqual(r['qualified_count'],24)
++
++    def test_first_parent_paths_and_rename_sides(self):
++        with patch('teacher.closed_discussions.git',side_effect=[b'p1 p2',b'old.py\nnew.py\n']) as g:
++            self.assertEqual(task_paths(None,'merge'),['new.py','old.py'])
++            self.assertEqual(g.call_args.args[1:],('diff-tree','--no-commit-id','--name-only','--no-renames','-r','p1','merge'))
++        r=self.selected([self.bundle(text='new.py')],paths=[],changed=['new.py'])
++        self.assertEqual(r['items'][0]['matched_paths'],['new.py'])
++
++    def test_attachment_binding_and_versioned_instruction(self):
++        result=self.selected([self.bundle(text='eval/humaneval.py')])
++        with tempfile.TemporaryDirectory() as tmp:
++            p=Path(tmp);(p/'blobs').mkdir();m=dict(task_sha='b'*40,task_parents=['a'*40],base_commit='a'*40,cutoff_date=CUTOFF,commits={},evidence=[],evidence_index={'sources':[]},walk_input_contract={'version':8},task_changed_files=['eval/humaneval.py'])
++            b=dict(result,task_sha=m['task_sha'],cutoff=CUTOFF,complete=True)
++            bad=copy.deepcopy(b);bad['task_changed_paths']=['elsewhere.py']
++            with self.assertRaisesRegex(ValueError,'changed paths'):attach(p,m,bad)
++            bad=copy.deepcopy(b);bad['items'][0]['matched_paths']=['elsewhere.py']
++            with self.assertRaisesRegex(ValueError,'matched paths'):attach(p,m,bad)
++            attach(p,m,b);validate(m,p);(p/'manifest.json').write_text(json.dumps(m))
++            self.assertIn('matched_paths',page(m,{'max_bytes':8192})['text'])
++            self.assertIn('bare filename',FreshSession(p).initial[0]['content'])
++            if os.environ.get('EXDEV_SANDBOX_TESTS')=='1':
++                from teacher.runner import Runner
++                result=Runner(p).invoke('evidence_index',dict(index_id='closed_discussions',offset=0,max_bytes=128))
++                self.assertTrue(result['ok'],result)
++                self.assertEqual(result['result'],page(m,dict(offset=0,max_bytes=128)))
++            bad=copy.deepcopy(m);bad['closed_discussion_catalog']['rows'][0]['matched_paths']=[]
++            with self.assertRaises(ValueError):validate(bad)
+--- a/docs/ancestor-context.md
++++ b/docs/ancestor-context.md
+@@ -269,6 +269,26 @@
+ kind then number. No closure recency contributes. This navigation heuristic can
+ miss synonyms and can match unrelated code vocabulary; it does not certify relevance.
+ 
++An opt-in rule, `salience-v3-paths`, adds cutoff-text path overlap as an independent
++qualifier. Curators select it by passing `changed_paths=task_paths(repo, sha)` to
++`closed_discussions.select`; omitting that argument preserves `salience-v2`.
++`task_paths` uses the exact first-parent change with rename detection disabled, so
++both rename sides are retained. Full paths are resolved against the parent tree
++plus task paths. A bare filename in the historical title or body qualifies only
++when it names exactly one path in that universe; directory-qualified references
++to other files do not count. Current GitHub PR file lists are not used because
++their cutoff state has not been established.
++
++A path-qualified row receives a ranking floor of 1; lexical scores above that
++still rank first, with the same kind/number tie break and cap of 20. Rows show
++`matched_paths`, including when no lexical term matched. Paths and the rule identity
++are bound into the packet; the changed-path inventory must match the task. A
++versioned instruction describes these as navigation hints, not established
++relationships. Legacy packet instructions and rows remain unchanged. Unknown
++state, missing historical bodies, future edits/comments, reopenings and explicit
++reference exclusions use the same fail-closed handling as v2. Historical bound
++bundles must not be overwritten to adopt the new rule.
++
+ Rows expose kind/number, title, author, created/closed times, `state: closed`, URL,
+ existing parent-tree path hints and matched terms. **Matched terms expose words
+ from discussion text.** They contain no score, body or excerpt. Initial navigation

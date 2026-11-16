@@ -1,0 +1,387 @@
+{
+  "schema_version": 5,
+  "sha": "830b6a018070a327d6d261628dff496f1303cf93",
+  "parent_shas": [
+    "a19538cf1e3b3f46ccdb347ff076fd4838a4910b"
+  ],
+  "cutoff_date": "2025-05-16T00:35:44+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "refactor",
+    "problem": [
+      {
+        "text": "Configuration previously selected one model class, and compilation collected only the instantiated model's modules. Neither interface represented separately selectable components or additional source tensors.",
+        "basis": "source",
+        "evidence": [
+          "call_633c3ace0f444ebc864f9e28a0dd248e",
+          "call_55654da583e240909c4dc4eccf58dacc"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "A component-name dictionary replaces the single class reference. A default text component preserves existing factory call signatures, while a class-level hook allows compilation to collect tensors without instantiating every component.",
+        "basis": "source",
+        "evidence": [
+          "call_633c3ace0f444ebc864f9e28a0dd248e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This is preparation, not implemented multimodal inference: the factory explicitly retains a multimodal TODO, and the added tensor hook returns an empty dictionary by default. Qwen3 MoE is omitted from the configuration migration.",
+        "basis": "source",
+        "evidence": [
+          "call_633c3ace0f444ebc864f9e28a0dd248e",
+          "call_8cf6485cdd8648f894d58e9ed7c8e3c3"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier Qwen3 MoE entry describes Qwen3MoeConfig supplying Qwen3MoeModel directly to Config and registering both through directory-based dispatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_836a495611b14dc0abd161f215cb67c6"
+        ]
+      },
+      {
+        "text": "PR #25, \u201cLanguage layers for Mistral Small 3.1 and InternVL3,\u201d contains turboderp's stated preference for deliberate component support over language-only patches producing incompatible future multimodal checkpoints. Its connection to this change is inferred from the component-model interface, not an explicit commit reference.",
+        "basis": "inference",
+        "evidence": [
+          "call_a9c51c805e534786b5004117db3cf542",
+          "call_633c3ace0f444ebc864f9e28a0dd248e"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d concerns a spelling correction. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d reports an installation/build failure. Their relationship here is only inferred from shared config.py/model.py paths, not evidence that this refactor fixes those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_abaaa74061094957817cb22697ebbd84",
+          "call_76b0fe83d9214f10b28c74adc842a655",
+          "call_73842155e48a4cdeaeb26393c625a9b6",
+          "call_633c3ace0f444ebc864f9e28a0dd248e"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d initially reports failure at compile_model's qtensors_stc.get_tensors call, later identified in the discussion as too many open files and reported resolved. The thread subsequently tracks GLM4 generation producing exclamation marks. Association with this task is inferred from the matching compiler call and later discussion of separated vision components; it does not establish a fix by this commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_ce52eaa724bd4ec2801a5f01cdeb7538",
+          "call_9f7418aeea434af7a30cf4d2b6df87cc",
+          "call_633c3ace0f444ebc864f9e28a0dd248e"
+        ]
+      }
+    ],
+    "limitations": [
+      "Task-state conclusions combine inspected parent source with the complete task diff; direct solved-tree reads were unavailable.",
+      "No model loading, conversion, filesystem-library behavior or GPU execution was tested. The Python check models dictionary operations only.",
+      "Checkpoint configurations and tensor headers were not validated; this annotation establishes interface changes, not model-by-model checkpoint compatibility."
+    ],
+    "links": [
+      "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Component selection and compilation",
+        "claims": [
+          {
+            "text": "The complete configuration-subclass inventory contains twelve classes. At the task commit, direct Config subclasses pass these second arguments: CohereConfig \u2192 {\"text\": CohereModel}; Cohere2Config \u2192 {\"text\": Cohere2Model}; DeciLMConfig \u2192 {\"text\": DeciLMModel}; Gemma2Config \u2192 {\"text\": Gemma2Model}; Glm4Config \u2192 {\"text\": Glm4Model}; MixtralConfig \u2192 {\"text\": MixtralModel}; Phi3Config \u2192 {\"text\": Phi3Model}; Qwen3Config \u2192 {\"text\": Qwen3Model}. LlamaConfig passes derived_model when truthy, otherwise {\"text\": LlamaModel}. MistralConfig and Qwen2Config call LlamaConfig with derived_model set to {\"text\": MistralModel} and {\"text\": Qwen2Model}, respectively. Unchanged Qwen3MoeConfig still passes the bare Qwen3MoeModel class.",
+            "basis": "source",
+            "evidence": [
+              "call_8cf6485cdd8648f894d58e9ed7c8e3c3",
+              "call_633c3ace0f444ebc864f9e28a0dd248e"
+            ]
+          },
+          {
+            "text": "Config stores that argument verbatim as model_classes. For each of the eleven migrated configurations under its ordinary construction, Model.from_config checks membership of the requested component, defaults to \"text\", and invokes the corresponding class with config and forwarded kwargs. Llama's explicit nonempty override instead determines the available components. The same factory cannot consume Qwen3MoeConfig's bare class.",
+            "basis": "source",
+            "evidence": [
+              "call_633c3ace0f444ebc864f9e28a0dd248e",
+              "call_fc97279a3f824567b1697808e133fbf1"
+            ]
+          },
+          {
+            "text": "Mistral and Qwen2 now select their named model subclasses rather than LlamaModel. Both selected constructors simply delegate to LlamaModel; their configuration-class identity changes without introducing a different constructor computation.",
+            "basis": "source",
+            "evidence": [
+              "call_ac4c8633508f45d1a6d351dfcce195c5",
+              "call_cfd72f06d58b4238b463dafaef4fd96d",
+              "call_fc97279a3f824567b1697808e133fbf1",
+              "call_633c3ace0f444ebc864f9e28a0dd248e"
+            ]
+          },
+          {
+            "text": "The registry contains twelve architecture files, but the diff changes eleven of them: qwen3_moe.py is the sole omitted registered architecture file. Conversely, config.py and model.py are changed infrastructure files, not registered architecture implementations. architectures.py itself is unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_8cf6485cdd8648f894d58e9ed7c8e3c3",
+              "call_633c3ace0f444ebc864f9e28a0dd248e"
+            ]
+          },
+          {
+            "text": "The introducing ancestor entry for that omitted architecture is a5caa423bbd9d8a61266a88fb237c18fb77ec0b8, whose chapter is \u201cQwen3 MoE assembly and calibration.\u201d It describes a direct Config subclass supplying Qwen3MoeModel, rather than inheritance through LlamaConfig.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_836a495611b14dc0abd161f215cb67c6"
+            ]
+          },
+          {
+            "text": "At the Additional tensors block, compile_model iterates model_classes.items() and merges each class's get_additional_compiled_tensors(config) result. All eleven migrated default mappings reach the newly inherited empty hook and add nothing. A custom Llama mapping can provide other hooks. Qwen3MoeConfig instead fails at .items() if execution reaches this block.",
+            "basis": "source",
+            "evidence": [
+              "call_633c3ace0f444ebc864f9e28a0dd248e",
+              "call_8cf6485cdd8648f894d58e9ed7c8e3c3"
+            ]
+          },
+          {
+            "text": "Hook results describe tensors by key with n_bytes metadata. Compilation appends those keys after module allocations, using the existing shard budget of shard_size \u00d7 1024\u00b2 bytes. An oversized tensor is warned about but not split. Module entries load from work_dir/qtensors; string entries load by exact key from config.stc, retain BF16 permission, become contiguous, and join the same output shard and weight map. Dictionary updates merge duplicate keys rather than preserving separate component namespaces.",
+            "basis": "source",
+            "evidence": [
+              "call_55654da583e240909c4dc4eccf58dacc",
+              "call_633c3ace0f444ebc864f9e28a0dd248e"
+            ]
+          },
+          {
+            "text": "Whole-tree caller search and inspected call-site context found direct Model.from_config calls in conversion/convert_model.py:get_base_model, conversion/quant_config.py:create_quantization_config_json, model_init.py:init, eval/compare_q_exllamav3.py, eval/model_diff.py (both models), examples/{async_generator,banned_strings,dynamic_gen,generation_loop,generator,loading}.py, science/kv_quant_exp.py, and tests/{generator_stresstest,test_qgemm,test_quant_fn}.py. None supplies component. These sites are unchanged by the task.",
+            "basis": "source",
+            "evidence": [
+              "call_2548ed8318374a0e9d2527fab36e7654",
+              "call_8635d467bec444d7bb701815971f81df",
+              "call_633c3ace0f444ebc864f9e28a0dd248e"
+            ]
+          },
+          {
+            "text": "Chat, perplexity evaluation and HumanEval reach the factory indirectly through model_init.init. Conversion reaches it before quantization through get_base_model and again when constructing output quantization metadata. Consequently the omitted Qwen3 MoE migration is not confined to an optional multimodal path.",
+            "basis": "source",
+            "evidence": [
+              "call_8635d467bec444d7bb701815971f81df",
+              "call_55654da583e240909c4dc4eccf58dacc"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "qwen3-moe-component-migration",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The shared configuration interface changes to a dictionary, but registered Qwen3MoeConfig still supplies a model class.",
+        "trigger": "Construct a valid Qwen3MoeConfig and pass it to Model.from_config; alternatively call compile_model with that config and reach its Additional tensors block.",
+        "expected_behavior": "Select Qwen3MoeModel as the text component and allow compilation to enumerate component hooks.",
+        "actual_behavior": "Config stores Qwen3MoeModel as model_classes. The normal factory membership test raises TypeError rather than constructing the model; compilation's .items() raises AttributeError if reached independently. All inspected factory callers omit component, including conversion, examples and evaluation entry points. Ordinary conversion fails before reaching the compiler hook.",
+        "locations": [
+          {
+            "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+            "path": "exllamav3/models/qwen3_moe.py",
+            "symbol": "Qwen3MoeConfig.__init__"
+          },
+          {
+            "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.from_config"
+          },
+          {
+            "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+            "path": "exllamav3/conversion/compile.py",
+            "symbol": "compile_model"
+          }
+        ],
+        "source_evidence": [
+          "call_633c3ace0f444ebc864f9e28a0dd248e",
+          "call_8cf6485cdd8648f894d58e9ed7c8e3c3",
+          "call_2548ed8318374a0e9d2527fab36e7654",
+          "call_8635d467bec444d7bb701815971f81df"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared every parent configuration constructor and registry entry with the task diff, then inspected whole-tree factory callers.",
+            "evidence": [
+              "call_8cf6485cdd8648f894d58e9ed7c8e3c3",
+              "call_633c3ace0f444ebc864f9e28a0dd248e",
+              "call_8635d467bec444d7bb701815971f81df"
+            ],
+            "limits": "No repository model was instantiated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Applied the new membership and .items() operations to a plain stand-in model class and to its text-component dictionary. The dictionary operations succeeded; the class operations raised TypeError and AttributeError.",
+            "evidence": [
+              "call_fc97279a3f824567b1697808e133fbf1"
+            ],
+            "limits": "Standard-library Python stand-in, not execution of Model.from_config or compile_model."
+          }
+        ]
+      }
+    ],
+    "summary": "Introduces named model components and an additional-tensor compilation hook, but leaves registered Qwen3 MoE on the incompatible single-class interface."
+  },
+  "evidence": {
+    "call_633c3ace0f444ebc864f9e28a0dd248e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "max_bytes": 12000,
+        "offset": 0
+      },
+      "result_sha256": "2d71af08e706d5898f3d7e3c590244b8b2b0415624e23b26efbd7d21b4951162"
+    },
+    "call_8cf6485cdd8648f894d58e9ed7c8e3c3": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import pathlib,ast\np=pathlib.Path('exllamav3/models')\nfor f in sorted(p.glob('*.py')):\n t=ast.parse(f.read_text()); print('\\nFILE',f)\n for n in t.body:\n  if isinstance(n,ast.ClassDef):\n   print('CLASS',n.name,[ast.unparse(b) for b in n.bases])\n   for m in n.body:\n    if isinstance(m,ast.FunctionDef) and m.name=='__init__' and 'Config' in n.name: print(ast.get_source_segment(f.read_text(),m))\nprint((p/'architectures.py').read_text())"
+        ]
+      },
+      "result_sha256": "a38dd31a8488257520186c84d7f62aca228828fcb8776399a8575b5838c3f5ab"
+    },
+    "call_2548ed8318374a0e9d2527fab36e7654": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "query": "from_config",
+        "limit": 100
+      },
+      "result_sha256": "1f0c85a4cbe75e71e2fff3b150a5b48e0ebfeb9a7f2f8edb427a6a23339a48c7"
+    },
+    "call_e359e43ab2e94fabbbdf92d870439d5e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "query": "model_class",
+        "limit": 100
+      },
+      "result_sha256": "d581772e179659dc3f4e9d35f0b1f27334b45d1a8d1abbdf73002d5d3938e116"
+    },
+    "call_d4624fe7485845ee8fd68d7f030b9173": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "qwen3_moe.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "a955bb2e9e54afd8fe9e0d0c50e3efd24c9fc9d021deebea2ceed481ab2a74a3",
+      "catalog_only": true
+    },
+    "call_836a495611b14dc0abd161f215cb67c6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7b962bd4cfc79326fe848f6153b3881f7e987fd49a4ff520f257a0f83aece8cd"
+    },
+    "call_55654da583e240909c4dc4eccf58dacc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "915deae0808d586aa1ee30bf3a2aab0f407861821d038376f35756b1f13f84bc"
+    },
+    "call_8635d467bec444d7bb701815971f81df": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor p in Path('.').rglob('*.py'):\n s=p.read_text(); lines=s.splitlines()\n if 'Model.from_config(' in s or 'model_init.init(' in s or 'compile_model(' in s:\n  print('\\nFILE',p)\n  for i,l in enumerate(lines):\n   if 'Model.from_config(' in l or 'model_init.init(' in l or 'compile_model(' in l:\n    print('\\n'.join(f'{j+1}: {lines[j]}' for j in range(max(0,i-4), min(len(lines),i+4))))"
+        ]
+      },
+      "result_sha256": "a5818fab30a42792ce77129ba1407b7af82e17c61d452275cea9054ec40cd732"
+    },
+    "call_abaaa74061094957817cb22697ebbd84": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 12000
+      },
+      "result_sha256": "95c8d79236a11e9bdc0e9965f8ebf19f32d3e11292a1207eed95d82ca4b14873"
+    },
+    "call_76b0fe83d9214f10b28c74adc842a655": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7b6ca5aebd2c2382d612521e07760ba3663c49173fb4a625c169bb1b7bd10a3c"
+    },
+    "call_ce52eaa724bd4ec2801a5f01cdeb7538": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "047ab58ea0eccbd55368c8915331d82f0c009c0c739ab31f33cf07f6301c696c"
+    },
+    "call_9f7418aeea434af7a30cf4d2b6df87cc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 30000
+      },
+      "result_sha256": "e82dc4b9e9cea8907a61a6b9f9703c7af95549212348ee6bf443091c45570cbb"
+    },
+    "call_73842155e48a4cdeaeb26393c625a9b6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 20000
+      },
+      "result_sha256": "9279ea3f55d68ca6774c15eff377848d29a5783cae162bdd01938f62872878a4"
+    },
+    "call_a9c51c805e534786b5004117db3cf542": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "max_bytes": 16000
+      },
+      "result_sha256": "56631fea3687b04db500ec6306ededa55e3205be2b70e2c258d37af5c95dcced"
+    },
+    "call_8deec563d6194adbb7471becbb7551df": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "query": "multimodal",
+        "limit": 100
+      },
+      "result_sha256": "e0078379440c155a52c185864ca15ea36e5aa135528ea436c2db525c4c1a3d32"
+    },
+    "call_ac4c8633508f45d1a6d351dfcce195c5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/models/mistral.py"
+      },
+      "result_sha256": "58a532de94f21db19074f986504ff348a6d583893ef23ccf03e43e55f2f292ec"
+    },
+    "call_cfd72f06d58b4238b463dafaef4fd96d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a19538cf1e3b3f46ccdb347ff076fd4838a4910b",
+        "path": "exllamav3/models/qwen2.py"
+      },
+      "result_sha256": "6c62b7e91cbfe07a47933229152439467431c262f817dc5163aeaac0ddfbe086"
+    },
+    "call_fc97279a3f824567b1697808e133fbf1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "class Qwen3MoeModel: pass\nfor v in ({'text':Qwen3MoeModel},Qwen3MoeModel):\n for label,f in [('membership',lambda:'text' in v),('items',lambda:list(v.items()))]:\n  try: print(type(v).__name__,label,f())\n  except Exception as e: print(type(v).__name__,label,type(e).__name__,str(e))\nfrom pathlib import Path\nfor name in ('llama.py','qwen3_moe.py'):\n s=(Path('exllamav3/models')/name).read_text();print(name);print(s)\n"
+        ]
+      },
+      "result_sha256": "7f47a2dcb88bf8d4388085c9cd51c43a260fcaf93660686def30e5940c485c0f"
+    }
+  }
+}

@@ -27,6 +27,7 @@ MIRRORS={'gemma2': {'upstream_repo':'google/gemma-2-2b',
 PAPERS={'qtip':('2406.11235v3','2024-10-29T18:55:48Z'),
         'quip-sharp':('2402.04396v2','2024-06-04T04:51:52Z')}
 WEIGHTS=('.safetensors','.bin','.pt','.pth','.gguf','.ckpt','.h5','.hdf5','.npz','.npy','.msgpack','.onnx','.ot')
+MAX_HEADER_BYTES=16*1024**2
 
 
 class Redirect(HTTPRedirectHandler):
@@ -142,7 +143,7 @@ def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=Fal
             if path.endswith('.safetensors'):
                 prefix,_=fetch(url,byte_range=(0,7))
                 length=struct.unpack('<Q',prefix)[0]
-                if not 2<=length<=4*1024**2:raise ValueError('Tensor header length outside allowed bounds')
+                if not 2<=length<=MAX_HEADER_BYTES:raise ValueError('Tensor header length outside allowed bounds')
                 # Distinct query avoids intermediaries incorrectly reusing the first range.
                 data,_=fetch(url+'?header=metadata',byte_range=(8,7+length))
                 parsed=json.loads(data)
@@ -151,6 +152,7 @@ def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=Fal
                     if name!='__metadata__' and not {'dtype','shape','data_offsets'}<=set(value):
                         raise ValueError('Invalid tensor metadata')
                 data=json.dumps(parsed,sort_keys=True).encode()
+                if len(data)>MAX_HEADER_BYTES:raise ValueError('Normalized tensor header exceeds runtime budget')
                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='safetensors_header',
                                      repo_id=repo,revision=sha,path=path,artifact_role='tensor_header'))
                 headers.append(path)

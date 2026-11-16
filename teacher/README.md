@@ -30,6 +30,8 @@ Each tool call gets fresh Bubblewrap namespaces, no network, a cleared environme
 
 Repository reads allow ancestor trees only; `git_show` additionally permits the explicit task change. External fetch tools serve only curator-approved cached objects, with no live retrieval fallback. HF artifacts require immutable revision identifiers and approved non-weight/header roles. Header tools expose bounded tensor-header data rather than weights. Blob hashes, paths, request sizes and output sizes are checked.
 
+Official Hugging Face recovery bounds both raw and normalized safetensors headers at 16 MiB; the runtime applies the same limit to cached headers and returns only the requested tensor page. Recovery fetches the eight-byte length prefix and the exact header range, never weight payloads. ModelScope mirror recovery retains its separate 4 MiB bound.
+
 `run` materializes the first-parent source tree and applies optional disposable file replacements. It runs isolated standard-library Python only, with time, memory, file-size and output limits. A seccomp filter denies process/thread creation and namespace changes. This profile cannot execute Torch, GPU workloads or threaded tests. Those require a separately reviewed runtime profile.
 
 `FreshSession.run(model)` accepts a stateless provider callback and starts with only its generic instructions, task metadata and approved evidence catalog. It exposes nine source tools, `ancestor_read` for retrieval packets, and five graph tools when a graph packet is attached. It rejects reuse of the session object. The callback must not attach prior conversations or remote session IDs. The driver returns an unpublished draft/transcript; it does not save corpus entries. Tests use explicit fixtures, not fabricated model outputs.
@@ -161,3 +163,31 @@ When moving the checkout, preserve hard links across the entire `.teacher/` tree
 including its blob store; ordinary copying can expand the packets back into full
 copies. See [shared packet storage](../docs/ancestor-context.md#shared-packet-blob-storage)
 for migration and verification instructions.
+
+### Administrative cycle driver
+
+`python3 -m teacher.cycle --state reports/teacher-walk-001.json` blocks through
+fresh discussion recovery, salience-v3 selection, graph/packet preparation,
+authoring, validation and exact tool replay. It emits a JSON summary and writes
+an unfiled `.skeleton.md` under `reports/`, only for a full-review commit. The author must read the draft and supply the
+judgement paragraphs (including run file reads, limitations and ledger work),
+then publish the finished request with `teacher.walk --publish-review-request`.
+Mechanical approvals may continue until a full-review stop, as in the walk.
+
+The driver locks the journal and stops before inference for an existing pause,
+non-ready/half-started run, less than 2 GiB free, an architecture trigger,
+unresolved/invalid references, curator attestation, path-qualified truncation,
+or inputs needing manual recovery. It never guesses an architecture exemption,
+rewrites an existing bundle, or resumes a stopped run. Architecture commits and
+replacement/coverage attempts retain the existing manual path. A failed replay
+or integrity check stops the journal without approval or a filed request.
+
+`python3 -m teacher.cycle --state reports/teacher-walk-001.json --approve VERDICT`
+is an explicit operator action for the pending full-review first-attempt unassisted run. It refuses replacements, multiple
+runs at the same position, and reviewer-assisted provenance. It checks the
+verdict identity and approval, verifies the request's hashes, records ancestor
+approval, preserves any advancement pause and appends follow-ups to
+`reviews/ASTRA-REGISTER.md`, updating only current status in `ASTRA-TRACKING.md`. Semantic verdict review, ledger acceptance/closure and
+replacement selection still belong to the author. Rejections are not processed
+by this approval command. Neither command changes teacher instructions, evidence
+rules or the session model. Discussion-history caching is a separate future change.

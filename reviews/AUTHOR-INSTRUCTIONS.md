@@ -61,6 +61,12 @@ last write for this pause; no files may be changed after it until work is restar
 
 ## Where things stand
 
+Read `reviews/ASTRA-TRACKING.md` after every context reset: its current section
+holds the procedure, standing conditions and open work. Search
+`reviews/ASTRA-REGISTER.md` for specific historical follow-ups; do not read that
+register whole after a reset. Keep both updated when verdicts add or close items.
+Neither is teacher input.
+
 Do not trust a summary for this, including one in this file. Read:
 
 - `reports/teacher-walk-001.json`: `status`, `next_position`, `handover`,

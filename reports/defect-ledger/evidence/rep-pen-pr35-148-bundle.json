@@ -1,0 +1,83 @@
+{
+  "task_sha": "81a0a7d2409ae682522b7cf051b066b6baa6f471",
+  "cutoff": "2025-05-11T20:47:03+02:00",
+  "items": [
+    {
+      "author_login": "gakada",
+      "url": "https://github.com/turboderp-org/exllamav3/pull/35",
+      "source_id": "PR_kwDOOU24Gs6VuDLB",
+      "created_at": "2025-05-11T03:34:41Z",
+      "revision_at": "2025-05-11T03:34:41Z",
+      "representation": "body",
+      "content": "Missed `top_k` being `int`, so it doesn't work as an index like that.",
+      "content_sha256": "35fe80de09b855a2a38f1735318eb9e8f39c84ecd0db98b82bbc33e1146d78f9",
+      "retrieved_at": "2026-11-15T07:51:59.125644+00:00"
+    },
+    {
+      "author_login": "gakada",
+      "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869495750",
+      "source_id": "IC_kwDOOU24Gs6rCQfG",
+      "created_at": "2025-05-11T05:32:04Z",
+      "revision_at": "2025-05-11T06:13:49Z",
+      "representation": "body",
+      "content": "For `rep_p`, all of those break the generation here, so it gets 0%.\r\n\r\n```py\r\nrep_p = 1.01,\r\nrep_p = 1.01, rep_sustain_range = 10,\r\nrep_p = 1.01, rep_sustain_range = 10, rep_decay_range = 10,\r\nrep_p = 1.001, rep_sustain_range = 512, rep_decay_range = 512,\r\n```",
+      "content_sha256": "2682d737aba56238259998611dc2abdecfc8ef6cec32af33c8bf89183ebc03a6",
+      "retrieved_at": "2026-11-15T07:51:59.125644+00:00"
+    },
+    {
+      "author_login": "gakada",
+      "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869651452",
+      "source_id": "IC_kwDOOU24Gs6rC2f8",
+      "created_at": "2025-05-11T09:24:51Z",
+      "revision_at": "2025-05-11T09:24:51Z",
+      "representation": "body",
+      "content": "`chatml` vs `qwen3` is ~30% vs ~50% on Qwen3-8B 4bpw and ~35% vs ~40% on 8bpw-h8 (and still many strange repetitive completions).",
+      "content_sha256": "4071eaf7702d008dd43e2e8dc67127bf2b55bb81539f92799e6d3fcadf6017f1",
+      "retrieved_at": "2026-11-15T07:51:59.125644+00:00"
+    },
+    {
+      "author_login": "turboderp",
+      "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869932280",
+      "source_id": "IC_kwDOOU24Gs6rD7D4",
+      "created_at": "2025-05-11T15:11:23Z",
+      "revision_at": "2025-05-11T15:11:23Z",
+      "representation": "body",
+      "content": "Qwen3-8B is very weird about its reasoning. The larger model appear to be more conditioned to reason and will often fall into reasoning patterns even outside of the `<think>` `</think>` tags. That's what those repetitive failures always look like, e.g.:\r\n\r\n```py\r\n    # Parse the fractions\r\n    x_num, x_den = x.split('/')\r\n    n_num, n_den = n.split('/')\r\n\r\n    # Multiply the fractions\r\n    # (x_num / x_den) * (n_num / n_den) = (x_num * n_num) / (x_den * n_den)\r\n    # Check if the result is a whole number\r\n    # To do this, we can check if the numerator is divisible by the denominator\r\n    # (x_num * n_num) % (x_den * n_den) == 0\r\n\r\n    # But since we are working with integers, we can also check if the result is a whole number\r\n    # by checking if the numerator is divisible by the denominator\r\n    # (x_num * n_num) % (x_den * n_den) == 0\r\n```\r\n\r\nThis is the type of stuff the model usually generates in its reasoning step, and it seems to work a lot better there, without needing repetition penalties to avoid falling into cycles. It seems like the non-reasoning mode is just sort of half-baked. The smaller Qwen3 models do a lot better with this style of prompting, to support that hypothesis. Qwen3-4B gets 78%, for instance. I think to actually get decent scores from Qwen3 in general the pipeline would have to allow for reasoning at the start of the prompt (i.e. generate until `</think>`, then inject the head of the function after that.\r\n\r\nRepetition penalties in general are a hack, and you can't rely on them to fix a model that's already in some failure mode. In this case I think it's a bug in the implementation, though. Something about the combination of the forced prefix and the penalties being enabled causes it to always sample `!!!!!!!` before doing anything else, e.g.:\r\n\r\n```py\r\ndef remove_vowels(text):\r\n    \"\"\"\r\n    remove_vowels is a function that takes string and returns string without vowels.\r\n    >>> remove_vowels('')\r\n    ''\r\n    >>> remove_vowels(\"abcdef\\nghijklm\")\r\n    'bcdf\\nghjklm'\r\n    >>> remove_vowels('abcdef')\r\n    'bcdf'\r\n    >>> remove_vowels('aaaaa')\r\n    ''\r\n    >>> remove_vowels('aaBAA')\r\n    'B'\r\n    >>> remove_vowels('zbcd')\r\n    'zbcd'\r\n    \"\"\"\r\n    !!!!!!!\r\n    vowels = \"aeiou\"\r\n    result = \"\"\r\n    for char in text:\r\n        if char not in vowels:\r\n            result += char\r\n    return result\r\n```\r\n\r\nI will investigate this in a little bit. As for the PR, it's fine and I'll merge once the dev branch is pushed in a little bit. Have you tried adding `/no_think` to the prompt and/or system prompt?",
+      "content_sha256": "e5120ff7c17334c3dcbcba71f067a390cd36f0b2133dfa0598b50ff4d34f8a15",
+      "retrieved_at": "2026-11-15T07:51:59.125644+00:00"
+    },
+    {
+      "author_login": "turboderp",
+      "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2869941750",
+      "source_id": "IC_kwDOOU24Gs6rD9X2",
+      "created_at": "2025-05-11T15:33:57Z",
+      "revision_at": "2025-05-11T15:33:57Z",
+      "representation": "body",
+      "content": "Yep, I checked, and there was a bug in the penalty kernel. Masking out a token and then applying any penalty to it before the falloff range would result in `lerp(-inf, -inf, 1)`, which should yield `-inf` but is evalutated as `(-inf) * 1.0f + (-inf) * 0.0f = NaN`. In this case it was `<|im_end|>` being prohibited because of the `min_new_tokens` argument. Fix will appear in dev branch shortly.",
+      "content_sha256": "a7a558367ce44b5f50bbd5187097c2242ec9895dd551b9266c82340b1f5dfeb5",
+      "retrieved_at": "2026-11-15T07:51:59.125644+00:00"
+    },
+    {
+      "author_login": "gakada",
+      "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2870031996",
+      "source_id": "IC_kwDOOU24Gs6rETZ8",
+      "created_at": "2025-05-11T18:04:49Z",
+      "revision_at": "2025-05-11T18:34:08Z",
+      "representation": "body",
+      "content": "I didn't see any difference with `/no_think`, trying to generate functions bodies like that, with or without `/no_think`, can produce many placeholders (like `# Insert implementation here`) and bad repetitions (just repeating the same lines). `enable_thinking=False` seems better, i.e. starting the reply with `<think>\\n\\n</think>\\n\\n`, then it is only bad repetitions (less for Qwen3-14B). So yeah, probably just the non-thinking mode not working very well, like reka-flash-3 still manages to think in comments and isn't doing any placeholders or repetitions when trying to generate code before thinking blocks (but it will keep rambling in comments instead, Phi-4-R+ is also similar, also around 90%). I'm getting\r\n\r\n| Model                  | Q4   | Q6   | Q8   | FP16 |\r\n| ---------------------- | ---- | ---- | ---- | ---- |\r\n| Qwen3-8B-exl3-4bpw     | 44.5 | 45.7 | 47.6 | 48.2 |\r\n| Qwen3-8B-exl3-6bpw     | 37.8 | 43.3 | 46.3 | 45.1 |\r\n| Qwen3-8B-exl3-8bpw-h8  | 29.9 | 37.8 | 37.8 | 39.0 |\r\n| Qwen3-14B-exl3-4bpw    | 79.3 | 80.5 | 80.5 | 79.3 |\r\n| Qwen3-14B-exl3-6bpw    | 77.4 | 78.7 | 79.3 | 79.3 |\r\n| reka-flash-3-exl3-3bpw | 87.8 | 87.2 | 90.2 | 90.9 |\r\n\r\nAnd the failures look like this\r\n\r\n[Qwen3-8B-exl3-4bpw-q8.md](https://github.com/user-attachments/files/20150619/Qwen3-8B-exl3-4bpw-q8.md)\r\n[Qwen3-8B-exl3-8bpw-h8-q8.md](https://github.com/user-attachments/files/20150618/Qwen3-8B-exl3-8bpw-h8-q8.md)\r\n[Qwen3-14B-exl3-4bpw-q8.md](https://github.com/user-attachments/files/20150620/Qwen3-14B-exl3-4bpw-q8.md)\r\n[reka-flash-3-exl3-3bpw-q8.md](https://github.com/user-attachments/files/20150621/reka-flash-3-exl3-3bpw-q8.md)",
+      "content_sha256": "b08e39b53d198b7ea9368c6598892c75a4a41bd0a1166d59d3e94862c9f1598d",
+      "retrieved_at": "2026-11-15T07:51:59.125644+00:00"
+    },
+    {
+      "author_login": "turboderp",
+      "url": "https://github.com/turboderp-org/exllamav3/pull/35#issuecomment-2870046981",
+      "source_id": "IC_kwDOOU24Gs6rEXEF",
+      "created_at": "2025-05-11T18:46:37Z",
+      "revision_at": "2025-05-11T18:46:37Z",
+      "representation": "body",
+      "content": "You should be able to test with repetition penalties now in the dev branch. Won't fix the thinking-in-comments exploit that Reka-Flash seems to have discovered, but it might help Qwen3-8B get back on track in a few cases where it gets stuck in a loop.\r\n\r\nAt the end of the day instruct models (and especially reasoning models) are just going to be harder to evaluate this way. HumanEval is also an old test by now and the problems presumably appear in all the pretraining datasets already. So the absolute score doesn't mean anything anymore. I mostly added it as an easy way to compare different quant levels of the same model against one another, and even that doesn't really seem to work anymore when more precise quants can get significantly *lower* scores, somehow.\r\n\r\nHere are some results I just did with Qwen3-30B-A3B. Mostly within the margin of error for a single completion per task, but it's remarkable that a model with (presumably) the same training and finetuning data as Qwen3-8B is so much stronger on this particular test, and so much more consistently so:\r\n\r\n| Model    | HumanEval pass@1 |\r\n|----------|------------------|\r\n| 2.25 bpw | 88.41%           |\r\n| 3.00 bpw | 89.63%           |\r\n| 4.00 bpw | 92.07%           |\r\n| 5.00 bpw | 93.29%           |\r\n| 6.00 bpw | 92.68%           |\r\n| FP16     | 91.46%           |\r\n\r\nAnd as mentioned, Qwen3-4B also performs much better. It's got to be worth looking into more rigorously. I'd imagine adding a little bit of random noise to the unquantized model could give you a similar effect in a more controlled way.",
+      "content_sha256": "92781154078a7ab26afce3202f0dc953695ef78ef3a84c23dc35b740e128961a",
+      "retrieved_at": "2026-11-15T07:51:59.125644+00:00"
+    }
+  ]
+}

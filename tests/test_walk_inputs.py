@@ -60,6 +60,39 @@ class WalkInputTests(unittest.TestCase):
         with patch('teacher.walk_inputs.build_packet',side_effect=broken):
             with self.assertRaisesRegex(ValueError,'evidence'):prepare(self.repo,self.task,9,self.root/'broken',directory)
 
+    def test_guidance_seven_default_preserves_legacy_inputs(self):
+        from teacher.session import GUIDANCE_6, GUIDANCE_7
+        directory = self.bundle()
+        packet = self.root/'guidance-trial'
+        manifest = prepare(self.repo, self.task, 9, packet, directory)
+        self.assertEqual(manifest['guidance_version'], 7)
+        validate_bundle(packet, directory/'000009-eligible.json')
+        adopted = FreshSession(packet)
+        manifest['guidance_version'] = 5
+        (packet/'manifest.json').write_text(json.dumps(manifest))
+        validate_bundle(packet, directory/'000009-eligible.json')
+        original = FreshSession(packet)
+        self.assertNotIn(GUIDANCE_6, original.initial[0]['content'])
+        manifest['guidance_version'] = 6
+        (packet/'manifest.json').write_text(json.dumps(manifest))
+        validate_bundle(packet, directory/'000009-eligible.json')
+        trial = FreshSession(packet)
+        self.assertEqual(trial.initial[0]['content'], original.initial[0]['content']+'\n'+GUIDANCE_6)
+        self.assertEqual(trial.initial[1:], original.initial[1:])
+        self.assertEqual(trial.tools, original.tools)
+        self.assertEqual(trial.reasoning_effort, original.reasoning_effort)
+        self.assertEqual(adopted.initial[0]['content'], original.initial[0]['content']+'\n'+GUIDANCE_7)
+        self.assertNotIn(GUIDANCE_6, adopted.initial[0]['content'])
+        self.assertEqual(adopted.initial[1:], original.initial[1:])
+        self.assertEqual(adopted.tools, original.tools)
+        self.assertEqual(adopted.reasoning_effort, original.reasoning_effort)
+        manifest['guidance_version'] = 7
+        # Adoption does not weaken evidence integrity checks.
+        manifest['walk_input_contract']['reference_signatures'] = [['missing', '0'*64]]
+        (packet/'manifest.json').write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'Reference evidence missing or changed'):
+            validate_bundle(packet, directory/'000009-eligible.json')
+
     def test_removed_evidence_blocks_author_before_provider(self):
         from teacher.author import author
         directory=self.bundle();packet=self.root/'prepared';m=prepare(self.repo,self.task,9,packet,directory)
