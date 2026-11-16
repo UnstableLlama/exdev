@@ -1,0 +1,441 @@
+{
+  "schema_version": 5,
+  "sha": "532d78658414d8f9aabce52cb64b982b3ec53388",
+  "parent_shas": [
+    "074019737caac1c6e6a457e3bed7e4a30e0a5877"
+  ],
+  "cutoff_date": "2025-06-02T02:03:38+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "Gemma3's vision component previously contained load/unload stubs. This change supplies image preprocessing, a vision tower and projection into text-model embedding space.",
+        "basis": "source",
+        "evidence": [
+          "call_99741885323c4ebdad7d1f1e30f8f002"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation connects existing convolution, positional embedding, attention and MLP modules rather than adding a separate execution engine. Configuration parsing, module assembly and the image-shaped autosplit input are mutually supporting parts of that integration.",
+        "basis": "source",
+        "evidence": [
+          "call_99741885323c4ebdad7d1f1e30f8f002",
+          "call_47a15fac148f483b8bb60649800b7506"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Gemma3Config now unconditionally requires vision dimensions and preprocessor_config.json, including an asserted Gemma3ImageProcessor type. These requirements apply when constructing the conditional-generation configuration even if the caller selects its text component. The separate Gemma3TextConfig is not changed.",
+        "basis": "source",
+        "evidence": [
+          "call_99741885323c4ebdad7d1f1e30f8f002",
+          "call_47a15fac148f483b8bb60649800b7506"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The Gemma3 introduction entry was read: it establishes the earlier text implementation and explicitly unfinished vision component. The vision-helper entry was also read: it records that pixel rescaling and integration were previously caller responsibilities.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_f4784c8810c8487a90f74e65f70c94a2",
+          "call_879c8faa36da47ab8288e80e37043eda"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure and a reporter-provided environment workaround. Its relationship here is only an inferred shared model.py path, not evidence of a vision-model failure or a fix in this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_20d0986976fc477e95eab139a404f412",
+          "call_99741885323c4ebdad7d1f1e30f8f002"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, image-library operation, tensor operation or GPU inference was executed. The computation checks integer shape arithmetic only.",
+      "Checkpoint configuration agreement does not establish numerical parity or weight-layout compatibility; tensor headers and preprocessor configuration files were not inspected.",
+      "Pooling assumes a square patch grid and suitable divisibility by the requested token-grid side. Nonstandard configurations and rectangular preprocessing sizes were not validated.",
+      "Whole-tree compatibility inspection was incomplete for configuration consumers and inherited module interfaces."
+    ],
+    "links": [
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+      "074019737caac1c6e6a457e3bed7e4a30e0a5877"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Gemma3 image-to-token embedding pipeline",
+        "claims": [
+          {
+            "text": "Preprocessing converts transparency onto white through convert_to_rgb, resizes once, converts pixels to float32, applies the configured rescale factor, then channelwise (image \u2212 mean) / std. Only afterward does it transpose channels first and create a half-precision tensor with a leading batch dimension. Rescaling before normalization supplies the value-scale preparation the existing helper does not perform.",
+            "basis": "source",
+            "evidence": [
+              "call_99741885323c4ebdad7d1f1e30f8f002",
+              "call_da03695ac8ca4ed2810c93286e0c5604"
+            ]
+          },
+          {
+            "text": "Conv uses patch size as convolution stride and returns flattened spatial tokens. PosEmbedding adds consecutive learned position vectors from index zero. The tower then uses pre-attention and pre-MLP LayerNorm, attention without RoPE, and ordinary fc1/GELU/fc2 MLPs. The selected GELU implementation uses the tanh approximation; pad_to=1 preserves the checkpoint's unaligned intermediate width.",
+            "basis": "source",
+            "evidence": [
+              "call_99741885323c4ebdad7d1f1e30f8f002",
+              "call_740f84e5344e4acb855b54ce06630df9",
+              "call_2bb4a18850384696ae626220f6fd1c79",
+              "call_59647c70cc01484681a0dc42da9baa29"
+            ]
+          },
+          {
+            "text": "get_image_embeddings invokes the inherited sequential forward with causal=False. Attention defaults to the no-cache FlashAttention path, which passes that flag to flash_attn_func. It does not select the cache-bearing decoder. The existing SDPA alternative rejects sliding windows and softcaps, neither of which this tower configures.",
+            "basis": "source",
+            "evidence": [
+              "call_99741885323c4ebdad7d1f1e30f8f002",
+              "call_47a15fac148f483b8bb60649800b7506",
+              "call_7d66692fb1e1466fa15bd7cfc2a11f3d"
+            ]
+          },
+          {
+            "text": "After post-LayerNorm, Gemma3MMPool reshapes tokens into a spatial grid and average-pools nonoverlapping neighborhoods. RMSNorm with constant_bias=1 follows, then a linear projection to text hidden width. The projector explicitly requests transposed_load=False. The pool has no weights and no loading work.",
+            "basis": "source",
+            "evidence": [
+              "call_99741885323c4ebdad7d1f1e30f8f002"
+            ]
+          },
+          {
+            "text": "All eleven inspected conditional-generation configurations specify the same vision geometry: width 1152, intermediate width 4304, 16 attention heads, 27 layers, image side 896, patch side 14 and 256 image tokens. This holds individually for google/gemma-3-4b-it, google/gemma-3-4b-pt, google/gemma-3-12b-it, google/gemma-3-12b-pt, google/gemma-3-27b-it and google/gemma-3-27b-pt. Their projector output widths are respectively 2560, 2560, 3840, 3840, 5376 and 5376.",
+            "basis": "source",
+            "evidence": [
+              "call_9a8fccb3b9df410587a75a024ccac693",
+              "call_0a925d399669437ebdf7ccee7a27b52b",
+              "call_8257be1a4dd5483bbb885ff0f891fea7",
+              "call_a578415257334e0c8cf073d4f76a0ef7",
+              "call_b60591316b8c49068f8ea9904459bc87",
+              "call_cee7548a5ce74dbaa34b140326c9b994",
+              "call_99741885323c4ebdad7d1f1e30f8f002"
+            ]
+          },
+          {
+            "text": "The same vision dimensions hold individually for google/gemma-3-4b-it-qat-int4-unquantized, google/gemma-3-4b-it-qat-q4_0-unquantized, google/gemma-3-12b-it-qat-int4-unquantized, google/gemma-3-12b-it-qat-q4_0-unquantized and google/gemma-3-27b-it-qat-q4_0-unquantized; their text widths are 2560, 2560, 3840, 3840 and 5376. These five explicitly specify three channels, LayerNorm epsilon 1e-6 and tanh GELU, agreeing with the implementation's fixed choices. All eleven omit vision KV-head count and head dimension, so the adapter defaults them to 16 and 1152/16 rather than using text-attention dimensions.",
+            "basis": "source",
+            "evidence": [
+              "call_9835266bd9244ceba3ca4e5f8ada00bd",
+              "call_0526c190d1ed48b587579fea857e1886",
+              "call_1333953733be4139bdffdc1796912100",
+              "call_2f2c2c46b68d48f7a616d6e621fda7d9",
+              "call_be77a8a1c626457ba169df19a28a9952",
+              "call_99741885323c4ebdad7d1f1e30f8f002"
+            ]
+          },
+          {
+            "text": "A standard-library arithmetic transcription gives head dimension 72, a 64\u00d764 patch grid containing 4096 tokens, and a 4\u00d74 pooling kernel producing 16\u00d716 = 256 tokens. Adding the image boundary tokens gives a 258-token representation. It also shows that ordinary 128-alignment would round intermediate width 4304 to 4352, explaining the practical significance of pad_to=1.",
+            "basis": "execution",
+            "evidence": [
+              "call_5501d8bd6a4a466c86f64ec0ec9879f9"
+            ]
+          },
+          {
+            "text": "The final image vectors move to CPU and lose the singleton batch dimension. The method surrounds one -1 placeholder per vector with tokenizer IDs for <start_of_image> and <end_of_image>, then constructs MMEmbedding. That container replaces placeholders with allocated synthetic IDs and stores the original vectors and alias. The new method adds original size, preprocessed size and architecture metadata; no existing literal MMEmbedding constructor call was found in the parent tree.",
+            "basis": "source",
+            "evidence": [
+              "call_99741885323c4ebdad7d1f1e30f8f002",
+              "call_b199b575b7f0416fa2160d86b76c5bdf",
+              "call_8702d1966214415aa9413821acbdb980"
+            ]
+          },
+          {
+            "text": "The autosplit override supplies a half-precision (1, channels, height, width) probe instead of integer token IDs. Model._load_autosplit consumes this hook before forwarding through modules, so this edit enables the convolution-first assembly to participate in the existing memory-probing loader.",
+            "basis": "source",
+            "evidence": [
+              "call_99741885323c4ebdad7d1f1e30f8f002",
+              "call_47a15fac148f483b8bb60649800b7506"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Implements Gemma3's vision component, from normalized images through pooled vision features to synthetic-token embeddings, while adding mandatory vision preprocessing configuration."
+  },
+  "evidence": {
+    "call_99741885323c4ebdad7d1f1e30f8f002": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+        "offset": 158,
+        "max_bytes": 12480
+      },
+      "result_sha256": "858201debd5ad7cc3a98663050ae838dca337c715aacc6ec5f30ab832c54af40"
+    },
+    "call_b199b575b7f0416fa2160d86b76c5bdf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/tokenizer/mm_embedding.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "6dcb5f9c3fc00e92e292051b23f3d324751bdcca855c5a28708a733488d83200"
+    },
+    "call_f4784c8810c8487a90f74e65f70c94a2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7e8974fcf5d11f5fdedb9f1af0c4eb2a2c25ad72cf9734dbdfbe25f9e7facd78"
+    },
+    "call_a187cf23fcda455c8f6c6b3649a076e0": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "5293b981ed3e5c7581463326b20686b32bcf070aa8096487b77369280ca21fbd",
+      "catalog_only": true
+    },
+    "call_da33d89530b44399b31c841a01b3390a": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "6877c91642b9fc9e11ba8419b8a9dcd9264eac30f098ce9986e88232cd5bfffc",
+      "catalog_only": true
+    },
+    "call_9a8fccb3b9df410587a75a024ccac693": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it",
+        "revision": "68d0dd42f002fd8304ea8af6335c656e254697df9d260550874186f0a7975022",
+        "path": "config.json"
+      },
+      "result_sha256": "4df131b27733cf5aed2b17ed6469ab93bbe907b54c74b8814140c0e1b2758706"
+    },
+    "call_0a925d399669437ebdf7ccee7a27b52b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-pt",
+        "revision": "10aa25f11b7f97ccaab63ebcb85b264d9ab0eea57a06bddf83003c017c2cb034",
+        "path": "config.json"
+      },
+      "result_sha256": "aeb4c3a1876e5513286dd2cf6607f01a7a2a9738104ece1cadec81b5c517ee1d"
+    },
+    "call_8257be1a4dd5483bbb885ff0f891fea7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it",
+        "revision": "bfa370037dad85e96e27f383482eb642490d94caffa7a8d5261374380476e826",
+        "path": "config.json"
+      },
+      "result_sha256": "fb936b312c99176feba2eb4bf4ae5e52ca62adcfbf80494bb8d6f169a86258c0"
+    },
+    "call_a578415257334e0c8cf073d4f76a0ef7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-pt",
+        "revision": "405f9ea391f2687827846f3bf9bdfb95ba36315ec04d609c41f1cedc5797a787",
+        "path": "config.json"
+      },
+      "result_sha256": "bbf1da573d3d4f4335c714c0f3032d5740e9cadc07730585dc039cc36076ca57"
+    },
+    "call_b60591316b8c49068f8ea9904459bc87": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-it",
+        "revision": "7c1934e18aba594d8726189f95245f86215b8ba095aadd7396fb063ebe362531",
+        "path": "config.json"
+      },
+      "result_sha256": "2db0f0a74209ed6c51ed4c4dd14a87374e097decc1342a45c460e25c14156ef4"
+    },
+    "call_cee7548a5ce74dbaa34b140326c9b994": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-pt",
+        "revision": "78896a1322ea631148a290906354880f3c9f3d20c7dd93459de4630e13ba6c5f",
+        "path": "config.json"
+      },
+      "result_sha256": "5325cc52132af2907e30e76b173415e61a1e420504f4b0120d598dcb89e9c562"
+    },
+    "call_9835266bd9244ceba3ca4e5f8ada00bd": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it-qat-int4-unquantized",
+        "revision": "545141ed13e0aba86542ce589599306c21773b9a572d62d3ed311601202cdbe7",
+        "path": "config.json"
+      },
+      "result_sha256": "758aa3e988309a18b0f83cc5430827f1a88d23dcbb3c8eedaed43dfe37cfe8b6"
+    },
+    "call_0526c190d1ed48b587579fea857e1886": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it-qat-q4_0-unquantized",
+        "revision": "1c4d825a9b2f731f62bb1a4f7e6822e93dc6a85f64b2a0ecf0ca988dd8bff872",
+        "path": "config.json"
+      },
+      "result_sha256": "d59a6d4606576accd19b0e1e5ce4baf0e8849b86408f5fe42a7e55f3d7d3b3d8"
+    },
+    "call_1333953733be4139bdffdc1796912100": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it-qat-int4-unquantized",
+        "revision": "e7f83727dbceb78288d03a5be9306732d65e9c1ec236559e23ecca95c50bc600",
+        "path": "config.json"
+      },
+      "result_sha256": "9e4fe7086ff146b5cb0ce8023157dfe245e1c4db3d5cf0e033b2ac9112ab2010"
+    },
+    "call_2f2c2c46b68d48f7a616d6e621fda7d9": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it-qat-q4_0-unquantized",
+        "revision": "5a13093554eadc575b7e22dabb83ce11de7aa4fe5c326473f8338d4b2e124751",
+        "path": "config.json"
+      },
+      "result_sha256": "5c49c1c8590d0aa3d9a2ca8deb2e2eb5a99e7c1f585d74b92e8feb9706add065"
+    },
+    "call_be77a8a1c626457ba169df19a28a9952": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-it-qat-q4_0-unquantized",
+        "revision": "9298cefe01f299638bab3696e5368cbb041d8ec78674f10545fe2d93c10ad37e",
+        "path": "config.json"
+      },
+      "result_sha256": "c7842feb179b46fbc9fd744c82f1dd7c14d12a5636e2de2b29ef4b1e1ae4b32c"
+    },
+    "call_7d66692fb1e1466fa15bd7cfc2a11f3d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "4d5417ca0f9cd50fe2ddb7789b03be0e8c0b482cc67e6fc71ca9ef4a739c0793"
+    },
+    "call_2bb4a18850384696ae626220f6fd1c79": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/pos_embedding.py"
+      },
+      "result_sha256": "d3329f7fcfbf4c30dc18c0f8395890d7147f215132e3fa9d6e6842f80e291049"
+    },
+    "call_740f84e5344e4acb855b54ce06630df9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/conv.py"
+      },
+      "result_sha256": "b5463afd4b0d6c7e0c8797e968486641eb57858cae498c2d079f6f99e92188c9"
+    },
+    "call_47a15fac148f483b8bb60649800b7506": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 32000
+      },
+      "result_sha256": "8f3f3a41f910c0444d12e059c61d58c8559286e7fed06d8e215128796bb5a590"
+    },
+    "call_5c204a4a07064e76a7fc7ba85e32d666": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "vision",
+        "limit": 100
+      },
+      "result_sha256": "70268cac6f7a23b4b4fee7a20033a640e35c5885adaa0025d9ba001fda519046"
+    },
+    "call_b8c37951568f4253853cf3d91e70b08f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "Gemma3",
+        "limit": 60
+      },
+      "result_sha256": "1da3e8704716776d274247fd1f07e47950b742add043f496aa44664633ed7901"
+    },
+    "call_da03695ac8ca4ed2810c93286e0c5604": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/util/vision.py"
+      },
+      "result_sha256": "1f91ff6a4482f59b264839adb45f369a8e44d2934cf85c9f4d029c4921e99ef1"
+    },
+    "call_8702d1966214415aa9413821acbdb980": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "MMEmbedding(",
+        "limit": 40
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_85a6df1e60b4460d9e7416a0a6e865be": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "normalize_image(",
+        "limit": 40
+      },
+      "result_sha256": "3222b05969f6ba96f24b60a272ffc49b58817a00f34a46036834c21a3b453476"
+    },
+    "call_124261b2a5644eecaa76f36d5914688d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "vision_config",
+        "limit": 40
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_63bbac3f4290468797ad3eb2427dc59a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "image_",
+        "limit": 60
+      },
+      "result_sha256": "c92c70f190cfd73aa2771bd587d53555bb08349028555580b74560174b836ea9"
+    },
+    "call_879c8faa36da47ab8288e80e37043eda": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6e0ac557ab93b984d3d9801d4d3346fb042701322379829e2ae6721ed3a92b06"
+    },
+    "call_59647c70cc01484681a0dc42da9baa29": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "3c39084ed15080ede839daa88d5d0b8d2b68aecb0da7c75ae543f415345ee625"
+    },
+    "call_20d0986976fc477e95eab139a404f412": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "3ddd4d124495ed0bfeddafd15aa088a6e77095f370a48751f21782454b85e54e"
+    },
+    "call_5501d8bd6a4a466c86f64ec0ec9879f9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "p=896//14;t=int(256**0.5);k=p//t;print({'patch_side':p,'patch_tokens':p*p,'head_dim':1152//16,'pool_kernel':k,'pooled_tokens':(p//k)**2,'wrapped_tokens':(p//k)**2+2,'intermediate_128_padded':((4304+127)//128)*128})"
+        ]
+      },
+      "result_sha256": "bb68ec4a354f2710edd35558f45eb95c79532cc0b571ea632d34a767c38e82d0"
+    }
+  }
+}

@@ -1,0 +1,322 @@
+{
+  "schema_version": 5,
+  "sha": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+  "parent_shas": [
+    "d908052e96929a4f92e90256838f9cad9b72226d"
+  ],
+  "cutoff_date": "2025-04-13T14:24:35+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "SafetensorsCollection previously resolved tensor reads only through its file index. This change adds an in-memory source without replacing the existing disk loader.",
+        "basis": "source",
+        "evidence": [
+          "call_4185fc103e5045a7934fd05e36521c1f",
+          "call_1fd902f43176455fa3c932c1a7e4e4a5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The new source is a mutable overlay: set_new_tensors stores the supplied object directly, and matching memory keys take precedence over file keys. Missing memory keys still use the existing file path.",
+        "basis": "source",
+        "evidence": [
+          "call_4185fc103e5045a7934fd05e36521c1f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Single-tensor presence checks and reads accept memory tensors, but sizing, listing, prefix reads and close explicitly assert that new_tensors is None. Even an empty dictionary activates these restrictions; passing None restores the file-only interface.",
+        "basis": "source",
+        "evidence": [
+          "call_4185fc103e5045a7934fd05e36521c1f",
+          "call_1fd902f43176455fa3c932c1a7e4e4a5"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier inventory entry describes list_tensors as a header-derived metadata interface. The new assertions make that interface unavailable while a memory mapping is installed.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_127aeb6a603c4d0b885eeae65f020b5d"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure and the reporter's environment workaround, not a request for memory loading. No connection to this change is established.",
+        "basis": "source",
+        "evidence": [
+          "call_821159274aa643c0bed8421feb8c564d"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch tensor transfers, model loading, native I/O or GPU execution were tested. The Python check transcribed only dictionary membership logic.",
+      "The change supplies no usage example or mapping validation. End-to-end lifecycle compatibility with the restricted metadata and close methods remains untested.",
+      "The native failure-path observation is source-derived, not a reproduced deadlock."
+    ],
+    "links": [
+      "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Memory-first tensor lookup with a restricted collection interface",
+        "claims": [
+          {
+            "text": "Construction still scans the directory and builds file metadata before initializing new_tensors to None. set_new_tensors assigns a mapping rather than merging it into tensor_file_map, so file metadata remains separate.",
+            "basis": "source",
+            "evidence": [
+              "call_4185fc103e5045a7934fd05e36521c1f",
+              "call_1fd902f43176455fa3c932c1a7e4e4a5"
+            ]
+          },
+          {
+            "text": "get_tensor first resolves an omitted device to CPU, then returns new_tensors[key].to(device) for a memory hit. This bypasses file opening, payload validation, loading metrics and the file branch's BF16-to-FP16 conversion. Consequently allow_bf16 does not control the memory branch's dtype.",
+            "basis": "source",
+            "evidence": [
+              "call_4185fc103e5045a7934fd05e36521c1f",
+              "call_1fd902f43176455fa3c932c1a7e4e4a5"
+            ]
+          },
+          {
+            "text": "Memory misses retain required-versus-optional file lookup behavior: absent required keys raise ValueError, while optional keys return None. Existing mt_fread and python implementations remain the fallback alternatives.",
+            "basis": "source",
+            "evidence": [
+              "call_4185fc103e5045a7934fd05e36521c1f",
+              "call_1fd902f43176455fa3c932c1a7e4e4a5"
+            ]
+          },
+          {
+            "text": "has_tensor_group evaluates an entire group separately against each source, rather than against their union. String subkeys are required members; nested alternatives need at least one match. Linear.is_exl3_storage uses this predicate for sv/svh, su/suh and trellis before load_exl3 fetches individual tensors.",
+            "basis": "source",
+            "evidence": [
+              "call_4185fc103e5045a7934fd05e36521c1f",
+              "call_e157cfa3d9554a18951c696e7ccd282b",
+              "call_c42c1f9ae37044dab301caf51d4ffd62"
+            ]
+          },
+          {
+            "text": "A bounded transcription returned false for a group with trellis only on disk and su/sv only in memory, although every individual key was available. Putting the complete group in either source returned true.",
+            "basis": "execution",
+            "evidence": [
+              "call_08d4ea425a6f4896a326e102ba0c4dc2"
+            ]
+          },
+          {
+            "text": "This design offers inexpensive memory overrides but not a fully interchangeable memory-backed collection: group completeness is source-local and metadata operations are deliberately guarded rather than synthesized from tensors.",
+            "basis": "inference",
+            "evidence": [
+              "call_4185fc103e5045a7934fd05e36521c1f"
+            ]
+          },
+          {
+            "text": "The earlier loading entry records a native read-failure synchronization risk. Inspection of the parent implementation and this single-file diff shows that the risky wait/error logic is carried over unchanged for disk fallback; memory hits bypass it.",
+            "basis": "source",
+            "evidence": [
+              "call_e9d5ce5d5dc54f8c8010902fe849dc15",
+              "call_425fe7c0994d4fc484d68d12a6bd699d",
+              "call_4185fc103e5045a7934fd05e36521c1f",
+              "call_1fd902f43176455fa3c932c1a7e4e4a5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "split-source-group",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "Group detection does not compose the same disk-plus-memory availability offered by individual lookup.",
+        "trigger": "A requested group is complete only across the union of tensor_file_map and new_tensors, for example disk trellis plus memory su and sv.",
+        "expected_behavior": "If group detection is intended to reflect individual lookup availability, this group would be recognized.",
+        "actual_behavior": "has_tensor_group returns false because neither source independently contains the complete group. Linear.load_exl3 consequently declines that storage layout.",
+        "locations": [
+          {
+            "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "SafetensorsCollection.has_tensor_group"
+          }
+        ],
+        "source_evidence": [
+          "call_4185fc103e5045a7934fd05e36521c1f",
+          "call_c42c1f9ae37044dab301caf51d4ffd62",
+          "call_e157cfa3d9554a18951c696e7ccd282b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent literal search found direct application callers in Linear.load_fp16 and Linear.is_exl3_storage; load_exl3 checks the latter before reading tensors. The multi-member EXL3 group is the concrete affected case.",
+            "evidence": [
+              "call_c42c1f9ae37044dab301caf51d4ffd62",
+              "call_e157cfa3d9554a18951c696e7ccd282b"
+            ],
+            "limits": "Whether source-local completeness is intentional is unestablished; no model workflow was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed the changed predicate and checked split-source and complete-source groups.",
+            "evidence": [
+              "call_08d4ea425a6f4896a326e102ba0c4dc2"
+            ],
+            "limits": "Standard-library membership test only, not repository or tensor execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-native-read-wait",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The existing native disk fallback can leave its GPU copy worker waiting after a read failure.",
+        "trigger": "A GPU-target mt_fread load has a copy worker waiting on an empty queue when a reader fails, with no subsequent successful enqueue.",
+        "expected_behavior": "The failure should wake the copy worker and allow the loader to report its I/O error.",
+        "actual_behavior": "The reader only sets load_failed; the wait predicate checks only queue nonemptiness and receives no failure notification, so thread joining may not complete.",
+        "locations": [
+          {
+            "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_read"
+          }
+        ],
+        "source_evidence": [
+          "call_425fe7c0994d4fc484d68d12a6bd699d",
+          "call_9a1a495170904d0abe32364e6e581284",
+          "call_1fd902f43176455fa3c932c1a7e4e4a5",
+          "call_4185fc103e5045a7934fd05e36521c1f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search located the binding and get_tensor's native call. The task leaves this fallback unchanged while bypassing it on memory hits.",
+            "evidence": [
+              "call_9a1a495170904d0abe32364e6e581284",
+              "call_425fe7c0994d4fc484d68d12a6bd699d",
+              "call_4185fc103e5045a7934fd05e36521c1f"
+            ],
+            "limits": "No concurrent execution or injected I/O failure; CPU and python-loader paths do not use this copy-worker wait."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds memory-first tensor lookup with disk fallback, while restricting collection metadata operations and requiring tensor groups to be complete within one source."
+  },
+  "evidence": {
+    "call_4185fc103e5045a7934fd05e36521c1f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "offset": 168,
+        "max_bytes": 3851
+      },
+      "result_sha256": "e5893fd28576f1e15d1f858fd46d6e6936e688f4d9f4c59c6b9d7acc3399d363"
+    },
+    "call_1fd902f43176455fa3c932c1a7e4e4a5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "ff68b8d022b2747307cf50ed56402dfc484b55a68cda4db2e50428814107e6b9"
+    },
+    "call_127aeb6a603c4d0b885eeae65f020b5d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "23fbfb8bfa68c3565e19f2dfbf0ebad245f4b6c077a86dcdcd3e57b3200c638a"
+    },
+    "call_e9d5ce5d5dc54f8c8010902fe849dc15": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    },
+    "call_6467b94bd50348d982956267ba72fee3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "query": "get_tensor(",
+        "limit": 100
+      },
+      "result_sha256": "9889cb6213ad92fcba872b6497077521a1600c7e22bc4a3c1a3c1e4ee933f1f0"
+    },
+    "call_821159274aa643c0bed8421feb8c564d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "63519d245ab7092151f6c202417eaeadb1cfc2e02e7cb6ab38b17b2cdb640c89"
+    },
+    "call_e157cfa3d9554a18951c696e7ccd282b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "54bab8b9110407b6e0658a182cf3d3706a8f983cdc311392386265bf691793dd"
+    },
+    "call_c42c1f9ae37044dab301caf51d4ffd62": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "query": "has_tensor_group(",
+        "limit": 100
+      },
+      "result_sha256": "0706e5a0dc19d2aade90e8afb1cfa6f4069a9f1c836fa2319587d8e311e21f43"
+    },
+    "call_b768515c6592401b8d02d3308a90b9a3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "query": "load_failed",
+        "limit": 30
+      },
+      "result_sha256": "25061cf6b46d5623c31e92785b7d1be92927e51e990c00a7351188d1c6f57164"
+    },
+    "call_425fe7c0994d4fc484d68d12a6bd699d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "max_bytes": 12000
+      },
+      "result_sha256": "ec0e5666a251bc1fd5ba5235d26407a1b7501c1b9a1753532864fe64c5a6dc56"
+    },
+    "call_08d4ea425a6f4896a326e102ba0c4dc2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def group(files, memory, key, subkeys):\n sources=[files]\n if memory: sources += [memory]\n return any(all((f'{key}.{s}' in source if isinstance(s,str) else any(f'{key}.{x}' in source for x in s)) for s in subkeys) for source in sources)\nf={'l.trellis':1}; m={'l.su':2,'l.sv':3}; req=[['sv','svh'],['su','suh'],'trellis']\nprint({'split_group':group(f,m,'l',req),'all_individual_keys_available':all(k in f or k in m for k in ['l.trellis','l.su','l.sv']),'complete_memory_group':group({},dict(f,**m),'l',req),'complete_file_group':group(dict(f,**m),{},'l',req)})"
+        ]
+      },
+      "result_sha256": "17b4d736bf1df2fc2d3141098ba3467e483c068b9516ae4c7ceeec916c229f29"
+    },
+    "call_9a1a495170904d0abe32364e6e581284": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+        "query": "stloader_read",
+        "limit": 30
+      },
+      "result_sha256": "53acf47d8c3408675c1aa44bcafdd00b7d058f521185eded6b78f63361da6146"
+    }
+  }
+}

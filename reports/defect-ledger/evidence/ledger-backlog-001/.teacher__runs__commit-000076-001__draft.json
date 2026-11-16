@@ -1,0 +1,258 @@
+{
+  "schema_version": 5,
+  "sha": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+  "parent_shas": [
+    "be19eb55f2f6d13f04ff6003a60dee430f8d2735"
+  ],
+  "cutoff_date": "2025-04-22T22:55:48+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The loader exposed a blocking load operation and an optional progress bar, but no callback or iterable progress interface.",
+        "basis": "source",
+        "evidence": [
+          "call_74dd42bb83fb44e99939e5ed73e27378"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change moves loading orchestration into load_gen and makes load exhaust that generator with generator=False. This shares loading logic while preserving the blocking interface.",
+        "basis": "source",
+        "evidence": [
+          "call_95016320fa484754b1adc4026ad5f26f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Autosplit loading can report progress through a callback, generator yields, or both, alongside the existing progress bar. Explicit-device loading does not receive the new notifications.",
+        "basis": "source",
+        "evidence": [
+          "call_95016320fa484754b1adc4026ad5f26f",
+          "call_74dd42bb83fb44e99939e5ed73e27378"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier loader documentation entry explains the distinction between usage budgets and reserved memory; this change retains those argument-normalization branches.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_fb6e1d5f490f49f1a55c0447a7b381bd"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure; issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns quantization quality. Neither establishes motivation for this loader interface change. The inferred connection to #7 is only its traceback passing through model.py.",
+        "basis": "inference",
+        "evidence": [
+          "call_e02592d307004596b3962070f90d76c7",
+          "call_38bc171a817d40e3a02dc5649dc3ed4f",
+          "call_95016320fa484754b1adc4026ad5f26f"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, CUDA allocation, cache lifecycle, or PyTorch inference-mode behavior was executed. The bounded Python check models notification and cleanup ordering only.",
+      "Direct load_gen iteration lacks the inference-mode decorator retained on load; the runtime consequences were not tested."
+    ],
+    "links": [
+      "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Iterable loading progress and callback delivery",
+        "claims": [
+          {
+            "text": "_load_autosplit invokes the callback and optionally yields (idx, module_count) before attempting each module. Consequently idx counts completed modules, starting at zero; retries on another device do not emit additional notifications. A final (module_count, module_count) notification follows successful completion of the loop.",
+            "basis": "source",
+            "evidence": [
+              "call_95016320fa484754b1adc4026ad5f26f",
+              "call_74dd42bb83fb44e99939e5ed73e27378"
+            ]
+          },
+          {
+            "text": "Autosplit still loads a module, forwards dummy state through it to estimate memory requirements, and retries on another device after an out-of-memory failure. The new notifications surround this existing mechanism rather than changing its placement policy.",
+            "basis": "source",
+            "evidence": [
+              "call_74dd42bb83fb44e99939e5ed73e27378",
+              "call_95016320fa484754b1adc4026ad5f26f"
+            ]
+          },
+          {
+            "text": "The generator pauses before each module and again at its terminal progress tuple. Memory-limit reset, dummy-state release and safetensor-context closure occur only after iteration resumes beyond that terminal tuple. Consumers should exhaust the iterator rather than treat receipt of the final tuple as completed cleanup.",
+            "basis": "source",
+            "evidence": [
+              "call_95016320fa484754b1adc4026ad5f26f",
+              "call_74dd42bb83fb44e99939e5ed73e27378"
+            ]
+          },
+          {
+            "text": "A two-module scalar transcription emitted progress (0,2), (1,2), and (2,2), with cleanup and context closure occurring only on the subsequent exhaustion step. Disabling yields still performed both modeled loads and cleanup when the generator was exhausted.",
+            "basis": "execution",
+            "evidence": [
+              "call_180388d61caf441c83ae91edf45ef2f4"
+            ]
+          },
+          {
+            "text": "The new loading example demonstrates repeated load/unload cycles, attaching and detaching a cache, callback-only loading, generator iteration, and combining callback, iterator and progress bar. Its generator examples use ordinary for loops, which exhaust the iterator.",
+            "basis": "source",
+            "evidence": [
+              "call_5b8f80b4dee244a98a6928a94e362f7c"
+            ]
+          },
+          {
+            "text": "A whole-parent-tree search found only Model.load calling the private _load_autosplit helper; the diff updates that call with both newly required arguments.",
+            "basis": "source",
+            "evidence": [
+              "call_6bc1d0769dd748acb77c3cd33a76747a",
+              "call_95016320fa484754b1adc4026ad5f26f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "single-device-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The advertised progress interfaces cover autosplit loading but silently omit explicit-device loading.",
+        "trigger": "Call load(device=..., callback=...) or iterate load_gen(device=...).",
+        "expected_behavior": "Receive callback or iterator progress for the selected loading mode.",
+        "actual_behavior": "The device branch calls unchanged _load_single(progressbar, device), which neither invokes the callback nor yields progress. Iterating load_gen still performs loading but produces no progress tuples.",
+        "locations": [
+          {
+            "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.load_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_95016320fa484754b1adc4026ad5f26f",
+          "call_74dd42bb83fb44e99939e5ed73e27378"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unchanged explicit-device callee with the autosplit additions. Whole-tree caller search found explicit-device load calls in tests/generator_stresstest.py, whose inspected setup uses cuda:1 and optionally cuda:2 without callbacks. Those existing calls demonstrate branch use, not an existing notification failure; the omission affects callers adopting the new interfaces.",
+            "evidence": [
+              "call_8685f1405ae24244828e636045b28d7e",
+              "call_6846d67a48884d5293231998bc5885e8",
+              "call_74dd42bb83fb44e99939e5ed73e27378",
+              "call_95016320fa484754b1adc4026ad5f26f"
+            ],
+            "limits": "Source inspection only; external callers and dynamic invocation were not established."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds callback and generator-based progress to autosplit model loading while retaining blocking load. Explicit-device loading omits the new notifications, and iterator exhaustion is necessary to reach cleanup."
+  },
+  "evidence": {
+    "call_5b8f80b4dee244a98a6928a94e362f7c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "offset": 183,
+        "max_bytes": 2434
+      },
+      "result_sha256": "7e5d81652b11840b607cc38869c5ee2b5ba6e88e7e6ff05721f207d209c6e105"
+    },
+    "call_95016320fa484754b1adc4026ad5f26f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "offset": 2617,
+        "max_bytes": 3629
+      },
+      "result_sha256": "0854b36d469262453303743da06a5576246a4353057056c68e97441544fb1291"
+    },
+    "call_74dd42bb83fb44e99939e5ed73e27378": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "be19eb55f2f6d13f04ff6003a60dee430f8d2735",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "a03159ee47be5e621537f30ba290da47942537a14b4483d6123d4227e3573358"
+    },
+    "call_6bc1d0769dd748acb77c3cd33a76747a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "be19eb55f2f6d13f04ff6003a60dee430f8d2735",
+        "query": "_load_autosplit",
+        "limit": 100
+      },
+      "result_sha256": "bfa6b3b6c78ff6b6e1d07d9947540e0c59a6bea28588eee0638ea048f413d0c7"
+    },
+    "call_8685f1405ae24244828e636045b28d7e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "be19eb55f2f6d13f04ff6003a60dee430f8d2735",
+        "query": ".load(",
+        "limit": 200
+      },
+      "result_sha256": "7b9aad4af5f9ab4577108e25e5ec4d5702c4fe5700d980b2c677c539bb7b17b2"
+    },
+    "call_e02592d307004596b3962070f90d76c7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d5d5bd427d2c59861fc4e8217de66088ca5849d7124841448171837f3f624464"
+    },
+    "call_38bc171a817d40e3a02dc5649dc3ed4f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9a3c341744a2d2d68b0e694495998814e4bf52548396615cc78703c0d110813f"
+    },
+    "call_006f42ed22a84004a816c4619e2c9352": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "4d8365b2481a31754ef7e2203ad0a6fdecc1f1d553f46debb5292bf5a64009c4",
+      "catalog_only": true
+    },
+    "call_fb6e1d5f490f49f1a55c0447a7b381bd": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "07b9e59ddb02e035119b98dcffaf319f1f3ee6b8",
+        "max_bytes": 10000
+      },
+      "result_sha256": "5e74a939b5a329174f85f0ba9dfb2e344ba1e1f06efaa2d7defce409dbae5f25"
+    },
+    "call_6846d67a48884d5293231998bc5885e8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "be19eb55f2f6d13f04ff6003a60dee430f8d2735",
+        "path": "tests/generator_stresstest.py",
+        "max_bytes": 3500
+      },
+      "result_sha256": "892ca1548c9bacf11dc17f711855ee76639c4df2d2c495b901157fb4a38b5fff"
+    },
+    "call_180388d61caf441c83ae91edf45ef2f4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "events=[]\ndef split(n, callback, generator=True):\n for idx in range(n):\n  if callback: callback(idx,n)\n  if generator: yield idx,n\n  events.append(('load',idx))\n if callback: callback(n,n)\n if generator: yield n,n\n events.append('cleanup')\ndef outer():\n yield from split(2, lambda i,n: events.append(('callback',i,n)))\n events.append('close_stc')\ng=outer(); assert events==[]\nprint('first',next(g),events)\nprint('second',next(g),events)\nprint('terminal',next(g),events)\nassert 'cleanup' not in events\ntry: next(g)\nexcept StopIteration: pass\nprint('exhausted',events)\nevents.clear(); assert list(split(2,None,False))==[]; print('non_generator',events)"
+        ]
+      },
+      "result_sha256": "9f1fbe6110355e4cd17efbbddcd6ef85e3afe27a70b11349a2b1ed74911a25bc"
+    }
+  }
+}

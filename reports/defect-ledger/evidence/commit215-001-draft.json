@@ -1,0 +1,239 @@
+{
+  "schema_version": 5,
+  "sha": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+  "parent_shas": [
+    "42afcd7e6cd361b2be9aef1072f26ffccffb92db"
+  ],
+  "cutoff_date": "2025-06-02T01:51:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The change addresses a tensor-name mismatch by mapping multi_modal_projector.mm_input_projection_weight to multi_modal_projector.mm_input_projection.weight. Previously, header keys were indexed verbatim.",
+        "basis": "source",
+        "evidence": [
+          "call_7396e2704b144eadacb5d29d15fab305",
+          "call_269b558ce46e4a1aaf9e91747a060b29"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Normalization belongs in the parsed header as well as the collection index: get_tensor, get_tensor_size and list_tensors use the indexed key to retrieve header[key]. Renaming only the index would leave those lookups inconsistent.",
+        "basis": "source",
+        "evidence": [
+          "call_7396e2704b144eadacb5d29d15fab305",
+          "call_269b558ce46e4a1aaf9e91747a060b29"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The replacement applies globally to the exact matching name, without checking architecture. It changes the in-memory namespace, not tensor shapes, offsets or on-disk bytes; the original spelling is not retained as an alias.",
+        "basis": "source",
+        "evidence": [
+          "call_7396e2704b144eadacb5d29d15fab305"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root loading-tokenization entry was read. It establishes the existing separation between Python name/offset interpretation and bulk tensor loading, and records limited header validation. Inspection of the parent and task diff shows that this change adds no file-bound or overlapping-range validation.",
+        "basis": "source",
+        "evidence": [
+          "call_98efa572178847778eb7ea5c46a54987",
+          "call_269b558ce46e4a1aaf9e91747a060b29",
+          "call_7396e2704b144eadacb5d29d15fab305"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d reports file-opening failures and later GLM sampling trouble; issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports a padding-size mismatch. Their connection here is inferred only from safetensors.py traceback overlap, not evidence that either motivated this key rename.",
+        "basis": "inference",
+        "evidence": [
+          "call_8ec61a978436474a9ceddaec9c771d18",
+          "call_8f2937786f21458a9388167eb5cfdb11",
+          "call_352b0144b6a84bd8ac06786f5b3d6377",
+          "call_7396e2704b144eadacb5d29d15fab305"
+        ]
+      }
+    ],
+    "limitations": [
+      "No real checkpoint loading, conversion or GPU execution was performed. The Python check transcribed only dictionary normalization.",
+      "The parent tree contains Gemma3 definitions but no literal mm_input_projection occurrence. The author's Gemma3 motivation is therefore not independently verified against an affected checkpoint or a model-specific consumer.",
+      "Whole-tree searches located the direct read_header caller and all file_headers references; dynamic or external consumers remain unestablished."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Normalize the projector key before indexing tensors",
+        "claims": [
+          {
+            "text": "read_header first parses the JSON and records the payload start. It then collects matching key/value pairs before deleting and reinserting them, avoiding mutation during dictionary iteration. The original descriptor is reused unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_7396e2704b144eadacb5d29d15fab305"
+            ]
+          },
+          {
+            "text": "The sole direct read_header caller found is SafetensorsCollection.add_tensor_files. Its additional name-fix check is redundant for this mapping because read_header has already removed the old key. The stored header and tensor_file_map nevertheless agree, preserving the existing size, listing and tensor-read interfaces.",
+            "basis": "source",
+            "evidence": [
+              "call_f57b6c10a8aa4f6bb61323af16fff34a",
+              "call_889a5777332441a5bc2a7113af7b50e7",
+              "call_269b558ce46e4a1aaf9e91747a060b29",
+              "call_7396e2704b144eadacb5d29d15fab305"
+            ]
+          },
+          {
+            "text": "A bounded standard-library transcription verified descriptor identity and payload-offset preservation, idempotence, and the collision rule: if both spellings exist, the legacy spelling's descriptor replaces the canonical descriptor. This checks dictionary semantics, not repository I/O.",
+            "basis": "execution",
+            "evidence": [
+              "call_2cc5d415c4584d82ad2fb37fe0dcd157"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "header-name-collision",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "Normalization silently collapses two distinct header entries when both spellings exist.",
+        "trigger": "A scanned safetensors header contains both mapped spellings with different descriptors.",
+        "expected_behavior": "An ambiguous collision should be rejected or explicitly resolved rather than silently discarding the canonical descriptor.",
+        "actual_behavior": "read_header deletes the legacy key and unconditionally overwrites the canonical key with its descriptor. Collection override accounting cannot report this within-header collision because it sees only the normalized header.",
+        "locations": [
+          {
+            "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "read_header"
+          }
+        ],
+        "source_evidence": [
+          "call_7396e2704b144eadacb5d29d15fab305",
+          "call_269b558ce46e4a1aaf9e91747a060b29",
+          "call_f57b6c10a8aa4f6bb61323af16fff34a"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed normalization selected the legacy descriptor when both keys were supplied.",
+            "evidence": [
+              "call_2cc5d415c4584d82ad2fb37fe0dcd157"
+            ],
+            "limits": "Synthetic dictionary only; no affected checkpoint established. Reach is the inspected add_tensor_files \u2192 read_header path, not a demonstrated model failure."
+          }
+        ]
+      }
+    ],
+    "summary": "Normalizes one Gemma3-related projector tensor spelling in parsed safetensors headers, keeping collection indexing and descriptor lookup consistent."
+  },
+  "evidence": {
+    "call_7396e2704b144eadacb5d29d15fab305": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "offset": 172,
+        "max_bytes": 1554
+      },
+      "result_sha256": "46d952f03654228515f2f5927bd5ee5baa29b0afe263b713dffde642e9d94d71"
+    },
+    "call_269b558ce46e4a1aaf9e91747a060b29": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_f57b6c10a8aa4f6bb61323af16fff34a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "query": "read_header",
+        "limit": 100
+      },
+      "result_sha256": "85fed5977a4dd3b815f9feb43f0be2ff061f415f66652841cfdf5efa3c35dca0"
+    },
+    "call_5490873f4b854215bc3174f6858c0e75": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "query": "Gemma3",
+        "limit": 100
+      },
+      "result_sha256": "1da3e8704716776d274247fd1f07e47950b742add043f496aa44664633ed7901"
+    },
+    "call_a0f17a52e187452bb690086bdc808ce7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "query": "mm_input_projection",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_98efa572178847778eb7ea5c46a54987": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    },
+    "call_8ec61a978436474a9ceddaec9c771d18": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 20000
+      },
+      "result_sha256": "400fe854f63b0933e8280d63464dd16a9ac4dfa99d2ea39bc94cd1b64d4dfce7"
+    },
+    "call_8f2937786f21458a9388167eb5cfdb11": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 20000,
+        "max_bytes": 30000
+      },
+      "result_sha256": "b8b441ea35ee3e704f88cd235fe78ccbcfc73b1965046d5092caac0a383c34d8"
+    },
+    "call_352b0144b6a84bd8ac06786f5b3d6377": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "c8f7c97766fc5a23ce3fda10d1916c17272ecc37ab2bcc97a1fbbd4a0387c152"
+    },
+    "call_889a5777332441a5bc2a7113af7b50e7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "query": "file_headers",
+        "limit": 100
+      },
+      "result_sha256": "fd6f8f356dcbd5aadf48985fbe32f514d10c94974efdbc6eb6cafd09391fdbeb"
+    },
+    "call_2cc5d415c4584d82ad2fb37fe0dcd157": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "old='multi_modal_projector.mm_input_projection_weight'; new='multi_modal_projector.mm_input_projection.weight'\nfix={old:new}\ndef normalize(h):\n bad=[]\n for k,v in h.items():\n  if k in fix: bad.append((k,v))\n for k,v in bad:\n  del h[k]; h[fix[k]]=v\n return h\nv={'shape':[2,3],'dtype':'F16','data_offsets':[0,12]}\nh=normalize({old:v,'_header_offset':128})\nassert h[new] is v and old not in h and h['_header_offset']==128\nassert normalize(dict(h))==h\nassert normalize({new:'canonical',old:'legacy'})[new]=='legacy'\nprint('rename preserves descriptor identity and payload offset; normalization idempotent; collision selects legacy descriptor')"
+        ]
+      },
+      "result_sha256": "9fffffa23a755434c0e82a64e32333e8ec16ff74e10134eb67dd96050a22ba5e"
+    }
+  }
+}

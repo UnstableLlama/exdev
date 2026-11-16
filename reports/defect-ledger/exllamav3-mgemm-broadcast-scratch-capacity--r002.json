@@ -1,0 +1,227 @@
+{
+  "origin": "authoring_observation",
+  "classification": "new_requirement",
+  "status": "suspected",
+  "description": "Broadcast-input multi-GEMM now requires scratch storage for every matrix rather than one input-sized scratch slice.",
+  "trigger": "bszm_in=1, bszm_out>1, with A_had allocated only as large as A, as the retained interface comment describes.",
+  "expected_behavior": "An input-sized scratch allocation should remain sufficient under the old contract, or the enlarged requirement should be documented and validated.",
+  "actual_behavior": "The kernel now writes and reads A_had + j*size_m*size_k, including for broadcast A. Later matrices therefore address beyond an input-sized allocation. The wrapper does not validate scratch capacity. No repository Python construction site was found; external extension callers are the established interface boundary.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Compared the prior conditional scratch-pointer advance with the new unconditional matrix-indexed offsets and inspected wrapper validation.",
+      "evidence": [
+        "call_18a5fa132362421498f124e072053e2d",
+        "call_9f9d887e1b7541d39bb05c3bfba41d22",
+        "call_b1f118b3e3394666a394fd19913a7294"
+      ],
+      "limits": "No external caller allocation or GPU memory violation was observed."
+    }
+  ],
+  "defect_id": "exllamav3-mgemm-broadcast-scratch-capacity",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "paths": [
+        "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh"
+      ],
+      "status": "source_supported",
+      "rationale": "Approved finding introduction, or root attribution verified by reviewer; no runtime execution."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "run": ".teacher/runs/commit-000135-001",
+      "finding_id": "broadcast-scratch-capacity"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "run": ".teacher/runs/commit-000135-001",
+      "local_id": "broadcast-scratch-capacity",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "broadcast-scratch-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "Broadcast-input multi-GEMM now requires scratch storage for every matrix rather than one input-sized scratch slice.",
+        "trigger": "bszm_in=1, bszm_out>1, with A_had allocated only as large as A, as the retained interface comment describes.",
+        "expected_behavior": "An input-sized scratch allocation should remain sufficient under the old contract, or the enlarged requirement should be documented and validated.",
+        "actual_behavior": "The kernel now writes and reads A_had + j*size_m*size_k, including for broadcast A. Later matrices therefore address beyond an input-sized allocation. The wrapper does not validate scratch capacity. No repository Python construction site was found; external extension callers are the established interface boundary.",
+        "locations": [
+          {
+            "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+            "symbol": "exl3_mgemm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_18a5fa132362421498f124e072053e2d",
+          "call_9f9d887e1b7541d39bb05c3bfba41d22",
+          "call_b1f118b3e3394666a394fd19913a7294",
+          "call_2e34b3a892fa4c1496cd89dd766d8aec",
+          "call_f146902dbea7449b85bb33cd418131b1"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the prior conditional scratch-pointer advance with the new unconditional matrix-indexed offsets and inspected wrapper validation.",
+            "evidence": [
+              "call_18a5fa132362421498f124e072053e2d",
+              "call_9f9d887e1b7541d39bb05c3bfba41d22",
+              "call_b1f118b3e3394666a394fd19913a7294"
+            ],
+            "limits": "No external caller allocation or GPU memory violation was observed."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "run": ".teacher/runs/commit-000153-002",
+      "local_id": "retained-broadcast-scratch-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "retained-broadcast-scratch-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "Broadcast-input scratch must cover every selected matrix, unlike the retained input-sized comment.",
+        "trigger": "bszm_in=1, bszm_out>1 and A_had allocated only as large as A.",
+        "expected_behavior": "Document and validate the expanded scratch requirement, or preserve the old allocation contract.",
+        "actual_behavior": "The kernel addresses A_had+j*m*k for each matrix without checking capacity. BlockSparseMLP's gate/up calls allocate per-selected-expert scratch and satisfy this requirement; external binding callers following the comment remain exposed.",
+        "locations": [
+          {
+            "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+            "symbol": "exl3_mgemm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_ff908d40494f4d5494c01a420f2bf820",
+          "call_8731c2dcde3e402cbd00f539ac283fb5",
+          "call_9499f2a3308f4fb281185dc91d1a4b81",
+          "call_8d59430784734cba80ef5ca913655445",
+          "call_2a63fe8a936c48828f6511fa87d0dcb7"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared interface comment, scratch offsets and located caller allocations.",
+            "evidence": [
+              "call_8731c2dcde3e402cbd00f539ac283fb5",
+              "call_9499f2a3308f4fb281185dc91d1a4b81",
+              "call_2a63fe8a936c48828f6511fa87d0dcb7"
+            ],
+            "limits": "No external caller or GPU overwrite observed."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit135-draft.json",
+      "sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf"
+    },
+    {
+      "file": "evidence/commit135-transcript.json",
+      "sha256": "63a315817a10c5b6f14e554fa2108d3adf3d90e31d9b2f15654d6c752af50ab6"
+    },
+    {
+      "file": "evidence/commit135-verdict.md",
+      "sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000135-001__draft.json",
+      "sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000135-001.md",
+      "sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000153-002__draft.json",
+      "sha256": "b6284fd2bc6d18a2caddf2e7deff6f48918edc938e8bdaa11af00c42d6a39bad"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000153-002.md",
+      "sha256": "1ed558b6edb6c31262812a5466b9162561d82f24cc183ea72278ffc055814815"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "available_at": "2025-05-11T02:04:57+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit135-draft.json",
+      "source_id": "evidence/commit135-draft.json",
+      "content_sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf",
+      "available_at": "2026-11-15T06:03:32.663875+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit135-transcript.json",
+      "source_id": "evidence/commit135-transcript.json",
+      "content_sha256": "63a315817a10c5b6f14e554fa2108d3adf3d90e31d9b2f15654d6c752af50ab6",
+      "available_at": "2026-11-15T06:03:32.663875+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit135-verdict.md",
+      "source_id": "evidence/commit135-verdict.md",
+      "content_sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557",
+      "available_at": "2026-11-15T06:03:32.663875+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000135-001/draft.json",
+      "source_id": ".teacher/runs/commit-000135-001/draft.json",
+      "content_sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000135-001.md",
+      "source_id": "reviews/verdicts/commit-000135-001.md",
+      "content_sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000153-002/draft.json",
+      "source_id": ".teacher/runs/commit-000153-002/draft.json",
+      "content_sha256": "b6284fd2bc6d18a2caddf2e7deff6f48918edc938e8bdaa11af00c42d6a39bad",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000153-002.md",
+      "source_id": "reviews/verdicts/commit-000153-002.md",
+      "content_sha256": "1ed558b6edb6c31262812a5466b9162561d82f24cc183ea72278ffc055814815",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "available_at": "2025-05-12T12:38:08-04:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "a905cffb1a3f66792ea000e9b589557aac3f9d14"
+    ],
+    "limits": "Exact source-supported observations only; no continuous affected range or runtime effects asserted."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

@@ -1,0 +1,451 @@
+{
+  "schema_version": 5,
+  "sha": "91c7cc41881c50abf6608a07c53b9d888c9cf2a6",
+  "parent_shas": [
+    "f45eb4ce2090ca5db306cf863ee2f1826810e0ff"
+  ],
+  "cutoff_date": "2025-05-30T16:58:48+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "CohereModel previously supplied no Q/K normalization, even for configurations requesting it. The change connects the optional configuration flag to paired LayerNorm modules.",
+        "basis": "source",
+        "evidence": [
+          "call_f25b3efcfe3e46f8b69f15431040a8ed",
+          "call_563f5d58d34440f18d3a16fa9acb3a4b"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation reuses the parent's standalone LayerNorm attention path rather than adding a normalization kernel. That path normalizes Q and K before RoPE and leaves V unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_563f5d58d34440f18d3a16fa9acb3a4b",
+          "call_5c5c7185650f462caac0ead8cc6dec9f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Absent or false use_qk_norm preserves attention without head norms. Independently of that flag, every Cohere GatedMLP now requests float32 output.",
+        "basis": "source",
+        "evidence": [
+          "call_563f5d58d34440f18d3a16fa9acb3a4b"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the Cohere introduction and QK LayerNorm ancestor entries. The former records the missing Command R Plus normalization; the latter establishes the reusable standalone path and records concerns in RMSNorm dispatch and the alternative LayerNorm method.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_9ea688859c1840de8a7b5bfc1180473c",
+          "call_460b100999d44480b5ae09b3421aa9a4"
+        ]
+      },
+      {
+        "text": "The missing Cohere wiring is removed by this diff. The parent's tensor-truth condition and forward_torch implementation remain unchanged, but the new path uses LayerNorm.forward with q_norm_tensor=None, not loaded RMSNorm tensors or forward_torch.",
+        "basis": "source",
+        "evidence": [
+          "call_563f5d58d34440f18d3a16fa9acb3a4b",
+          "call_5c5c7185650f462caac0ead8cc6dec9f",
+          "call_bb4dc7c222bf42cc919a4ae0f07a37e3"
+        ]
+      },
+      {
+        "text": "Inspected discussion #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; PR #4, \u201cchore: update config.py,\u201d proposes a spelling correction. Their connection to this inspection is inferred from config.py overlap, not evidence that either motivated this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_57e7773aa6ce4e959d20d60e1a075093",
+          "call_9355d0318dda4945bdd67b88f1986967",
+          "call_e384057943fd43608e7456302493d782"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, generation, PyTorch operation or GPU kernel was executed. The successful run exercised only the repository's standard-library configuration reader and integer shape arithmetic.",
+      "Configuration agreement does not establish checkpoint tensor compatibility or numerical equivalence. In particular, the two 4bit configurations describe bitsandbytes storage; this patch does not establish support for that format.",
+      "The inspected model files are hash-verified mirror copies; their supplied revisions identify verified file sets rather than official Git commits.",
+      "The reason for the unconditional float32 MLP output change and its numerical or performance benefit are not established by measurements."
+    ],
+    "links": [
+      "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+      "f45eb4ce2090ca5db306cf863ee2f1826810e0ff"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Optional Cohere Q/K LayerNorm and MLP output precision",
+        "claims": [
+          {
+            "text": "CohereConfig reads use_qk_norm with expected type int and default False. Whole-parent-tree searches found neither use_qk_norm nor qk_norm. Config.read_cfg delegates to read_dict, whose isinstance-based validation accepts boolean values without converting them.",
+            "basis": "source",
+            "evidence": [
+              "call_563f5d58d34440f18d3a16fa9acb3a4b",
+              "call_fd0e3e868ca64ab89f3b7e1df7513a3e",
+              "call_247bcc6da3e146cdaa75e0932304e12d",
+              "call_e384057943fd43608e7456302493d782",
+              "call_970737e06a13417e9a461472f0bda2d0"
+            ]
+          },
+          {
+            "text": "Executing the repository read_dict through runpy returned False for an absent key and preserved False, True and integer 1 for supplied values. Thus the int annotation does not reject the inspected JSON boolean flags.",
+            "basis": "execution",
+            "evidence": [
+              "call_cbbd7a2018e74f66907eca42d5fb52f9"
+            ]
+          },
+          {
+            "text": "When enabled, each layer constructs norms at model.layers.<idx>.self_attn.q_norm and k_norm using the existing layer_norm_eps mapping, whose default is 1e-5. LayerNorm.load requires the corresponding .weight and treats .bias as optional. Both objects are supplied together, satisfying Attention's paired-norm assertion.",
+            "basis": "source",
+            "evidence": [
+              "call_563f5d58d34440f18d3a16fa9acb3a4b",
+              "call_f25b3efcfe3e46f8b69f15431040a8ed",
+              "call_bb4dc7c222bf42cc919a4ae0f07a37e3",
+              "call_5c5c7185650f462caac0ead8cc6dec9f"
+            ]
+          },
+          {
+            "text": "All three attention decode routes reshape Q/K into batch \u00d7 sequence \u00d7 heads \u00d7 head_dim, call the standalone norms with half output, and then apply RoPE. LayerNorm weights are not exposed as fused RMSNorm weights. For multidimensional affine weights, LayerNorm.forward normalizes only the final axis without affine parameters, then broadcasts the weight multiplication and optional bias addition.",
+            "basis": "source",
+            "evidence": [
+              "call_5c5c7185650f462caac0ead8cc6dec9f",
+              "call_bb4dc7c222bf42cc919a4ae0f07a37e3"
+            ]
+          },
+          {
+            "text": "Existing LayerNorm constructors in Cohere and Cohere2 serve block-input and final normalization, using the same epsilon argument and no quantization map; final norms request half output explicitly. The new constructors retain these conditions but operate on head-shaped attention tensors. Cohere2 is not modified.",
+            "basis": "source",
+            "evidence": [
+              "call_ddda803b67c349d4944fe968d3abb888",
+              "call_f25b3efcfe3e46f8b69f15431040a8ed",
+              "call_2619a62fb97c448bb211c87454d8b9a7",
+              "call_563f5d58d34440f18d3a16fa9acb3a4b"
+            ]
+          },
+          {
+            "text": "The float32 setting reaches GatedMLP's down-projection constructors and final dtype selection; it does not change the gate/up intermediate dtype setting. Multiple MLP slices accumulate their down-projection outputs before returning. ParallelDecoderBlock consumes this result through x += y2, after adding attention output; its prefill early return skips the MLP. Q/K LayerNorm explicitly returns half tensors and does not require the MLP output setting as a precondition.",
+            "basis": "source",
+            "evidence": [
+              "call_563f5d58d34440f18d3a16fa9acb3a4b",
+              "call_72ceb5594d3343fab887e0f5be4fba47",
+              "call_cdf44bf251bf4bcebf5f7ddbc57742fc",
+              "call_5c5c7185650f462caac0ead8cc6dec9f"
+            ]
+          },
+          {
+            "text": "Among the inspected CohereLabs configurations, aya-23-35B, aya-23-8B, aya-expanse-32b, aya-expanse-8b and c4ai-command-r-08-2024 each explicitly disable use_qk_norm. Each therefore retains no head norms under this mapping. All specify layer_norm_eps=1e-5.",
+            "basis": "source",
+            "evidence": [
+              "call_0b3a1505f4314dcba631a12983d5d405",
+              "call_5d8515a456ea491cb8e910e044fe912f",
+              "call_0a97bf7e3aac446cb1fdd91fbf1664ab",
+              "call_62da08f9e96c424d96a48d34887567f4",
+              "call_9176ba32ee67467c9375e8b6ca6bfc2e",
+              "call_563f5d58d34440f18d3a16fa9acb3a4b"
+            ]
+          },
+          {
+            "text": "c4ai-command-r-v01 and c4ai-command-r-v01-4bit each omit use_qk_norm and take False. c4ai-command-r-plus, c4ai-command-r-plus-08-2024 and c4ai-command-r-plus-4bit each set it true and therefore select the new paired norms. All five specify layer_norm_eps=1e-5; the three Plus configurations each have hidden width 12288, 96 query heads and 8 KV heads.",
+            "basis": "source",
+            "evidence": [
+              "call_52220672affe42c080d205f2e6116753",
+              "call_5399a84d87274ba7b52499de346fb3ba",
+              "call_5bf3ce3dac124e558818e16648044d05",
+              "call_1361b8e3582546b694a7addd29bdb5e4",
+              "call_58d7f0b69b5f4496b634cf9f093d7861",
+              "call_563f5d58d34440f18d3a16fa9acb3a4b"
+            ]
+          },
+          {
+            "text": "A bounded integer calculation gave head_dim=128 for all three hidden-width/query-head pairs represented by these configurations: 4096/32, 8192/64 and 12288/96. This checks the existing fallback division, not actual tensor loading or broadcasting.",
+            "basis": "execution",
+            "evidence": [
+              "call_cbbd7a2018e74f66907eca42d5fb52f9"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Wires optional Cohere Q/K LayerNorm into the existing attention path and unconditionally requests float32 MLP output; inspected Command R Plus configurations enable the new norms."
+  },
+  "evidence": {
+    "call_563f5d58d34440f18d3a16fa9acb3a4b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "91c7cc41881c50abf6608a07c53b9d888c9cf2a6",
+        "offset": 201,
+        "max_bytes": 1738
+      },
+      "result_sha256": "debdb3e03cc9601b624908bd8819bb83954752ef423d53651d2818865d073eb6"
+    },
+    "call_f25b3efcfe3e46f8b69f15431040a8ed": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/models/cohere.py"
+      },
+      "result_sha256": "0e74eed61d8f3f978015b355d199711eb4dc02c9b7a9c60626eb64dce1e7238b"
+    },
+    "call_fd0e3e868ca64ab89f3b7e1df7513a3e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "query": "use_qk_norm",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_247bcc6da3e146cdaa75e0932304e12d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "query": "qk_norm",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_5c5c7185650f462caac0ead8cc6dec9f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "4948201bae8cac4f8f597b080e8791bd3de5098eb5d5a798102deb6b1e67f72c"
+    },
+    "call_bb4dc7c222bf42cc919a4ae0f07a37e3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/modules/layernorm.py"
+      },
+      "result_sha256": "6b87f4749b36f861b2b234f4a4521cb74db87111cdca7d69bce241df3f3e52f1"
+    },
+    "call_72ceb5594d3343fab887e0f5be4fba47": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/modules/mlp.py"
+      },
+      "result_sha256": "a1c16bb72d2d4764984b833fa71b6ef0120ffbf6d858dc2a5d6f9f87e09adcbb"
+    },
+    "call_b7e8925e93ab4ce6ae4619aadcc5963a": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "fb05df3f0a9aec117ddaf5d51199a74f31b9e9b3f32293ef297bcf69bf57e4bc",
+      "catalog_only": true
+    },
+    "call_9ea688859c1840de8a7b5bfc1180473c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1ee63f8afd2d04020caa9d4f5f696753690238ee8183ab5248112aba81c6cd44"
+    },
+    "call_460b100999d44480b5ae09b3421aa9a4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "max_bytes": 16384
+      },
+      "result_sha256": "dd0f5694362a99c401c34071b84ecb4d592e475e0099a56fed58b340495b2acb"
+    },
+    "call_0b3a1505f4314dcba631a12983d5d405": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-35B",
+        "revision": "36500dd4d42b63b409803cf220ba1b023d5fda5fcb4d81ef3b6708dd1293c0de",
+        "path": "config.json"
+      },
+      "result_sha256": "b6243b32a11a0486fea3e1d1be955dda0e3d8b98a1060e6e93a593a413c71103"
+    },
+    "call_5d8515a456ea491cb8e910e044fe912f": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-8B",
+        "revision": "f80bfe68f01dba0f068111abc911c1f3053bfc08d6a579515d831a93f0b390d3",
+        "path": "config.json"
+      },
+      "result_sha256": "c8e6b4867c6e84b5222ef86b045e6b3a193c039c1a436a1a79657ff58e9d57b9"
+    },
+    "call_0a97bf7e3aac446cb1fdd91fbf1664ab": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-32b",
+        "revision": "486da7488c905bf511e4cd4cdfc7c4e939fd156ae21022f18f1b47f5e339307d",
+        "path": "config.json"
+      },
+      "result_sha256": "3f56003d25068c0cd09e3075634d0b7b70ef0daa57ab1e9dd0f82be89c9b2fda"
+    },
+    "call_62da08f9e96c424d96a48d34887567f4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-8b",
+        "revision": "f0cdb4dc978366148a634945645744b3bdc6280f5f61f5a4d6892285becfe74f",
+        "path": "config.json"
+      },
+      "result_sha256": "51a034482c3ac9ff56bf3fdea856bcc1e8fa1f6fab3c913576407caf008dddde"
+    },
+    "call_9176ba32ee67467c9375e8b6ca6bfc2e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-08-2024",
+        "revision": "5e0338cf217ff8ec27dd5d70bf799f87e58d9194524b41a733ef4a1a6b0f9535",
+        "path": "config.json"
+      },
+      "result_sha256": "96651b8c5733d587b59c596f89170d2787489983d103c4019f9bae1f78595df2"
+    },
+    "call_5bf3ce3dac124e558818e16648044d05": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus",
+        "revision": "ea6af2bd1336d211c5d3002744b3908d3baf6fe3c55ef03f0057f88586345aaa",
+        "path": "config.json"
+      },
+      "result_sha256": "84c4a9e3a76f621bf1fef28723fcd4a73b9c28a42d9a878b0c90e1001dc97774"
+    },
+    "call_1361b8e3582546b694a7addd29bdb5e4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-08-2024",
+        "revision": "9ccaf7a1a168d85d97c5bfa083f821f674d69c0fb96ab0f68ebff066bd20c689",
+        "path": "config.json"
+      },
+      "result_sha256": "01efa56ec47dad5478f952cc71fc156f9b9497a729b37834f121673be4440e42"
+    },
+    "call_58d7f0b69b5f4496b634cf9f093d7861": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-4bit",
+        "revision": "8fe0d0a0fe4e3d0b331690a197be3b0d8ad679e44adfd34d548caf52d1d3c087",
+        "path": "config.json"
+      },
+      "result_sha256": "8932d219ab4e6cbc5ab6d8bf4aef2428f6f2445c65ca8b4e2e6a468cd9adaf7e"
+    },
+    "call_52220672affe42c080d205f2e6116753": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01",
+        "revision": "25bfd60077f17ffb22aaf1aa3aaca00d949f42d81423eef0f9b64687be4fea67",
+        "path": "config.json"
+      },
+      "result_sha256": "0922281383c8eee41c8901ea39088128360fa9d835a75085c89f140060dff0f4"
+    },
+    "call_5399a84d87274ba7b52499de346fb3ba": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01-4bit",
+        "revision": "23624e8f1164105511e99738152d695f91d2f4bc6eb9574cfe327bde64e03dee",
+        "path": "config.json"
+      },
+      "result_sha256": "8b834529cb8c8de4c42508294fd073f9f6e11a6be9f26e246c1fb8919098ba34"
+    },
+    "call_85baccc3f8fc48458ed83517b8ffd0a8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "query": "Command",
+        "limit": 100
+      },
+      "result_sha256": "f34e04c8190632170c18ff3ff18e2a5402b8d4c2dfa554beb89035ffffe5d789"
+    },
+    "call_e384057943fd43608e7456302493d782": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "31dadc6d2dfa9f82c9444116a18c76b558264751a966842c6a76977f1360167f"
+    },
+    "call_970737e06a13417e9a461472f0bda2d0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/util/file.py"
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_d4771511086d4de2a19f75c1354546e7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "query": "class ParallelDecoderBlock"
+      },
+      "result_sha256": "b7d03a431f0cc0be8ae30f6c327ceb7cf2fd9b3fe37d4b513160593520c43f6a"
+    },
+    "call_cdf44bf251bf4bcebf5f7ddbc57742fc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_ddda803b67c349d4944fe968d3abb888": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "query": "LayerNorm(",
+        "limit": 100
+      },
+      "result_sha256": "5f9a0513e04fa41181945e66be613484c899ecb9387efe70a2b08e1d67b82a6d"
+    },
+    "call_2619a62fb97c448bb211c87454d8b9a7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "path": "exllamav3/models/cohere2.py"
+      },
+      "result_sha256": "4608acb16d486176bf61d19d3ad18fc22a14e1e63cbb7f9d5d5b20a95119377e"
+    },
+    "call_cbbd7a2018e74f66907eca42d5fb52f9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import runpy\nf=runpy.run_path('exllamav3/util/file.py')['read_dict']\nfor d in ({},{'use_qk_norm':False},{'use_qk_norm':True},{'use_qk_norm':1}):\n print(d,repr(f(d,int,'use_qk_norm',False)))\nfor h,q in [(4096,32),(8192,64),(12288,96)]:print(h,q,h//q)\n"
+        ]
+      },
+      "result_sha256": "1540522845a5310f9ec8bcb15f932d511e393ecb570341780ca6bd80a8fd9ca9"
+    },
+    "call_57e7773aa6ce4e959d20d60e1a075093": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "16358bec615c55ab81cba6c3871b2d30ffd3f58be638a165f38223cdd1c04806"
+    },
+    "call_9355d0318dda4945bdd67b88f1986967": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6e6d7f1c7b11c8f91091e40dfefd668d0112bbe8a6766ad018de6e98fb3fc1fb"
+    },
+    "call_b54a9c659daf4f85bd0c7b8c107f3194": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "query": "out_dtype",
+        "path": "exllamav3/modules/linear.py",
+        "limit": 50
+      },
+      "result_sha256": "880c88192058ac54542b83a0118d4e2512af08c8f393f2c6d9790c7ad66329fa"
+    }
+  }
+}

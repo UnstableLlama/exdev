@@ -1,0 +1,316 @@
+{
+  "schema_version": 5,
+  "sha": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+  "parent_shas": [
+    "5ad79b071f48d26906d737b5c6b4d97e9cb0a457"
+  ],
+  "cutoff_date": "2025-06-02T01:56:43+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Ordinary Linear weights were always transposed during loading, preventing callers from declaring weights already stored in the internal [input, output] orientation.",
+        "basis": "source",
+        "evidence": [
+          "call_96e8f97e115147af812c6e1d3edbe311",
+          "call_0600185e3a9f465f801771b1afaa8b13"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change makes orientation an explicit per-layer choice rather than inferring it from dimensions. Keeping transposed_load=True preserves existing callers; False skips the loader transpose without changing the projection's internal layout.",
+        "basis": "source",
+        "evidence": [
+          "call_96e8f97e115147af812c6e1d3edbe311",
+          "call_9f51d3f48b974e2ead4ef357fb7a4e2e",
+          "call_0600185e3a9f465f801771b1afaa8b13"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This adds a construction-time capability, not an architecture implementation or automatic checkpoint detection. The diff changes no model constructor to select False.",
+        "basis": "source",
+        "evidence": [
+          "call_96e8f97e115147af812c6e1d3edbe311",
+          "call_a87284887e514f9d939b977d3fcf555d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial implementation's modules chapter was read. It establishes Linear's storage-independent interface, EXL3-first loading order, fused-weight slicing and conversion handoff.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_6c9b401205d847b287c5c511bae079ea"
+        ]
+      },
+      {
+        "text": "Related reports were inspected: #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d concerns vocabulary padding; #11, \u201cAssertionError: bias is wrong datatype,\u201d concerns bias conversion; #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d was discussed as tokenizer truncation; #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d concerns padding before slicing. Their connection here is inferred from shared linear.py paths, particularly #38's load_fp16/get_tensor traceback, not evidence that this change fixes those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_69ba11b7f0b74a1fb9ebccd17105ae13",
+          "call_049def02e688405886dfaba8af6f920b",
+          "call_77a34d0646f64323a37fdb095a4b1b3a",
+          "call_1e9b9dca78094011a1285fc5d8599632",
+          "call_96e8f97e115147af812c6e1d3edbe311"
+        ]
+      },
+      {
+        "text": "Other inspected reports concern different failures: #34, \u201ctorch._C._LinAlgError on last layer of quant\u201d; #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values\u201d; and #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,\u201d describe calibration/factorization problems. #33, \u201cError converting model,\u201d initially reports file-opening failure and later discusses GLM4 sampling. Connections to this task are inferred only from shared Linear conversion or safetensors-loader paths; none establishes a transpose-related motivation.",
+        "basis": "inference",
+        "evidence": [
+          "call_0eaab466841241748641b4b43e83e142",
+          "call_71fbea4414da4e46802d68a3f318158f",
+          "call_17732d8fa7734a08b16ffd98af8bfcdc",
+          "call_08132e7b1c004c95a1d12a41be2d108f",
+          "call_ee5c5fe1ab7f416a8aef2385eb6fe986",
+          "call_96e8f97e115147af812c6e1d3edbe311"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model, tensor loader or GPU kernel was executed. The scalar check models orientation algebra using Python integers, not FP16 conversion, padding copies or deferred device transfers.",
+      "The new option requires callers to know checkpoint orientation; compatibility with external constructors and real transposed checkpoints was not demonstrated."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Explicit weight orientation at the Linear loading boundary",
+        "claims": [
+          {
+            "text": "Linear.__init__ appends transposed_load=True and stores it on the instance. load_fp16 passes that value as get_tensor's transpose argument for an ordinary key.weight. These edits are dependent: storing the option supplies the value consumed by loading.",
+            "basis": "source",
+            "evidence": [
+              "call_96e8f97e115147af812c6e1d3edbe311"
+            ]
+          },
+          {
+            "text": "LinearFP16 consumes [input, output] weights through x @ weight. Thus True converts conventional [output, input] storage, while False accepts storage already in internal orientation. SafetensorsCollection applies the choice in both direct loaders and deferred-load completion; its in-memory new_tensors branch also honors transpose.",
+            "basis": "source",
+            "evidence": [
+              "call_0600185e3a9f465f801771b1afaa8b13",
+              "call_9f51d3f48b974e2ead4ef357fb7a4e2e",
+              "call_96e8f97e115147af812c6e1d3edbe311"
+            ]
+          },
+          {
+            "text": "Padding still targets (in_features, out_features), with dimensions rounded to multiples of the existing pad_to default, 128. Sliced layers still load the full weight on CPU without loader padding, then let LinearFP16 select input/output slices and move them to the target device. Bias and optional scale loading are unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_8817bd4ec7874febba243f3802083c15",
+              "call_0600185e3a9f465f801771b1afaa8b13",
+              "call_96e8f97e115147af812c6e1d3edbe311"
+            ]
+          },
+          {
+            "text": "The option affects ordinary primary or alternate weights only. EXL3 remains preferred and does not consume it. The fused fkey fallback retains its explicit weight.T; exporting LinearFP16 tensors likewise always transposes back to conventional storage. Conversion's get_weight_tensor continues receiving internal orientation, so the flag is not an export-format selector.",
+            "basis": "source",
+            "evidence": [
+              "call_8817bd4ec7874febba243f3802083c15",
+              "call_0600185e3a9f465f801771b1afaa8b13",
+              "call_96e8f97e115147af812c6e1d3edbe311"
+            ]
+          },
+          {
+            "text": "Whole-tree caller inspection found unchanged default-compatible construction in Attention's four projections; MLP and GatedMLP projections; BlockSparseMLP's router and experts; and the output heads in cohere, cohere2, decilm, gemma2, gemma3, glm4, llama, mixtral, phi3, qwen3 and qwen3_moe. None supplies the new argument. The Python scan found no direct Linear subclass or pre-existing transposed_load reference.",
+            "basis": "source",
+            "evidence": [
+              "call_b12c64c381e34fe2aed566d150a95a5e",
+              "call_a87284887e514f9d939b977d3fcf555d",
+              "call_96e8f97e115147af812c6e1d3edbe311"
+            ]
+          },
+          {
+            "text": "A scalar orientation check produced [30, 39, 48] for both a conventional 3\u00d72 checkpoint transposed on load and an already-oriented 2\u00d73 checkpoint left unchanged. It also checked that existing 128-element rounding maps dimensions (128, 129) to (128, 256).",
+            "basis": "execution",
+            "evidence": [
+              "call_c7843ed4d0ea4dc5881cce37da0c11e8"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds a default-preserving Linear loading option for weights already stored in internal orientation, without changing fused loading, EXL3 storage or export orientation."
+  },
+  "evidence": {
+    "call_96e8f97e115147af812c6e1d3edbe311": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+        "offset": 172,
+        "max_bytes": 1779
+      },
+      "result_sha256": "000752c393220a3e9bd306fe8090d6b2a7e926b6a7cfb895806f509631df63c0"
+    },
+    "call_8817bd4ec7874febba243f3802083c15": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5ad79b071f48d26906d737b5c6b4d97e9cb0a457",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "a9d6142a1e94ecec7dfc91496fa1e95e01a59faae7f29a466ef614eff11a62a4"
+    },
+    "call_b12c64c381e34fe2aed566d150a95a5e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "5ad79b071f48d26906d737b5c6b4d97e9cb0a457",
+        "query": "Linear(",
+        "limit": 200
+      },
+      "result_sha256": "63e9bb1e8f7517e6af12ce18f2b83260d2e8d556359fa24cc8e11c136e99271a"
+    },
+    "call_9f51d3f48b974e2ead4ef357fb7a4e2e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5ad79b071f48d26906d737b5c6b4d97e9cb0a457",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "f4dcf0e9744dc2120017cc8a979cfd1e16dfb6c9903934e165d0c82e8dfe0687"
+    },
+    "call_0600185e3a9f465f801771b1afaa8b13": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "5ad79b071f48d26906d737b5c6b4d97e9cb0a457",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "ff79e6b70830c6743673877232fe9d57f140a3525c6c4bd02b016bf55e6fd75a"
+    },
+    "call_0ad71140a4044b3c8a8c7a3ddbe0007d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/linear.py",
+        "limit": 30,
+        "max_bytes": 8000
+      },
+      "result_sha256": "ec240acca71da95dee7366490696c8e46752d33d5500f80ec3eb6ab2fcf18dec",
+      "catalog_only": true
+    },
+    "call_eb59a17b4c6e46b89097bdf6f6ebb153": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/linear.py",
+        "offset": 15,
+        "max_bytes": 5000
+      },
+      "result_sha256": "5055549913514ca497901b0312af9c6507d351228611ba9b17a66243cc174a38",
+      "catalog_only": true
+    },
+    "call_6c9b401205d847b287c5c511bae079ea": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_a87284887e514f9d939b977d3fcf555d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import pathlib,re\nfor p in pathlib.Path('.').rglob('*.py'):\n s=p.read_text(); lines=s.splitlines()\n for i,l in enumerate(lines):\n  if re.search(r'(?<![\\w.])Linear\\(',l) and 'class Linear' not in l:\n   print(str(p)+':'+str(i+1)); print('\\n'.join(lines[max(0,i-2):i+22]))\nprint('SUBCLASSES/FLAG')\nfor p in pathlib.Path('.').rglob('*.py'):\n for i,l in enumerate(p.read_text().splitlines()):\n  if 'transposed_load' in l or re.search(r'class .*\\(Linear\\)',l): print(p,i+1,l)"
+        ]
+      },
+      "result_sha256": "5775cb795e0868c45b5755a8b0281a5e9656d49be70a4207c5578ecf23770d7c"
+    },
+    "call_69ba11b7f0b74a1fb9ebccd17105ae13": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 20000
+      },
+      "result_sha256": "fb498a686bd2e453aacd3fe01c608aa961394c641a2449be0c77160dd0b1177f"
+    },
+    "call_049def02e688405886dfaba8af6f920b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 20000
+      },
+      "result_sha256": "e77f4005e45de7bddd019fe10c790f9985cb98c5009e2bcc11cdd070350d21bb"
+    },
+    "call_77a34d0646f64323a37fdb095a4b1b3a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "bd00415f527f4fcffb83e9b3b11050c6939eda7c7123e9e2678ceb1ec1a48c94"
+    },
+    "call_1e9b9dca78094011a1285fc5d8599632": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "4c8f80ab44ed68561f8f37a595fb2b4eb92970098157068e51908f7d9b02134d"
+    },
+    "call_17732d8fa7734a08b16ffd98af8bfcdc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 20000
+      },
+      "result_sha256": "d0db858bf980ec2af6edd49ca20f38574d1f6aece5bef0e2dd2fe9379e1adb42"
+    },
+    "call_0eaab466841241748641b4b43e83e142": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "d09ea28574dfa226a9296c1d866254c049589379404a771b6c353fb435a8a60c"
+    },
+    "call_71fbea4414da4e46802d68a3f318158f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 16000
+      },
+      "result_sha256": "aaceb4cee3dbf27faed1bc00974afab46c613a2ad353dae159e4058ed1e4c1c3"
+    },
+    "call_08132e7b1c004c95a1d12a41be2d108f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 20000
+      },
+      "result_sha256": "bf1b94bf3a7d85b503f2bb710b1882ae33343cc05b3f7abcdbd131e2fc4e56db"
+    },
+    "call_ee5c5fe1ab7f416a8aef2385eb6fe986": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 20000,
+        "max_bytes": 30000
+      },
+      "result_sha256": "d39d82ba6480cb32527869bc50599f0a3398ee4373f5dee9f61295c7259f5c73"
+    },
+    "call_c7843ed4d0ea4dc5881cce37da0c11e8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "W=[[1,2,3],[4,5,6]]; T=lambda a:list(map(list,zip(*a))); x=[2,7]; standard=T(W); a=T(standard); b=W; dot=lambda m:[sum(x[i]*m[i][j] for i in range(2)) for j in range(3)]; assert a==b; print('standard 3x2 + transpose and native 2x3 + no transpose:',dot(a),dot(b)); print('export shape:',len(T(b)),len(T(b)[0])); print('default padding for (128,129):',tuple((d+127)//128*128 for d in (128,129)))"
+        ]
+      },
+      "result_sha256": "a0a0d8e480be4edd026df69d3825550a39d21e656a4aab2a6f8239e47a59b8a2"
+    }
+  }
+}

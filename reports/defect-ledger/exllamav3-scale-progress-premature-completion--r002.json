@@ -1,0 +1,235 @@
+{
+  "defect_id": "exllamav3-scale-progress-premature-completion",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "confirmed",
+  "description": "Commit 72e88ae computes golden-section progress with int(delta2 / delta1), causing every contraction update to report 100 while the search continues.",
+  "trigger": "g_scale_gss performs any interval contraction with a visible ProgressBar.",
+  "expected_behavior": "Intermediate contractions report progress below completion until the search terminates.",
+  "actual_behavior": "Because the contracted-width ratio is between zero and one, int(delta2 / delta1) is zero and pb.update receives 100 on every iteration.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "72e88aef02ac18ef080f3cc084bac6109553d322",
+      "paths": [
+        "exllamav3/modules/quant/exl3_lib/quantize.py"
+      ],
+      "status": "source_verified_introduction",
+      "scope": "The task diff introduces the progress expression into g_scale_gss."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "72e88aef02ac18ef080f3cc084bac6109553d322",
+      "run": ".teacher/runs/commit-000024-001",
+      "finding_id": "scale-progress-premature-completion",
+      "source": "Commit 24 authoring finding and independent Fable mailbox source review.",
+      "reach": "Normal conversion supplies a visible progress string to the ProgressBar used by g_scale_gss. The faulty value affects display only, not the search objective or interval update.",
+      "limits": "No terminal rendering, conversion or CUDA code was executed."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+      "run": ".teacher/runs/commit-000063-001",
+      "local_id": "inherited-premature-progress",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-premature-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The optional-progress guard carries over the premature-completion calculation.",
+        "trigger": "g_scale_gss contracts its interval with a visible ProgressBar supplied by quantize_exl3.",
+        "expected_behavior": "Intermediate search progress should remain distinguishable from completion.",
+        "actual_behavior": "int(delta2 / delta1) becomes zero after the first contraction, so every loop update reports 100 even while search continues.",
+        "locations": [
+          {
+            "commit": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "g_scale_gss"
+          }
+        ],
+        "source_evidence": [
+          "call_dc6154f354074db98ec1157bc1055a1f",
+          "call_554dd2365646442ab6c3fe52d0c4ff3c",
+          "call_8a7456b45f9b4231a0e795e1be126057"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The sole located direct caller supplies a progress object; ProgressBar.update forwards the number as completed work. The patch guards the update but leaves its expression unchanged.",
+            "evidence": [
+              "call_08b81e0e32f54b4593180415f8ec42fc",
+              "call_554dd2365646442ab6c3fe52d0c4ff3c",
+              "call_8a7456b45f9b4231a0e795e1be126057",
+              "call_dc6154f354074db98ec1157bc1055a1f"
+            ],
+            "limits": "Visibility depends on the caller supplying progress text; terminal rendering was not executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled golden-section contraction from interval width 1.8 to below 0.01: all 11 updates were 100, ending at approximately 0.009045.",
+            "evidence": [
+              "call_bce23afe5b1048f7bcbc4071256c09db"
+            ],
+            "limits": "Standard-library arithmetic only; not execution of the repository search or CUDA objective."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+      "run": ".teacher/runs/commit-000066-001",
+      "local_id": "inherited-premature-search-progress",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-premature-search-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Scale-search progress still reports completion at its first interval contraction.",
+        "trigger": "g_scale_gss runs with the visible progress bar supplied through quantize_exl3 and regularize.",
+        "expected_behavior": "Intermediate updates distinguish search work from completion.",
+        "actual_behavior": "int(delta2/delta1) becomes zero after contraction, making every loop update 100 while search continues.",
+        "locations": [
+          {
+            "commit": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "g_scale_gss"
+          }
+        ],
+        "source_evidence": [
+          "call_650018a236e64899a7322064a66ff61b",
+          "call_b01b95df90b0486985bd936b15e1b798",
+          "call_41005f991d5f4effbcc7eff9ec6c7063"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent direct caller is quantize_exl3; the task moves that call into regularize while forwarding its progress bar. ProgressBar.update interprets the supplied value as completed work.",
+            "evidence": [
+              "call_68f0767188a5450d9467650b7e336a44",
+              "call_b01b95df90b0486985bd936b15e1b798",
+              "call_41005f991d5f4effbcc7eff9ec6c7063"
+            ],
+            "limits": "No terminal rendering was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled golden-section interval contraction: all 11 updates were 100, ending at width approximately 0.009045.",
+            "evidence": [
+              "call_74b1af66ec8f4defb8cb571014c9ddf1"
+            ],
+            "limits": "Python arithmetic models progress only; it does not execute the repository search or CUDA objective."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "verification": {
+    "method": "scalar_transcription",
+    "repository_execution": false,
+    "tree_scope": "Commit 72e88ae introduction only.",
+    "limits": [
+      "Standard-library scalar arithmetic modeled the source expression.",
+      "No repository or GPU execution occurred.",
+      "Terminal rendering was not assessed."
+    ]
+  },
+  "evidence": [
+    {
+      "file": "evidence/commit24-devices-and-scale-progress-source-scan.json",
+      "sha256": "dbd24542164fdf9585a07761fde53932107f8d48a02f34371f81e8bdbab0cbfe",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "72e88aef02ac18ef080f3cc084bac6109553d322",
+        "artifact": "Commit-24 scale-progress source scan and scalar transcription"
+      },
+      "retrieved_at": "2026-11-11T20:47:33Z"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000063-001__draft.json",
+      "sha256": "d5879d935807a9c5823e96667551653cc9c2fd8106cf9d54db1665398639e2fa"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000063-001.md",
+      "sha256": "d7b6f2bee59636b020254dd0e96aed2f1f16aa463e999a075c37b366606c11e1"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000066-001__draft.json",
+      "sha256": "ab59a4f114d29fbfaed88cc5a7630b79552225e70083fd7c50a814ea9e5c57eb"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000066-001.md",
+      "sha256": "73ae32f1a5c9eb4ef1a99b1e7cde3cb5545b985a00f409b1adb44f87e62febaf"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "72e88aef02ac18ef080f3cc084bac6109553d322",
+      "available_at": "2025-04-09T03:01:44+02:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000063-001/draft.json",
+      "source_id": ".teacher/runs/commit-000063-001/draft.json",
+      "content_sha256": "d5879d935807a9c5823e96667551653cc9c2fd8106cf9d54db1665398639e2fa",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000063-001.md",
+      "source_id": "reviews/verdicts/commit-000063-001.md",
+      "content_sha256": "d7b6f2bee59636b020254dd0e96aed2f1f16aa463e999a075c37b366606c11e1",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000066-001/draft.json",
+      "source_id": ".teacher/runs/commit-000066-001/draft.json",
+      "content_sha256": "ab59a4f114d29fbfaed88cc5a7630b79552225e70083fd7c50a814ea9e5c57eb",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000066-001.md",
+      "source_id": "reviews/verdicts/commit-000066-001.md",
+      "content_sha256": "73ae32f1a5c9eb4ef1a99b1e7cde3cb5545b985a00f409b1adb44f87e62febaf",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+      "available_at": "2025-04-17T11:43:08+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+      "available_at": "2025-04-17T18:37:25+02:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "72e88aef02ac18ef080f3cc084bac6109553d322",
+      "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+      "322815f71eaf582e36fd81bc6fdf5148b27fb97a"
+    ],
+    "unaffected_checked_shas": [
+      "ff72058d5052ab8c65250dbd03cc96620dc03cf5"
+    ]
+  },
+  "impact": {
+    "level": "low",
+    "domain": "usability",
+    "rationale": "The direct effect is premature progress completion in the display; the search computation does not use the progress value."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "Commit-24 source-confirmed candidate awaiting independent ledger review."
+}

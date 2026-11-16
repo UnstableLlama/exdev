@@ -156,7 +156,7 @@ def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=Fal
                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='safetensors_header',
                                      repo_id=repo,revision=sha,path=path,artifact_role='tensor_header'))
                 headers.append(path)
-            elif not path.lower().endswith(WEIGHTS) and (not reference_only or Path(path).name in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json')):
+            elif not path.lower().endswith(WEIGHTS) and (not reference_only or Path(path).name in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json','preprocessor_config.json','processor_config.json')):
                 data,_=fetch(url)
                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='hf_file',
                                      repo_id=repo,revision=sha,path=path,artifact_role='non_weight'))

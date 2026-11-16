@@ -1,0 +1,226 @@
+{
+  "schema_version": 5,
+  "sha": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+  "parent_shas": [
+    "8b0df6910382b84fd9225353c2eb4cd2708482fb"
+  ],
+  "cutoff_date": "2025-05-23T23:33:20+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Every Job.receive_logits call checked logit batch size, prefill completion and sequence liveness before sampling.",
+        "basis": "source",
+        "evidence": [
+          "call_e0ff3533510d4c319da1badfa46d1601"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Removing these repeated checks plausibly reduces Python-side sampling overhead, at the cost of local invariant diagnostics. Performance motivation is an inference, not a measured speedup.",
+        "basis": "inference",
+        "evidence": [
+          "call_98ce086d5e6f4a7c90a710326956e614",
+          "call_7517338f52a44380b4fe13129fde0451"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The three assertions become comments; sampler arguments, token constraints and return handling are unchanged. Invalid state no longer fails at these particular checks.",
+        "basis": "source",
+        "evidence": [
+          "call_98ce086d5e6f4a7c90a710326956e614",
+          "call_e0ff3533510d4c319da1badfa46d1601"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root generation entry was read. It records the ready-sequence invariant and an incomplete optional-output implementation in receive_logits.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_f9ad7128e3e143fabbc5a58c57b81902",
+          "call_f9dcaed7b0ee44dab048d7614197067f"
+        ]
+      },
+      {
+        "text": "Issue #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d reports a constructor failure and discusses using chatml instead of llama3 mode. Its relationship here is only inferred from the shared job.py path and matching constructor exception; the task does not change that code.",
+        "basis": "inference",
+        "evidence": [
+          "call_8fc4634a0d614074828812b3e74e7bc4",
+          "call_e0ff3533510d4c319da1badfa46d1601",
+          "call_98ce086d5e6f4a7c90a710326956e614"
+        ]
+      }
+    ],
+    "limitations": [
+      "No generation workload or GPU benchmark was executed; overhead reduction and output equivalence are unmeasured.",
+      "The scalar check exercises optional-return control flow only, not repository sampling or tensor operations."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Skip repeated sampling-entry assertions",
+        "claims": [
+          {
+            "text": "The removed prefill check scans sequences for kv_position == len(sequence_ids) - 1: the final input token remains for decoding. The liveness check separately scans seq.live; the shape check compares logits' first dimension with the sequence count.",
+            "basis": "source",
+            "evidence": [
+              "call_e0ff3533510d4c319da1badfa46d1601",
+              "call_98ce086d5e6f4a7c90a710326956e614"
+            ]
+          },
+          {
+            "text": "Whole-tree search finds one active direct caller, Generator.iterate_gen, and one commented threaded call. iterate_gen excludes unready jobs while constructing its batch, maps sequence rows back to each job and passes one token-position slice per sampling call. These upstream controls remain; removing local assertions does not introduce support for arbitrary shapes or unready jobs.",
+            "basis": "source",
+            "evidence": [
+              "call_30bc8169d10a414bb600367319cf0d55",
+              "call_7517338f52a44380b4fe13129fde0451",
+              "call_98ce086d5e6f4a7c90a710326956e614"
+            ]
+          },
+          {
+            "text": "The inherited optional-output failure remains: enabled probability or top-token branches still contain only pass, leaving return variables unassigned. The task changes neither these branches nor their caller.",
+            "basis": "source",
+            "evidence": [
+              "call_e0ff3533510d4c319da1badfa46d1601",
+              "call_98ce086d5e6f4a7c90a710326956e614",
+              "call_7517338f52a44380b4fe13129fde0451"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "optional-output-return",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "An inherited optional-output failure persists in the modified function.",
+        "trigger": "Job.receive_logits reaches its return with return_probs=True or return_top_tokens greater than zero.",
+        "expected_behavior": "Return requested probabilities or top-token arrays alongside the sampled token.",
+        "actual_behavior": "The enabled branches assign nothing, so tuple construction raises UnboundLocalError. This reaches the active Generator.iterate_gen caller before receive_sample can consume the result.",
+        "locations": [
+          {
+            "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_logits"
+          }
+        ],
+        "source_evidence": [
+          "call_e0ff3533510d4c319da1badfa46d1601",
+          "call_98ce086d5e6f4a7c90a710326956e614",
+          "call_30bc8169d10a414bb600367319cf0d55",
+          "call_7517338f52a44380b4fe13129fde0451"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed conditional assignments returned the default tuple with both options disabled and raised UnboundLocalError for each enabled option.",
+            "evidence": [
+              "call_4e4e6604e94f4dfbaac003df7bdd329c"
+            ],
+            "limits": "Scalar Python model, not execution of Job or its sampler."
+          }
+        ]
+      }
+    ],
+    "summary": "Comments out three sampling-entry assertions, trading local diagnostics for less repeated checking; an inherited optional-output failure remains."
+  },
+  "evidence": {
+    "call_98ce086d5e6f4a7c90a710326956e614": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "offset": 160,
+        "max_bytes": 767
+      },
+      "result_sha256": "a1899858853924375b4ce26b7d56ac417794aeb5c032eabd3581dcc235e5027f"
+    },
+    "call_e0ff3533510d4c319da1badfa46d1601": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "path": "exllamav3/generator/job.py",
+        "offset": 0,
+        "max_bytes": 24000
+      },
+      "result_sha256": "248c2ed2cecbee4f0403a2ff0f4065118f367984e37e7d0a83e5691ed17a8b6f"
+    },
+    "call_30bc8169d10a414bb600367319cf0d55": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "query": "receive_logits",
+        "limit": 100
+      },
+      "result_sha256": "361335e2a9c068d5f00760f7c7ea7e517df9a34aadbaf5facc3872ebe021b75b"
+    },
+    "call_7517338f52a44380b4fe13129fde0451": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 12500,
+        "max_bytes": 11000
+      },
+      "result_sha256": "bf178ecb0341a4d38bab78ff5bc6b1c370e1c01d722d320693fb16fdc865f440"
+    },
+    "call_f9ad7128e3e143fabbc5a58c57b81902": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f6e224671cf1acd067e79899a1ab9164bd9529f50e19b372cfde44ee97664cc6"
+    },
+    "call_f9dcaed7b0ee44dab048d7614197067f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "offset": 16384,
+        "max_bytes": 6000
+      },
+      "result_sha256": "46408465c2ee6e58d5a9559e17e3a68044c895ae9fbc960c84151cfa7f82e6a5"
+    },
+    "call_f57b6de1fda64ed1a3d61ca708881ad6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c8da0889d2c3bfa4f61462ab651fe243fb4a12323e8324739a9b26b86c883aae"
+    },
+    "call_8fc4634a0d614074828812b3e74e7bc4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "a7ed72186102cd351341950181547faac94f5222b181c1a8c1df6e18f6bae151"
+    },
+    "call_4e4e6604e94f4dfbaac003df7bdd329c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def f(probs,top):\n    next_token=1\n    if probs: pass\n    else: next_prob=None\n    if top: pass\n    else: next_k_tokens,next_k_probs=None,None\n    return next_token,next_k_tokens,next_k_probs,next_prob\nfor p,t in [(False,0),(True,0),(False,1)]:\n    try: print(p,t,f(p,t))\n    except UnboundLocalError as e: print(p,t,type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "06ec0b9a2675dbd28a2a92d59d77dac2eb2e988e0e7c60b0ed1489b76b1a6345"
+    }
+  }
+}

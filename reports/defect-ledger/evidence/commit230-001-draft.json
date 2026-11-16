@@ -1,0 +1,481 @@
+{
+  "schema_version": 5,
+  "sha": "2f8254fe00445db8554ff5150db42f9b49c73687",
+  "parent_shas": [
+    "0e27484613b9bca2d99e719db839e0a456ecb10b"
+  ],
+  "cutoff_date": "2025-06-03T03:06:24+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "RoPE previously formed every rotation angle as position \u00d7 a one-dimensional inverse-frequency vector. That cannot directly express arbitrary position-dependent angles supplied by a model.",
+        "basis": "source",
+        "evidence": [
+          "call_29601bd97be34a48ad951021860cadbe"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The three edits form one interface: attention retrieves an optional tensor, RoPE.apply forwards it instead of its stored frequencies, and CUDA interprets a two-dimensional tensor as a position-indexed angle table. The existing vector path remains the default.",
+        "basis": "source",
+        "evidence": [
+          "call_d21258cd66d14a97bcdd4b74bccd4fbd",
+          "call_58d8db9a61c74a5281af06ab0409b3a3",
+          "call_73b05e7c0c824bad9617d356051ef114"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This provides special-RoPE plumbing rather than a complete Pixtral implementation: the diff adds neither a table producer nor a model registration. The whole-parent-tree search for \u201cPixtral\u201d returned no matches.",
+        "basis": "source",
+        "evidence": [
+          "call_2d4921ad5b5348ac98f5692857b7edc2",
+          "call_d21258cd66d14a97bcdd4b74bccd4fbd",
+          "call_58d8db9a61c74a5281af06ab0409b3a3",
+          "call_73b05e7c0c824bad9617d356051ef114"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the earlier fused-normalization entry c82af98. It establishes the normalization-before-rotation design and records normalization-setting, reduction-store and padded-read concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_451687443a7443b4aa04aa4bad3c37a7"
+        ]
+      },
+      {
+        "text": "The earlier overwritten-normalization-settings concern is no longer present in the inspected parent constructor: supplied norm settings and no-norm defaults occupy separate branches. The task leaves this arrangement unchanged. The kernel's reduction-store and padded-read concerns remain.",
+        "basis": "source",
+        "evidence": [
+          "call_d2774d71d33841fb960f1c16cd08effa",
+          "call_29601bd97be34a48ad951021860cadbe",
+          "call_73b05e7c0c824bad9617d356051ef114"
+        ]
+      },
+      {
+        "text": "Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, discusses automatic scaling policy and cache/batching difficulties. Its relationship to this task is inferred from the shared rope.py frequency mechanism; it does not establish that this change implements dynamic YaRN.",
+        "basis": "inference",
+        "evidence": [
+          "call_fca3d9d082f74486a619e6f320906b89",
+          "call_58d8db9a61c74a5281af06ab0409b3a3"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d and issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d concern import/installation failures. Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d concerns conversion and is attributed in discussion to tokenizer truncation. Their connections here are inferred only from rope.py or attn.py traceback overlap, not evidence that this change fixes those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_d16726fb9a174db1bbb53dc9fea45fb3",
+          "call_1cc26810e694452096959450ace1f039",
+          "call_0024e6b2f12f48deae2f20ff75aac64b"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA build, repository test, model inference or performance benchmark was run. The Python calculation models angle/index arithmetic, not GPU execution, float32 trigonometry or FP16 rounding.",
+      "Literal searches do not establish compatibility for dynamically accessed or external callers.",
+      "The existing tests omit override tables; they exercise stored frequencies, both rotary layouts and optional normalization.",
+      "No supplied model configuration or executed producer establishes Pixtral-specific angle construction."
+    ],
+    "links": [
+      "c82af98d57c4ffd21b67baad0eb89a5ed9091759"
+    ],
+    "chapters": [
+      {
+        "id": "rope",
+        "title": "Position-indexed rotary angles",
+        "claims": [
+          {
+            "text": "All three Attention routes\u2014SDPA without cache, FlashAttention without cache, and cached FlashAttention\u2014retrieve params['inv_freq'] through get_for_device with default None. Rotation remains conditional on self.rope. The helper transfers the tensor to the layer device and caches it in params['dev_cache']; like the existing position-tensor calls, this assumes the value remains read-only for that dictionary's lifetime.",
+            "basis": "source",
+            "evidence": [
+              "call_d21258cd66d14a97bcdd4b74bccd4fbd",
+              "call_d2774d71d33841fb960f1c16cd08effa",
+              "call_051b4b43dbe842e4ace453d53c18b6d4",
+              "call_2e66a84263114037b5369d5c3d99f67c"
+            ]
+          },
+          {
+            "text": "RoPE.apply appends an optional inv_freq argument. None selects self.inv_freq without changing stored state; an override is passed directly to ext.rope. The native signature is unchanged. The science/kv_quant_exp.py caller and test_rope.py calls omit the new trailing argument and therefore retain stored-frequency behavior. compute_sincos and apply_torch remain stored-frequency paths, not override-table references.",
+            "basis": "source",
+            "evidence": [
+              "call_58d8db9a61c74a5281af06ab0409b3a3",
+              "call_cc144836a4f04c92a396f59720df463a",
+              "call_d5885e36251c4a9a89fe7305341e2d15",
+              "call_33edd5f98e204ec2a9d5b9011d0b41de",
+              "call_1f2962fde7ea420ab7a5cc655b581899"
+            ]
+          },
+          {
+            "text": "For a vector, CUDA retains angle = inv_freq[t] \u00d7 pos. For a table, it reads angle = inv_freq[pos \u00d7 width + t] without multiplying by position again. These are precomputed angles, not precomputed sine/cosine values: CUDA still evaluates both trigonometric functions and multiplies by the RoPE object's existing attn_factor.",
+            "basis": "source",
+            "evidence": [
+              "call_73b05e7c0c824bad9617d356051ef114",
+              "call_cc144836a4f04c92a396f59720df463a"
+            ]
+          },
+          {
+            "text": "The last dimension determines partial_head_dim = 2 \u00d7 width, because each angle rotates a pair of channels. Two-dimensional inputs must have width = query head_dim / 2, so this table interface requires full rotary width even though the vector path retains partial-width behavior. Float32 is checked; the former mandatory one-dimensional check is replaced by a two-dimensional check only for rank greater than one.",
+            "basis": "source",
+            "evidence": [
+              "call_73b05e7c0c824bad9617d356051ef114",
+              "call_aea6444c7949466d8a2ddfa910677cc0",
+              "call_29601bd97be34a48ad951021860cadbe"
+            ]
+          },
+          {
+            "text": "Table row selection reuses existing position semantics: token index plus scalar offset, token index plus a per-batch offset, or an explicit per-token position ID. Native validation rejects supplying both position tensors. One table is shared across the batch; batch-specific angles require callers to arrange distinct row IDs. NEOX still pairs the two rotary halves, while GPTJ pairs adjacent channels.",
+            "basis": "source",
+            "evidence": [
+              "call_29601bd97be34a48ad951021860cadbe",
+              "call_73b05e7c0c824bad9617d356051ef114"
+            ]
+          },
+          {
+            "text": "A standard-library scalar check confirmed that a flattened table built as table[p,t] = p \u00d7 frequency[t] reproduces the old angle calculation for four positions and four frequencies. This checks the indexing interpretation, not either CUDA rotation implementation.",
+            "basis": "execution",
+            "evidence": [
+              "call_ed02ce0f86f84e2fb3336c585d1850d1"
+            ]
+          },
+          {
+            "text": "The design trades a larger position-by-channel tensor and its device storage for arbitrary angles while retaining the existing rotation and fused-normalization kernel. Keeping the vector path avoids requiring such tables for ordinary RoPE; no measured speed advantage is established.",
+            "basis": "inference",
+            "evidence": [
+              "call_73b05e7c0c824bad9617d356051ef114",
+              "call_051b4b43dbe842e4ace453d53c18b6d4"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "table-row-bounds",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new table path does not validate that resolved positions name existing rows.",
+        "trigger": "Pass a float32 table of shape (2, 64), 128-wide Q/K, and position=2 through RoPE.apply or an enabled Attention RoPE route.",
+        "expected_behavior": "Reject a position outside the supplied table before launching a read.",
+        "actual_behavior": "Shape validation accepts the width, but the first table index is 128, equal to the entire table's element count. No inspected wrapper or native guard checks row bounds. The three Attention routes forward caller-supplied overrides; no default workflow producing this invalid table was identified.",
+        "locations": [
+          {
+            "commit": "2f8254fe00445db8554ff5150db42f9b49c73687",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_73b05e7c0c824bad9617d356051ef114",
+          "call_29601bd97be34a48ad951021860cadbe",
+          "call_d21258cd66d14a97bcdd4b74bccd4fbd",
+          "call_1f2962fde7ea420ab7a5cc655b581899"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Calculated the first flattened index for position 2 in a two-row, 64-column table.",
+            "evidence": [
+              "call_ed02ce0f86f84e2fb3336c585d1850d1"
+            ],
+            "limits": "No GPU memory access or resulting fault was observed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-padded-input-reads",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Warp-padded threads still read frequencies and normalization weights without logical-width guards; table lookup inherits this issue.",
+        "trigger": "Use head_dim=80, present in the existing tests, or a vector shorter than the launched rotary-thread width.",
+        "expected_behavior": "Inactive lanes avoid reading beyond frequency rows and norm-weight arrays.",
+        "actual_behavior": "The launch rounds 40 channel pairs to 64 threads. All threads read frequencies before the rotary-width guard; table mode can cross into the next row or beyond the final row. With fused normalization, padded lanes also read half2 norm weights beyond the 80-element vector. These reads remain reachable through RoPE.apply and the three Attention routes.",
+        "locations": [
+          {
+            "commit": "2f8254fe00445db8554ff5150db42f9b49c73687",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_29601bd97be34a48ad951021860cadbe",
+          "call_73b05e7c0c824bad9617d356051ef114",
+          "call_33edd5f98e204ec2a9d5b9011d0b41de",
+          "call_1f2962fde7ea420ab7a5cc655b581899"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Applied the inspected warp-rounding formula: D=80 launches 64 x threads for 40 frequencies, leaving 24 excess indices.",
+            "evidence": [
+              "call_ed02ce0f86f84e2fb3336c585d1850d1"
+            ],
+            "limits": "Index analysis does not establish compiler-emitted loads or observed CUDA faults."
+          }
+        ]
+      },
+      {
+        "id": "inherited-normalization-store-race",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged fused normalization stores every lane's reduction result to the same shared warp slot.",
+        "trigger": "Enable fused Q/K RMS normalization with nonuniform per-lane square sums.",
+        "expected_behavior": "Store the complete warp sum once, using a lane-zero guard.",
+        "actual_behavior": "rope_kernel::apply_norm writes warp_reduce_sum_f(sum) from every lane to sums[warps*t_head+warp_id]. The inspected block_reduce_sum_f helper guards its corresponding store with lane_id==0. The task leaves the unguarded store unchanged; normalization-enabled Attention and test calls still reach it.",
+        "locations": [
+          {
+            "commit": "2f8254fe00445db8554ff5150db42f9b49c73687",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel::apply_norm"
+          }
+        ],
+        "source_evidence": [
+          "call_29601bd97be34a48ad951021860cadbe",
+          "call_2c0762e12b3141fea05b749b33e61468",
+          "call_73b05e7c0c824bad9617d356051ef114",
+          "call_d2774d71d33841fb960f1c16cd08effa",
+          "call_33edd5f98e204ec2a9d5b9011d0b41de"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the kernel store with the reduction helper and inspected the production and test call sites.",
+            "evidence": [
+              "call_29601bd97be34a48ad951021860cadbe",
+              "call_2c0762e12b3141fea05b749b33e61468"
+            ],
+            "limits": "No GPU race detection or numerical failure was measured."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional per-call RoPE angle tables across attention, Python and CUDA while preserving vector defaults. Table construction remains external; row validation and inherited kernel concerns remain."
+  },
+  "evidence": {
+    "call_73b05e7c0c824bad9617d356051ef114": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2f8254fe00445db8554ff5150db42f9b49c73687",
+        "offset": 207,
+        "max_bytes": 10000
+      },
+      "result_sha256": "e6d4cad5cc01d569643a97aaf564884dca0a05d63cb899af9f11303ad0d03210"
+    },
+    "call_d21258cd66d14a97bcdd4b74bccd4fbd": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2f8254fe00445db8554ff5150db42f9b49c73687",
+        "offset": 2939,
+        "max_bytes": 2501
+      },
+      "result_sha256": "48abd0c6eb7aa2fa955e0aab27b5717cf526015f556a69bfe0cc12d45a307376"
+    },
+    "call_58d8db9a61c74a5281af06ab0409b3a3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2f8254fe00445db8554ff5150db42f9b49c73687",
+        "offset": 5440,
+        "max_bytes": 842
+      },
+      "result_sha256": "fdc79359839ab2039dddd2e6ad5a6c0fb497cbc1213b7e15d26e1979773f37b4"
+    },
+    "call_4ddd29a1954e41808c215c0bee32ec22": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "query": "inv_freq",
+        "limit": 100
+      },
+      "result_sha256": "ec8be0fa1aae11e7c13a92c8ad1c14481683d1198e68a8392458e2b6f5e3ab68"
+    },
+    "call_cc144836a4f04c92a396f59720df463a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "a7ae0793d6deb1b7a447f44bf789af1e363eed8a9fb9ab2a99de688f5528d8d0"
+    },
+    "call_d2774d71d33841fb960f1c16cd08effa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "4d5417ca0f9cd50fe2ddb7789b03be0e8c0b482cc67e6fc71ca9ef4a739c0793"
+    },
+    "call_29601bd97be34a48ad951021860cadbe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 22000
+      },
+      "result_sha256": "b71eecf05983b3e7e834c2debe54eb04568183607db947a9277d5f9a88df45ce"
+    },
+    "call_1f2962fde7ea420ab7a5cc655b581899": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "query": "rope.apply",
+        "limit": 100
+      },
+      "result_sha256": "de88e25c455ecf541786a2cd8d9bdbf14511e3c7e451bf3cb8299a0acee1c9e3"
+    },
+    "call_2e66a84263114037b5369d5c3d99f67c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "query": "get_for_device(",
+        "limit": 100
+      },
+      "result_sha256": "170f293e130635317bbf56996cf72927f755092cdefd76681a0ed26d63e7a25c"
+    },
+    "call_051b4b43dbe842e4ace453d53c18b6d4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "path": "exllamav3/util/tensor.py",
+        "offset": 3000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "cb469aa4b9368904c6a17008602e2b8989e18adafb706ecc86dd9cedc7a834bb"
+    },
+    "call_d5885e36251c4a9a89fe7305341e2d15": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 5500
+      },
+      "result_sha256": "54c164cb54f66d5c980882173fb281bb9921fc77a3ee0df0c8e5b1c8594fa935"
+    },
+    "call_3f5f506da8f24e599599e21a91fd9dfb": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "rope",
+        "limit": 10,
+        "max_bytes": 6000
+      },
+      "result_sha256": "ddbc9faa5455d598e2a18f810c442606a7c4c68fea69f847711315a2351f83fd",
+      "catalog_only": true
+    },
+    "call_451687443a7443b4aa04aa4bad3c37a7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "max_bytes": 16000
+      },
+      "result_sha256": "597d0cc17d10c90903f4b0f71997c1971bcd70e15cdafcd32525ad5bb20eeac5"
+    },
+    "call_d16726fb9a174db1bbb53dc9fea45fb3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1d473af3ff2d401ea26ac23bc11f74c531d64308ccd8cb00c544347fdc1ed797"
+    },
+    "call_fca3d9d082f74486a619e6f320906b89": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 10000
+      },
+      "result_sha256": "e50de173da2884fa2f7accc41791f73c608fdc5cd91458859ab6e727e95c8168"
+    },
+    "call_1cc26810e694452096959450ace1f039": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 14000
+      },
+      "result_sha256": "f8137d731e5df4d89a48fb621c98f021837959ac1fec18185fc80f182440b966"
+    },
+    "call_0024e6b2f12f48deae2f20ff75aac64b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 14000
+      },
+      "result_sha256": "346b3ec60ccdd4e6beeb28d95037dfc29dca5ca5b0589d59d13fd2bb6d8c3635"
+    },
+    "call_2d4921ad5b5348ac98f5692857b7edc2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "query": "Pixtral",
+        "limit": 50
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_7772874d6cd94e09a7a3dfba8d7c6ee4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "query": "freq",
+        "limit": 100
+      },
+      "result_sha256": "8ee90b53f04b217f4dd3713f5fdabbc639c57d492f70747c524131fcddb21061"
+    },
+    "call_52b65dc15b80464b81ecdb87f3970376": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "query": "RoPE",
+        "limit": 80
+      },
+      "result_sha256": "adf3af15bd4799c296bef860d56a189b27ed74bace09a6441079e534722875fa"
+    },
+    "call_33edd5f98e204ec2a9d5b9011d0b41de": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "path": "tests/test_rope.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "e7a1b50fe496622e2bc6a55421203c37f6cf394277d3dc4b913f03f4a9312133"
+    },
+    "call_aea6444c7949466d8a2ddfa910677cc0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "query": "TORCH_CHECK_SHAPES",
+        "path": "exllamav3/exllamav3_ext/util.h",
+        "limit": 10
+      },
+      "result_sha256": "cad199da115d90d855a6a35f48e39305cf0373bbe7337c45986aa17fa256182e"
+    },
+    "call_2c0762e12b3141fea05b749b33e61468": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0e27484613b9bca2d99e719db839e0a456ecb10b",
+        "path": "exllamav3/exllamav3_ext/reduction.cuh",
+        "max_bytes": 5000
+      },
+      "result_sha256": "0ad70125969a695bff216d9c65b643089b8fe40cc74cd51b98ebedad02193fb1"
+    },
+    "call_ed02ce0f86f84e2fb3336c585d1850d1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nf=[1.,0.1,0.01,0.001]; table=[p*x for p in range(4) for x in f]\nprint('phase agreement',all(table[p*4+t]==p*f[t] for p in range(4) for t in range(4)))\nD=80; threads=((D//2+31)//32)*32\nprint('D80 threads',threads,'row width',D//2,'excess reads',threads-D//2)\nprint('table rows=2 D=128 position=2 first index',2*64,'elements',2*64)\n"
+        ]
+      },
+      "result_sha256": "5cc8d0d8c2e2fd15c46335004484148373c0dc334c9d4bf37a073b24f8025e1a"
+    }
+  }
+}

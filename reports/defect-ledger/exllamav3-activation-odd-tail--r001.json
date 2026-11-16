@@ -1,0 +1,169 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Disabling padding can expose the inherited activation kernel's missing odd-element tail.",
+  "trigger": "A direct GatedMLP caller selects pad_to=1 and runs FP16 projections with an odd total intermediate element count, for example one token, hidden_size=128 and intermediate_size=129.",
+  "expected_behavior": "Every intermediate element becomes activation(gate) multiplied by up before the down projection.",
+  "actual_behavior": "act_mul_kernel processes only numel // 2 half2 pairs. With 129 elements, the last up element remains ungated and is consumed by down. No even-element guard is added. The inspected model constructors retain padding, so this observation concerns opt-in callers rather than all existing model workflows.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Traced configurable dimensions through LinearFP16 output allocation to GatedMLP's in-place activation call and subsequent down projection.",
+      "evidence": [
+        "call_e091bd97b55640bcbbb2a7d126b415d4",
+        "call_c60c91d9d924471eb93be1574d4b98c9",
+        "call_e8cdd3658bf4405aaf61895a0bda049f",
+        "call_a8f589daa7364e07b185c9d2de5c4d36"
+      ],
+      "limits": "No GPU execution or loaded checkpoint."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Enumerated the kernel's pairwise coverage for 129 elements; index 128 was not written.",
+      "evidence": [
+        "call_94a9fc138a214c3aa25a88cb709dee16"
+      ],
+      "limits": "Integer indexing model only; does not execute CUDA or reproduce FP16 arithmetic."
+    }
+  ],
+  "defect_id": "exllamav3-activation-odd-tail",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "status": "source_supported",
+      "rationale": "Read root activation.cu from Git: act_mul_kernel returns at idx >= numel / 2 and writes half2 pairs, with no scalar tail."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "3637103e2ff4a736544774606ddc964fc4f71362",
+      "run": ".teacher/runs/commit-000232-001",
+      "local_id": "unpadded-odd-activation-tail",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "unpadded-odd-activation-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Disabling padding can expose the inherited activation kernel's missing odd-element tail.",
+        "trigger": "A direct GatedMLP caller selects pad_to=1 and runs FP16 projections with an odd total intermediate element count, for example one token, hidden_size=128 and intermediate_size=129.",
+        "expected_behavior": "Every intermediate element becomes activation(gate) multiplied by up before the down projection.",
+        "actual_behavior": "act_mul_kernel processes only numel // 2 half2 pairs. With 129 elements, the last up element remains ungated and is consumed by down. No even-element guard is added. The inspected model constructors retain padding, so this observation concerns opt-in callers rather than all existing model workflows.",
+        "locations": [
+          {
+            "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.__init__"
+          },
+          {
+            "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "act_mul_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_bd6fe2c3517449a994c9c3fb7d385669",
+          "call_e8cdd3658bf4405aaf61895a0bda049f",
+          "call_a8f589daa7364e07b185c9d2de5c4d36",
+          "call_0753846c3ea744b5bcd9f01a47672c7e",
+          "call_3bf4e3122909424180de4e8d34977e82"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced configurable dimensions through LinearFP16 output allocation to GatedMLP's in-place activation call and subsequent down projection.",
+            "evidence": [
+              "call_e091bd97b55640bcbbb2a7d126b415d4",
+              "call_c60c91d9d924471eb93be1574d4b98c9",
+              "call_e8cdd3658bf4405aaf61895a0bda049f",
+              "call_a8f589daa7364e07b185c9d2de5c4d36"
+            ],
+            "limits": "No GPU execution or loaded checkpoint."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated the kernel's pairwise coverage for 129 elements; index 128 was not written.",
+            "evidence": [
+              "call_94a9fc138a214c3aa25a88cb709dee16"
+            ],
+            "limits": "Integer indexing model only; does not execute CUDA or reproduce FP16 arithmetic."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit232-001-draft.json",
+      "sha256": "d43c25b0e17772da2dd9d30d9aa2757f4dd0f4b5e51407ef29ed32c605df9485"
+    },
+    {
+      "file": "evidence/commit232-001-transcript.json",
+      "sha256": "7b145006e914d0aef4d29b16fa56be3188696db1599fd42f2006ae0a05ec3708"
+    },
+    {
+      "file": "evidence/commit232-001-verdict.md",
+      "sha256": "4100b421b10c4e45f55d3df7aa147e4a38ccb9a1227ccce150259084b0f75aaf"
+    },
+    {
+      "file": "evidence/root-activation-odd-tail.cu",
+      "sha256": "fe4b4d1a0690ac1e802643bb94d0c83fd63aa231f4dae545a1a3cdd8a9979cb3"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit232-001-draft.json",
+      "source_id": "evidence/commit232-001-draft.json",
+      "content_sha256": "d43c25b0e17772da2dd9d30d9aa2757f4dd0f4b5e51407ef29ed32c605df9485",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit232-001-transcript.json",
+      "source_id": "evidence/commit232-001-transcript.json",
+      "content_sha256": "7b145006e914d0aef4d29b16fa56be3188696db1599fd42f2006ae0a05ec3708",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit232-001-verdict.md",
+      "source_id": "evidence/commit232-001-verdict.md",
+      "content_sha256": "4100b421b10c4e45f55d3df7aa147e4a38ccb9a1227ccce150259084b0f75aaf",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/root-activation-odd-tail.cu",
+      "source_id": "evidence/root-activation-odd-tail.cu",
+      "content_sha256": "fe4b4d1a0690ac1e802643bb94d0c83fd63aa231f4dae545a1a3cdd8a9979cb3",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "3637103e2ff4a736544774606ddc964fc4f71362"
+    ],
+    "limits": "Kernel limitation exists at root; 232 first exposes it through configurable GatedMLP padding. Opt-in FP16 odd total intermediate count; default padded model constructors remain unaffected. No continuous affected range asserted."
+  },
+  "first_caller_exposure": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "sha": "3637103e2ff4a736544774606ddc964fc4f71362",
+    "description": "GatedMLP pad_to=1 permits odd intermediate widths; odd token count yields an odd total."
+  },
+  "administrative_qualifications": [
+    "Suspected/source-only with integer coverage model; no CUDA or FP16 numerical execution.",
+    "Separate from deferred BF16 conversion odd-tail and FP32 intermediate-contract identities.",
+    "Preserved original finding verbatim. Canonical-use correction: activation.cu location should use task SHA 3637103e2ff4a736544774606ddc964fc4f71362 rather than the parent. Authored artifacts unchanged; never teacher input."
+  ],
+  "recorded_at": "2026-11-16T15:04:35.204473+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

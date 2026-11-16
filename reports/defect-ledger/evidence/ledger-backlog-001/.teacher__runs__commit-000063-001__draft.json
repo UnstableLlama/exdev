@@ -1,0 +1,306 @@
+{
+  "schema_version": 5,
+  "sha": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+  "parent_shas": [
+    "00bbb58384359ced00025238360cdcdcafad7c3c"
+  ],
+  "cutoff_date": "2025-04-17T11:43:08+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Global-scale estimation repeated the same tile for every inner-loop iteration: its column index used the fixed sampling width instead of the loop variable.",
+        "basis": "source",
+        "evidence": [
+          "call_dc6154f354074db98ec1157bc1055a1f",
+          "call_554dd2365646442ab6c3fe52d0c4ff3c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Using w selects neighboring wrapped diagonals rather than duplicating one diagonal, increasing sample diversity without increasing the number of sampled tiles.",
+        "basis": "source",
+        "evidence": [
+          "call_dc6154f354074db98ec1157bc1055a1f",
+          "call_554dd2365646442ab6c3fe52d0c4ff3c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The changed sample can change the selected global scale and subsequent quantization. Improved model quality or conversion speed is not established.",
+        "basis": "inference",
+        "evidence": [
+          "call_554dd2365646442ab6c3fe52d0c4ff3c",
+          "call_dc6154f354074db98ec1157bc1055a1f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier multi-GPU entry records premature scale-search progress completion. Inspection of this patch shows that its arithmetic persists despite the new optional-progress guard.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_e9aa4fc96fe948c1bd352da182ddafb6"
+        ]
+      },
+      {
+        "text": "The inspected discussions report an undefined __cxa_call_terminate symbol (#7), incoherent cogito output at bpw <= 2.5 (#15), a CUDA invalid-configuration error (#16), and missing torch during installation (#17). They do not establish that this sampling patch resolves those reports.",
+        "basis": "source",
+        "evidence": [
+          "call_15e488bac11e4a368d8f21cf427bd77f",
+          "call_49594b14aa164adfb4dc0640f7a174a2",
+          "call_b14ed47303cb44c7bf4ca5e6ec6bf6a9",
+          "call_7775c71260f7478b80041f3e0c897119"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch, CUDA kernel, or end-to-end conversion was executed. Scalar checks establish indexing and interval arithmetic only, not GPU numerical behavior or model quality.",
+      "The sampling comment hopes for representative coverage; neither representative distributions nor a unimodal scale-error objective were empirically established."
+    ],
+    "links": [
+      "72e88aef02ac18ef080f3cc084bac6109553d322"
+    ],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Correct wrapped-diagonal scale-search sampling",
+        "claims": [
+          {
+            "text": "g_scale_gss samples 16-by-16 tiles, flattens each to 256 elements, applies tensor_core_perm, and stacks them for trial quantization. With default width 3, the corrected column index ((i + w) % tiles_n) spans three wrapped offsets per i; the old index repeated ((i + 3) % tiles_n) three times. Modulo wrapping can still produce duplicates when the tile grid is narrow.",
+            "basis": "source",
+            "evidence": [
+              "call_554dd2365646442ab6c3fe52d0c4ff3c",
+              "call_dc6154f354074db98ec1157bc1055a1f"
+            ]
+          },
+          {
+            "text": "A scalar transcription confirmed unchanged sample counts but greater distinct coverage: a 4-by-4 tile grid has 12 samples and changes from 4 to 12 unique tiles; a 2-by-5 grid changes from 5 to 10 unique tiles among 15 samples.",
+            "basis": "execution",
+            "evidence": [
+              "call_bce23afe5b1048f7bcbc4071256c09db"
+            ]
+          },
+          {
+            "text": "Each trial quantizes tiles multiplied by scale, divides reconstructed values by that scale, and minimizes mean squared error against the original samples. Golden-section search retains bounds 0.1 and 1.9 and stops when interval width is at most 0.01; these are scale-search parameters, not bitrate limits.",
+            "basis": "source",
+            "evidence": [
+              "call_554dd2365646442ab6c3fe52d0c4ff3c"
+            ]
+          },
+          {
+            "text": "The whole-parent caller search found one direct caller, quantize_exl3. It supplies a ProgressBar after channel normalization and Hadamard transforms, multiplies weight_r by the returned scale, and divides su by the same scale before LDLQ. This compensating adjustment preserves the reconstruction scaling convention while changing the values presented to quantization.",
+            "basis": "source",
+            "evidence": [
+              "call_08b81e0e32f54b4593180415f8ec42fc",
+              "call_554dd2365646442ab6c3fe52d0c4ff3c"
+            ]
+          },
+          {
+            "text": "The patch also suppresses verbose interval-by-interval printing while retaining the final scale/error message, and guards pb.update so the default pb=None no longer causes an attribute access there. The newly appended synchronization loop follows an unconditional return and is unreachable on normal completion.",
+            "basis": "source",
+            "evidence": [
+              "call_dc6154f354074db98ec1157bc1055a1f",
+              "call_554dd2365646442ab6c3fe52d0c4ff3c"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unreachable-final-synchronization",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly added exit synchronization cannot execute.",
+        "trigger": "g_scale_gss completes its search normally.",
+        "expected_behavior": "If the added loop is intended to synchronize selected devices before returning, it must run before the return.",
+        "actual_behavior": "return best_scale exits inside the stream context before control can reach the appended device loop.",
+        "locations": [
+          {
+            "commit": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "g_scale_gss"
+          }
+        ],
+        "source_evidence": [
+          "call_dc6154f354074db98ec1157bc1055a1f",
+          "call_554dd2365646442ab6c3fe52d0c4ff3c",
+          "call_08b81e0e32f54b4593180415f8ec42fc"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the appended loop with the unconditional return and inspected quantize_exl3, the only direct caller found in the whole-parent search.",
+            "evidence": [
+              "call_dc6154f354074db98ec1157bc1055a1f",
+              "call_554dd2365646442ab6c3fe52d0c4ff3c",
+              "call_08b81e0e32f54b4593180415f8ec42fc"
+            ],
+            "limits": "This establishes dead code, not a CUDA race or a requirement for additional synchronization."
+          }
+        ]
+      },
+      {
+        "id": "inherited-premature-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The optional-progress guard carries over the premature-completion calculation.",
+        "trigger": "g_scale_gss contracts its interval with a visible ProgressBar supplied by quantize_exl3.",
+        "expected_behavior": "Intermediate search progress should remain distinguishable from completion.",
+        "actual_behavior": "int(delta2 / delta1) becomes zero after the first contraction, so every loop update reports 100 even while search continues.",
+        "locations": [
+          {
+            "commit": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "g_scale_gss"
+          }
+        ],
+        "source_evidence": [
+          "call_dc6154f354074db98ec1157bc1055a1f",
+          "call_554dd2365646442ab6c3fe52d0c4ff3c",
+          "call_8a7456b45f9b4231a0e795e1be126057"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The sole located direct caller supplies a progress object; ProgressBar.update forwards the number as completed work. The patch guards the update but leaves its expression unchanged.",
+            "evidence": [
+              "call_08b81e0e32f54b4593180415f8ec42fc",
+              "call_554dd2365646442ab6c3fe52d0c4ff3c",
+              "call_8a7456b45f9b4231a0e795e1be126057",
+              "call_dc6154f354074db98ec1157bc1055a1f"
+            ],
+            "limits": "Visibility depends on the caller supplying progress text; terminal rendering was not executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled golden-section contraction from interval width 1.8 to below 0.01: all 11 updates were 100, ending at approximately 0.009045.",
+            "evidence": [
+              "call_bce23afe5b1048f7bcbc4071256c09db"
+            ],
+            "limits": "Standard-library arithmetic only; not execution of the repository search or CUDA objective."
+          }
+        ]
+      }
+    ],
+    "summary": "Corrects global-scale tile sampling to use distinct wrapped offsets, guards optional progress updates, and reduces verbose output. Premature progress completion persists, and newly appended synchronization is unreachable."
+  },
+  "evidence": {
+    "call_dc6154f354074db98ec1157bc1055a1f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+        "offset": 161,
+        "max_bytes": 1800
+      },
+      "result_sha256": "cab6685c9f64c3ce3ca674256bfd4a750f4c3b5344bc933c4f2e763b9a3163a9"
+    },
+    "call_554dd2365646442ab6c3fe52d0c4ff3c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 16000,
+        "max_bytes": 15000
+      },
+      "result_sha256": "2d6126742ec9b604c359f7aed87a654ef98db84a6b109fd4c51006588573d3d9"
+    },
+    "call_08b81e0e32f54b4593180415f8ec42fc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+        "query": "g_scale_gss",
+        "limit": 100
+      },
+      "result_sha256": "761c9ebb5b71273b65aaef954c091d093aee7fc417fe13d15f399d553d9ad44a"
+    },
+    "call_191b260a0bc34552920ddceebc26d5f8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "quantize.py",
+        "symbol": "g_scale",
+        "limit": 20,
+        "max_bytes": 4000
+      },
+      "result_sha256": "9e5e20f36d9b19dd4ebe75fad54c2f84cf77007dd8cd4e56b102233db1b84fe1",
+      "catalog_only": true
+    },
+    "call_e9aa4fc96fe948c1bd352da182ddafb6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "72e88aef02ac18ef080f3cc084bac6109553d322",
+        "max_bytes": 16384
+      },
+      "result_sha256": "be01f27b1d1fc0aaf0e83ead6ad1b680acf7bf49d0e0aa67d1f341da60eb8333"
+    },
+    "call_15e488bac11e4a368d8f21cf427bd77f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "29fdf8c4b90ed1d82b93a23c22773dad2d9abf6b0db281812f15fa20817bb283"
+    },
+    "call_49594b14aa164adfb4dc0640f7a174a2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "aa894a355c2d0afe22f84c21db1644031fd44b080566a7518b1e602cc47c549b"
+    },
+    "call_b14ed47303cb44c7bf4ca5e6ec6bf6a9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "33c6173fd39f7efe765bede35e8d41f3f42ea1662234c3345cce1f2b61834064"
+    },
+    "call_7775c71260f7478b80041f3e0c897119": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 10000
+      },
+      "result_sha256": "0761aa220f72dcebbfb68f9027fd2d7b64b2aa06a9413e753de614d61c0b64b7"
+    },
+    "call_6d942e85a8ae4da38d699b2406b436ca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+        "query": "class ProgressBar",
+        "limit": 20
+      },
+      "result_sha256": "bf5b9df8870f6348b252496229faa140072539be95cd75e9a062dea9306e8e39"
+    },
+    "call_8a7456b45f9b4231a0e795e1be126057": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+        "path": "exllamav3/util/progress.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "75b82471ff9e022bed8490f7349aff057f5b2708715bbcc9996e1578e77a9dd8"
+    },
+    "call_bce23afe5b1048f7bcbc4071256c09db": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor k,n,w in [(4,4,3),(2,5,3),(4,2,3)]:\n old=[(i%k,(i+w)%n) for i in range(max(k,n)) for j in range(w)]\n new=[(i%k,(i+j)%n) for i in range(max(k,n)) for j in range(w)]\n print((k,n,w),'samples',len(new),'unique old/new',len(set(old)),len(set(new)))\nd=1.8; updates=[]\nwhile d>0.01:\n d*= (math.sqrt(5)-1)/2\n updates.append(100-100*int(d/1.8))\nprint('iterations',len(updates),'updates',updates,'final width',d)"
+        ]
+      },
+      "result_sha256": "278c19fd6161ea985c4e3a2499aec341d86891c7f000ad34f409eb91a7d11a48"
+    }
+  }
+}

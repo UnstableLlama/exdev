@@ -3945,3 +3945,592 @@ Ancestor retrieval only. reviews/verdicts/commit-000207-001.md sha256 8fbed33b10
 
 1. Administrative: the finding's location is written against the parent `2cc8f718` rather than the task commit.
    The file is identical at both, but locations elsewhere use the task commit.
+
+- 208/001 request filed: reviews/requests/commit-000208-001.md; eleven hashes verified, 15 identical replays, 1/1 sections, one second-parent ancestor entry. Native concerns inherited; Python stand-in only. Science caller read through byte 5500; parent-based finding location disclosed. One path-only row selected, no truncation. No ledger candidates; older obligations remain open. Await verdict; 209 unstarted.
+
+- User ledger-backlog decision recorded: reviews/verdicts/ledger-backlog.decision.md SHA256 4073325bf693ff76e2ce0c96c90973efe20238bf3f6047e8077390bfb4764235. Explicit advancement pause installed while 208 awaits verdict; no 209 packet/run until reviews/requests/ledger-backlog-001.md is accepted. Batch must reconcile every verdict/register obligation including held items, preserve reviewer origins and approved-walk cutoff, and include hashes/validation. Subsequent ledger items due with next commit request. User reports through 207 committed/pushed as 39357a9.
+
+## Recorded commit-000208-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000208-001.md sha256 6fdb488a94ea99274ce9155e04fed2f73075c62a206b74dc36e54c06bf4df015
+
+### Follow-ups
+
+1. Ledger: no new identity. PR 45 is an observed occurrence of the 200 tensor-truth-value record and may be
+   cited on it as evidence; the fix stays attributed to `95c5097b`.
+
+### Must fix before canonical use
+
+1. Minor: say in the entry that the merged tree equals the second parent's, so the merge itself adds nothing
+   beyond 207. The entry reads the second-parent explanation but describes the change only through the
+   first-parent diff.
+2. Administrative, as at 207: write the finding's location against the task commit.
+
+## Ledger backlog filed — 2026-11-16
+
+`reviews/requests/ledger-backlog-001.md` submits 100 append-only records (63 new identities, 37 revisions), with 199 obligation rows and 72 existing-identity inventory rows in `reports/ledger-backlog-001.json`. Older ledger follow-ups are reconciled by this inventory pending review, not accepted by filing. Budget-boundary (+1), packed-scale publication candidate and separate reviewer-origin validator implementation remain held. Reviewer provenance stays administrative; execution limitations remain. All 114 prior records match HEAD bytes. 208 approval recorded with --approve; 209 blocked until acceptance. Subsequent ledger work due with next commit request.
+
+## Ledger backlog accepted — 2026-11-16T10:59:43.932041+00:00
+
+Verdict `reviews/verdicts/ledger-backlog-001.md` SHA256 `286d51de975ee67312346b84a765fd9b0e301f04222d8b8cf1b705d2a4f58307`; request hash and 329 manifest hashes verified. Backlog discharged except three declared holds. Pause lifted; proceed 209 on guidance 9 detached. Pending correction for 209 request: `reports/defect-ledger/exllamav3-layernorm-reference-shape--r002.json` (introduction f45eb4ce/200, source-supported, not inherited), schema/evidence validated. Reviewer-only correction excluded from teacher input. Each commit’s ledger items due with next request. Acceptance evidence: reports/ledger-backlog-001.acceptance.json.
+
+
+## 2026-11-16 — 209 request
+
+209/001 request filed in reviews/requests/commit-000209-001.md: unassisted guidance 9, 36 identical replays, 2/2 task sections, three ancestor reads; one isolated AST/stub run with one additional repository file read. Layernorm-reference-shape r002 correction included for review; schema/evidence validation passes. Serialization finding and inherited filtered-reference observation await verdict, with ledger filing due in next request. Three backlog holds persist. Await verdict; no 210.
+
+## Recorded commit-000209-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000209-001.md sha256 83834e2a825167f6361ca54d6b8bb65278ab8b8563ac4f2a28d56506c1a66aa8
+
+### Follow-ups
+
+1. Ledger, with 210's request: the split-result finding as suspected, introduced at `8ff65b87`; the
+   filtered-reference identity gains this commit as an observation.
+
+### Must fix before canonical use
+
+1. With `--logits_file` given and a model specification that contains `out_logits`, `test_ppl` still treats that
+   model as the producer and at the end calls `save_tensor(ref_logits, logits_file)`, overwriting the reference
+   file the user supplied. The entry states the rule ("a specification containing out_logits is a producer") but
+   not this consequence.
+2. `--dataspec` is not marked required and has no default, but the script opens it unconditionally. The entry
+   says only that the model and output paths are required.
+
+
+## 2026-11-16 — 209 approval
+
+209/001 approved for ancestor retrieval only via --approve; verdict SHA256 83834e2a825167f6361ca54d6b8bb65278ab8b8563ac4f2a28d56506c1a66aa8; request and all 17 artifact hashes verified. Layernorm-reference-shape r002 accepted. Pending with 210 request: compare-q-split-result-serialization r001 (introduced 209, suspected, no future fix) and compare-q-filtered-reference-dependency r004 (209 observation), both schema/evidence validated. Canonical-use conditions: explicit logits_file can be overwritten by an out_logits producer; dataspec is optional in CLI but opened unconditionally. Reviewer notes never teacher input. Reviewer replay reports 35 identical calls plus the declared argument error, whereas local validation reports all 36 including error; preserve both reports. Three backlog holds remain. Launch 210 detached on guidance 9.
+
+
+## 2026-11-16 — 210 request
+
+210/001 filed in reviews/requests/commit-000210-001.md: guidance 9, nine exact replays, 1/1 task section, one ancestor chapter; scalar index transcription only, no run file reads or kernel execution. Both 209 ledger items included: split-result-serialization r001 and filtered-reference-dependency r004; schema/evidence validation passes. Incomplete reconstruction-width finding awaits verdict and identity disposition for next request. Await verdict; no 211.
+
+## Recorded commit-000210-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000210-001.md sha256 2f488f6d71d902dcdce99e8de0e2d9f6d02c880100247d29d3e8da0e22f98c32
+
+### Follow-ups
+
+1. Ledger, with 211's request: one identity for the reconstruction width. The missing width check and the wrong
+   stride are inherited (verify the introduction from the root tree); `49ac13c0` is the commit at which the
+   unwritten part stops being zero. Suspected, source-only, reach limited as the entry states.
+
+### Must fix before canonical use
+
+1. Administrative: the second location is written against the parent commit; use the task commit.
+
+
+## 2026-11-16 — 210 approval
+
+210 approved via --approve for ancestor retrieval only; verdict SHA256 2f488f6d71d902dcdce99e8de0e2d9f6d02c880100247d29d3e8da0e22f98c32, request plus 27 artifact hashes verified. Both 209 ledger items accepted. Pending with 211 request: exllamav3-reconstruction-width--r001.json; root constructor and native kernel verified for inherited width guard/stride defect, 210 changes unwritten storage from zero to uninitialized. Schema/evidence pass, suspected, no CUDA execution or normal model-loading reach. Canonical-use correction: native location must cite task SHA rather than parent. Guidance-9 reviewer cost/effect note retained in verdict for later report, never teacher input. 211 launching detached; three backlog holds persist.
+
+
+## 2026-11-16 — 211 request
+
+211/001 request filed: reviews/requests/commit-000211-001.md. Guidance 9, 35 exact replays, 5/5 task sections, two root chapters; truncated allocation ancestor search disclosed. Run reads: whole-tree Python AST scan plus six distinct files in seven range-print reads; scalar parser transcription only. 210 reconstruction-width r001 included and validated. Strategy-input finding awaits verdict; inherited exact-budget observation does not resolve existing +1 qualification hold. Await verdict; no 212.
+
+## Recorded commit-000211-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000211-001.md sha256 2fd7fb77431a0c5db86fe13e5afcb05255dc26878160be554428a351ff5c19cd
+
+### Follow-ups
+
+1. Ledger, with 212's request: the malformed-strategy finding as suspected, introduced at `00ad26e8`.
+
+### Must fix before canonical use
+
+1. `inherited-exact-budget-boundary` is stated as at the root entry, without the qualification from the 181 and
+   182 verdicts: the callers' budget already includes `+1`, so the practical effect is not an excluded exact
+   match. The identity remains held; no ledger record follows from this entry.
+2. Minor: say that a malformed segment is only reached when the loop arrives at that module, so a long
+   conversion can fail part-way instead of at start-up. The entry's "before processing modules" is the expected
+   behaviour, not the actual one, and could say so more plainly.
+
+
+## 2026-11-16 — 211 approval
+
+211/001 approved via --approve for ancestor retrieval only; verdict SHA256 2fd7fb77431a0c5db86fe13e5afcb05255dc26878160be554428a351ff5c19cd; request and 18 artifact hashes verified. Reconstruction-width r001 accepted. Due with 212 request: malformed-strategy finding, suspected, introduced at 00ad26e8. Budget-boundary identity stays held: callers already include +1; no record from this observation. Canonical-use clarification: malformed segments fail only when conversion reaches the module, potentially part-way through. Authored run unchanged; reviewer material never teacher input. Continue 212 detached on guidance 9.
+
+
+## 2026-11-16 — 212 request
+
+212/001 request filed: reviews/requests/commit-000212-001.md. Guidance 9; eight exact replays, 1/1 sections, one complete prior-version ancestor entry, three complete parent reads, no run calls. No findings or execution claims. 211 strategy-input-validation r001 included, suspected and introduced at 00ad26e8; schema/evidence validated. Budget-boundary identity and remaining backlog holds persist. Await verdict; no 213.
+
+## Recorded commit-000212-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000212-001.md sha256 7208e5de3c712115347e26c341d0b4feb3edeccafb2a79dc797627e77074ef19
+
+### Follow-ups
+
+None new.
+
+### Must fix before canonical use
+
+None.
+
+
+## 2026-11-16 — 212 approval
+
+212/001 approved via --approve for ancestor retrieval only; verdict SHA256 7208e5de3c712115347e26c341d0b4feb3edeccafb2a79dc797627e77074ef19; request and all 16 artifact hashes verified. Strategy-input-validation r001 accepted. No new findings, canonical-use conditions or ledger obligations. Budget-boundary identity stays held; three backlog holds persist. Continue 213 detached on guidance 9.
+
+- 2026-11-16: 213 architecture stop resolved through complete XiaomiMiMo discovery and five validated official pinned reference bundles; reports/commit-000213-reference-recovery-001.json records provenance. Manual unassisted 213/001 supervisor prepared; guidance 9, no pause bypass or teacher hints.
+
+- 2026-11-16: 213/001 request filed: reviews/requests/commit-000213-001.md. Fresh unassisted guidance 9; 25 identical replays, 2/2 task sections, one complete ancestor chapter. Five complete official reference bundles recovered after manual architecture discovery; teacher read all five configs but no headers. Five complete parent file reads and two truncated prefixes disclosed; scalar-only run with no file reads. No findings or ledger obligations from 212. Await verdict; no 214.
+
+## Recorded commit-000213-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000213-001.md sha256 7c19a76890234d04ef2c66e4da0fe5127d90108870b49fbe2eb0df7922629f42
+
+### Follow-ups
+
+None for the ledger. No items were owed from 212 and none arise here.
+
+### Must fix before canonical use
+
+1. The entry says bias handling is unestablished although the tensor headers were in the packet. State that the
+   checkpoints carry Q/K/V biases and that the inherited `Linear` loads them by presence, not through the
+   configuration flag.
+2. State what is left unread: the 16 `model.mtp_layers.0` tensors.
+
+- 2026-11-16: 213/001 approved via --approve for ancestor retrieval only; verdict SHA256 7c19a76890234d04ef2c66e4da0fe5127d90108870b49fbe2eb0df7922629f42; request and all 17 artifact hashes verified. Manual reference recovery accepted. No ledger obligations. Canonical-use conditions: describe Q/K/V bias loading by tensor presence and the 16 unread model.mtp_layers.0 tensors. Reviewer knowledge remains administrative, never teacher input; authored run unchanged. Continue 214 detached on guidance 9.
+
+- 2026-11-16: 214 architecture recovery stopped before authoring; reference-access request filed, SHA256 8f6fb0b14a50033a73e918758c763a2973ce0487d44e16dfc14ae814096104b2. Google discovery 002 has one unresolved historical-config identity (medgemma-4b-it), five known matches recovered/validated separately. No packet/run, no ledger from 213; wait for resolution.
+
+
+### 2026-11-16 — 214 reference-access resolution
+
+214 reference-access resolution recorded: reviews/verdicts/commit-000214-reference-access-001.md, SHA256 26584138c506de87dfb46e8fd48df94b072f1c8fd2116839f002054759144027; request and all 41 artifact hashes verified. Discovery 003 records medgemma-4b-it as not inspected at the pin; current public metadata declares Gemma3ForConditionalGeneration. No files from it attached. Five validated bundles promoted to unbound canonical evidence (45 objects, 15 headers), initial four archived unchanged; recovery 003. Full request must name uninspected status, 164 proof reuse and two gemma-3n absences. No implementation change or ledger owed; manual unassisted guidance-9 launch authorized. Reviewer material stays administrative.
+
+
+### 2026-11-16 — 214/001 request
+
+214/001 full-review request filed: reviews/requests/commit-000214-001.md, SHA256 3b456863dda5da46890a686ef53a70e2046c5aa1a733653c888dc2794148c3bb. Unassisted guidance 9; 19 exact replays including one serialized evidence_index argument error; 2/2 sections, one complete ancestor, five complete configs; no header reads. One parent model.py prefix truncated; run scans Python files but prints selected matching lines and scalar transcription only. Discovery 003 applies decision 98 point 5: medgemma-4b-it not inspected at pin, no files attached; five mirror bundles (45 objects, 15 headers), 164 proof reuse and two gemma-3n absences disclosed. No findings or ledger owed from 213. Await verdict; no 215.
+
+## Recorded commit-000214-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000214-001.md sha256 8c7b2f0fbcc59c7606d3cb2b9a6cc28f9baf0596e410c256c3a7bef9915ae3fa
+
+### Follow-ups
+
+None for the ledger.
+
+### Must fix before canonical use
+
+1. The entry says tensor layout is unproved although the headers were in the packet. State that the reference
+   checkpoints use unprefixed names and store no separate output head, so the head comes from the embedding
+   through the alternative key.
+
+
+### 2026-11-16 — 214 approval
+
+214/001 approved via --approve for ancestor retrieval only; verdict SHA256 8c7b2f0fbcc59c7606d3cb2b9a6cc28f9baf0596e410c256c3a7bef9915ae3fa; request and all 23 artifact hashes verified. Reference discovery accepted; no ledger follow-ups. Canonical-use condition: describe unprefixed reference tensor names and absence of separate lm_head.weight, loaded from embedding via alt_key. Reviewer-only header observations remain administrative, never teacher input; authored artifacts unchanged. Reviewer replay reports 18/19 identical with the declared argument error differing, versus local 19/19 including serialized error; both reports retained. Continue 215 detached on guidance 9.
+
+
+### 2026-11-16 — 215/001 request
+
+215/001 full-review request filed: reviews/requests/commit-000215-001.md, SHA256 58badf23186ed5c2945e48b74951013ca05782becb90087379b4889bc40cadf4. Unassisted guidance 9; 11 exact replays, 1/1 task section, complete parent safetensors.py and root loading-tokenization chapter; four untruncated searches, issues 33/38 complete. Run is synthetic dictionary transcription only, no file reads or repository execution. Suspected header-name-collision finding awaits review; if accepted file with 216 request. No ledger owed from 214. One path-only closed row selected, no truncation. Await verdict; no 216.
+
+## Recorded commit-000215-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000215-001.md sha256 e5cdc8fe280338573f4a23bac6684a2c9a3dc4d67097f29f30c7b9f2547b1498
+
+### Follow-ups
+
+1. Ledger, with 216's request: the collision finding as suspected, classification as filed (behaviour change),
+   introduced at `4e493719`, synthetic reach only.
+
+### Must fix before canonical use
+
+1. State the conversion consequence above. The Impact sentence "changes the in-memory namespace, not … on-disk
+   bytes" is true of the source files but reads as if nothing on disk is affected.
+
+
+### 2026-11-16 — 215 approval
+
+215/001 approved via --approve for ancestor retrieval only; verdict SHA256 e5cdc8fe280338573f4a23bac6684a2c9a3dc4d67097f29f30c7b9f2547b1498; request and 12 artifact hashes verified. Due with 216 request: header-name-collision ledger record, suspected / behavior_change, introduced at 4e493719fbbb25c91142a65bfbc56791f18ccaec, synthetic reach only; no affected checkpoint demonstrated. Canonical-use condition: normalization also changes the tensor key emitted by conversion through Gemma3VisionModel.get_additional_compiled_tensors and compile_model; source files remain unchanged. Reviewer-only conversion consequence and older checkpoint evidence remain administrative, never teacher input. Authored run unchanged. Continue 216 detached on guidance 9.
+
+- 2026-11-16: 216/001 request filed: reviews/requests/commit-000216-001.md, SHA256 2f4678f719ee3fa2262c0605b584d934e30aa01a74a1e70cf2c592ba9c0165cf. Unassisted guidance 9; 23 exact replays, 3078 read-only blobs, 7/7 sections and two complete ancestor chapters. Partial parent reads disclosed; pure scalar run with no repository file reads. 215 header-name-collision r001 included, suspected behavior_change, synthetic reach only; schema/evidence validated. 216 draft-prefill guard finding awaits review. Three path-only rows selected, no truncation. No implementation changes. Await verdict; no 217.
+
+## Recorded commit-000216-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000216-001.md sha256 ae8aba1d6d941eae7bb377ee539e11fd9aa7d8709a15d8b4f256b8362b9895ca
+
+### Follow-ups
+
+1. Ledger, with 217's request: the draft-prefill finding as suspected, introduced at `27c13b11`.
+
+### Must fix before canonical use
+
+1. State the dtype fallback above and that it is unreachable from the tree's own constructors.
+
+- 2026-11-16: 216/001 approved via --approve for ancestor retrieval only; verdict SHA256 ae8aba1d6d941eae7bb377ee539e11fd9aa7d8709a15d8b4f256b8362b9895ca; request and 16 artifact hashes verified. Header-name-collision r001 accepted. Due with 217 request: draft-prefill-before-embedding-guard record, suspected defect, introduced at 27c13b11e32af575c9684dd3d2905c55ef6eab9a, source-only uncached prefill trigger. Canonical-use condition: latent output-dtype fallback uses integer IDs when both output dtypes are unset; unreachable from in-tree constructors. Reviewer-only observation remains administrative, never teacher input. Authored run unchanged. Launch 217 detached on guidance 9.
+
+- 2026-11-16: 217/001 request filed: reviews/requests/commit-000217-001.md, SHA256 733053ba069df39ed275b85c71a21e475aa9443e49fabd672c7259a230d8ee0a. Unassisted guidance 9; 11 exact replays, 3089 read-only blobs, 1/1 task section, complete parent model.py and root models chapter. Ancestor search completed in two pages; vision grep truncated and disclosed. No run calls or findings. 216 draft-prefill-before-embedding-guard r001 included, suspected defect, source-only; schema/evidence validated. One path-only row selected, no catalog truncation. No implementation changes. Await verdict; no 218.
+
+## Recorded commit-000217-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000217-001.md sha256 b73c571b886946406839930ea6957ba69fb3cec4d1cff0cc80406e0a75d3c985
+
+### Follow-ups
+
+None new.
+
+### Must fix before canonical use
+
+None.
+
+- 2026-11-16: 217/001 approved via --approve for ancestor retrieval only; verdict SHA256 b73c571b886946406839930ea6957ba69fb3cec4d1cff0cc80406e0a75d3c985; request and 16 artifact hashes verified. Draft-prefill-before-embedding-guard r001 accepted. No new findings, canonical-use conditions or ledger follow-ups. Authored run unchanged. Continue 218 detached on guidance 9.
+
+- 2026-11-16: 218/001 request filed: reviews/requests/commit-000218-001.md, SHA256 4447462b0454600b1d8c56979bf63430c2ea8a67ba0a38af49530fadcaaa93a5. Unassisted guidance 9; 19 exact replays, 3098 read-only blobs, 1/1 task section, three complete parent files and root modules chapter. Additional run scans Python files twice and prints selected caller neighborhoods; separate scalar orientation/padding check. No model/loader/GPU execution. Eight complete discussions; five path-only rows selected, no catalog truncation. No findings or ledger owed from 217; no implementation changes. Await verdict; no 219.
+
+## Recorded commit-000218-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000218-001.md sha256 d740add6fa48f673e9d8e6facbd00688f25a89abf27f8568905f22b4ee42cb71
+
+### Follow-ups
+
+None for the ledger now: no caller sets the flag. When the walk reaches the first caller that passes
+`transposed_load = False`, check whether that layer can be exported.
+
+### Must fix before canonical use
+
+1. Draw the round-trip consequence above from the two facts the entry already states.
+
+- 2026-11-16: 218/001 approved via --approve for ancestor retrieval only; verdict SHA256 d740add6fa48f673e9d8e6facbd00688f25a89abf27f8568905f22b4ee42cb71; request and 11 artifact hashes verified. No ledger item now. Reviewer-only canonical-use condition: transposed_load=False does not round-trip through LinearFP16.get_tensors, which always exports weight.T (non-square shape mismatch; square silent transpose). At the first caller passing False, check whether the layer can be exported. Keep this administrative observation out of teacher input. Authored run unchanged; canonical/training false. Continue 219 detached on guidance 9.
+
+- 2026-11-16: 219/001 request filed: reviews/requests/commit-000219-001.md, SHA256 c7392622b6b0cb151aeeff69d34c6e6c9ce05c2ae5fb8fe2bf52dfa091410fb6. Unassisted guidance 9; 11 exact replays, 3101 read-only blobs, 1/1 task section, four complete parent files and root modules chapter. MLP grep and three discussions complete. Sole run is scalar dimension arithmetic, no file reads or model/GPU execution. Suspected ignored-activation finding awaits review; if accepted file with next request. No ledger owed from 218; its conditional export follow-up stays administrative. One path-only row selected, no truncation; no implementation changes. Await verdict; no 220.
+
+## Recorded commit-000219-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000219-001.md sha256 400b637a14d71ba3870617fa0b021cd49e977596e66e12c63d21355785cb0d6f
+
+### Follow-ups
+
+1. Ledger, with 220's request: the ignored-activation finding as suspected, introduced at `62e88326`, reach
+   limited to the exposed interface.
+
+### Must fix before canonical use
+
+None.
+
+- 2026-11-16: 219/001 approved via --approve for ancestor retrieval only; verdict SHA256 400b637a14d71ba3870617fa0b021cd49e977596e66e12c63d21355785cb0d6f; request and 10 artifact hashes verified. Due with 220 request: ignored-activation ledger record, suspected defect, introduced at 62e8832603ffc3c8089417f384f14d57f3ef6a52, reach limited to exposed interface; no in-tree plain MLP caller or activation execution. No canonical-use condition. Reviewer-only minor note: inherited qmap=None string concatenation raises when omitted; administrative only, never teacher input. Authored run unchanged; canonical/training false. Continue 220 detached on guidance 9.
+
+- 2026-11-16: 220/001 request filed: reviews/requests/commit-000220-001.md, SHA256 32a0a05f2acd0db250d25e4cdd5bd5b4cb0b96c40084106d9d8ec3b1a009e611. Unassisted guidance 9; seven exact replays, 3108 read-only blobs, 1/1 section, complete parent transformer.py and root modules chapter. Two run calls scan/read source and AST only; no repository import, type checker or GPU execution. One complete discussion; one path-only row selected, no truncation. No findings. 219 ignored-activation r001 included, suspected defect with exposed-interface reach only; schema/evidence validated. No implementation changes. Await verdict; no 221.
+
+## Recorded commit-000220-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000220-001.md sha256 fbad42c3a3a38559a8fb59d96e8894cc4d782657a03b51d0cb7fd5a3b74cb2e8
+
+### Follow-ups
+
+None new.
+
+### Must fix before canonical use
+
+None.
+
+- 2026-11-16: 220/001 approved via --approve for ancestor retrieval only; verdict SHA256 fbad42c3a3a38559a8fb59d96e8894cc4d782657a03b51d0cb7fd5a3b74cb2e8; request and 14 artifact hashes verified. MLP ignored-activation r001 accepted, suspected defect introduced at 62e88326, exposed-interface reach only, no fix. No new findings, canonical-use conditions or ledger follow-ups. Authored run unchanged; canonical/training false. Continue 221 detached on guidance 9.
+
+
+## 2026-11-16 — 221 request
+
+221/001 request filed: reviews/requests/commit-000221-001.md, SHA256 aa2658856325749ad986c207bda879949c2c6b5c3943e6afca4b25c23ad13341. Unassisted guidance 9; 17 exact replays, 3114 read-only blobs, 2/2 task sections, two complete ancestor entries. Parent loader partial reads and truncated broad conv grep disclosed; targeted searches and issue 33 complete. Sole run uses scalar/list layout transcription, no repository file reads/imports or convolution/GPU execution. Suspected unused output-dtype finding awaits review; no ledger owed from 220. Zero path-only rows, no catalog truncation; no implementation changes. Await verdict; no 222.
+
+## Recorded commit-000221-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000221-001.md sha256 8748387c3bf6523dc10cca19ce0b8054adae43555972a81e6aae8e595713e996
+
+### Follow-ups
+
+1. Ledger, with 222's request: the output-dtype finding as suspected, introduced at `9bde46e7`, reach limited
+   to the exposed interface.
+
+### Must fix before canonical use
+
+None. The entry already states that the weights are loaded as half precision and the input is not cast, so a
+float32 input is the caller's responsibility.
+
+
+## 2026-11-16 — 221 approval
+
+221/001 approved via --approve for ancestor retrieval only; verdict SHA256 8748387c3bf6523dc10cca19ce0b8054adae43555972a81e6aae8e595713e996; request and 10 artifact hashes verified. Due with 222 request: conv-output-dtype-unused ledger record, suspected, introduced at 9bde46e775df21d54d78a0fbe78b1490bf311a5a; reach limited to the exposed interface, no convolution/loading/GPU execution. No canonical-use conditions. Authored artifacts unchanged; canonical/training false. Continue 222 detached on guidance 9.
+
+
+## 2026-11-16 — 222 request
+
+222/001 request filed: reviews/requests/commit-000222-001.md, SHA256 4e84669550b7cbbadb4986666504965c0992449d51bbd0ae0cd3c1d25b6d40b6. Unassisted guidance 9; nine exact replays, 3123 read-only blobs, 2/2 sections, three complete parent files and root modules chapter. Sole run is list/arithmetic transcription with no repository file reads/imports or PyTorch/GPU execution. No findings. 221 conv-output-dtype-unused r001 included, suspected and interface-only, schema/evidence validated. No path-only rows or truncation; no implementation changes. Await verdict; no 223.
+
+## Recorded commit-000222-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000222-001.md sha256 813f18729c8d59d5a330f1810bca075cee14ee0eda64919e8b25a81bedd6e686
+
+### Follow-ups
+
+None new.
+
+### Must fix before canonical use
+
+None.
+
+
+## 2026-11-16 — 222 approval
+
+222/001 approved via --approve for ancestor retrieval only; verdict SHA256 813f18729c8d59d5a330f1810bca075cee14ee0eda64919e8b25a81bedd6e686; request and 14 artifact hashes verified. Conv-output-dtype-unused r001 accepted, suspected defect introduced at 9bde46e7, exposed-interface reach only, no fix. No new findings, canonical-use conditions or ledger obligations. Authored artifacts unchanged; canonical/training false. Continue 223 detached on guidance 9.
+
+
+## 2026-11-16 — 223 request
+
+223/001 request filed: reviews/requests/commit-000223-001.md, SHA256 fbdadb82b19df4e89462d8364054210d81556638757703c29f2e9af204799c3b. Unassisted guidance 9; eight exact replays, 3131 read-only blobs, 1/1 section, two complete parent files and complete 219 ancestor entry. All searches and issue 38 complete. No run calls or runtime claims. Suspected unsupported-activation finding and apparent ignored-activation fix await review; ensuing ledger work due with next request. No ledger owed from 222. One path-only row selected, no truncation; no implementation changes. Await verdict; no 224.
+
+## Recorded commit-000223-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000223-001.md sha256 2340a66dbe65cc5a338b050b2b775f48da502b10fe60d0a65b303ebba2afd818
+
+### Follow-ups
+
+1. Ledger, with 224's request: `exllamav3-mlp-ignored-activation` takes `95c41ce0` as its fix; the
+   unsupported-activation finding as a new suspected identity introduced at `95c41ce0`, reach limited to the
+   exposed interface.
+
+### Must fix before canonical use
+
+None.
+
+
+## 2026-11-16 — 223 approval
+
+223/001 approved via --approve for ancestor retrieval only; verdict SHA256 2340a66dbe65cc5a338b050b2b775f48da502b10fe60d0a65b303ebba2afd818; request and 10 artifact hashes verified. Due with 224 request: ignored-activation r002 with fix 95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225; new unsupported-activation identity introduced at that SHA, suspected, exposed-interface reach only. No PyTorch execution. Reviewer observation about the older GatedMLP match remains administrative, never teacher input. No canonical-use conditions. Authored artifacts unchanged; canonical/training false. Continue 224 detached on guidance 9.
+
+
+## 2026-11-16 — 224 request
+
+224/001 request filed: reviews/requests/commit-000224-001.md, SHA256 3f9e9ae89381efee4b929af5912d04d9c5af49dedfe070f11e6610650599dae2. Unassisted guidance 9; 12 exact replays, 3141 read-only blobs, 2/2 sections, complete dependency ancestor entry; parent tensor.py tail only. Four searches and three discussions complete. Sole run is scalar normalization arithmetic, no repository reads/imports or NumPy/Pillow execution. No findings. Ignored-activation r002 fix and unsupported-activation r001 included; schema/evidence validated, source-only/interface-only. Three path-only rows selected, no truncation; no implementation changes. Await verdict; no 225.
+
+## Recorded commit-000224-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000224-001.md sha256 e7bd01cf0d2662b6ed164cc2a268e80fcabb103a35c6eb368817700b2d04e47a
+
+### Follow-ups
+
+1. Ledger, with 225's request: a reviewer-observation record for the Pillow declaration mismatch, introduced at
+   `07401973`, suspected, source-only, reach limited to installs from package metadata that import the vision
+   helpers. Not teacher input.
+
+### Must fix before canonical use
+
+1. State the packaging mismatch above.
+
+
+## 2026-11-16 — 224 approval
+
+224/001 approved via --approve for ancestor retrieval only; verdict SHA256 e7bd01cf0d2662b6ed164cc2a268e80fcabb103a35c6eb368817700b2d04e47a; request and 18 artifact hashes verified. Ignored-activation r002 and unsupported-activation r001 accepted. Due with 225 request: reviewer-observation Pillow declaration mismatch, introduced at 074019737caac1c6e6a457e3bed7e4a30e0a5877, suspected/source-only; requirements.txt adds pillow but setup.py install_requires omits it, so package-metadata installations lacking Pillow fail when importing vision helpers. No installation/Pillow execution. Canonical use must state this mismatch. Preserve reviewer-observation origin and disclose existing validator limitation; never teacher input. Authored artifacts unchanged; canonical/training false. Continue 225 detached on guidance 9.
+
+2026-11-16: 225/001 request filed: reviews/requests/commit-000225-001.md, SHA256 4c5cc501d6fcff30504bf3023c6d999a39c1370ff0d77ba307fd490a64c3670b. Guidance 9, 31 exact replays, 3146 read-only shared blobs, 1/1 task sections and two complete ancestor entries. Partial mlp.py, truncated broad vision grep/index pages disclosed; eleven complete configs, no headers/preprocessor reads. Scalar-only run, no runtime claim. Reviewer-observation Pillow metadata r001 filed with verified evidence; existing origin-validator limitation disclosed. 218 export follow-up checked at first False caller: normal text conversion copies source vision/projector tensors; direct get_tensors consequence remains, no normal conversion failure shown. No implementation changes. Await verdict; no 226. Canonical/training false.
+
+## Recorded commit-000225-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000225-001.md sha256 d10e83292c3490053b733499597fd112bef755c759619a3880d4f85d76019454
+
+### Follow-ups
+
+1. Ledger, with 226's request: a reviewer-observation record for the width/height order, introduced at
+   `532d7865`, suspected, source-only, no reach at the reference size.
+
+### Must fix before canonical use
+
+1. State the width/height order slip and that the square reference size hides it.
+2. The entry says weight layout is unestablished although tensor headers for these checkpoints exist in the
+   evidence; state what they show (first reviewer-knowledge item). This is the third new-architecture entry in a
+   row (213, 214, 225) that left available headers unread.
+
+2026-11-16: 225/001 approved via --approve for ancestor retrieval only; verdict SHA256 d10e83292c3490053b733499597fd112bef755c759619a3880d4f85d76019454; request and 13 artifact hashes verified. Pillow metadata r001 accepted, reviewer-origin validator hold unchanged. 218 follow-up reach analysis agreed: ordinary conversion copies source projector tensors; direct get_tensors export remains latent, no ledger identity. Due with 226 request: reviewer-observation width/height order record introduced 532d78658414d8f9aabce52cb64b982b3ec53388, suspected/source-only, rectangular configured size trigger, no reach at square reference size. preprocess uses (height,width) for PIL size/resize, versus PIL (width,height); metadata mixes orders, autosplit uses correct shape. Canonical use must state this and header layout evidence; reviewer knowledge remains administrative, never teacher input. Authored run unchanged; canonical/training false. Continue 226 detached on guidance 9.
+
+2026-11-16: 226/001 request filed: reviews/requests/commit-000226-001.md, SHA256 c9e85f54130d812dc43688937a1332980144625411d1565c4b337acbda0b85ca. Guidance 9, 12 exact replays including one nonexistent-file error, 3153 read-only blobs. Both text sections complete; two binary images uninspected. Three complete parent files and two complete ancestor entries, searches untruncated; no discussion reads or run calls. No findings; no implementation changes. Width/height-order reviewer-observation r001 filed, suspected/source-only, rectangular trigger with no square-reference reach; evidence validated and existing origin-validator limitation disclosed. Await verdict; no 227; canonical/training false.
+
+## Recorded commit-000226-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000226-001.md sha256 cc162fbea30e4963f15733998f4d5cf4714e2e1e10f41858c3395df1698261a9
+
+### Follow-ups
+
+None new.
+
+### Must fix before canonical use
+
+None.
+
+2026-11-16: 226/001 approved via --approve for ancestor retrieval only; verdict SHA256 cc162fbea30e4963f15733998f4d5cf4714e2e1e10f41858c3395df1698261a9; request and 12 artifact hashes verified. Width/height-order reviewer-observation r001 accepted, suspected with no reach at square reference size, no fix, not teacher eligible. Binary-image coverage limitation accepted. No findings, canonical-use conditions or new ledger follow-ups. Reviewer image-header knowledge stays administrative, never teacher input. Authored run unchanged; canonical/training false. Continue 227 detached on guidance 9.
+
+- 2026-11-16: 228/001 request filed with sampled mechanical 227/001: reviews/requests/commit-000228-001.md, SHA256 83b918d435a0933c4878b0d77e3bf5c80f040741f75fb931fe02e7aabeee260e; 23 artifact hashes verified. Guidance 9; 228 has 11 exact replays, 3169 read-only blobs, 2/2 task sections, one complete root chapter over two pages and partial generator.py tail. Documentation finding awaits review; no run calls or implementation changes. 227 has seven exact replays, 3163 blobs, complete section/parent example/two ancestor entries/issue 12; mechanical sample pending. Path-only rows: 228 zero, 227 one selected, no truncation. No ledger owed from 226. Await verdict; no 229; canonical/training false.
+
+## Recorded commit-000228-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000228-001.md sha256 db5a1ae1117fecc40e21c5b08bd1719c53379269455e97639ab6b831058d275c
+
+### Follow-ups
+
+1. Ledger, with 229's request: the 228 documentation finding as suspected, introduced at `4f6929dd`,
+   documentation only.
+
+### Must fix before canonical use
+
+1. 227: the Problem section calls the 226 example an "image-generation example". It generates text about an
+   image; say "image-description" or "multimodal".
+
+- 2026-11-16: 228 approved via --approve; request and 23 hashes verified; verdict SHA256 db5a1ae1117fecc40e21c5b08bd1719c53379269455e97639ab6b831058d275c. Sampled mechanical 227 reviewed and agreed, sample review recorded. Canonical-only wording condition: 227 image-generation should say image-description/multimodal; authored prose unchanged. Due with 229 request: reports/defect-ledger/exllamav3-async-job-doc-reference--r001.json and three evidence files, schema/evidence validated, suspected documentation-only defect introduced 4f6929dd. No runtime claim or fix. Continue 229 detached on guidance 9; canonical/training false.
+
+- 2026-11-16: 229/001 request filed: reviews/requests/commit-000229-001.md, SHA256 0a70f0f03ff52a77bb23918d38a2979ca859770bd2d626111619de49cf530f55; 14 hashes verified. Guidance 9, six exact replays, 3176 read-only blobs; 1/1 task section, two complete parent files, complete 226 ancestor and issue 7. Sole run is StringIO flush comparison and scalar reserve arithmetic; no repository file reads/imports or model/GPU execution. No findings, implementation changes or sampled mechanical runs; zero path-only rows and no truncation. 228 async-job-doc-reference r001 included, suspected/documentation-only, schema/evidence validated. Await verdict; no 230; canonical/training false.
+
+## Recorded commit-000229-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000229-001.md sha256 f4d87bd62a7b9ec8cc53a79e8c8c127d39319102c2ba560bd81a81afbb555d98
+
+### Follow-ups
+
+None new.
+
+### Must fix before canonical use
+
+None.
+
+- 2026-11-16: 229/001 approved via --approve for ancestor retrieval only; verdict SHA256 f4d87bd62a7b9ec8cc53a79e8c8c127d39319102c2ba560bd81a81afbb555d98; request and 14 artifact hashes verified. Async-job-doc-reference r001 accepted, suspected/documentation-only, introduced 4f6929dd, no fix. No findings, canonical-use conditions or new ledger follow-ups. Authored run unchanged; canonical/training false. Continue 230 detached on guidance 9.
+
+- 2026-11-16: 230/001 request filed: reviews/requests/commit-000230-001.md, SHA256 fc91aa06f1c274a6a3e87821b3df653afbe5f9339b17290080579a5078635687; 10 artifact hashes verified. Guidance 9, 24 exact replays, 3187 read-only shared blobs; 3/3 task sections, five complete parent files and partial tensor/science reads. Ancestor search and broad freq grep truncated, disclosed; selected ancestor and four discussions complete. Sole run is scalar/list arithmetic, no repository imports/reads or GPU execution. Three suspected source findings await review; inherited identities must not be duplicated. Two path-only rows selected, no catalog truncation. No implementation changes, sampled mechanical runs or ledger owed from 229. Await verdict; no 231; canonical/training false.
+
+## Recorded commit-000230-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000230-001.md sha256 d811ff2432c56a47dfbc723d5e2710310f628111d167869877f5e90cbde68e8d
+
+### Follow-ups
+
+1. Ledger, with 231's request: the table-row-bounds finding as a new suspected identity introduced at
+   `2f8254fe`; the two 185 identities each gain this commit as an observation, the padded-read one noting the
+   table case. No duplicates.
+
+### Must fix before canonical use
+
+None. Minor, for completeness: the table is also read through `data_ptr()` with no contiguity check, like the
+other tensors in this wrapper.
+
+- 2026-11-16: 230/001 approved via --approve for ancestor retrieval only; request and 10 artifact hashes verified; verdict SHA256 d811ff2432c56a47dfbc723d5e2710310f628111d167869877f5e90cbde68e8d. All three findings confirmed as stated. DUE WITH 231 REQUEST: new suspected table-row-bounds identity introduced at 2f8254fe00445db8554ff5150db42f9b49c73687; revise each of the two existing 185 identities (padded reads and reduction store) to add 230 as an observation, with the table case on padded reads; no duplicates. No required canonical-use fixes; minor reviewer-only note: data_ptr table access also lacks a contiguity check. No CUDA execution verified. Authored artifacts unchanged, canonical/training false. Proceed 231 detached on guidance 9.
+
+- 2026-11-16: 231/001 request filed: reviews/requests/commit-000231-001.md, SHA256 85de90b5f1989facb4062f1862d8e245c9f3cd47bc3da35748e2ce43ee1f7c06; 16 artifact hashes verified. Guidance 9; seven exact replays, 3193 read-only blobs; complete task section, parent vision.py, 224 ancestor and PR 35; untruncated caller grep. Two scalar-model runs, first fails boundedness assertion, second completes 90000 pairs with 2497 overflows. No repository/NumPy execution or run file reads. Suspected floating-ceiling-overflow awaits review. Filed 230 ledger items: rope-table-row-bounds r001, padded-thread-read-bounds r002, warp-sum-store-race r002, schema/evidence validated, source-confirmed but suspected; three bound evidence copies. No duplicates, no implementation changes or mechanical samples; zero path-only rows, no catalog truncation. Await verdict; no 232; canonical/training false.
+
+## Recorded commit-000231-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000231-001.md sha256 26f8ce65dc7e85171a5a3c6343dd59140cf10326d4b18f389036172bf36f640e
+
+### Follow-ups
+
+1. Ledger, with 232's request: the overflow finding as suspected, introduced at `16df3fd1`, reach limited to
+   direct use of the helper; it may cite this verdict's exact-arithmetic count as a reviewer note.
+
+### Must fix before canonical use
+
+None.
+
+- 2026-11-16: 231/001 approved via --approve for ancestor retrieval only; request and 16 artifact hashes verified; verdict SHA256 26f8ce65dc7e85171a5a3c6343dd59140cf10326d4b18f389036172bf36f640e. All three 230 ledger items accepted: rope-table-row-bounds r001, padded-thread-read-bounds r002, warp-sum-store-race r002. DUE WITH 232 REQUEST: floating-ceiling-overflow as new suspected identity introduced at 16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628, reach limited to direct helper use. Reviewer reproduced 2497 float overflows and zero exact-rational overflows in 90000 cases; optional administrative reviewer note only, never teacher input. NumPy helper/resizing not executed; no canonical-use conditions. Authored artifacts unchanged, canonical/training false. Proceed 232 detached on guidance 9.
+
+- 2026-11-16: 232 preparation failed in GitHub userContentEdits retrieval before any run, packet or position bundle. Failed supervisor log preserved. API rate-limit probe succeeded (4305 GraphQL remaining); exact original API error unavailable because stderr was captured but not logged. Explicit pre-run recovery recorded in reports/commit-000232-preparation-recovery-001.json; restore ready and retry already-authorized 232 once detached. No teacher attempt consumed, no authored artifacts changed. 231 overflow ledger remains due with 232 request.
+
+
+## 2026-11-16 — 232 review request
+
+232/001 request filed: reviews/requests/commit-000232-001.md, SHA256 bbd9f8a22f8b99875e09f9173a6787214c78e5ad364d0d6f7b8396ea89de92b3; 19 artifact hashes verified. Guidance 9, 16 exact replays, 3200 read-only blobs; full task section, five complete parent files, root modules chapter and three discussions. One preserved nonexistent-file error. Run source scan reads reported separately; scalar check only, no GPU/FP16 execution. Pre-run GitHub failure and successful recovery disclosed. 231 floating-ceiling-overflow r001 filed, schema/evidence validated, suspected/direct-helper reach, no fix. One path-only row selected, no catalog truncation; no implementation changes or sampled mechanicals. Await verdict; no 233; canonical/training false.
+
+## Recorded commit-000232-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000232-001.md sha256 4100b421b10c4e45f55d3df7aa147e4a38ccb9a1227ccce150259084b0f75aaf
+
+### Follow-ups
+
+1. Ledger, with 233's request: one identity for the activation kernel's missing odd tail. Introduction at the
+   root (the kernel's `numel / 2` bound is there; verify from the root tree), with `3637103e` as the commit that
+   first exposes it to a caller. Suspected, source-only, opt-in reach.
+
+### Must fix before canonical use
+
+1. Administrative: the second location is written against the parent commit; use the task commit.
+
+
+## 2026-11-16 — 232 approval
+
+232/001 approved via --approve for ancestor retrieval only; request and 19 artifact hashes verified; verdict SHA256 4100b421b10c4e45f55d3df7aa147e4a38ccb9a1227ccce150259084b0f75aaf. Overflow r001 and pre-run retrieval retry accepted. DUE WITH 233 REQUEST: one missing activation odd-tail identity, suspected/source-only/opt-in reach; verify numel / 2 bound in root tree for introduction, mark 3637103e as first caller exposure, deduplicate existing identities. Canonical-only condition: second finding location must use task commit rather than parent; authored artifacts unchanged. Standing retry rule: one fetch retry before any run exists allowed with preserved/reportable failure; second failure requires request. Reviewer note remains administrative, never teacher input. Continue 233 detached on guidance 9; canonical/training false.
+
+
+## 2026-11-16 — 233 request
+
+233/001 request filed: reviews/requests/commit-000233-001.md, SHA256 c60c0917b35e07340cb9c97d51491317a1044df19ffc34f583a6d2ff1c1c364e; 15 hashes verified. Guidance 9, 14 exact replays, 3207 read-only blobs; full task section, four complete parent files and Gemma3 tail only, two ancestor entries/root modules chapter, three complete discussions. Scalar-only run, no file reads/imports/GPU execution. Carried unsupported-activation finding awaits review. 232 activation-odd-tail r001 filed: root source verified and bound, root introduction, 3637103e first caller exposure, suspected/opt-in, no fix; schema/evidence validated. Parent location correction administrative; original finding preserved. One path-only row selected, no catalog truncation; no implementation changes or mechanical samples. Await verdict; no 234; canonical/training false.
+
+## Recorded commit-000233-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000233-001.md sha256 827bcd44f85a97b7aae34855f648ed8a8a3c0aabb57cdce7683be3bb410ceb18
+
+### Follow-ups
+
+1. Ledger, with 234's request: `exllamav3-mlp-unsupported-activation` gains this commit as an observation.
+   Optional; it may be batched with the next revision of that record.
+
+### Must fix before canonical use
+
+None.
+
+
+## 2026-11-16 — 233 approval
+
+233/001 approved via --approve for ancestor retrieval only; request and 15 artifact hashes verified; verdict SHA256 827bcd44f85a97b7aae34855f648ed8a8a3c0aabb57cdce7683be3bb410ceb18. Activation-odd-tail r001 accepted: root introduction, 3637103e first caller exposure, suspected/source-only, no fix. No canonical-use conditions. Follow-up for 234 request: add d4cdab818dfaa29854a5d218366e4c603036783a as an observation to exllamav3-mlp-unsupported-activation; reviewer permits batching with next revision, no new identity. Authored artifacts unchanged; canonical/training false. Continue 234 detached on guidance 9.
+
+
+## 2026-11-16 — 234 manual architecture recovery
+
+234 stopped before any packet/run at architecture_trigger. Manual discovery 002 resolves all 83 original-publisher repositories: two official Mistral3 matches, five verified root-config absences, one accepted pre-cutoff mirror nonmatch revalidated. Two bundles validate: 10 metadata objects and 22 range-only tensor headers. GitHub/catalog recovery in progress; teacher not yet started. Owed 233 unsupported-activation r002 appended and evidence/schema validated; include with 234 request. No implementation changes; administrative material excluded from teacher input.
+
+
+2026-11-16 — 234 manual supervisor launched detached after successful discussion recovery and parent indexing. Catalog: two qualified/selected, one path-only qualified/selected, no truncation. Complete discovery 002 and two official reference bundles supplied; guidance 9. Unsupported-activation r002 remains due with 234 request. Await completion notification; no advancement past review gate.
+
+
+2026-11-16 — 234/001 request filed: reviews/requests/commit-000234-001.md, SHA256 24fadce293a5e44f8285be47b851a05d68dcb56c07317dddc1c18b4ef4220bbe. All 22 listed hashes verified. Manual architecture recovery complete; guidance 9 unassisted; 35 exact replays, 3232 readonly blobs. Full task and eleven parent files; two configs, three ancestor entries and four discussions read. Evidence index partial, preserved max_bytes error and unavailable preprocessor lookup; tensor headers unread by teacher. Scalar-only resize/index checks; no repository execution. Unsupported-activation r002 filed for 233. One path-only row selected, no truncation; no implementation changes/mechanical samples. Await verdict; no 235; canonical/training false.
+
+## Recorded commit-000234-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000234-001.md sha256 3ad8f0580b972b12d9790fb7cd0170f2f731d0a901e819fe189c6cedbfe503a7
+
+### Follow-ups
+
+1. Ledger, with 235's request: `exllamav3-vision-floating-ceiling-overflow` gains this commit as its first
+   caller; `exllamav3-rope-table-row-bounds` gains a reviewer observation that the Mistral 3 path reaches it
+   through that overflow (reviewer finding 1), marked reviewer-only. One reviewer-observation record for the
+   hard-coded projector width; the `has_tensor` slip may ride on the same record or be left in this verdict.
+
+### Must fix before canonical use
+
+1. Carry the overflow finding through to the angle table (reviewer finding 1).
+2. State the projector width and layout from the headers instead of leaving them unestablished (finding 2 and
+   the first knowledge item). This is the fourth architecture entry (213, 214, 225, 234) that left headers in
+   its packet unread.
+3. Check the end-of-image token sequence against a pinned reference source.
+
+
+2026-11-16 — 234/001 APPROVED via --approve, ancestor retrieval only; verdict SHA256 3ad8f0580b972b12d9790fb7cd0170f2f731d0a901e819fe189c6cedbfe503a7; request and 22 hashes verified. Manual recovery accepted; unsupported-activation r002 accepted. DUE WITH 235 REQUEST: floating-ceiling-overflow adds 234 as first caller; rope-table-row-bounds adds reviewer-only Mistral3 overflow reach (tall out-of-bounds, wide wrong positions); new reviewer-observation hard-coded projector-width record. has_tensor missing .weight may remain in verdict. Canonical conditions: carry overflow to table, establish projector dimensions from headers, verify end-of-image token sequence. All reviewer material stays out of teacher input. IMPLEMENTATION REQUEST OWED before next architecture reading processor files: gather pinned preprocessor_config.json and processor_config.json when present; specify proposed 164/225 and 234 backfill for later positions only, no packet rewrites/re-authoring. Non-blocking 235. Reviewer replay 34/35 differs on declared max_bytes error; local validation 35/35. Guidance 9; no pause; launch 235 detached.
+
+2026-11-16: - 235/001 request filed, awaiting verdict; no 236. Eleven exact replays, 3239 read-only blobs; full task, partial config/Gemma3 tails, no execution. Three 234 ledger follow-ups filed with verified evidence; reviewer-origin schema limitation disclosed. Processor metadata implementation in progress after run validation; old packets immutable.
+
+
+2026-11-16: - Processor-metadata implementation request filed: reviews/requests/processor-metadata-implementation-001.md; Ran 282 tests in 39.267s, host-enabled suite OK. Pinned official and hash-verified mirror metadata collection plus bundle validation implemented after 235 validation. Proposed 164/225 and 234 backfill awaits acceptance, for later positions only. No historical artifacts rewritten. 235 request awaits verdict; no 236.
+
+
+## Recorded commit-000235-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000235-001.md sha256 c7f43029ccf6fc3b430686f403bfe333f2cc5f84cd59a988f4bb5ee469cac23d
+
+### Follow-ups
+
+None new. The processor-metadata recovery implementation request remains owed from 234 (not blocking).
+
+### Must fix before canonical use
+
+None.
+
+2026-11-16: 235/001 approval recorded with --approve, ancestor retrieval only; request and 16 artifact hashes verified. Verdict SHA256 c7f43029ccf6fc3b430686f403bfe333f2cc5f84cd59a988f4bb5ee469cac23d. All three ledger items accepted; reviewer-origin schema hold stands. No findings or new ledger work. USER SESSION STOP: journal paused_by_user at 236; no 236 run exists. Await explicit restart, not automatic advancement. Processor-metadata implementation request already filed at reviews/requests/processor-metadata-implementation-001.md (282 host-enabled tests passed), pending next-session review; backfill not performed. Expected tensor-header guidance decision has not arrived; read it on restart before acting. Guidance remains 9 unless a user decision changes it. Canonical/training false.

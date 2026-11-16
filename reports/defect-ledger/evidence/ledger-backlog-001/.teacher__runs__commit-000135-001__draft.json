@@ -1,0 +1,301 @@
+{
+  "schema_version": 5,
+  "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+  "parent_shas": [
+    "74abd5e135f574f958faa6507f40c12c3f0cadba"
+  ],
+  "cutoff_date": "2025-05-11T02:04:57+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Multi-GEMM previously processed matrices sequentially using a grid capped by the work available for one matrix, leaving potential capacity unused.",
+        "basis": "source",
+        "evidence": [
+          "call_b1f118b3e3394666a394fd19913a7294",
+          "call_fea1900736f0463c8a21e0e14df6e3aa"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change retains the per-matrix grid width and uses an additional grid dimension to process independent matrices concurrently, rather than dividing each matrix into smaller slices.",
+        "basis": "source",
+        "evidence": [
+          "call_82d0b2ddc77c4d7180d7593d2dc4c124",
+          "call_18a5fa132362421498f124e072053e2d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This can increase concurrent work when kernel selection reduces the grid width and multiple outputs are available. It does not guarantee full utilization or a measured speedup.",
+        "basis": "inference",
+        "evidence": [
+          "call_82d0b2ddc77c4d7180d7593d2dc4c124",
+          "call_fea1900736f0463c8a21e0e14df6e3aa"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Whole-parent literal search found the Python extension binding but no Python call site for exl3_mgemm. The observations therefore concern the exposed native interface; reach into generation or conversion workflows is not established.",
+        "basis": "source",
+        "evidence": [
+          "call_2e34b3a892fa4c1496cd89dd766d8aec",
+          "call_f146902dbea7449b85bb33cd418131b1"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, kernel execution, numerical comparison or performance measurement was performed.",
+      "Scalar checks model bounded integer scheduling and allocation arithmetic, not CUDA synchronization, memory safety or floating-point accumulation.",
+      "Dynamic or external callers are not excluded by the literal repository search."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Concurrent matrix groups in the cooperative GEMM grid",
+        "claims": [
+          {
+            "text": "exl3_mgemm saves the device SM count before selection reduces num_sms, then launches (num_sms, 1, min(total_sms / num_sms, bszm_out)). The unchanged selector divides the K-by-N tile count by 12 to limit slices. Comments describe this divisor as experimental and leave evaluation of larger Ampere grids open.",
+            "basis": "source",
+            "evidence": [
+              "call_82d0b2ddc77c4d7180d7593d2dc4c124",
+              "call_fea1900736f0463c8a21e0e14df6e3aa",
+              "call_0baac3772cb5415ebef38e680937f795"
+            ]
+          },
+          {
+            "text": "Each z-plane handles j = i + blockIdx.z, advancing i by gridDim.z. It selects B and its scales through B_indices[j], broadcasts A only when bszm_in is one, and assigns separate transformed-input and output slices to j. Optional output weights likewise use j.",
+            "basis": "source",
+            "evidence": [
+              "call_18a5fa132362421498f124e072053e2d"
+            ]
+          },
+          {
+            "text": "Inactive tail planes skip transform and GEMM work but still participate in the grid-wide barriers. Active planes retain input Hadamard transformation, GEMM in 16-row steps, and output Hadamard transformation. The normalization remains 1/sqrt(128), optionally multiplied by the matrix weight on output.",
+            "basis": "source",
+            "evidence": [
+              "call_18a5fa132362421498f124e072053e2d",
+              "call_b1f118b3e3394666a394fd19913a7294"
+            ]
+          },
+          {
+            "text": "The inner kernel still partitions K-by-N tiles across gridDim.x, decodes packed weights and performs tensor-core multiplication with locked partial-output reduction. Separate z-planes receive lock offsets blockIdx.z * size_n / 128. This stride covers the output-column locks because supported N tiles are at least 128 columns. index_m now returns zero; both launch paths use a unit y dimension and advance row pointers explicitly.",
+            "basis": "source",
+            "evidence": [
+              "call_54bd320653594b909b62803ba2dc5fac",
+              "call_ae67634a17934a3eb277a259d59b3091",
+              "call_db625d3448cf48a9b229e0f5dbf0caee",
+              "call_18a5fa132362421498f124e072053e2d",
+              "call_9f9d887e1b7541d39bb05c3bfba41d22"
+            ]
+          },
+          {
+            "text": "A scalar scheduling check with 120 available SMs, width 32 and eight matrices produced three concurrent planes and 96 blocks, covering matrices in groups [0,1,2], [3,4,5], [6,7]. With only two matrices it produced 64 blocks; with width 120 it retained serial matrix processing. Thus integer packing and batch size can leave capacity unused.",
+            "basis": "execution",
+            "evidence": [
+              "call_0adc900e5b3446168adcc5f1c4bf01a4"
+            ]
+          },
+          {
+            "text": "The tradeoff is more independent work without changing the existing tile and slice policy, at the cost of distinct per-matrix transformed-input storage and continued whole-grid synchronization between phases.",
+            "basis": "inference",
+            "evidence": [
+              "call_18a5fa132362421498f124e072053e2d",
+              "call_fea1900736f0463c8a21e0e14df6e3aa"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "zero-slice-division",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new concurrency calculation divides by a selector result that can be zero.",
+        "trigger": "Call exl3_mgemm with shape 2 forced, size_k=128 and size_n=128: the selector computes (128/32)*(128/128)/12 = 0.",
+        "expected_behavior": "Reject unsupported small workloads explicitly or retain a positive launch width.",
+        "actual_behavior": "The selector sets num_sms to zero and the new host expression evaluates total_sms / num_sms before launch. The prior zero-width launch problem is changed into an integer-division-by-zero path. Reach is the native interface exposed by the extension; no Python caller was found.",
+        "locations": [
+          {
+            "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_82d0b2ddc77c4d7180d7593d2dc4c124",
+          "call_fea1900736f0463c8a21e0e14df6e3aa",
+          "call_ae67634a17934a3eb277a259d59b3091",
+          "call_2e34b3a892fa4c1496cd89dd766d8aec",
+          "call_f146902dbea7449b85bb33cd418131b1"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the selector's bounded tile-count arithmetic and obtained zero.",
+            "evidence": [
+              "call_0adc900e5b3446168adcc5f1c4bf01a4"
+            ],
+            "limits": "Did not execute C++ division or launch CUDA; runtime failure manifestation is unmeasured."
+          }
+        ]
+      },
+      {
+        "id": "broadcast-scratch-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "Broadcast-input multi-GEMM now requires scratch storage for every matrix rather than one input-sized scratch slice.",
+        "trigger": "bszm_in=1, bszm_out>1, with A_had allocated only as large as A, as the retained interface comment describes.",
+        "expected_behavior": "An input-sized scratch allocation should remain sufficient under the old contract, or the enlarged requirement should be documented and validated.",
+        "actual_behavior": "The kernel now writes and reads A_had + j*size_m*size_k, including for broadcast A. Later matrices therefore address beyond an input-sized allocation. The wrapper does not validate scratch capacity. No repository Python construction site was found; external extension callers are the established interface boundary.",
+        "locations": [
+          {
+            "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+            "symbol": "exl3_mgemm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_18a5fa132362421498f124e072053e2d",
+          "call_9f9d887e1b7541d39bb05c3bfba41d22",
+          "call_b1f118b3e3394666a394fd19913a7294",
+          "call_2e34b3a892fa4c1496cd89dd766d8aec",
+          "call_f146902dbea7449b85bb33cd418131b1"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the prior conditional scratch-pointer advance with the new unconditional matrix-indexed offsets and inspected wrapper validation.",
+            "evidence": [
+              "call_18a5fa132362421498f124e072053e2d",
+              "call_9f9d887e1b7541d39bb05c3bfba41d22",
+              "call_b1f118b3e3394666a394fd19913a7294"
+            ],
+            "limits": "No external caller allocation or GPU memory violation was observed."
+          }
+        ]
+      }
+    ],
+    "summary": "Parallelizes multi-GEMM across grid z-planes while retaining per-matrix slicing. Speedup is unmeasured; inspection identifies a zero-width division path and an enlarged broadcast scratch requirement."
+  },
+  "evidence": {
+    "call_82d0b2ddc77c4d7180d7593d2dc4c124": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "offset": 168,
+        "max_bytes": 10000
+      },
+      "result_sha256": "f6a6e1effc531673bf03fdd1e2555f7141e229717ad5db00f3b26d553b0de931"
+    },
+    "call_db625d3448cf48a9b229e0f5dbf0caee": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "offset": 1290,
+        "max_bytes": 10000
+      },
+      "result_sha256": "9705a79e166694969c33e49de2cdff0ec4a8d9c40a8072cddea424ca1b5a9dd2"
+    },
+    "call_18a5fa132362421498f124e072053e2d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "offset": 2013,
+        "max_bytes": 10000
+      },
+      "result_sha256": "d3a781746be983937a04e9e4deae408fda1906f48fe2304170ec1e4f29e81715"
+    },
+    "call_0baac3772cb5415ebef38e680937f795": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "offset": 7299,
+        "max_bytes": 3000
+      },
+      "result_sha256": "cba31cc19199ec5ad156ed9ac2ac4e57e461d2cc7831cdf124565d4f12912bb9"
+    },
+    "call_9f9d887e1b7541d39bb05c3bfba41d22": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 20000
+      },
+      "result_sha256": "b8a4aaadd4150271012da3e7fb2ba0f0eb783c0fe04649e79fb660225f21e9b6"
+    },
+    "call_fea1900736f0463c8a21e0e14df6e3aa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "ddcc4edf59f7c07456fb3f0c6084cf2159a82c00fb9106ddf72fcc72218123c9"
+    },
+    "call_54bd320653594b909b62803ba2dc5fac": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh",
+        "max_bytes": 26000
+      },
+      "result_sha256": "30ec51b00025713c3f2d36afd98a37e78bd8f4a41a145d3e9f5b0178998a535e"
+    },
+    "call_2e34b3a892fa4c1496cd89dd766d8aec": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "query": "exl3_mgemm",
+        "limit": 100
+      },
+      "result_sha256": "ad38a61f96cc5c20d3699455166870ff02855558a23ba263ac1a6b0579765af3"
+    },
+    "call_b1f118b3e3394666a394fd19913a7294": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "max_bytes": 14000
+      },
+      "result_sha256": "1fee6edafab9f732950c2c30da39f046f3ac9e1524f361b2f0f4eade1718b1c3"
+    },
+    "call_ae67634a17934a3eb277a259d59b3091": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cuh",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b9e70feff54ee9643296b1c96b4e99f07557614ba9327f8f7ca5e5f5d16b8143"
+    },
+    "call_f146902dbea7449b85bb33cd418131b1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "path": "exllamav3/exllamav3_ext/bindings.cpp",
+        "max_bytes": 5000
+      },
+      "result_sha256": "ef2ae0e28d5940d1ad3c051bd28f7b9f16ab067f8b30cdbd9f9651290044dbd1"
+    },
+    "call_0adc900e5b3446168adcc5f1c4bf01a4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor total,x,batch in [(120,32,8),(120,32,2),(120,120,8)]:\n z=min(total//x,batch); groups=[[i+t for t in range(z) if i+t<batch] for i in range(0,batch,z)]\n assert sorted(sum(groups,[]))==list(range(batch))\n print(total,x,batch,'z',z,'blocks',x*z,'groups',groups)\nprint('shape2 small max_slices', (128//32)*(128//128)//12)\nprint('had normalization',1/math.sqrt(128))\nprint('broadcast scratch half elements for m=1 k=128 outputs=4:',4*1*128,'versus old',1*128)"
+        ]
+      },
+      "result_sha256": "da515af113969d47a9c0e361db7eae5db85377809e92be2779d99a8c18e95404"
+    }
+  }
+}

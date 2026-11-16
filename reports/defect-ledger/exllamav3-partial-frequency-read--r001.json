@@ -1,0 +1,229 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The inherited unconditional frequency read remains outside the partial-rotation guard.",
+  "trigger": "A partial rotary frequency array shorter than head_dim/2 reaches rope_kernel.",
+  "expected_behavior": "Threads copying unrotated channels should not read beyond the frequency array.",
+  "actual_behavior": "All x threads evaluate inv_freq[t] before the rotation/copy branch. For head_dim=128 and rotary_dim=64, 32 source-level frequency indices exceed the 32-element array. Actual GPU consequences are untested.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "The parent-tree search locates ext.rope in RoPE.apply and three attention callers of self.rope.apply. Their reach is conditional on supplying partial frequencies; it is not evidence that every model uses them. The task diff leaves the shared read and launch unchanged.",
+      "evidence": [
+        "call_3966534e7632463eb4e1e01b6a23df8c",
+        "call_9867f6c103474b51b58b50314cc4be32",
+        "call_70ede631d93e4913acd35cf6c15dfb2c",
+        "call_7192cb6d99994abe81198d9f5cd607dd"
+      ],
+      "limits": "Source-level bounds concern, not a measured CUDA fault."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Counted launched frequency indices outside the partial array for two bounded examples.",
+      "evidence": [
+        "call_b23cd757206f48db9136f1fcc0cfceed"
+      ],
+      "limits": "Integer indexing model only."
+    }
+  ],
+  "defect_id": "exllamav3-partial-frequency-read",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "status": "source_supported",
+      "rationale": "Root-tree inspection"
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+      "run": ".teacher/runs/commit-000065-001",
+      "local_id": "partial-frequency-read",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "partial-frequency-read",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited unconditional frequency read remains outside the partial-rotation guard.",
+        "trigger": "A partial rotary frequency array shorter than head_dim/2 reaches rope_kernel.",
+        "expected_behavior": "Threads copying unrotated channels should not read beyond the frequency array.",
+        "actual_behavior": "All x threads evaluate inv_freq[t] before the rotation/copy branch. For head_dim=128 and rotary_dim=64, 32 source-level frequency indices exceed the 32-element array. Actual GPU consequences are untested.",
+        "locations": [
+          {
+            "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_4fa0c19373f541aaa9fc1ec5ee6abbec",
+          "call_7192cb6d99994abe81198d9f5cd607dd",
+          "call_784b029bd92f4df2af378719cc7b9b95"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent-tree search locates ext.rope in RoPE.apply and three attention callers of self.rope.apply. Their reach is conditional on supplying partial frequencies; it is not evidence that every model uses them. The task diff leaves the shared read and launch unchanged.",
+            "evidence": [
+              "call_3966534e7632463eb4e1e01b6a23df8c",
+              "call_9867f6c103474b51b58b50314cc4be32",
+              "call_70ede631d93e4913acd35cf6c15dfb2c",
+              "call_7192cb6d99994abe81198d9f5cd607dd"
+            ],
+            "limits": "Source-level bounds concern, not a measured CUDA fault."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Counted launched frequency indices outside the partial array for two bounded examples.",
+            "evidence": [
+              "call_b23cd757206f48db9136f1fcc0cfceed"
+            ],
+            "limits": "Integer indexing model only."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+      "run": ".teacher/runs/commit-000072-002",
+      "local_id": "partial-rope-frequency-load",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "partial-rope-frequency-load",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly selected partial GPTJ path encounters an inherited source-level frequency bounds concern.",
+        "trigger": "Native RoPE runs with the inspected GLM4 settings head_dim=128 and partial_rotary_factor=0.5.",
+        "expected_behavior": "Only threads rotating the first 64 channels should read the 32-element inverse-frequency tensor; remaining threads should copy channels without reading it.",
+        "actual_behavior": "rope_kernel unconditionally evaluates inv_freq[threadIdx.x] before testing the partial rotary boundary. The launch spans indices 0\u201363 although the tensor has 32 elements. This code is unchanged by the task. Whole-parent searches locate RoPE.apply as the Python native caller and all three Attention decode methods as its callers, so the concern reaches GLM4's default and alternative attention modes if execution reaches RoPE. A runtime fault is not established.",
+        "locations": [
+          {
+            "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          },
+          {
+            "commit": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+            "path": "exllamav3/models/glm4.py",
+            "symbol": "Glm4Config.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_10e0289e524f4faebbc1413c94c2d931",
+          "call_28b4205dec974a7c8078b9516b2ba157",
+          "call_1c9251074c7444a4ad28297bfad13f5b",
+          "call_14862b5a245c4337b78d6b7f50a13b7f",
+          "call_5f66387bb5fa4460b04492ae2150b992",
+          "call_6e81a1b44d8245dd9c88cdd145f6871b"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the inspected frequency count and launch width: 32 of 64 x-thread indices exceed the frequency tensor's logical bounds, covering indices 32\u201363.",
+            "evidence": [
+              "call_8561102475d14ee4ac2151e783486b0a"
+            ],
+            "limits": "Integer indexing model only; no CUDA execution or compiler-output inspection. Copy-only threads do not use the computed trigonometric values."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000065-001__draft.json",
+      "sha256": "660379192665d0c13d336c5d19d7d664c2ac419daac591befcfae218f042b213"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000065-001.md",
+      "sha256": "d591a347af99cda24206ff75355c273a99743368379e3304f3f5265b5c057bef"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000072-002__draft.json",
+      "sha256": "d1575e613e8644eec6797550c26e103094069ff38149f372bf9d299f525e93a1"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000072-002.md",
+      "sha256": "014fd6b931e3dec4c2ba4cfc9dd98048a70bb3eafd9ad34460a2ebd9eebb2ffa"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/root__exllamav3__exllamav3_ext__rope.cu",
+      "sha256": "bc7a1cd7460276af61d300f471f0165b9def41d2cf85e7e9990ae54b1d854003"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000065-001/draft.json",
+      "source_id": ".teacher/runs/commit-000065-001/draft.json",
+      "content_sha256": "660379192665d0c13d336c5d19d7d664c2ac419daac591befcfae218f042b213",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000065-001.md",
+      "source_id": "reviews/verdicts/commit-000065-001.md",
+      "content_sha256": "d591a347af99cda24206ff75355c273a99743368379e3304f3f5265b5c057bef",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000072-002/draft.json",
+      "source_id": ".teacher/runs/commit-000072-002/draft.json",
+      "content_sha256": "d1575e613e8644eec6797550c26e103094069ff38149f372bf9d299f525e93a1",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000072-002.md",
+      "source_id": "reviews/verdicts/commit-000072-002.md",
+      "content_sha256": "014fd6b931e3dec4c2ba4cfc9dd98048a70bb3eafd9ad34460a2ebd9eebb2ffa",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+      "available_at": "2025-04-17T11:44:56+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c44e56c73b2c67eee087c7195c9093520494d3bf",
+      "available_at": "2025-04-18T02:49:19+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+      "c44e56c73b2c67eee087c7195c9093520494d3bf"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "Root rope.cu reads inv_freq[t] before partial rotation guard; verified from root tree. 65 and GLM4/72 are observations of this same identity. No compiler/device fault proved. The 185 padded-lane concern is related but also introduces normalisation-weight reads."
+  ],
+  "administrative_source_checks": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "path": "exllamav3/exllamav3_ext/rope.cu",
+      "method": "git show; byte-exact archived root source",
+      "executed": false
+    }
+  ]
+}

@@ -1,0 +1,295 @@
+{
+  "schema_version": 5,
+  "sha": "d4cdab818dfaa29854a5d218366e4c603036783a",
+  "parent_shas": [
+    "3637103e2ff4a736544774606ddc964fc4f71362"
+  ],
+  "cutoff_date": "2025-06-03T03:08:33+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Ordinary MLP previously fixed its down projection's output width to hidden_size, preventing independently sized outputs.",
+        "basis": "source",
+        "evidence": [
+          "call_6aea68fa6011459389cd4781a90bbf86"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The new optional out_size controls only the down projection. None preserves hidden_size; the up projection, activation and forward sequence remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_6aea68fa6011459389cd4781a90bbf86",
+          "call_440d16af5d2f415a833578a581b1fd10"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The whole-tree MLP search found one ordinary MLP construction site, in Gemma3 vision. It uses keyword arguments and omits out_size, preserving its existing dimensions. GatedMLP is unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_3a15c22c2e4d4f73aadd0fe350798f96",
+          "call_d6b3e05768e743e2812d57076dcb619f",
+          "call_6aea68fa6011459389cd4781a90bbf86"
+        ]
+      },
+      {
+        "text": "Inserting out_size before key_up changes positional binding for external callers that supplied optional arguments positionally; the inspected in-tree caller does not do so.",
+        "basis": "source",
+        "evidence": [
+          "call_6aea68fa6011459389cd4781a90bbf86",
+          "call_d6b3e05768e743e2812d57076dcb619f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial modules entry and the ordinary-MLP alignment and activation entries. They establish the original projection pipeline, configurable alignment and subsequent activation selection.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_dd01318fb9964c56abb2705d25b53c40",
+          "call_5e2f1861aa064904ac940c3f94cf33c4",
+          "call_42f0cfac319746f9affaecf19037da51"
+        ]
+      },
+      {
+        "text": "The earlier ignored-activation observation is no longer present: the parent selects SiLU or GELU. Its unsupported-activation observation persists because this patch changes neither selection nor forward dispatch.",
+        "basis": "source",
+        "evidence": [
+          "call_440d16af5d2f415a833578a581b1fd10",
+          "call_6aea68fa6011459389cd4781a90bbf86"
+        ]
+      },
+      {
+        "text": "Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d concerns sliced GatedMLP loading. Issues #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concern quantization failures. Their relationship here is inferred only from shared mlp.py or linear.py paths; none establishes a motivation or fix for ordinary MLP output sizing.",
+        "basis": "inference",
+        "evidence": [
+          "call_e3b677c26a384987aa6e9bfb29aacd59",
+          "call_dee7ec8101ee47f7bd74ec84cb497c8d",
+          "call_07b13d4dc078430aa048d7017f2d6485",
+          "call_6aea68fa6011459389cd4781a90bbf86"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model, PyTorch operation, weight loader or GPU kernel was executed. The scalar check validates dimension arithmetic only, not backend support for arbitrary widths.",
+      "Literal whole-tree searches do not establish compatibility for dynamic or external callers."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+      "95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Independent ordinary-MLP output width",
+        "claims": [
+          {
+            "text": "MLP now constructs hidden_size \u2192 intermediate_size \u2192 out_size projections, falling back to hidden_size when out_size is None. Forward still applies up, the selected activation, down, and output-dtype conversion; it introduces no residual projection or output cropping.",
+            "basis": "source",
+            "evidence": [
+              "call_6aea68fa6011459389cd4781a90bbf86",
+              "call_440d16af5d2f415a833578a581b1fd10"
+            ]
+          },
+          {
+            "text": "out_size remains subject to Linear's alignment: dimensions round upward to multiples of pad_to, whose default 128 is an alignment quantum, not a token threshold. pad_to=1 preserves exact widths. Both MLP projections retain the input-padding assertion, so default alignment still requires aligned hidden and intermediate dimensions.",
+            "basis": "source",
+            "evidence": [
+              "call_94f0a38ff9b7490e85d0e668293d1c4d",
+              "call_440d16af5d2f415a833578a581b1fd10"
+            ]
+          },
+          {
+            "text": "A standard-library transcription with hidden=128 and intermediate=256 produced down dimensions (256,128) for the default output, (256,256) for out_size=130 with alignment 128, and (256,130) with alignment 1. All three satisfied the inspected input-alignment conditions.",
+            "basis": "execution",
+            "evidence": [
+              "call_82ca1de1abcf42c4aa0c9c45280fc527"
+            ]
+          },
+          {
+            "text": "TransformerBlock and ParallelDecoderBlock still add MLP results directly to their residual tensors; neither adapts the residual width. Their interfaces therefore do not generally accommodate independently sized outputs. Gemma3's existing keyword-based MLP construction retains the default equal width, while its separate multimodal Linear projection remains unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_0895754ec6a94dcf949387cb5341e557",
+              "call_d6b3e05768e743e2812d57076dcb619f",
+              "call_6aea68fa6011459389cd4781a90bbf86"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unsupported-activation-carried-over",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Unsupported activation strings still leave ordinary MLP's activation callable unset.",
+        "trigger": "An external caller constructs an otherwise valid MLP with activation_fn=\"relu\" and calls forward after loading its projections.",
+        "expected_behavior": "Reject the unsupported selection explicitly or provide a defined activation.",
+        "actual_behavior": "Neither match arm assigns activation_fn_call, so forward accesses a missing attribute after the up projection. The only identified in-tree constructor uses supported GELU; this trigger is limited to the exposed API.",
+        "locations": [
+          {
+            "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "MLP.__init__ / MLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_440d16af5d2f415a833578a581b1fd10",
+          "call_6aea68fa6011459389cd4781a90bbf86",
+          "call_3a15c22c2e4d4f73aadd0fe350798f96",
+          "call_d6b3e05768e743e2812d57076dcb619f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared parent activation dispatch with the complete task diff and inspected the constructor caller and transformer consumers.",
+            "evidence": [
+              "call_440d16af5d2f415a833578a581b1fd10",
+              "call_6aea68fa6011459389cd4781a90bbf86",
+              "call_0895754ec6a94dcf949387cb5341e557"
+            ],
+            "limits": "No MLP execution or external caller inspection."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional ordinary-MLP output sizing while preserving default dimensions and existing alignment requirements; residual consumers remain unchanged."
+  },
+  "evidence": {
+    "call_6aea68fa6011459389cd4781a90bbf86": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "offset": 183,
+        "max_bytes": 807
+      },
+      "result_sha256": "4891c3f00d6293e90b155e21b0c85615182c8bba9eeb0333efe74c5316ff230b"
+    },
+    "call_440d16af5d2f415a833578a581b1fd10": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "45832e021f44873d4b16fdae4a6c151adf2719722ced68c9712b8cc601eaedbb"
+    },
+    "call_3a15c22c2e4d4f73aadd0fe350798f96": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "query": "MLP",
+        "limit": 100
+      },
+      "result_sha256": "4448885407bb4bf3ad699a2db1540edd60ff045c244d1425e0f43a2b959111e3"
+    },
+    "call_94f0a38ff9b7490e85d0e668293d1c4d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 23000
+      },
+      "result_sha256": "5d50fc353093ebd2afc8c8afc837c22062eee143acd0eec4c34c7783879f27f5"
+    },
+    "call_d6b3e05768e743e2812d57076dcb619f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 16000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "ba637875e8a1cdc7c1e05d4b70bb6f254e53bd63634993a1cd1914674fe1edee"
+    },
+    "call_0895754ec6a94dcf949387cb5341e557": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "10d650f34158f55773f0614cb89c949738083a8633808d758fa1304de44f5e5a"
+    },
+    "call_42f0cfac319746f9affaecf19037da51": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b88ddeece74eba99175fcc580f2f0510db95f312ab95e9e28a2cd06558a3c396"
+    },
+    "call_5e2f1861aa064904ac940c3f94cf33c4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+        "max_bytes": 16384
+      },
+      "result_sha256": "01e84c59470ef1db63d77e28d5195dbabb76d005622948d863bd77b736167810"
+    },
+    "call_dd01318fb9964c56abb2705d25b53c40": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_e3b677c26a384987aa6e9bfb29aacd59": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "aaa83a421859b64239223392a062f5a316119570a42fe8a863b8db10d10c3006"
+    },
+    "call_dee7ec8101ee47f7bd74ec84cb497c8d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "45aed5cb518e86e1cafde6ef41160af8d0f4689fa08d19aedd7631d99c1f2fe8"
+    },
+    "call_07b13d4dc078430aa048d7017f2d6485": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 20000
+      },
+      "result_sha256": "4e73cdabd7755625884a8bb2332526de199db21bfd0da55fd9411ac8badee6ab"
+    },
+    "call_20ad7bbc87ce4fb8b13f8f2d9eeb05e4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_82ca1de1abcf42c4aa0c9c45280fc527": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for h,i,o,p in [(128,256,None,128),(128,256,130,128),(128,256,130,1)]:\n r=lambda n:(n+p-1)//p*p\n print({'up':(r(h),r(i)),'down':(r(i),r(h if o is None else o)),'inputs_allowed':r(h)==h and r(i)==i})"
+        ]
+      },
+      "result_sha256": "cde680e73dfba761d5b2e93063a6015a0c691e8347a5c95e1d2cbc68cbb0c853"
+    }
+  }
+}

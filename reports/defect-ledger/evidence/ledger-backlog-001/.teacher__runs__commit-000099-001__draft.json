@@ -1,0 +1,299 @@
+{
+  "schema_version": 5,
+  "sha": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+  "parent_shas": [
+    "875e503e84ddf27441f551a2c7dc50982c8cd48c"
+  ],
+  "cutoff_date": "2025-04-27T18:54:09+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "refactor",
+    "problem": [
+      {
+        "text": "Successful autosplit loading cleaned up memory before returning to load_gen and closing the safetensors collection; explicit-device loading lacked that final cleanup call.",
+        "basis": "source",
+        "evidence": [
+          "call_69efe3c062e64b0a8ecbb710d2a99ead",
+          "call_6a7cbc55450c417b8a916d70448f83f5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Moving free_mem to the shared successful completion path places garbage collection and CUDA cache emptying after loader closure and after the autosplit generator has finished. This plausibly makes more temporary allocations eligible for reclamation, without changing placement or OOM retry policy.",
+        "basis": "inference",
+        "evidence": [
+          "call_6a7cbc55450c417b8a916d70448f83f5",
+          "call_69efe3c062e64b0a8ecbb710d2a99ead",
+          "call_c2d17ac3a7364299988f3fb518803d31"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both successful single-device and autosplit loads now invoke final cleanup. Dictionary traversal in the tensor diagnostic becomes best-effort, suppressing exceptions within that traversal block.",
+        "basis": "source",
+        "evidence": [
+          "call_6a7cbc55450c417b8a916d70448f83f5",
+          "call_86ccd02572e84c4eb078ee7a8f8711d8"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier loader entry identifies iterator exhaustion as necessary for cleanup and records missing explicit-device progress notifications.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ecc9c89d10214c908a919dab84f3baa5"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension import failure; its inferred connection is only a traceback through model.py. Issue #15 reports incoherent low-bpw cogito output, and #21 reports Windows build failure. None establishes motivation for this memory-management change.",
+        "basis": "inference",
+        "evidence": [
+          "call_eb9e55bfbf81426ba2747b35271bf569",
+          "call_597c7fd41c144cc8a0253eb9714633a8",
+          "call_f8e9cc885d464a539a3e812a80e00cb6",
+          "call_6a7cbc55450c417b8a916d70448f83f5"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, CUDA allocation, reclamation timing, or performance measurement was executed. Source ordering does not establish a reduction in peak or retained VRAM.",
+      "A scalar arithmetic check would not validate these lifecycle changes; meaningful validation requires generator lifecycle and allocator behavior with real model loads.",
+      "The exception motivating the diagnostic guard is not established by the supplied evidence."
+    ],
+    "links": [
+      "448815bc1cf7b17e714a52fe6f70bcb53da48147"
+    ],
+    "chapters": [
+      {
+        "id": "runtime",
+        "title": "Loading cleanup and best-effort tensor inspection",
+        "claims": [
+          {
+            "text": "free_mem calls gc.collect followed by torch.cuda.empty_cache. The patch removes its successful-completion call from _load_autosplit and adds it immediately after self.config.stc.close in load_gen. Initial cleanup and cleanup during OOM retry remain unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_c2d17ac3a7364299988f3fb518803d31",
+              "call_69efe3c062e64b0a8ecbb710d2a99ead",
+              "call_6a7cbc55450c417b8a916d70448f83f5"
+            ]
+          },
+          {
+            "text": "Autosplit creates extra_dummy_states for output-memory estimation when max_output_factor exceeds one. Moving cleanup outside the exhausted helper places it after the helper's local lifetime rather than while those locals remain in its active frame. SafetensorsCollection.close closes native file handles and clears their entries; variant collections delegate closure to their constituent collections.",
+            "basis": "source",
+            "evidence": [
+              "call_69efe3c062e64b0a8ecbb710d2a99ead",
+              "call_6a7cbc55450c417b8a916d70448f83f5",
+              "call_2263833604894e5891de9ea81d5d3a0a",
+              "call_65e619079b6a4e668d4939e703eb1aee"
+            ]
+          },
+          {
+            "text": "Cleanup still requires successful completion: it is not protected by finally. The terminal autosplit progress tuple precedes dummy-state release and memory-limit reset; callers must resume to exhaustion to reach collection closure and the relocated free_mem. Model.load and the inspected loading examples exhaust the iterator.",
+            "basis": "source",
+            "evidence": [
+              "call_69efe3c062e64b0a8ecbb710d2a99ead",
+              "call_6a7cbc55450c417b8a916d70448f83f5",
+              "call_c949deb9b1bd46aba64f47bdd8690788"
+            ]
+          },
+          {
+            "text": "list_gpu_tensors walks reachable objects, recording tensor paths and queueing unvisited values. Only its dictionary-items block gains a bare except/pass. If iteration, path formatting, collection, or queue maintenance raises, traversal abandons the remainder of that dictionary without reporting the error; already collected results remain. Attribute and sequence traversal are not covered by this guard.",
+            "basis": "source",
+            "evidence": [
+              "call_c2d17ac3a7364299988f3fb518803d31",
+              "call_86ccd02572e84c4eb078ee7a8f8711d8"
+            ]
+          },
+          {
+            "text": "The diagnostic trades completeness and visibility of failures for continued scanning. It does not itself free tensors or participate in the inspected model-loading path.",
+            "basis": "inference",
+            "evidence": [
+              "call_c2d17ac3a7364299988f3fb518803d31",
+              "call_86ccd02572e84c4eb078ee7a8f8711d8",
+              "call_69efe3c062e64b0a8ecbb710d2a99ead"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-single-device-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The previously recorded explicit-device progress omission is carried over unchanged.",
+        "trigger": "Use load_gen(device=...) expecting yielded progress, or load(device=..., callback=...) expecting callback notifications.",
+        "expected_behavior": "Receive loading progress through the requested interface.",
+        "actual_behavior": "The explicit-device branch calls _load_single, which only updates its progress bar. Loading can finish and reach the new cleanup without yielding progress or calling the callback.",
+        "locations": [
+          {
+            "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.load_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_69efe3c062e64b0a8ecbb710d2a99ead",
+          "call_6a7cbc55450c417b8a916d70448f83f5"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent explicit-device branch and _load_single with the task diff. Whole-tree load_gen search found Model.load and two loading-example callers; the examples use autosplit and exhaust their iterators. The omission reaches direct explicit-device iterator consumers and explicit-device callback users through Model.load, not the inspected example calls.",
+            "evidence": [
+              "call_02a57f63db2446d8ab9d122022aa6f1d",
+              "call_c949deb9b1bd46aba64f47bdd8690788",
+              "call_69efe3c062e64b0a8ecbb710d2a99ead",
+              "call_6a7cbc55450c417b8a916d70448f83f5"
+            ],
+            "limits": "No runtime reproduction; literal caller searches do not establish external or dynamically dispatched usage."
+          }
+        ]
+      }
+    ],
+    "summary": "Moves final memory cleanup after shared loader closure and makes dictionary scanning in the tensor diagnostic tolerate exceptions."
+  },
+  "evidence": {
+    "call_6a7cbc55450c417b8a916d70448f83f5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "offset": 188,
+        "max_bytes": 1803
+      },
+      "result_sha256": "8981a7b488d2f7ceab70a9897f6752247356541401641da060800b1034a0cfb0"
+    },
+    "call_86ccd02572e84c4eb078ee7a8f8711d8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "offset": 851,
+        "max_bytes": 1140
+      },
+      "result_sha256": "fb37e2dab7e9dc95e9edc4fab8def015a9dffaac1ec0a3a4fe48709f0d047841"
+    },
+    "call_69efe3c062e64b0a8ecbb710d2a99ead": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "5204f5f7191f1cdc9d0b112af12b590f805d12048cf3e5500367c18766dd15b4"
+    },
+    "call_c2d17ac3a7364299988f3fb518803d31": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "path": "exllamav3/util/memory.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "7d6c52cf19adbcb6e6143e25c0a7fbc7d28af296e653b7408731bcca794d2bea"
+    },
+    "call_43cb89382761484f9febccb42c079317": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "query": "def close",
+        "path": "exllamav3",
+        "limit": 30
+      },
+      "result_sha256": "e2b5fe09c7709476b00c210f2cf43cfc5b7a2dd4da603f5fd12d2bee7a678d30"
+    },
+    "call_65e619079b6a4e668d4939e703eb1aee": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 9500,
+        "max_bytes": 7000
+      },
+      "result_sha256": "4690ba2c55a06ca953f8d459600ff368d934c281723e8843201be5ac1a00ce58"
+    },
+    "call_2263833604894e5891de9ea81d5d3a0a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 6500,
+        "max_bytes": 2300
+      },
+      "result_sha256": "ae64c56535e162130f8226f07af8d549f754cc464aba2a957705645db38f5a42"
+    },
+    "call_eb9e55bfbf81426ba2747b35271bf569": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b5aba1d506967ef3ecf1da4863d4feac126270565229ce5a744ea415abfc16d6"
+    },
+    "call_597c7fd41c144cc8a0253eb9714633a8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8a83f3451088485806f8d8f58b855ebe1cffdc37db6fa08151a58eb44a53ec25"
+    },
+    "call_f8e9cc885d464a539a3e812a80e00cb6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8312e06a09efba0e55db14ecf7cd0e11226be7984c08b8cd3e0d842cb339eb7b"
+    },
+    "call_9d3bf7e0dbfe4f8ea1d6fab607cab5d9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "limit": 3,
+        "max_bytes": 4000
+      },
+      "result_sha256": "934b8dc9276c1f5e113f3693fd0914650cdedeba45a9ad1a81b20c2a246afe18",
+      "catalog_only": true
+    },
+    "call_ecc9c89d10214c908a919dab84f3baa5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2ffeb24c725e54fca514ba7e907d1b3ea5436f5de5c15fd3b8d5d9f3df01c53d"
+    },
+    "call_02a57f63db2446d8ab9d122022aa6f1d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "query": "load_gen(",
+        "limit": 30
+      },
+      "result_sha256": "4196f26f5604b089d9dc9a467a2e4711a76acdc953d9cc2e6a92624f49412e80"
+    },
+    "call_c949deb9b1bd46aba64f47bdd8690788": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "path": "examples/loading.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "79bb990913974980a2fcef1079846ae5d1b102238a61aa241d1e73cf1a6930cd"
+    },
+    "call_de58ec002fd84fecb9911c50aa9b2d89": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "875e503e84ddf27441f551a2c7dc50982c8cd48c",
+        "query": ".load(device",
+        "limit": 30
+      },
+      "result_sha256": "0587f3d1342e3caeecc3281a9769c516da8029aba06cb719663902172e004c82"
+    }
+  }
+}

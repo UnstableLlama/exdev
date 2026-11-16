@@ -1,0 +1,476 @@
+{
+  "schema_version": 5,
+  "sha": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+  "parent_shas": [
+    "bcc096667169d8f34c602ce495b372e3fc9afd2b"
+  ],
+  "cutoff_date": "2025-04-17T18:37:25+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Quantization previously always normalized output channels. This change makes that normalization conditional on calibration-input skew and adds explicit overrides.",
+        "basis": "source",
+        "evidence": [
+          "call_b01b95df90b0486985bd936b15e1b798"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The source describes the cutoff as experimental: concentrate at least 15% of the summed channel RMS in the largest approximately 2% of channels, and automatic mode disables output-channel scaling. This is a heuristic, not a demonstrated optimum.",
+        "basis": "source",
+        "evidence": [
+          "call_b01b95df90b0486985bd936b15e1b798"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The converter forwards the requested policy per linear layer, prints the actual decision and global scale, and writes head_bits plus the requested always/never/auto policy into quantization metadata. The metadata policy is not a per-layer decision inventory.",
+        "basis": "source",
+        "evidence": [
+          "call_9c703a488e1342e18249f24b9585a1ed",
+          "call_2717a11d2e054c4bb854f55836fd35a5",
+          "call_b01b95df90b0486985bd936b15e1b798"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier tile-sampling entry records unreachable exit synchronization and premature progress completion.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_30c8a665943747c3bd05d01cdf176bbb"
+        ]
+      },
+      {
+        "text": "Inspection of the parent and task diff shows that exit synchronization is now reachable before the tuple return; the premature-progress expression remains unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_650018a236e64899a7322064a66ff61b",
+          "call_b01b95df90b0486985bd936b15e1b798"
+        ]
+      },
+      {
+        "text": "The inspected reports concern undefined __cxa_call_terminate (#7), incoherent cogito output at bpw <= 2.5 (#15), CUDA invalid configuration (#16), and missing torch during installation (#17). None establishes a resolution by this change.",
+        "basis": "source",
+        "evidence": [
+          "call_ed57d0f32f4344859dadd655b588a3f9",
+          "call_e94bf85ecabb4ecc945301e5c3cdbf54",
+          "call_e87a07866d2c4a4baebf3a99ea1a26ae",
+          "call_8280e26303094365b5ac4c99b6f66aeb"
+        ]
+      },
+      {
+        "text": "Issue #16 is related context because its traceback matches Linear.capture_H's addmm_ accumulation and the converter's calibration forward pass. That connection does not establish that changing subsequent regularization addresses its reported CUDA failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_e87a07866d2c4a4baebf3a99ea1a26ae",
+          "call_1a2f9512c934488ebd3080f4fc250143",
+          "call_2f4fbceac49a44c2a1730702562a566e"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Torch, CUDA kernel, conversion, model-quality benchmark, or terminal rendering was executed. Scalar checks use Python arithmetic rather than GPU float32 operations.",
+      "The inspected source does not derive the retained codebook_scale value 1.24371088 or establish the empirical quality of the 0.15 cutoff.",
+      "Literal whole-tree caller searches cover repository call sites, not dynamic or external callers."
+    ],
+    "links": [
+      "bad500d7272a863b3d1b0cd5a3ed1f714370c972"
+    ],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "Calibration-guided output scaling and regularization",
+        "claims": [
+          {
+            "text": "Linear.capture_H accumulates X\u1d40X and a row count. finalize_capture_H divides by that count and adds sigma_reg times the mean diagonal, default 0.025. It now saves a clone of this regularized diagonal before sign flips and Hadamard transforms, returning it also when the captured Hessian is reused. Thus the decision uses damped input second moments, not raw weight statistics.",
+            "basis": "source",
+            "evidence": [
+              "call_1a2f9512c934488ebd3080f4fc250143",
+              "call_650018a236e64899a7322064a66ff61b",
+              "call_b01b95df90b0486985bd936b15e1b798"
+            ]
+          },
+          {
+            "text": "regularize sorts sqrt(H_diag) descending and divides the sum of its first floor(k/50) entries by the total. Automatic mode applies output scales only when this ratio is strictly below 0.15; equality disables them. Explicit True or False overrides the decision, although the statistic is still calculated.",
+            "basis": "source",
+            "evidence": [
+              "call_b01b95df90b0486985bd936b15e1b798"
+            ]
+          },
+          {
+            "text": "A scalar transcription including default diagonal damping produced skew 0.02 for 100 equal second moments, enabling scales, and approximately 0.164545 for two second moments of 100 and 98 of 1, disabling scales.",
+            "basis": "execution",
+            "evidence": [
+              "call_74b1af66ec8f4defb8cb571014c9ddf1"
+            ]
+          },
+          {
+            "text": "When enabled, output-channel RMS values are normalized by their mean and folded into sv. When disabled, sv retains random signs. Both paths divide weights by sv, apply the right Hadamard transform, derive input RMS scales in su using -codebook_scale, divide by su, and apply the left transform. Disabling output normalization therefore does not disable sign mixing, input scaling, or Hadamard preprocessing.",
+            "basis": "source",
+            "evidence": [
+              "call_b01b95df90b0486985bd936b15e1b798",
+              "call_650018a236e64899a7322064a66ff61b"
+            ]
+          },
+          {
+            "text": "The refactor selects blockwise in-place Hadamard helpers instead of whole-matrix helpers. Their implementations require float tensors and dimensions divisible by the transform size, here 128, and use normalization 1/sqrt(128). Processing one block at a time avoids a whole transformed-matrix result allocation, but no memory or speed improvement was measured.",
+            "basis": "source",
+            "evidence": [
+              "call_650018a236e64899a7322064a66ff61b",
+              "call_b01b95df90b0486985bd936b15e1b798"
+            ]
+          },
+          {
+            "text": "Global-scale search still trial-quantizes wrapped-diagonal 16\u00d716 samples, with width 3, over [0.1, 1.9] until interval width is at most 0.01. It now returns both the midpoint scale and the average of the two retained trial errors, after synchronizing selected devices. The reported sample MSE is therefore not a fresh evaluation at the returned midpoint. regularize multiplies weights by this scale and divides su by it to preserve reconstruction scaling.",
+            "basis": "source",
+            "evidence": [
+              "call_650018a236e64899a7322064a66ff61b",
+              "call_b01b95df90b0486985bd936b15e1b798"
+            ]
+          },
+          {
+            "text": "Packed output remains suh, svh and trellis, with half-precision scale vectors. Reconstruction still reverses the transforms and applies su and sv; the decision changes their values rather than introducing a new tensor format.",
+            "basis": "source",
+            "evidence": [
+              "call_650018a236e64899a7322064a66ff61b",
+              "call_b01b95df90b0486985bd936b15e1b798",
+              "call_1a2f9512c934488ebd3080f4fc250143"
+            ]
+          },
+          {
+            "text": "The documented output-scale switches are mutually exclusive and default to None, matching automatic mode. prepare treats the policy as momentary: resuming without a switch resets it to auto rather than retaining a saved forced policy. --override_anyway permits changes to otherwise protected bitrate and calibration settings; it bypasses the guard, not the consequences of incompatible checkpoints.",
+            "basis": "source",
+            "evidence": [
+              "call_8642c4502931496189ae6bb76a751bf9",
+              "call_9c703a488e1342e18249f24b9585a1ed",
+              "call_2f4fbceac49a44c2a1730702562a566e"
+            ]
+          },
+          {
+            "text": "Whole-parent searches found the converter and test_quant_dequant as callers of Linear.convert_exl3, which forwards quant_args unchanged to quantize_exl3. The converter builder gains apply_out_scales, but the test builder does not. The located internal callers of finalize_capture_H and block_ldl are updated for their required verbose arguments.",
+            "basis": "source",
+            "evidence": [
+              "call_791ef75c44af434db986e253e81e3c76",
+              "call_9bda9bd0b4c94a8ebb963145da99c7c2",
+              "call_b8a6577f581f4bcd87dea3a5f8762b18",
+              "call_8732fc7e98214bfcab03202d87647692",
+              "call_8bcfd0283b3e47619f5739611574019a",
+              "call_61ba61d8e5d34eb5a9dfbfa0de5c361e",
+              "call_1a2f9512c934488ebd3080f4fc250143",
+              "call_b01b95df90b0486985bd936b15e1b798",
+              "call_9c703a488e1342e18249f24b9585a1ed"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "required-scale-policy-test-caller",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "regularize requires a policy key that the existing quantization test does not supply.",
+        "trigger": "test_quant_dequant reaches regularize with its unchanged K/seed-only quant_args dictionary.",
+        "expected_behavior": "The repository caller supplies the new policy or omission defaults to automatic mode.",
+        "actual_behavior": "quant_args['apply_out_scales'] raises KeyError. The test also already lacks devices, required later by the parent implementation; this is an additional incompatibility, not evidence that the test previously passed.",
+        "locations": [
+          {
+            "commit": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "regularize"
+          },
+          {
+            "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+            "path": "tests/test_quant_fn.py",
+            "symbol": "test_quant_dequant"
+          }
+        ],
+        "source_evidence": [
+          "call_b01b95df90b0486985bd936b15e1b798",
+          "call_61ba61d8e5d34eb5a9dfbfa0de5c361e",
+          "call_650018a236e64899a7322064a66ff61b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-tree caller and quant_args searches identified the converter and test builders; Linear.convert_exl3 forwards the dictionary unchanged. The converter is updated, the test is not.",
+            "evidence": [
+              "call_791ef75c44af434db986e253e81e3c76",
+              "call_9bda9bd0b4c94a8ebb963145da99c7c2",
+              "call_b8a6577f581f4bcd87dea3a5f8762b18",
+              "call_1a2f9512c934488ebd3080f4fc250143",
+              "call_9c703a488e1342e18249f24b9585a1ed"
+            ],
+            "limits": "Conditional on reaching regularize; the CUDA/model-dependent test was not run."
+          }
+        ]
+      },
+      {
+        "id": "inherited-premature-search-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Scale-search progress still reports completion at its first interval contraction.",
+        "trigger": "g_scale_gss runs with the visible progress bar supplied through quantize_exl3 and regularize.",
+        "expected_behavior": "Intermediate updates distinguish search work from completion.",
+        "actual_behavior": "int(delta2/delta1) becomes zero after contraction, making every loop update 100 while search continues.",
+        "locations": [
+          {
+            "commit": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+            "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+            "symbol": "g_scale_gss"
+          }
+        ],
+        "source_evidence": [
+          "call_650018a236e64899a7322064a66ff61b",
+          "call_b01b95df90b0486985bd936b15e1b798",
+          "call_41005f991d5f4effbcc7eff9ec6c7063"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent direct caller is quantize_exl3; the task moves that call into regularize while forwarding its progress bar. ProgressBar.update interprets the supplied value as completed work.",
+            "evidence": [
+              "call_68f0767188a5450d9467650b7e336a44",
+              "call_b01b95df90b0486985bd936b15e1b798",
+              "call_41005f991d5f4effbcc7eff9ec6c7063"
+            ],
+            "limits": "No terminal rendering was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled golden-section interval contraction: all 11 updates were 100, ending at width approximately 0.009045.",
+            "evidence": [
+              "call_74b1af66ec8f4defb8cb571014c9ddf1"
+            ],
+            "limits": "Python arithmetic models progress only; it does not execute the repository search or CUDA objective."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds calibration-guided output-channel scaling with forced overrides, factors preprocessing into regularize, and makes scale-search exit synchronization reachable. A test caller lacks the new required policy key, and premature progress reporting persists."
+  },
+  "evidence": {
+    "call_8642c4502931496189ae6bb76a751bf9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+        "offset": 235,
+        "max_bytes": 20000
+      },
+      "result_sha256": "a0b9bff411a646a4160b8cd92c9f0678aee6d39ba09588e9869bc8a770dc78ff"
+    },
+    "call_2717a11d2e054c4bb854f55836fd35a5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+        "offset": 1257,
+        "max_bytes": 815
+      },
+      "result_sha256": "c6b0427df42ac7b42cb78163c77eb1ba847163df04681f09296c40b4aa5e04c5"
+    },
+    "call_9c703a488e1342e18249f24b9585a1ed": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+        "offset": 2072,
+        "max_bytes": 3467
+      },
+      "result_sha256": "0d3616b39ad03a04b9b8f6ca59f7e2a05622e4f002943120132db5b4c3ab5198"
+    },
+    "call_b01b95df90b0486985bd936b15e1b798": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "322815f71eaf582e36fd81bc6fdf5148b27fb97a",
+        "offset": 5539,
+        "max_bytes": 10610
+      },
+      "result_sha256": "9b05d3c5735a1b7844ea16a3162a59f7554ae4524f7b5ca269826ff2334383fc"
+    },
+    "call_650018a236e64899a7322064a66ff61b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "max_bytes": 40000
+      },
+      "result_sha256": "a6e7d90497d67bc4983e9b7d6686887e56ea0148bd0829cd786782ad2818735b"
+    },
+    "call_791ef75c44af434db986e253e81e3c76": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "quant_args",
+        "limit": 200
+      },
+      "result_sha256": "fc67ac99ecc7fd7877ab3b7e2e712f5a9f9a2f3d92c46660a80aab767cbf4b54"
+    },
+    "call_ce29221e09634dfe923d8fb44f68a1f3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "out_scales",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_7c4bd01f339b4baebad57e8e1b9f24b2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "out_channel_scales",
+        "limit": 100
+      },
+      "result_sha256": "d04b42090f9b5b943a958fdaccd29bdaa19020140fb5492fa0767ad41ffc74f4"
+    },
+    "call_2f4fbceac49a44c2a1730702562a566e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "73a09c1fd1016c35766e8c5cf5b848099c143a7dc0c83970ab206530c1afe813"
+    },
+    "call_61ba61d8e5d34eb5a9dfbfa0de5c361e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "path": "tests/test_quant_fn.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "0954bf52091b61f081d550fb9501efafade0ea2ec9d7ef506e9ae979a56b74db"
+    },
+    "call_1a2f9512c934488ebd3080f4fc250143": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 3500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "832a8644604188ae1e9b9758a633a2bc90958c7c73f8a9b18bcd87d73e40356b"
+    },
+    "call_8bcfd0283b3e47619f5739611574019a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "block_ldl(",
+        "limit": 100
+      },
+      "result_sha256": "05cbf1b340527cdb9beea08d3f1391524e2361c6cd2a7f47fd88708de52b9bd3"
+    },
+    "call_8732fc7e98214bfcab03202d87647692": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "finalize_capture_H(",
+        "limit": 100
+      },
+      "result_sha256": "6ddfedcb19d9269481794f8906dda4dd875955085a79afc413a97c5350ba2c14"
+    },
+    "call_9bda9bd0b4c94a8ebb963145da99c7c2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "convert_exl3(",
+        "limit": 100
+      },
+      "result_sha256": "34e6b8b70376c11240959ec42f9a1c6e17be9848ff535a9f0df903d307f2357d"
+    },
+    "call_b8a6577f581f4bcd87dea3a5f8762b18": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "quantize_exl3(",
+        "limit": 100
+      },
+      "result_sha256": "47eb581c2dddd357e60b44a3b3ed570d58847ef872d770a93f35e15f744778b5"
+    },
+    "call_30c8a665943747c3bd05d01cdf176bbb": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "bad500d7272a863b3d1b0cd5a3ed1f714370c972",
+        "max_bytes": 16384
+      },
+      "result_sha256": "c36471449a59649ab76834529163b7bb1273114ee23b4d29755ef5a96c13fafc"
+    },
+    "call_ed57d0f32f4344859dadd655b588a3f9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0c311ad4568ac30fc71f3d38419fa1b49aa52f3e193f12098b6f303be92b1beb"
+    },
+    "call_e94bf85ecabb4ecc945301e5c3cdbf54": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6127211562d00d1ed86b0a0a3007ec195ccec7b4c5a0a09bb584252feb0c39f3"
+    },
+    "call_e87a07866d2c4a4baebf3a99ea1a26ae": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "641c7c7ec660943824ff6b2da6a243e91622426755851dbd1ffbeb5c0dce970e"
+    },
+    "call_8280e26303094365b5ac4c99b6f66aeb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 16000
+      },
+      "result_sha256": "cc31bf6a470eb45e169386fa5b8b0af5d4415940593f9f4372b7b8ae1686f8ab"
+    },
+    "call_17dba428084d442691c27e6ba1d4758c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "apply_out_scales",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_68f0767188a5450d9467650b7e336a44": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "query": "g_scale_gss(",
+        "limit": 100
+      },
+      "result_sha256": "52140aebb751d94b8c5dc9fad7d9ceca5dfbcc01c1e3b4d53e74ced8b8b1d985"
+    },
+    "call_41005f991d5f4effbcc7eff9ec6c7063": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "path": "exllamav3/util/progress.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "75b82471ff9e022bed8490f7349aff057f5b2708715bbcc9996e1578e77a9dd8"
+    },
+    "call_74b1af66ec8f4defb8cb571014c9ddf1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,json\nr=(math.sqrt(5)-1)/2; d=1.8; updates=[]\nwhile d>0.01:\n d*=r;updates.append(100-100*int(d/1.8))\nfor vals in ([1.0]*100,[100.0]*2+[1.0]*98):\n mean=sum(vals)/len(vals); rms=sorted([math.sqrt(x+.025*mean) for x in vals],reverse=True); skew=sum(rms[:len(rms)//50])/sum(rms); print(json.dumps({'channels':len(vals),'skew':skew,'apply_out_scales':skew<.15}))\nprint(json.dumps({'progress_updates':updates,'final_width':d}))"
+        ]
+      },
+      "result_sha256": "10341b47c0a34d13baa306145ca0bd5f6f230ba50cfdaaae9f7bd98d4f07fc5d"
+    }
+  }
+}

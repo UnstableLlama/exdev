@@ -1,0 +1,236 @@
+{
+  "schema_version": 5,
+  "sha": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+  "parent_shas": [
+    "75c7366bb2e2a7671e38d079f9e5f54945b78006"
+  ],
+  "cutoff_date": "2025-04-12T03:26:05+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The example chatbot previously printed generated chunks directly, without interpreting Markdown.",
+        "basis": "source",
+        "evidence": [
+          "call_4b650460f259471da5e1a81422779254"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change separates input and response presentation from generation, selecting paired console or Rich implementations while retaining the existing Job-based inference loop.",
+        "basis": "source",
+        "evidence": [
+          "call_bf5a8b056732415998818319ec64eccd"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Markdown becomes the default presentation. --basic_console restores direct printing; --refresh_per_second defaults to 25 and is passed to Rich Live, rather than controlling token generation.",
+        "basis": "source",
+        "evidence": [
+          "call_bf5a8b056732415998818319ec64eccd"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d reports failure at chat.py's Job construction. Its relationship here is inferred from that shared call site, not an explicit commit reference: this patch changes presentation, not stop-condition selection.",
+        "basis": "inference",
+        "evidence": [
+          "call_0af6634a3f824e60b78221cf16f6ba88",
+          "call_4b650460f259471da5e1a81422779254",
+          "call_bf5a8b056732415998818319ec64eccd"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns native-extension loading and reports a toolchain-environment workaround; it supplies no Markdown-rendering evidence.",
+        "basis": "source",
+        "evidence": [
+          "call_4efb501dc19d40d592ab66ce822c5459"
+        ]
+      }
+    ],
+    "limitations": [
+      "No interactive terminal, Rich rendering, model inference or GPU execution was tested. Actual refresh timing and terminal compatibility remain unestablished.",
+      "The scalar check covers string accumulation only; it does not execute either streamer implementation or Rich."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Markdown presentation for streamed chat responses",
+        "claims": [
+          {
+            "text": "The earlier usage entry describes chat.py as a template-driven, history-retokenizing Job client. This patch adds a presentation layer to that existing interface.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_3358b7a469404033b597143373bb81ae"
+            ]
+          },
+          {
+            "text": "Streamer_rich starts a Live context with vertical_overflow='visible', prefixes the bot name, and constructs Markdown from the entire accumulated display string on every chunk. Rebuilding the document allows markup spanning chunks to be interpreted together, at the cost of repeatedly processing an expanding response.",
+            "basis": "inference",
+            "evidence": [
+              "call_bf5a8b056732415998818319ec64eccd"
+            ]
+          },
+          {
+            "text": "Both streamers preserve unmodified chunks in all_text and remove only one initial space from display output. History receives all_text.strip(), not the rendered Markdown or bot-name prefix. The basic streamer retains direct flushed printing and supplies a final newline when needed.",
+            "basis": "source",
+            "evidence": [
+              "call_bf5a8b056732415998818319ec64eccd"
+            ]
+          },
+          {
+            "text": "A bounded scalar transcription matched the previous and new raw-text, displayed-text and stripped-history accumulation for 343 three-chunk sequences, including empty chunks, spaces, newlines and Markdown text.",
+            "basis": "execution",
+            "evidence": [
+              "call_a1d91f517534402cbbabef077bb7e201"
+            ]
+          },
+          {
+            "text": "The max_new_tokens warning is deferred until after the streamer context exits, keeping it outside the live response display. The default response limit remains 1000 tokens.",
+            "basis": "source",
+            "evidence": [
+              "call_bf5a8b056732415998818319ec64eccd",
+              "call_4b650460f259471da5e1a81422779254"
+            ]
+          },
+          {
+            "text": "Rich imports are unconditional: selecting basic mode changes presentation but does not bypass importing Prompt, Live and Markdown.",
+            "basis": "source",
+            "evidence": [
+              "call_bf5a8b056732415998818319ec64eccd"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "markdown-multiline-input",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The existing --mli option is ignored by the newly default Rich input path.",
+        "trigger": "Run the chatbot with --mli without --basic_console and reach user input.",
+        "expected_behavior": "The advertised multiline option selects the existing stdin-to-EOF input behavior.",
+        "actual_behavior": "main selects read_input_rich, which calls Prompt.ask without consulting args.mli. Only read_input_console retains sys.stdin.read().",
+        "locations": [
+          {
+            "commit": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+            "path": "examples/chat.py",
+            "symbol": "read_input_rich"
+          }
+        ],
+        "source_evidence": [
+          "call_bf5a8b056732415998818319ec64eccd",
+          "call_4b650460f259471da5e1a81422779254",
+          "call_d06bd4bef77d45bc9738cb15d4614402"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent-tree search finds no read_input_rich because it is newly introduced. The diff shows its direct caller through main's read_input_fn selection and the script's main(_args) entry point. The observed reach is this chatbot input loop; --basic_console preserves the previous multiline branch.",
+            "evidence": [
+              "call_d06bd4bef77d45bc9738cb15d4614402",
+              "call_bf5a8b056732415998818319ec64eccd",
+              "call_4b650460f259471da5e1a81422779254"
+            ],
+            "limits": "No interactive input session or Rich library implementation was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds default Rich Markdown streaming with a basic-console alternative, preserving raw response history but leaving --mli ineffective on the default input path."
+  },
+  "evidence": {
+    "call_bf5a8b056732415998818319ec64eccd": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4c7b1e29485c7004a59be08ae8d88ebd239e36d1",
+        "offset": 173,
+        "max_bytes": 6110
+      },
+      "result_sha256": "a2c15ecd87a9da4db2876f8a91e8a128423ec850386b4511808bd6df5dd6a9c2"
+    },
+    "call_4b650460f259471da5e1a81422779254": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "path": "examples/chat.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a1543ba2eabd53a82f85c6086150e29327ee2d195d825a0983cb154dc9ec2ad3"
+    },
+    "call_3358b7a469404033b597143373bb81ae": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_4efb501dc19d40d592ab66ce822c5459": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "bffdafe3887bd0bbaf385fb7a6170618348ea17210b6171ede70e84335fc7763"
+    },
+    "call_4ed4464926cd4f72ba6f2a6c3953d8a3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16384
+      },
+      "result_sha256": "2eadd22bf524690e97fc39ff52edd8d06ffa7c0f57581ec9add69235122c1516"
+    },
+    "call_0af6634a3f824e60b78221cf16f6ba88": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "d54b815fca0af366fb6f9d491d0caead9167139144b713460380c605cc6b9dca"
+    },
+    "call_1c8953b4b36f46a0bcf935f1e6b4bf32": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "query": "chat",
+        "limit": 100
+      },
+      "result_sha256": "6651ea726f55013d6f888516e7d9fa3b63ca1d5f606654d30d5afa63d25aaf37"
+    },
+    "call_d06bd4bef77d45bc9738cb15d4614402": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "query": "read_input_rich",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_a1d91f517534402cbbabef077bb7e201": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import itertools\nn=0\nfor chunks in itertools.product(['',' ','  ',' x','x','\\n','**x**'], repeat=3):\n old=''; displayed=''; raw=''; new=''\n for text in chunks:\n  displayed += text[1:] if not old and text.startswith(' ') else text\n  old += text\n  p=text if raw or not text.startswith(' ') else text[1:]\n  raw += text; new += p\n assert (old,displayed,old.strip()) == (raw,new,raw.strip())\n n+=1\nprint('Matched old/new raw text, display text, and stripped history for',n,'three-chunk sequences; no Rich rendering executed.')"
+        ]
+      },
+      "result_sha256": "1fcb8fcb3549491efa0e3bac73201ce43794e3a2ae3f2a9bfab597071d1e3b07"
+    }
+  }
+}

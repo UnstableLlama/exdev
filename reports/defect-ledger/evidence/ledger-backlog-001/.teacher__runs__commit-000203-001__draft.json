@@ -1,0 +1,269 @@
+{
+  "schema_version": 5,
+  "sha": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+  "parent_shas": [
+    "dc69b16752a9ee25e6dca731b9db5d7b5da26878"
+  ],
+  "cutoff_date": "2025-05-30T19:42:49+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The model comparison script hardcoded cuda:0 for both models' non-CPU modules.",
+        "basis": "source",
+        "evidence": [
+          "call_7c8efe0985b74e34b1fde27f7fbc3795"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change constructs one device from the command-line argument and uses it for both model branches, retaining the prefer_cpu override.",
+        "basis": "source",
+        "evidence": [
+          "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Device selection becomes configurable without changing the sequential module-loading lifecycle or comparison formulas.",
+        "basis": "source",
+        "evidence": [
+          "call_8efe5d23d5a94f6bbfdbbd2c7abaec29",
+          "call_7c8efe0985b74e34b1fde27f7fbc3795"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier deferred-loading entry was read. It establishes the module-scoped loading and handle-cleanup design and records an inherited perplexity indexing concern.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_cbe2bddd7739423897857bc6b242363c"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d discusses using model_diff.py for decoder evaluation. Issue #33, \u201cError converting model,\u201d initially reports file-opening failures and later uses the script to investigate GLM4 output. Their relationship to this change is inferred solely from the shared script; neither cited discussion establishes the motivation for device selection.",
+        "basis": "inference",
+        "evidence": [
+          "call_2451c38109334b2b986af9465db41b0e",
+          "call_31a04587aa5e46108cb6ee9ba6538426",
+          "call_71931103246d4a5fb085025308bd3939",
+          "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Torch or CUDA execution was performed. Integer torch.device construction and its behavior across library versions and accelerator environments remain unverified.",
+      "Module.load and the base activation-transfer mechanism were inspected, but compatibility across every module override was not established.",
+      "The numerical check models only inherited perplexity slice bounds; it does not execute tensor operations or establish end-to-end metric correctness."
+    ],
+    "links": [
+      "5c3ff204c4c5c64dc2bd897582143b116a82b767"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Selectable device for model comparison",
+        "claims": [
+          {
+            "text": "The parser adds -d/--device as an integer with default 0 and help text \u201cCUDA device index.\u201d main immediately passes that integer to torch.device; it does not construct an explicit cuda:N string.",
+            "basis": "source",
+            "evidence": [
+              "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+            ]
+          },
+          {
+            "text": "Both paired module loads receive the resulting device unless their prefer_cpu capability selects the unchanged 'cpu' branch. This is one shared device choice, not independent placement for A and B or multi-device sharding.",
+            "basis": "source",
+            "evidence": [
+              "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+            ]
+          },
+          {
+            "text": "The base Module.load stores the supplied device and propagates it to submodules. prepare_for_device moves the activation to that stored device before forward. Consequently, changing the load destination also controls activation placement through the existing mechanism rather than a new explicit transfer in the script.",
+            "basis": "source",
+            "evidence": [
+              "call_cdc045c9a8f44eacb6e4397bb66728f8",
+              "call_7c8efe0985b74e34b1fde27f7fbc3795"
+            ]
+          },
+          {
+            "text": "A still completes deferred loading, preparation, forward, unload, collection close and memory cleanup before B follows the same sequence. The new parser field supplies the attribute required by the new main entry statement; these edits work together.",
+            "basis": "source",
+            "evidence": [
+              "call_7c8efe0985b74e34b1fde27f7fbc3795",
+              "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+            ]
+          },
+          {
+            "text": "Inspection of the parent together with the complete patch shows that the previously recorded perplexity axis-bound concern is carried over, not corrected by device selection.",
+            "basis": "source",
+            "evidence": [
+              "call_7c8efe0985b74e34b1fde27f7fbc3795",
+              "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-perplexity-axis-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged nested perplexity helper bounds sequence slices using vocabulary size.",
+        "trigger": "The metrics loop receives more prediction positions than vocabulary entries, for example 2047 positions and vocabulary size 1024.",
+        "expected_behavior": "Accumulate every next-token prediction once.",
+        "actual_behavior": "The loop stops at logits_.shape[1], covering only 1024 of those 2047 positions. Larger vocabularies can instead produce trailing empty slices.",
+        "locations": [
+          {
+            "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_7c8efe0985b74e34b1fde27f7fbc3795",
+          "call_8efe5d23d5a94f6bbfdbbd2c7abaec29",
+          "call_f0a5dc3ba99344a29ba2c73caa133838"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-tree search located the helper's direct call in main's per-model metrics loop; other matches are the separately named test_ppl. The CLI invokes main, and the task patch leaves this helper and call unchanged.",
+            "evidence": [
+              "call_f0a5dc3ba99344a29ba2c73caa133838",
+              "call_7c8efe0985b74e34b1fde27f7fbc3795",
+              "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+            ],
+            "limits": "Reach is established for the script's metrics loop, conditional on reaching it successfully."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library model of the inspected loop covered 1024 of 2047 positions for vocabulary 1024; vocabulary 32000 covered all 2047 positions over four iterations.",
+            "evidence": [
+              "call_2627494bdb1f48cc97c39e501f1ce12f"
+            ],
+            "limits": "This models integer bounds, not repository execution or Torch empty-slice behavior."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a shared device-index option to model_diff.py while preserving CPU-preferred modules, sequential loading and existing metrics."
+  },
+  "evidence": {
+    "call_8efe5d23d5a94f6bbfdbbd2c7abaec29": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "offset": 168,
+        "max_bytes": 1896
+      },
+      "result_sha256": "cfebf6c3dda1fddc0668dc788013db54aa1f86cb3e42454e79bd0929e4d2cb29"
+    },
+    "call_7c8efe0985b74e34b1fde27f7fbc3795": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+        "path": "eval/model_diff.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "594790bdf1362e34c2c9f3e5b3fa067b015afad34aae6bd9a9806299dc5f1944"
+    },
+    "call_cbe2bddd7739423897857bc6b242363c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1932323578771ad869fbdb89da364983453b39775913bd94e7735c85ab0b668c"
+    },
+    "call_6f7def423bd74979bb1161152220727b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+        "query": "model_diff",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_d096871c676147adb79296109086b05b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+        "query": "torch.device(",
+        "limit": 100
+      },
+      "result_sha256": "c89206ac893fe40f5857eaf605e19dc5dc4237c1a731f43692bd1b2bb3295d43"
+    },
+    "call_cdc045c9a8f44eacb6e4397bb66728f8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "9b6975e0608cb65d65b8e36c780e5328139495f3fea96c99ba250cffafa74a17"
+    },
+    "call_2451c38109334b2b986af9465db41b0e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "41d8e3da763907a553b99110cfae9069acb58c612a8e481fe4fe8d371bbcc82c"
+    },
+    "call_31a04587aa5e46108cb6ee9ba6538426": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 30000
+      },
+      "result_sha256": "433f14984826efd3f27979bb21fcff0151ebaf322ecdb23110c647a669a3e4a7"
+    },
+    "call_f0a5dc3ba99344a29ba2c73caa133838": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+        "query": "ppl(",
+        "limit": 100
+      },
+      "result_sha256": "d7e97143f309062a69771c9a624f97f3dd4fe7544e86a7e418c8903a10fb96e4"
+    },
+    "call_2627494bdb1f48cc97c39e501f1ce12f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "n=2047\nfor v in (1024,32000):\n b=0; covered=0; loops=0\n while b<v:\n  a=b;b=min(b+v*10240//v,v);covered+=max(0,min(b,n)-min(a,n));loops+=1\n print(v,covered,loops)\n"
+        ]
+      },
+      "result_sha256": "5e80deb0848c2a154204c7f62301960114edb100d8dd64391646025b37b79856"
+    },
+    "call_82f227be488a43f89700846250136dd9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+        "query": "main(",
+        "path": "eval",
+        "limit": 100
+      },
+      "result_sha256": "f8179d1585abec430f327e049f5545af21ba772e34393a11f2f8ce84a65d0229"
+    },
+    "call_71931103246d4a5fb085025308bd3939": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 30000,
+        "max_bytes": 20000
+      },
+      "result_sha256": "837f315dcfb620814574d2ef1f6bafa4e6ec6b7254336e0d5f2c324b5d0c4a88"
+    }
+  }
+}

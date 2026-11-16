@@ -39,7 +39,7 @@ class ArchitectureTests(unittest.TestCase):
 
     def test_recovery_never_fetches_weights(self):
         rows=[{'id':'a'*40,'date':'2020-01-01T00:00:00Z'}]
-        tree=[{'type':'file','path':p} for p in ['config.json','tokenizer_config.json','model.bin','model.safetensors','malicious.py']]
+        tree=[{'type':'file','path':p} for p in ['config.json','tokenizer_config.json','model.bin','model.safetensors','malicious.py','preprocessor_config.json','processor_config.json']]
         header=b'{}';calls=[]
         def fetch(url,byte_range=None,**kw):
             calls.append((url,byte_range))
@@ -48,6 +48,8 @@ class ArchitectureTests(unittest.TestCase):
             return b'{}',{}
         with patch('teacher.root_evidence.pages',side_effect=[iter([rows]),iter([tree])]),patch('teacher.root_evidence.fetch',side_effect=fetch):
             items,_=recover_hf('Demo',self.root,repo='org/demo',cutoff='2021-01-01T00:00:00Z',reference_only=True)
+        self.assertTrue({'preprocessor_config.json','processor_config.json'} <= {x['path'] for x in items})
+        self.assertTrue(all('/resolve/'+('a'*40)+'/' in u for u,_ in calls))
         self.assertFalse(any('model.bin' in u or 'malicious.py' in u for u,_ in calls))
         self.assertTrue(all(r is not None for u,r in calls if 'safetensors' in u))
         self.assertTrue(all(x['artifact_role'] in ('non_weight','tensor_header') for x in items))
@@ -64,6 +66,16 @@ class ArchitectureTests(unittest.TestCase):
             _,report=recover_hf('Demo',self.root,repo='org/demo',cutoff='2021-01-01T00:00:00Z',reference_only=True)
         self.assertEqual(report['status'],'incomplete')
         self.assertNotIn('tokenizer_config.json',report['absent_at_revision'])
+
+    def test_published_processor_download_failure_is_incomplete(self):
+        rows=[{'id':'a'*40,'date':'2020-01-01T00:00:00Z'}]
+        tree=[{'type':'file','path':p} for p in ('config.json','preprocessor_config.json','processor_config.json')]
+        with patch('teacher.root_evidence.pages',side_effect=[iter([rows]),iter([tree])]),patch('teacher.root_evidence.fetch',side_effect=[(b'{}',{}),OSError('unreadable'),(b'{}',{})]):
+            items,report=recover_hf('Demo',self.root,repo='org/demo',cutoff='2021-01-01T00:00:00Z',reference_only=True)
+        self.assertEqual(report['status'],'incomplete')
+        self.assertEqual(report['failures'][0]['path'],'preprocessor_config.json')
+        self.assertNotIn('preprocessor_config.json',report['absent_at_revision'])
+        self.assertIn('processor_config.json',{x['path'] for x in items})
 
     def test_guidance_legacy_and_new_contract(self):
         old=FreshSession(self.packet).initial[0]['content'];self.assertNotIn('read the selected callee',old)
@@ -95,13 +107,13 @@ class ArchitectureTests(unittest.TestCase):
         cutoff=self.git('show','-s','--format=%cI',sha);directory=self.root/'evidence';directory.mkdir()
         (directory/'000001-unreferenced.json').write_text(json.dumps({'task_sha':sha,'cutoff':cutoff,'complete':True,'limit':100,'truncated':False,'items':[]}))
         items=[]
-        for name,data,kind,role in [('config.json',b'{"architectures":["Demo"]}','hf_file','non_weight'),('tokenizer_config.json',b'{}','hf_file','non_weight'),('model.safetensors',b'{"w":{"dtype":"F16","shape":[1],"data_offsets":[0,2]}}','safetensors_header','tensor_header')]:
+        for name,data,kind,role in [('config.json',b'{"architectures":["Demo"]}','hf_file','non_weight'),('tokenizer_config.json',b'{}','hf_file','non_weight'),('preprocessor_config.json',b'{}','hf_file','non_weight'),('processor_config.json',b'{}','hf_file','non_weight'),('model.safetensors',b'{"w":{"dtype":"F16","shape":[1],"data_offsets":[0,2]}}','safetensors_header','tensor_header')]:
             items.append(item(name,'https://huggingface.co/org/demo/resolve/'+('a'*40)+'/'+name,data,cutoff,kind=kind,artifact_role=role,repo_id='org/demo',revision='a'*40,path=name))
         bundle={'task_sha':sha,'cutoff':cutoff,'trigger':trigger(self.repo,sha),'items':items,'selections':[{'architecture':'Demo','repo':'org/demo','revision':'a'*40,'date':cutoff,'status':'complete','reason':'Task-named fixture','candidates_considered':['org/demo']}]}
         ref=directory/'000001-references.json';ref.write_text(json.dumps(bundle))
         (directory/'000001-closed.json').write_text(json.dumps({'task_sha':sha,'cutoff':cutoff,'complete':True,'rule':'salience-v2','limit':20,'truncated':False,'items':[]}))
         packet=self.root/'references';m=prepare(self.repo,sha,1,packet,directory)
-        self.assertEqual(len(m['evidence']),3)
+        self.assertEqual(len(m['evidence']),5)
         opening=json.loads(FreshSession(packet).initial[1]['content'])
         self.assertEqual(opening['evidence_catalog'],[])
         self.assertEqual(len(json.loads(opening['evidence_index']['text'])),1)

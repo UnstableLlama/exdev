@@ -1,0 +1,539 @@
+{
+  "schema_version": 5,
+  "sha": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+  "parent_shas": [
+    "29060addb5a3994cec3867e1f2f6b30ecda7b8a3"
+  ],
+  "cutoff_date": "2025-04-12T03:05:05+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The change registers DeciLMForCausalLM and adds a constructor driven by per-block attention and feed-forward configurations rather than a uniform decoder layout.",
+        "basis": "source",
+        "evidence": [
+          "call_63b54f15c0d8489a9c45badc35ce142e",
+          "call_c5d0364ee0a64baaba7114827c87aef3"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Reusing Attention, GatedMLP and TransformerBlock limits the implementation to existing execution primitives. Unsupported linear replacements, sparsification and sink-attention features are explicitly rejected rather than approximated.",
+        "basis": "source",
+        "evidence": [
+          "call_c5d0364ee0a64baaba7114827c87aef3",
+          "call_fd0f1ddc49674a0895a5099a01e16b90",
+          "call_ae3b56f347d0457eb0e4d5eb17c12e0b"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Architecture registration is not equivalent to compatibility with every Nemotron checkpoint: the inspected models expose an explicit rejection, attention-shape mismatches and an empty-block conversion hazard.",
+        "basis": "inference",
+        "evidence": [
+          "call_c5d0364ee0a64baaba7114827c87aef3",
+          "call_83ce6c54f13141e6b5729af06dc5dec6",
+          "call_13b10fedd3c84467862141aa2f805975",
+          "call_7edad7394eda4c4c93a88938bf9ab62d",
+          "call_dff116790edc47c99208460af0fd7e8f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The discussions inspected concern other failures: issue 7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure; issue 12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d reports a chat-mode problem after conversion; PR 13, \u201cFix a tokenizer issue while converting models without a bos_token_id defined,\u201d reports missing-BOS handling. None supplies evidence of successful DeciLM execution.",
+        "basis": "source",
+        "evidence": [
+          "call_e47cc2dce31f4429aea08c8214614aa5",
+          "call_6fe98d36427a4214aacca15e74e410c7",
+          "call_202ddf8ecc4d43089a38d05b9f96358f",
+          "call_66310e9c191241ceba655d3f24327d22"
+        ]
+      }
+    ],
+    "limitations": [
+      "No checkpoint loading, conversion, inference or GPU execution was performed. The Python check transcribed dimension arithmetic and an empty-denominator expression only.",
+      "Tensor comparisons cover selected active blocks, not every tensor in each checkpoint.",
+      "Empty-block serialization through safetensors was not executed; the division-by-zero observation applies if serialization returns normally.",
+      "The factor 2/3 and 256-wide MLP alignment are explicit constructor rules; their architectural or hardware rationale is not established by the inspected evidence."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "DeciLM construction and checkpoint compatibility",
+        "claims": [
+          {
+            "text": "DeciLMConfig reads hidden size, query-head count, normalization epsilon and block_configs, checks the block-list length against num_hidden_layers, requires SiLU and defaults missing head_dim to hidden_size // num_attention_heads. The model constructs embedding, indexed transformer blocks, final RMSNorm and an output projection, with an embedding fallback for a tied output head.",
+            "basis": "source",
+            "evidence": [
+              "call_c5d0364ee0a64baaba7114827c87aef3"
+            ]
+          },
+          {
+            "text": "Each no_op branch becomes None together with its normalization. Present branches receive RMSNorm, so this constructor does not exercise TransformerBlock's uninitialized-y path for a present branch without an input norm. Both-disabled blocks remain in the module list and their forward method returns the input through dtype conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_c5d0364ee0a64baaba7114827c87aef3",
+              "call_fd0f1ddc49674a0895a5099a01e16b90"
+            ]
+          },
+          {
+            "text": "Checkpoint keys retain the original block index, while cache_layer_idx increments only for active attention. last_kv_module_idx records the final attention-bearing module, matching Model.prefill's stopping condition. prepare_inputs delegates attention-mode preparation to prepare_for_attn.",
+            "basis": "source",
+            "evidence": [
+              "call_c5d0364ee0a64baaba7114827c87aef3",
+              "call_d6b8a76c67874e9a961d4f19ff47a08c",
+              "call_2ef6e78ff43543d6bdf05902018fa316"
+            ]
+          },
+          {
+            "text": "For an active MLP, the constructor truncates 2 * ffn_mult * hidden_size / 3 to an integer, then rounds upward to a multiple of 256 using an added 255. GatedMLP declares up/gate weights of shape [intermediate, hidden] and down weights of shape [hidden, intermediate]. Attention declares K/V output widths as num_kv_heads * head_dim, with n_heads_in_group passed directly as num_kv_heads.",
+            "basis": "source",
+            "evidence": [
+              "call_c5d0364ee0a64baaba7114827c87aef3",
+              "call_ae3b56f347d0457eb0e4d5eb17c12e0b",
+              "call_2ef6e78ff43543d6bdf05902018fa316"
+            ]
+          },
+          {
+            "text": "nvidia/Llama-3_1-Nemotron-51B-Instruct config declares hidden_size 8192, 64 query heads and 80 blocks. Block 0 has n_heads_in_group=8 and ffn_mult=1.3125: declared Q/O [8192,8192], K/V [1024,8192], up/gate [7168,8192] and down [8192,7168] match its first-shard header. Block 1 instead stores K/V [512,8192], whereas its n_heads_in_group=16 declares [2048,8192]. The explicit feature assertions first reject block 11 for attention replace_with_linear=true. No block disables both branches.",
+            "basis": "source",
+            "evidence": [
+              "call_bcbc00a8bc1a4e7caff8ecd8a73f01ea",
+              "call_83ce6c54f13141e6b5729af06dc5dec6",
+              "call_c5d0364ee0a64baaba7114827c87aef3",
+              "call_2ef6e78ff43543d6bdf05902018fa316"
+            ]
+          },
+          {
+            "text": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1 declares hidden_size 16384, 128 query heads and 162 blocks. Its configuration passes the added feature assertions; there is no first rejected block. For block 0, n_heads_in_group=16 and ffn_mult=0.4875 declare Q/O [16384,16384], K/V [2048,16384], up/gate [5376,16384] and down [16384,5376]. The first-shard header agrees except that K/V are [1024,16384]. Both branches are disabled beginning at block 9.",
+            "basis": "source",
+            "evidence": [
+              "call_1ee5cab1691449698564cf2078aaaf60",
+              "call_bee34d3db0c44730852a9380ef69163e",
+              "call_13b10fedd3c84467862141aa2f805975",
+              "call_c5d0364ee0a64baaba7114827c87aef3",
+              "call_2ef6e78ff43543d6bdf05902018fa316"
+            ]
+          },
+          {
+            "text": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1 separately declares hidden_size 16384, 128 query heads and 162 blocks, and passes the added feature assertions without a rejected block. Block 0 has the same constructor dimensions as CPT. Headers from shards 1 and 2 agree with Q/O [16384,16384], up/gate [5376,16384] and down [16384,5376], but store K/V [1024,16384] rather than declared [2048,16384]. It also contains fully disabled blocks beginning at block 9.",
+            "basis": "source",
+            "evidence": [
+              "call_94f2544e765c49d6b97a743487f8199b",
+              "call_d28c84a3954d4ef792a4ebd0a13d008f",
+              "call_a2675b2ec5db4464830934bc78faac67",
+              "call_7edad7394eda4c4c93a88938bf9ab62d",
+              "call_c5d0364ee0a64baaba7114827c87aef3"
+            ]
+          },
+          {
+            "text": "nvidia/Llama-3_3-Nemotron-Super-49B-v1 declares hidden_size 8192, 64 query heads and 80 blocks. It passes the added feature assertions without a rejected block and has no fully disabled block. Block 0 has n_heads_in_group=8 and ffn_mult=2.625; declared Q/O [8192,8192], K/V [1024,8192], up/gate [14336,8192] and down [8192,14336] match its first-shard header.",
+            "basis": "source",
+            "evidence": [
+              "call_7282c37ed5374e6f888036173aa33b00",
+              "call_3c50db0f3fcb4a58b4290ca6b0eeefec",
+              "call_c5d0364ee0a64baaba7114827c87aef3"
+            ]
+          },
+          {
+            "text": "All four inspected configurations omit head_dim, yielding 128 under the fallback, specify SiLU and disable tied embeddings. A scalar transcription reproduced the selected MLP widths and K/V mismatches; notably Ultra block 0 truncates to 5324 and rounds to 5376.",
+            "basis": "execution",
+            "evidence": [
+              "call_2be6e26fa2ff413da3f458067ce3492a"
+            ]
+          },
+          {
+            "text": "For either Ultra model's fully disabled blocks, the parent converter skips calibration capture and allocation because there are no qmaps or Linear targets, but does not skip the module itself. It gathers an empty tensor dictionary, attempts to save it and then divides its byte count by weights_numel(), which is zero. This path does not arise from fully disabled blocks in the inspected 51B or Super configurations.",
+            "basis": "source",
+            "evidence": [
+              "call_dff116790edc47c99208460af0fd7e8f",
+              "call_a593c9a6e07b45128b75c510d2ac351a",
+              "call_fd0f1ddc49674a0895a5099a01e16b90",
+              "call_1ee5cab1691449698564cf2078aaaf60",
+              "call_94f2544e765c49d6b97a743487f8199b",
+              "call_bcbc00a8bc1a4e7caff8ecd8a73f01ea",
+              "call_7282c37ed5374e6f888036173aa33b00"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "kv-head-mapping",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Directly treating n_heads_in_group as the KV-head count produces projection declarations inconsistent with inspected checkpoint headers.",
+        "trigger": "Construct either inspected Ultra model, or block 1 of the inspected 51B model.",
+        "expected_behavior": "Declared K/V projection widths should match the checkpoint: 1024 for Ultra block 0 and 512 for 51B block 1.",
+        "actual_behavior": "The constructor declares width 2048 in all three cases. Model.from_config dispatches to the new constructor; conversion reaches it through get_base_model. No checkpoint execution was performed.",
+        "locations": [
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/models/decilm.py",
+            "symbol": "DeciLMModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_c5d0364ee0a64baaba7114827c87aef3",
+          "call_2ef6e78ff43543d6bdf05902018fa316",
+          "call_83ce6c54f13141e6b5729af06dc5dec6",
+          "call_13b10fedd3c84467862141aa2f805975",
+          "call_7edad7394eda4c4c93a88938bf9ab62d",
+          "call_b9160930c60542b5aafef2bb680a6459",
+          "call_d6b8a76c67874e9a961d4f19ff47a08c",
+          "call_dff116790edc47c99208460af0fd7e8f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Computed head dimensions and declared K/V widths from transcribed configuration values and constructor expressions.",
+            "evidence": [
+              "call_2be6e26fa2ff413da3f458067ce3492a"
+            ],
+            "limits": "Checks integer dimensions only, not model loading or attention execution."
+          }
+        ]
+      },
+      {
+        "id": "empty-block-conversion",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Fully disabled blocks expose an unguarded zero-weight denominator in the unchanged converter.",
+        "trigger": "Conversion reaches a fully disabled Ultra block, first present at block 9, and saving its empty tensor dictionary returns normally.",
+        "expected_behavior": "Skip weight-based bitrate reporting or handle a zero-weight identity module without division.",
+        "actual_behavior": "main evaluates num_bits / module.weights_numel() with denominator zero before advancing calibration state. The inspected direct CLI caller is convert.py; earlier loading problems may prevent reaching this point.",
+        "locations": [
+          {
+            "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+            "path": "exllamav3/models/decilm.py",
+            "symbol": "DeciLMModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_dff116790edc47c99208460af0fd7e8f",
+          "call_a593c9a6e07b45128b75c510d2ac351a",
+          "call_c5d0364ee0a64baaba7114827c87aef3",
+          "call_4794508a2f124cf28de9ddc25567e9d3",
+          "call_655deb56aa8d450e95440f204cd5f87f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the modeled empty-module bitrate expression 0 / sum([]), which raised ZeroDivisionError.",
+            "evidence": [
+              "call_2be6e26fa2ff413da3f458067ce3492a"
+            ],
+            "limits": "Did not execute the converter, tensor serialization or GPU operations."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds configurable DeciLM blocks and architecture dispatch, but inspected Nemotron checkpoints reveal incomplete compatibility: 51B rejects linear-replacement attention, Ultra KV dimensions disagree with headers, and fully disabled blocks encounter an unchanged conversion hazard."
+  },
+  "evidence": {
+    "call_63b54f15c0d8489a9c45badc35ce142e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 159,
+        "max_bytes": 7765
+      },
+      "result_sha256": "521e55eb45dc84fc2b10dd63d4a8b37a368cf0f6f677a0df1518dd0ec06567b2"
+    },
+    "call_c5d0364ee0a64baaba7114827c87aef3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "offset": 1019,
+        "max_bytes": 6905
+      },
+      "result_sha256": "4dcb34e5872add2bf58d0c4e05daf4431ea645f4adced894d03e2fe6bf090339"
+    },
+    "call_bcbc00a8bc1a4e7caff8ecd8a73f01ea": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-51B-Instruct",
+        "revision": "2e9bdbfa8e1ab73ce98f5960143cf927192d59e7",
+        "path": "config.json",
+        "max_bytes": 60000
+      },
+      "result_sha256": "6bd9601d154177923ca84c25b09eeb2024efcdd89acb583d9f62ebd06835f10c"
+    },
+    "call_1ee5cab1691449698564cf2078aaaf60": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "max_bytes": 60000
+      },
+      "result_sha256": "deb97ef46a4d1c749507d7cf0c6279488beaa0f2ffda9e0c1ea60f5b1822985a"
+    },
+    "call_bee34d3db0c44730852a9380ef69163e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "offset": 60000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "cf5f8a4d9370ea490e4dd27b6d798c9522e23fd21d90e4ffc88abcec2350ab84"
+    },
+    "call_94f2544e765c49d6b97a743487f8199b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "max_bytes": 60000
+      },
+      "result_sha256": "1ed0edfeb0f576f084fdd1200eb825fd89aaa107cdbe93ef7811175c98e005e0"
+    },
+    "call_d28c84a3954d4ef792a4ebd0a13d008f": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "offset": 60000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "6d1c4bb083eda3c4f24345de06c51d459d89eb251a7d84a46025f21d764efbf6"
+    },
+    "call_7282c37ed5374e6f888036173aa33b00": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1",
+        "revision": "4605d825c59945d6f8a195826ae8ff3366653f83",
+        "path": "config.json",
+        "max_bytes": 60000
+      },
+      "result_sha256": "93c5edeee3ba305206de878d2289f0e40e6a9dbe4a8e43545e01cdc5cd33dfce"
+    },
+    "call_3c50db0f3fcb4a58b4290ca6b0eeefec": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1",
+        "revision": "4605d825c59945d6f8a195826ae8ff3366653f83",
+        "path": "model-00001-of-00021.safetensors",
+        "limit": 15
+      },
+      "result_sha256": "e1be514d7fca9f0fd794e3fa3e27d5b9415043081f0a4a2adaca78cbdfd6499e"
+    },
+    "call_83ce6c54f13141e6b5729af06dc5dec6": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-51B-Instruct",
+        "revision": "2e9bdbfa8e1ab73ce98f5960143cf927192d59e7",
+        "path": "model-00001-of-00022.safetensors",
+        "limit": 30
+      },
+      "result_sha256": "a4278ce4b679d3022f9a2e800302865379df7a2e4998b6f206e907471ce8a307"
+    },
+    "call_13b10fedd3c84467862141aa2f805975": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "model-00001-of-00096.safetensors",
+        "limit": 40
+      },
+      "result_sha256": "6a2abffbc2493b2cd2de620ac9583c20fceda2c7079874cf56769e7b86de0e1f"
+    },
+    "call_a2675b2ec5db4464830934bc78faac67": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "model-00001-of-00049.safetensors",
+        "limit": 40
+      },
+      "result_sha256": "9c4377557a4d0e7974520bb36cce654b176dd10bbbee1ba5d8d1bf8c60bb7ce3"
+    },
+    "call_0ac9d58442c844189c8e8c004b03b7a2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "model.safetensors.index.json",
+        "max_bytes": 3500
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_7edad7394eda4c4c93a88938bf9ab62d": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "model-00002-of-00049.safetensors",
+        "limit": 40
+      },
+      "result_sha256": "389ec4b9e8b7e409f0b8d1c2018865917e6ed70e749c71012297df5169938d07"
+    },
+    "call_2ef6e78ff43543d6bdf05902018fa316": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "12d919635fdab979abb5ddc2d71ce0145ace938c30b0b47d50a8e9943151bf2a"
+    },
+    "call_fd0f1ddc49674a0895a5099a01e16b90": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "50384b5303f4fc1a56d580d948197e7e81cedc753634dd689952b6d3bb74cd56"
+    },
+    "call_dff116790edc47c99208460af0fd7e8f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "21c9ac6c474545596ba3b6ea66e958b35cf18806d90c862bfac71550fbbe44cd"
+    },
+    "call_159530d7197e45d69553b6cf4137176f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "Nemotron",
+        "limit": 30
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_a65821c4836f4d10b6ef0fa3c8d97f4c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "block_config",
+        "limit": 30
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_f3fd741bbc7d426592ff3e09e8a44a47": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "n_heads",
+        "limit": 30
+      },
+      "result_sha256": "d28c8223056bc5807081791e5c6ea3ece23b13f5f989a2a5f5be6be3b15f58f4"
+    },
+    "call_a593c9a6e07b45128b75c510d2ac351a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7315e2f2823e85046bb8bac6d2dd4d4a5ee95bbf73604c43362947a3d101f243"
+    },
+    "call_4794508a2f124cf28de9ddc25567e9d3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "convert_model",
+        "limit": 30
+      },
+      "result_sha256": "1e033972b046c9d0e344bbfd11ff7dd35ac79627a8c51e05cc1ddf2d83e355c5"
+    },
+    "call_655deb56aa8d450e95440f204cd5f87f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "convert.py"
+      },
+      "result_sha256": "005aa3bf1d4e254f82c7c5985334dbfb69de9a398326c807fea79b6970168e52"
+    },
+    "call_ae3b56f347d0457eb0e4d5eb17c12e0b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "11b86d6c5b54aea6ed1e5f0518b6f1c2b244420fc8c6f0605f04c52b4bd83e64"
+    },
+    "call_e47cc2dce31f4429aea08c8214614aa5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d3fc0f185430623c228c0ee8aaa3c2617ebb17d2b423d71172e7c6436b3c379b"
+    },
+    "call_6fe98d36427a4214aacca15e74e410c7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0b37c822302f218cb3926d0bfb5487835a69c632650414ddec695f2e2e58938c"
+    },
+    "call_202ddf8ecc4d43089a38d05b9f96358f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "bc853094b1874b20b1f937bf181265940fbfa7655ff4596f84f263fb754b0cf7"
+    },
+    "call_66310e9c191241ceba655d3f24327d22": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9b0a0567ed5d98a225f6b6b2d291c806968c8fbf2ac5fae86b8a291374c9ff88"
+    },
+    "call_b9160930c60542b5aafef2bb680a6459": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "query": "model_class",
+        "limit": 30
+      },
+      "result_sha256": "3e17eceb2169ee660d46693ca3e15ca873752798d63941b71a1f163a6e9d118f"
+    },
+    "call_d6b8a76c67874e9a961d4f19ff47a08c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "29060addb5a3994cec3867e1f2f6b30ecda7b8a3",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 3000
+      },
+      "result_sha256": "591969bce7fc584d854633e9a859651944a08894909cdbbfb27fde112062c6de"
+    },
+    "call_2be6e26fa2ff413da3f458067ce3492a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for name,h,q,g,m,stored in [('51B block0',8192,64,8,1.3125,1024),('51B block1',8192,64,16,2.625,512),('Ultra CPT block0',16384,128,16,.4875,1024),('Ultra block0',16384,128,16,.4875,1024),('Super block0',8192,64,8,2.625,1024)]:\n d=h//q; raw=int(2*m*h/3); i=((raw+255)//256)*256\n print(name, 'head_dim',d,'declared_KV',g*d,'stored_KV',stored,'raw_MLP',raw,'aligned_MLP',i)\ntry: print(0 / sum([]))\nexcept ZeroDivisionError: print('empty block bpw: ZeroDivisionError')"
+        ]
+      },
+      "result_sha256": "de607a30397fe5fb29d51fed9f04223d48d357750c507d9ddd672ee4a819516f"
+    }
+  }
+}

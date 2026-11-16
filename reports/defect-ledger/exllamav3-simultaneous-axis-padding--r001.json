@@ -1,0 +1,285 @@
+{
+  "origin": "authoring_observation",
+  "classification": "new_requirement",
+  "status": "suspected",
+  "description": "The output-padding branch prevents simultaneous input padding from copying into a correctly bounded destination.",
+  "trigger": "Load an ordinary 130-by-130 weight with default pad_to=128.",
+  "expected_behavior": "Copy into the leading 130-by-130 region of a zero-filled 256-by-256 matrix.",
+  "actual_behavior": "The output-width condition selects padded[:130, :], a 130-by-256 destination, for the 130-by-130 source; the input-column branch is skipped.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Whole-parent literal searches locate pad_out calls only in ordinary and fused load_fp16 branches; Linear.load directly invokes load_fp16 after EXL3 lookup. The finding concerns weights needing both axes padded, not all model loads.",
+      "evidence": [
+        "call_a668fc70fe9b4392bc5428c2c949cb8b",
+        "call_0d402bd48e0a4f76855d518d88ec01fb",
+        "call_1bb33e4332a64818abe291d434d85689"
+      ],
+      "limits": "No model exhibiting these dimensions was executed."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Computed the incompatible source and destination slice shapes.",
+      "evidence": [
+        "call_2d087df8304f4296af71a97b0d257d1e"
+      ],
+      "limits": "Does not execute tensor assignment or establish its exact exception."
+    }
+  ],
+  "defect_id": "exllamav3-simultaneous-axis-padding",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+      "run": ".teacher/runs/commit-000084-001",
+      "local_id": "simultaneous-axis-padding",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "simultaneous-axis-padding",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The output-padding branch prevents simultaneous input padding from copying into a correctly bounded destination.",
+        "trigger": "Load an ordinary 130-by-130 weight with default pad_to=128.",
+        "expected_behavior": "Copy into the leading 130-by-130 region of a zero-filled 256-by-256 matrix.",
+        "actual_behavior": "The output-width condition selects padded[:130, :], a 130-by-256 destination, for the 130-by-130 source; the input-column branch is skipped.",
+        "locations": [
+          {
+            "commit": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.pad_out"
+          }
+        ],
+        "source_evidence": [
+          "call_f1df2971d15f478fab23f8a5d8910d55",
+          "call_a668fc70fe9b4392bc5428c2c949cb8b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent literal searches locate pad_out calls only in ordinary and fused load_fp16 branches; Linear.load directly invokes load_fp16 after EXL3 lookup. The finding concerns weights needing both axes padded, not all model loads.",
+            "evidence": [
+              "call_a668fc70fe9b4392bc5428c2c949cb8b",
+              "call_0d402bd48e0a4f76855d518d88ec01fb",
+              "call_1bb33e4332a64818abe291d434d85689"
+            ],
+            "limits": "No model exhibiting these dimensions was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the incompatible source and destination slice shapes.",
+            "evidence": [
+              "call_2d087df8304f4296af71a97b0d257d1e"
+            ],
+            "limits": "Does not execute tensor assignment or establish its exact exception."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+      "run": ".teacher/runs/commit-000086-001",
+      "local_id": "simultaneous-padding-restriction",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "simultaneous-padding-restriction",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "The integrated helper supports one-axis padding, not general simultaneous padding; the discussion explicitly accepts retaining this restriction.",
+        "trigger": "Load a 130\u00d7130 FP16 weight with pad_to=128.",
+        "expected_behavior": "General two-axis support would copy into the leading 130\u00d7130 region of a 256\u00d7256 matrix.",
+        "actual_behavior": "The output-padding branch instead selects a 130\u00d7256 destination for the 130\u00d7130 source, skipping the input-padding branch.",
+        "locations": [
+          {
+            "commit": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.pad_out"
+          }
+        ],
+        "source_evidence": [
+          "call_8748291cbab541d2922b477ae6ade06d",
+          "call_17574189b5ce4d5d907ec2448d83d688"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent searches locate calls in ordinary and fused load_fp16 branches; Linear.load invokes load_fp16 after EXL3 lookup. Reach is conditional on both dimensions needing padding.",
+            "evidence": [
+              "call_ca1ab9b26e23429e9f94b5045c96c005",
+              "call_afbe37e3d73a467b9f92500251c82baa",
+              "call_78e47c24e4584e6798b102bb83ba4359"
+            ],
+            "limits": "No affected model load was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed source and destination slice shapes.",
+            "evidence": [
+              "call_68bd2ffbc69141be895743eeec7607a1"
+            ],
+            "limits": "Does not execute tensor assignment or establish its exact exception."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "de83084184c34cae0aaeca5c8b024de7f148830d",
+      "run": ".teacher/runs/commit-000088-001",
+      "local_id": "retained-two-axis-padding",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "retained-two-axis-padding",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited simultaneous-axis copy mismatch remains for explicitly opted-in Linear callers; the new default guard blocks it earlier for other callers.",
+        "trigger": "Load a 130-by-130 FP16 weight with pad_to=128 and allow_input_padding=True.",
+        "expected_behavior": "Either reject simultaneous-axis padding explicitly or copy the weight into the leading 130-by-130 region.",
+        "actual_behavior": "pad_out selects the output-padding branch and assigns the 130-by-130 source to a 130-by-256 destination.",
+        "locations": [
+          {
+            "commit": "de83084184c34cae0aaeca5c8b024de7f148830d",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.pad_out"
+          }
+        ],
+        "source_evidence": [
+          "call_afc10242ccfc4443b53b3272582add27",
+          "call_cd150961e05b4b58bd10fdc710149d30",
+          "call_a1891e4fcc0a4ac7a7fd1042f97ad1da",
+          "call_fe948152bb954066a4ad7950327a5721"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent searches locate pad_out calls in ordinary and fused load_fp16 paths, reached directly from Linear.load. The diff preserves those paths. Reach requires an opted-in two-axis case; normal GatedMLP construction also guards the hidden-size inputs of gate/up.",
+            "evidence": [
+              "call_a1891e4fcc0a4ac7a7fd1042f97ad1da",
+              "call_fe948152bb954066a4ad7950327a5721",
+              "call_3a1290973f0b4518bd56e14d3560a7f0"
+            ],
+            "limits": "No affected model construction or tensor assignment was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Calculated source and destination slice shapes.",
+            "evidence": [
+              "call_871d1998b9024fd7b61da26ee4e117a9"
+            ],
+            "limits": "Integer shape arithmetic, not PyTorch execution."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000084-001__draft.json",
+      "sha256": "63a3ec054bc7676810e3d9d05d592fdde58ad1fd075fd4a072defdda2e7b83b1"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000084-001.md",
+      "sha256": "5f3252977a5b1cf712f532157ac0ef06bd5d95ddd7b465a070851cf1fc658644"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000086-001__draft.json",
+      "sha256": "91f4a239d77c3f1e52ab236153fc053c0d99db85efcff630fd275b0c1dde5cc8"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000086-001.md",
+      "sha256": "a58dc0a27ad59c8f43aeae8925286d6d6842b36a88a29806c67c9cc945142994"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000088-001__draft.json",
+      "sha256": "d61ded24c21d7358411804315c5e9a5dd1e3ad63f6721adc23453e760ca54b90"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000088-001.md",
+      "sha256": "dfa23a8cb8e5b939709c911aaf8637e938cd2efb4b292a5bf6ef2ceb8ce83eb7"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000084-001/draft.json",
+      "source_id": ".teacher/runs/commit-000084-001/draft.json",
+      "content_sha256": "63a3ec054bc7676810e3d9d05d592fdde58ad1fd075fd4a072defdda2e7b83b1",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000084-001.md",
+      "source_id": "reviews/verdicts/commit-000084-001.md",
+      "content_sha256": "5f3252977a5b1cf712f532157ac0ef06bd5d95ddd7b465a070851cf1fc658644",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000086-001/draft.json",
+      "source_id": ".teacher/runs/commit-000086-001/draft.json",
+      "content_sha256": "91f4a239d77c3f1e52ab236153fc053c0d99db85efcff630fd275b0c1dde5cc8",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000086-001.md",
+      "source_id": "reviews/verdicts/commit-000086-001.md",
+      "content_sha256": "a58dc0a27ad59c8f43aeae8925286d6d6842b36a88a29806c67c9cc945142994",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000088-001/draft.json",
+      "source_id": ".teacher/runs/commit-000088-001/draft.json",
+      "content_sha256": "d61ded24c21d7358411804315c5e9a5dd1e3ad63f6721adc23453e760ca54b90",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000088-001.md",
+      "source_id": "reviews/verdicts/commit-000088-001.md",
+      "content_sha256": "dfa23a8cb8e5b939709c911aaf8637e938cd2efb4b292a5bf6ef2ceb8ce83eb7",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+      "available_at": "2025-04-23T21:57:16+09:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "0a4b2b210323489b3b830668fb86e22599bf54fb",
+      "available_at": "2025-04-25T00:53:21+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "de83084184c34cae0aaeca5c8b024de7f148830d",
+      "available_at": "2025-04-25T02:18:53+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "b3bd8f614b003d81d8f5f6b56b20a207d901c523",
+      "0a4b2b210323489b3b830668fb86e22599bf54fb",
+      "de83084184c34cae0aaeca5c8b024de7f148830d"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "Accepted one-axis limitation in PR 20, per reviewer 86. One identity across 84/86/88, not separate defects; intent is explicit only in that discussion."
+  ]
+}

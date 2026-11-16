@@ -1,0 +1,249 @@
+{
+  "schema_version": 5,
+  "sha": "c0a2028fb579d04491db8427f1e38979a4dcd164",
+  "parent_shas": [
+    "d860f8e1e106a45536603cd8069fc9ef43105fd9"
+  ],
+  "cutoff_date": "2025-05-18T21:55:26+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Perplexity-only evaluation unconditionally divided by a zero KLD count and left collect_logits undefined when no reference filename was supplied.",
+        "basis": "source",
+        "evidence": [
+          "call_2a4f8d3e60294de9b6b6c11a6951dffe"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The two guards work together: initializing collect_logits prevents an undefined-variable access, while conditioning KLD finalization on logits_file avoids the zero-denominator calculation. Either edit alone would leave the no-reference path broken.",
+        "basis": "source",
+        "evidence": [
+          "call_1bc7d8527a1a4e7bb0182b601fda80c1",
+          "call_2a4f8d3e60294de9b6b6c11a6951dffe"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "For valid nonempty evaluation data, the patched no-reference path can finalize perplexity without calculating, printing or returning KLD. Reference collection and comparison remain available.",
+        "basis": "source",
+        "evidence": [
+          "call_1bc7d8527a1a4e7bb0182b601fda80c1",
+          "call_2a4f8d3e60294de9b6b6c11a6951dffe"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the reference-logit introduction entry and the later mask/cache entry. They record the no-reference failure and establish that cache invalidation had already been repaired before this task.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0e2a0a8fc3f846e28a7ebf0d5db5a4b5",
+          "call_0b4253020d964d6f87c93064d86e7627"
+        ]
+      },
+      {
+        "text": "Parent source plus the task diff show that the recorded no-reference failure is removed, the three-argument cache invalidation remains, and filtering can still exclude a required reference producer.",
+        "basis": "source",
+        "evidence": [
+          "call_2a4f8d3e60294de9b6b6c11a6951dffe",
+          "call_1bc7d8527a1a4e7bb0182b601fda80c1"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model inference, GPU execution, cache access or safetensors round trip was executed; the arithmetic check is a scalar transcription, not execution of test_ppl.",
+      "The new tokenizer directory's availability and tokenizer compatibility with evaluated models are unestablished.",
+      "The evidence does not establish an empirical rationale for the inherited ten-row KLD cap."
+    ],
+    "links": [
+      "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+      "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Make reference-logit evaluation optional at finalization",
+        "claims": [
+          {
+            "text": "main supplies logits_file only when a model specification contains out_logits; --kld selects the plotted metric rather than enabling collection. Whole-tree search finds main as the sole direct test_ppl caller.",
+            "basis": "source",
+            "evidence": [
+              "call_2a4f8d3e60294de9b6b6c11a6951dffe",
+              "call_42c0ffb59b9548eb811d79c973c672c2"
+            ]
+          },
+          {
+            "text": "Perplexity calculation moves outside the ProgressBar context but remains after the row loop. KLD calculation and printing become conditional on logits_file. collect_logits defaults to false, so a perplexity-only run skips saving reference tensors; the result already conditionally included kld.",
+            "basis": "source",
+            "evidence": [
+              "call_1bc7d8527a1a4e7bb0182b601fda80c1",
+              "call_2a4f8d3e60294de9b6b6c11a6951dffe"
+            ]
+          },
+          {
+            "text": "The inherited KLD branch processes at most ten sequence rows. Reference collection increments its count without accumulating divergence, yielding zero for a nonempty reference run. Comparison accumulates divergence over output positions; perplexity instead uses shifted next-token targets across all rows. These metric definitions are unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_2a4f8d3e60294de9b6b6c11a6951dffe",
+              "call_1bc7d8527a1a4e7bb0182b601fda80c1"
+            ]
+          },
+          {
+            "text": "A standard-library transcription reproduced the parent's zero-over-zero failure. With synthetic log-probability sum \u22126 and count 3, patched finalization produced perplexity 7.389056 without KLD; synthetic reference and comparison cases produced KLD 0 and 0.5 respectively.",
+            "basis": "execution",
+            "evidence": [
+              "call_a273b2ad0db94f2ca6ee1f719c4b1316"
+            ]
+          },
+          {
+            "text": "The example data specification changes tokenizer_dir from /mnt/str/eval_models/llama3.2-1b/hf/ to /mnt/str/models/llama3.2-1b-instruct/hf/. get_test_data passes this value to tokenize_transformers, which loads AutoTokenizer from that directory. This selects tokenizer assets, not model weights, and is not a precondition of the finalization repair.",
+            "basis": "source",
+            "evidence": [
+              "call_ccdc6c3cf081481d8235a0701f21c53b",
+              "call_b0275c4d37aa42bc87894ad5e2d9d6a5",
+              "call_3305d0c3fd45454ba25f04e956c8904c",
+              "call_2a4f8d3e60294de9b6b6c11a6951dffe"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-filtered-reference-dependency",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited mask path can retain reference consumers while excluding their producer; this task does not change that dependency.",
+        "trigger": "A mask excludes the out_logits producer, retains an uncached candidate, and the selected reference file is absent.",
+        "expected_behavior": "Generate the reference or reject the missing dependency before evaluating the candidate.",
+        "actual_behavior": "main retains logits_file after filtering; test_ppl loads the candidate and then attempts to open the absent reference through load_tensor.",
+        "locations": [
+          {
+            "commit": "c0a2028fb579d04491db8427f1e38979a4dcd164",
+            "path": "eval/compare_q.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_2a4f8d3e60294de9b6b6c11a6951dffe",
+          "call_1bc7d8527a1a4e7bb0182b601fda80c1",
+          "call_42c0ffb59b9548eb811d79c973c672c2"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared parent reference discovery, filtering and loading with the complete task diff. Whole-tree test_ppl search found main as its only direct caller.",
+            "evidence": [
+              "call_2a4f8d3e60294de9b6b6c11a6951dffe",
+              "call_1bc7d8527a1a4e7bb0182b601fda80c1",
+              "call_42c0ffb59b9548eb811d79c973c672c2"
+            ],
+            "limits": "No filesystem-library behavior was executed. Existing reference files or cached candidate results avoid this trigger; external caller reach is not established."
+          }
+        ]
+      }
+    ],
+    "summary": "Repairs perplexity-only finalization by guarding optional KLD work and initializing reference collection state; also updates an example tokenizer path."
+  },
+  "evidence": {
+    "call_1bc7d8527a1a4e7bb0182b601fda80c1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c0a2028fb579d04491db8427f1e38979a4dcd164",
+        "offset": 175,
+        "max_bytes": 1100
+      },
+      "result_sha256": "364edbe0040282fd5b84df26913c96cda487f4da2165aa1af44a2b7deeffc53a"
+    },
+    "call_ccdc6c3cf081481d8235a0701f21c53b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c0a2028fb579d04491db8427f1e38979a4dcd164",
+        "offset": 1275,
+        "max_bytes": 491
+      },
+      "result_sha256": "2e8d8ae68b5b8585517a07c73d215623d1d24de4d43534a3525d98f0544f8149"
+    },
+    "call_2a4f8d3e60294de9b6b6c11a6951dffe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+        "path": "eval/compare_q.py",
+        "max_bytes": 40000
+      },
+      "result_sha256": "5fd1e47bc1e612796e8a426fcbf21d96b72c9b756b0be40a2e2ca11066478f95"
+    },
+    "call_0e2a0a8fc3f846e28a7ebf0d5db5a4b5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "fdd50e0bca94673d562e0a01317b52c798a2f49ea297cb6146fbd4b2dfcdc723"
+    },
+    "call_b0275c4d37aa42bc87894ad5e2d9d6a5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+        "query": "tokenizer_dir",
+        "limit": 100
+      },
+      "result_sha256": "ebcf3590b0f4322f4aebeb30f5a9de2c30bb1512b5a054235fb3384e0e24cb44"
+    },
+    "call_7bb50174cab44cfba570c8a7ef245740": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+        "query": "tokenizer_path",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_3305d0c3fd45454ba25f04e956c8904c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+        "path": "eval/compare_q_transformers.py",
+        "offset": 4000,
+        "max_bytes": 6000
+      },
+      "result_sha256": "10c41b794890f4d99731e0ce530140bbe8a92fc5a3780e47bb5a883d3a1d1d3b"
+    },
+    "call_42c0ffb59b9548eb811d79c973c672c2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+        "query": "test_ppl",
+        "limit": 100
+      },
+      "result_sha256": "1247c64d7261945e415c580124b8254586e4217f45115fa95478587560e9c7e7"
+    },
+    "call_0b4253020d964d6f87c93064d86e7627": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "max_bytes": 16384
+      },
+      "result_sha256": "eb5c4090c55063ce2915937ea8a64276110021e88ba389e346c2467327be0efa"
+    },
+    "call_a273b2ad0db94f2ca6ee1f719c4b1316": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor enabled,collect,count,total in [(False,False,0,0.0),(True,True,2,0.0),(True,False,4,2.0)]:\n p=math.exp(-(-6.0/3)); result={'ppl':p}\n if enabled: result['kld']=total/count\n print(enabled,collect,result)\ntry: print(0.0/0.0)\nexcept ZeroDivisionError: print('parent no-reference: ZeroDivisionError')"
+        ]
+      },
+      "result_sha256": "e320b57f2a20f4ed53a29ff347daf00cf0aac47f836740b258bfe2466b96da23"
+    }
+  }
+}

@@ -1,0 +1,217 @@
+{
+  "schema_version": 5,
+  "sha": "c8836d9f5abf58ca7967c08beb39a23be675e10e",
+  "parent_shas": [
+    "57a37f2658fa2b3deac5e3404d2df7120223a69a"
+  ],
+  "cutoff_date": "2025-05-06T19:29:43+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Native Safetensors open failures previously raised only \u201cError opening file,\u201d omitting both the filename and operating-system error.",
+        "basis": "source",
+        "evidence": [
+          "call_f552362b72494a7c835101de327d86b1"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch captures errno immediately after a failed fopen and includes the filename, strerror description and numeric errno in TORCH_CHECK. Python adds a filename message before re-raising RuntimeError in both native loading branches.",
+        "basis": "source",
+        "evidence": [
+          "call_6bebc10cc86d49eca964daddfcb04e42",
+          "call_cae1ab32a4ca4e4baf048c0c5dc9afa8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This improves failure diagnostics rather than repairing the underlying file-open failure: there is no retry, fallback or change to successful handle caching. Python header reading and the explicit python loading backend remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_6bebc10cc86d49eca964daddfcb04e42",
+          "call_cae1ab32a4ca4e4baf048c0c5dc9afa8",
+          "call_21480e974c4c4f6cab39052a2799605b"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d reports a conversion traceback through get_tensor into stloader_open_file with the old generic error. Its relationship to this patch is inferred from that exact call and message match, plus a turboderp comment promising more informative diagnostics; the discussion does not establish the filesystem root cause.",
+        "basis": "inference",
+        "evidence": [
+          "call_a25ff05dabe84afc9ddb8ec25a48af73",
+          "call_9fa62498bdbe44bbaecf98f04bf297c3",
+          "call_6bebc10cc86d49eca964daddfcb04e42"
+        ]
+      },
+      {
+        "text": "Closed issue #17, \u201cModuleNotFoundError: No module named 'torch' when installing requirements.txt,\u201d concerns installation and Flash-Attention dependencies, not a reported Safetensors file-open failure.",
+        "basis": "source",
+        "evidence": [
+          "call_a8b0019f78cb41b799da5136441d9d4a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No native extension, filesystem failure or CUDA path was executed. A scalar computation would not meaningfully validate errno propagation, thread synchronization or exception handling.",
+      "The underlying cause of the conversion failure reported in issue #33 remains unestablished."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "loading",
+        "title": "Safetensors failure diagnostics",
+        "claims": [
+          {
+            "text": "get_tensor resolves a tensor key to its filename and lazily opens native handles only when none are cached. The new Python guards cover both immediate mt_fread loading and deferred job creation; failed opens print the filename and propagate the exception without caching a result.",
+            "basis": "source",
+            "evidence": [
+              "call_21480e974c4c4f6cab39052a2799605b",
+              "call_cae1ab32a4ca4e4baf048c0c5dc9afa8"
+            ]
+          },
+          {
+            "text": "For immediate reads, worker error paths now copy errno into shared load_errnum, and the post-join check formats its description and number. CUDA copy failures still emit cudaGetErrorString separately. These changes add diagnostic information without changing chunk scheduling or transfer selection.",
+            "basis": "source",
+            "evidence": [
+              "call_f552362b72494a7c835101de327d86b1",
+              "call_6bebc10cc86d49eca964daddfcb04e42"
+            ]
+          },
+          {
+            "text": "Deferred error reporting is asymmetric: the CPU worker captures errno but retains the generic post-join exception; the CUDA post-join exception gains errno formatting, but its worker never assigns load_errnum.",
+            "basis": "source",
+            "evidence": [
+              "call_f552362b72494a7c835101de327d86b1",
+              "call_6bebc10cc86d49eca964daddfcb04e42"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "deferred-cuda-error-number",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new deferred-CUDA diagnostic reports an initialized zero rather than the worker's error number.",
+        "trigger": "A read, seek or CUDA-copy failure reaches stloader_deferred_cuda's worker error label and subsequently reaches its post-join failure check.",
+        "expected_behavior": "The diagnostic should preserve the relevant failure information rather than present zero as the captured error number.",
+        "actual_behavior": "load_errnum is initialized to zero and never assigned in this function; the worker sets only load_failed, so the new exception formats strerror(0) and errno=0.",
+        "locations": [
+          {
+            "commit": "c8836d9f5abf58ca7967c08beb39a23be675e10e",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_deferred_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_f552362b72494a7c835101de327d86b1",
+          "call_6bebc10cc86d49eca964daddfcb04e42",
+          "call_799a05a0f7694cb58045ece543cb9d0f",
+          "call_21480e974c4c4f6cab39052a2799605b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the complete parent function with the task diff. Whole-parent-tree literal caller search found the Python invocation in SafetensorsCollection.end_deferred_load and the native binding; the inspected caller passes CUDA workloads to this function. The observation therefore concerns deferred CUDA loads, not every get_tensor call.",
+            "evidence": [
+              "call_f552362b72494a7c835101de327d86b1",
+              "call_6bebc10cc86d49eca964daddfcb04e42",
+              "call_799a05a0f7694cb58045ece543cb9d0f",
+              "call_21480e974c4c4f6cab39052a2799605b"
+            ],
+            "limits": "No failure was induced; native exception propagation and runtime error text were not tested."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds filename and errno diagnostics for native Safetensors open failures and expands read-error reporting, with an incomplete errno handoff in deferred CUDA loading."
+  },
+  "evidence": {
+    "call_6bebc10cc86d49eca964daddfcb04e42": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c8836d9f5abf58ca7967c08beb39a23be675e10e",
+        "offset": 188,
+        "max_bytes": 3526
+      },
+      "result_sha256": "46cdc9850a2480452573c9ef8d011912d6741d3c752e71a5c97fe542e43d5fd4"
+    },
+    "call_cae1ab32a4ca4e4baf048c0c5dc9afa8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c8836d9f5abf58ca7967c08beb39a23be675e10e",
+        "offset": 3714,
+        "max_bytes": 1793
+      },
+      "result_sha256": "165cef2e8b74b978b4800773e39ad7df5def6a78fbc9b08009cfea8c37e3330e"
+    },
+    "call_f552362b72494a7c835101de327d86b1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "57a37f2658fa2b3deac5e3404d2df7120223a69a",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "max_bytes": 22000
+      },
+      "result_sha256": "fceb4220a8473e00fba80c5fe7c6f78cb69087cddbcd050e41a4c89f44f82529"
+    },
+    "call_21480e974c4c4f6cab39052a2799605b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "57a37f2658fa2b3deac5e3404d2df7120223a69a",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "2c75bd743a1a1de35dc82eb6d53059e114545bc944867d85b6367a89f5682208"
+    },
+    "call_a25ff05dabe84afc9ddb8ec25a48af73": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0fbe1c50bde32711899f69add638229ae246cea1677249361e2b8f327d2e8b62"
+    },
+    "call_9fa62498bdbe44bbaecf98f04bf297c3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 6000
+      },
+      "result_sha256": "2e389ee33feb1265c6bd65204f8428349ad89be8a0b7ea563e4a852b1f9cde7d"
+    },
+    "call_a8b0019f78cb41b799da5136441d9d4a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b8bd79700fcfbd37a02fba49645299694cb8ed13a8bbc5d7e851d3bb4ab6d7ab"
+    },
+    "call_d553a3409a78402eab1a7384fe296516": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "57a37f2658fa2b3deac5e3404d2df7120223a69a",
+        "query": "Error opening file",
+        "limit": 100
+      },
+      "result_sha256": "74e62c6d936d4deff041653a633429a637449831cb413b275689f3ae91b1b89c"
+    },
+    "call_799a05a0f7694cb58045ece543cb9d0f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "57a37f2658fa2b3deac5e3404d2df7120223a69a",
+        "query": "stloader_deferred_",
+        "limit": 100
+      },
+      "result_sha256": "4fb456f6f07399d3594774c988bc89c0121e69a8160a89ccd7d5f3545b3dc6c9"
+    }
+  }
+}

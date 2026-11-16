@@ -1,0 +1,308 @@
+{
+  "schema_version": 5,
+  "sha": "475dfcca479d4333d69e759f96d50045663cf69b",
+  "parent_shas": [
+    "2432c64e68ba4e3cbeccc3eaeba44c97731132d3"
+  ],
+  "cutoff_date": "2025-05-18T00:19:19+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The Transformers comparison adapter explicitly accounted for Marlin GPTQ layers but lacked branches for TritonV2 and ExllamaV2 layer storage.",
+        "basis": "source",
+        "evidence": [
+          "call_f0626223df034028ac7898b7f0abf76e",
+          "call_6a8d5adebc724d22b43e07ec8f60e83f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change extends storage accounting rather than selecting a new inference backend: backend-specific tensor collections feed the existing bits-per-weight calculation.",
+        "basis": "source",
+        "evidence": [
+          "call_6a8d5adebc724d22b43e07ec8f60e83f",
+          "call_f0626223df034028ac7898b7f0abf76e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Recognized layers now contribute both stored tensor bits and logical weight counts to the comparison results. A new AutoRound example selects the existing Transformers loader and forward adapter.",
+        "basis": "source",
+        "evidence": [
+          "call_6a8d5adebc724d22b43e07ec8f60e83f",
+          "call_af26d93a570943a7b0ef5f88b5f5f536",
+          "call_d4447570ac0048a5b25373b2649bdd95"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier comparison entry records no-reference finalization and cache-invalidation defects.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_23a8b543ef6f48a8844196cdacb35965"
+        ]
+      },
+      {
+        "text": "Issue #31, \u201cTypeError with presence penalty,\u201d concerns sampling arguments in TabbyAPI and reports recovery after TabbyAPI updates. Its shared term \u201ctypes\u201d does not establish a connection to this GPTQ accounting change.",
+        "basis": "inference",
+        "evidence": [
+          "call_478945aa666a41e1b2b5d3aae10e5084",
+          "call_6a8d5adebc724d22b43e07ec8f60e83f"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Transformers model, GPTQ implementation or GPU kernel was executed. External class inheritance, tensor layouts and installed-version compatibility remain unverified.",
+      "The storage result counts selected tensors, not measured peak VRAM or all inference allocations.",
+      "The AutoRound model directory is a local example path; its contents and availability were not established.",
+      "Scalar checks exercise transcribed arithmetic and cache-key construction, not repository evaluation."
+    ],
+    "links": [
+      "3873d40ae2734261f72aa85261ac06b6e307c1e4"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Additional GPTQ storage accounting",
+        "claims": [
+          {
+            "text": "get_storage_info adds TritonV2QuantLinear accounting for g_idx, qweight, qzeros and scales. Unlike the existing Marlin branch, it does not request g_idx_sort_indices. ExllamaV2QuantLinear instead supplies its q_tensors dictionary directly.",
+            "basis": "source",
+            "evidence": [
+              "call_6a8d5adebc724d22b43e07ec8f60e83f",
+              "call_f0626223df034028ac7898b7f0abf76e"
+            ]
+          },
+          {
+            "text": "Both branches add in_features \u00d7 out_features to the denominator. get_tensors_size sums element_size \u00d7 numel for non-None dictionary values and multiplies by eight to convert bytes to bits. Thus the reported bitrate includes selected quantization metadata rather than merely the nominal weight precision.",
+            "basis": "source",
+            "evidence": [
+              "call_6a8d5adebc724d22b43e07ec8f60e83f",
+              "call_f0626223df034028ac7898b7f0abf76e"
+            ]
+          },
+          {
+            "text": "An illustrative scalar calculation for 128 \u00d7 128 logical weights, 2048 int32 packed words, 128 FP16 scales and 16 int32 zero entries gives 68,096 bits, or 4.15625 bits per weight. These are hypothetical inputs demonstrating metadata overhead, not a measured GPTQ layout.",
+            "basis": "execution",
+            "evidence": [
+              "call_40b834b66dcb4aca8719d15314abf139"
+            ]
+          },
+          {
+            "text": "The existing loader calls AutoModelForCausalLM.from_pretrained before collecting storage statistics. test_ppl uses the returned decoder bitrate, head bitrate and storage estimate for results; plotting selects decoder bitrate or the storage estimate converted by division by eight and 1024\u00b3. The added branches do not alter forward computation.",
+            "basis": "source",
+            "evidence": [
+              "call_f0626223df034028ac7898b7f0abf76e",
+              "call_d4447570ac0048a5b25373b2649bdd95",
+              "call_6a8d5adebc724d22b43e07ec8f60e83f"
+            ]
+          },
+          {
+            "text": "The new specification labels a local llama3.1-8b-instruct/autoround/4bit-asym directory \u201cAutoRound 4bit asym\u201d and selects transformers for loading and forwarding. That loader requests cuda:0 and torch.half by default. The specification itself neither implements AutoRound quantization nor establishes which GPTQ class the external loader constructs.",
+            "basis": "source",
+            "evidence": [
+              "call_af26d93a570943a7b0ef5f88b5f5f536",
+              "call_d4447570ac0048a5b25373b2649bdd95",
+              "call_f0626223df034028ac7898b7f0abf76e"
+            ]
+          },
+          {
+            "text": "The task leaves the previously reported no-reference and cache-clear paths unchanged. Consequently, the new example should not be interpreted as evidence that standalone uncached evaluation successfully returns results.",
+            "basis": "source",
+            "evidence": [
+              "call_d4447570ac0048a5b25373b2649bdd95",
+              "call_be1df6c333a149848a78fef3fcc21ae6",
+              "call_af26d93a570943a7b0ef5f88b5f5f536",
+              "call_6a8d5adebc724d22b43e07ec8f60e83f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-no-reference-finalization",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Standalone use of the new example retains the existing no-reference finalization failure.",
+        "trigger": "An uncached evaluation using the AutoRound specification without another specification providing out_logits, assuming loading and nonempty-data inference succeed.",
+        "expected_behavior": "Return perplexity without requiring reference logits.",
+        "actual_behavior": "main passes None for logits_file; kl_div_count remains zero and test_ppl unconditionally divides zero by zero. collect_logits is also uninitialized on this path, although division fails first.",
+        "locations": [
+          {
+            "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+            "path": "eval/compare_q.py",
+            "symbol": "test_ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_d4447570ac0048a5b25373b2649bdd95",
+          "call_af26d93a570943a7b0ef5f88b5f5f536",
+          "call_315570058f42420e8afce7dab4bd7620"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search identifies main as the sole direct test_ppl caller. The task changes neither that call nor finalization.",
+            "evidence": [
+              "call_315570058f42420e8afce7dab4bd7620",
+              "call_d4447570ac0048a5b25373b2649bdd95",
+              "call_6a8d5adebc724d22b43e07ec8f60e83f"
+            ],
+            "limits": "Reach is established for the repository CLI, not external callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluating the transcribed zero-over-zero expression raised ZeroDivisionError.",
+            "evidence": [
+              "call_40b834b66dcb4aca8719d15314abf139"
+            ],
+            "limits": "No model or evaluation function was executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-cache-invalidation-mismatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The existing clear-cache argument mismatch persists.",
+        "trigger": "The comparison CLI requests --clear_cache for a result cached by the three-argument test_ppl call.",
+        "expected_behavior": "Remove the selected cached evaluation result.",
+        "actual_behavior": "main invalidates a key containing only data_spec and spec, whereas evaluation caches a key additionally containing logits_file.",
+        "locations": [
+          {
+            "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+            "path": "eval/compare_q.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_d4447570ac0048a5b25373b2649bdd95",
+          "call_be1df6c333a149848a78fef3fcc21ae6",
+          "call_315570058f42420e8afce7dab4bd7620"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed JSON key construction produces unequal keys for two arguments and three arguments including None.",
+            "evidence": [
+              "call_40b834b66dcb4aca8719d15314abf139"
+            ],
+            "limits": "No shelve database was opened; source inspection establishes the CLI call-site mismatch."
+          }
+        ]
+      }
+    ],
+    "summary": "Extends comparison storage accounting to TritonV2 and ExllamaV2 GPTQ layers and adds an AutoRound example; existing evaluation finalization and cache-clear defects remain."
+  },
+  "evidence": {
+    "call_6a8d5adebc724d22b43e07ec8f60e83f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+        "offset": 173,
+        "max_bytes": 2018
+      },
+      "result_sha256": "12e504dc056d901e241732628c980de7430e47ba2817ae60b735c67070347a9a"
+    },
+    "call_af26d93a570943a7b0ef5f88b5f5f536": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+        "offset": 1651,
+        "max_bytes": 540
+      },
+      "result_sha256": "b219a7bab2f0469c448477fa6148da7aeebba18326e50b16fbfe6192a2d8198a"
+    },
+    "call_f0626223df034028ac7898b7f0abf76e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2432c64e68ba4e3cbeccc3eaeba44c97731132d3",
+        "path": "eval/compare_q_transformers.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "f2e01ece9065a0e0d998c3912a9c7bc1f268eb3c8c5a6ac26f0122a9361c423c"
+    },
+    "call_34f42a3740044f8ca0bc03b9aa4cf5c9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2432c64e68ba4e3cbeccc3eaeba44c97731132d3",
+        "query": "GPTQ",
+        "limit": 50
+      },
+      "result_sha256": "ff95369f0bc8002802b277bbf04672676facbb6366d089e35f9d9c7c53edd9ce"
+    },
+    "call_d4447570ac0048a5b25373b2649bdd95": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2432c64e68ba4e3cbeccc3eaeba44c97731132d3",
+        "path": "eval/compare_q.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "8607fa5804ed1d4b3e4894dd0a48f031bf99ca37504d8d7b906201abc12ab7cc"
+    },
+    "call_23a8b543ef6f48a8844196cdacb35965": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "fdd50e0bca94673d562e0a01317b52c798a2f49ea297cb6146fbd4b2dfcdc723"
+    },
+    "call_315570058f42420e8afce7dab4bd7620": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2432c64e68ba4e3cbeccc3eaeba44c97731132d3",
+        "query": "test_ppl",
+        "limit": 50
+      },
+      "result_sha256": "8d93ada67727215b8c1d4f08970c9883f5fff6a0a696de5065f2a9d442c321ff"
+    },
+    "call_be1df6c333a149848a78fef3fcc21ae6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2432c64e68ba4e3cbeccc3eaeba44c97731132d3",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_478945aa666a41e1b2b5d3aae10e5084": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/31",
+        "max_bytes": 16000
+      },
+      "result_sha256": "461fefa348797eb131de1de1348d0dca04c95f8cff1a1aff0bf76433cd2c434c"
+    },
+    "call_7b9b162b02f047498a2b46ff2e60a3ce": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2432c64e68ba4e3cbeccc3eaeba44c97731132d3",
+        "path": "eval",
+        "query": "load_fn",
+        "limit": 60
+      },
+      "result_sha256": "5b3cc68a5e55b6a68b1f0e2d064af54481300d59ede15becca3b6d144c4056d7"
+    },
+    "call_40b834b66dcb4aca8719d15314abf139": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nkey=lambda args:str((json.dumps(args,sort_keys=True),json.dumps({},sort_keys=True)))\nprint('cache_keys_equal',key(({},{}))==key(({},{},None)))\ntry: print(0.0/0.0)\nexcept ZeroDivisionError: print('no_reference: ZeroDivisionError')\n# Hypothetical 128x128 4-bit weight, int32 packed words, 128 fp16 scales and 16 int32 zeros; no g_idx.\nbits=8*(2048*4+128*2+16*4)\nprint('illustrative_bits',bits,'bpw',bits/(128*128))"
+        ]
+      },
+      "result_sha256": "e4ab99164c2d4982d26dd8dfe1f3a07c28276c6b992ae4a52f46c22c50772c30"
+    }
+  }
+}

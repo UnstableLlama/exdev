@@ -1,0 +1,323 @@
+{
+  "schema_version": 5,
+  "sha": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+  "parent_shas": [
+    "6aa1449169a7076d61223fcf74b4e6ceb849327d"
+  ],
+  "cutoff_date": "2025-06-01T17:13:26+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The existing Gemma3 adapter recognized Gemma3ForConditionalGeneration, read nested text_config values and used language_model-prefixed tensor names. Standalone Gemma3ForCausalLM checkpoints require a different architecture registration, configuration layout and tensor namespace.",
+        "basis": "source",
+        "evidence": [
+          "call_eb7f8d532d2c4a819f713586040c0cee",
+          "call_c3de6c38489f4d4b9a9ead03fae4b289",
+          "call_1b26dfb33b3743a1abc22c306a8efc4d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The three edits cooperate: registration enables dispatch, Gemma3TextConfig supplies top-level settings, and an empty key prefix lets the existing decoder address standalone weights. Registration alone would not resolve the configuration and weight-name differences.",
+        "basis": "inference",
+        "evidence": [
+          "call_a7e24e887f76464b87f6144cee40ec9a",
+          "call_c3de6c38489f4d4b9a9ead03fae4b289",
+          "call_9cd0d9efdf4e409c82fd24f38c57ca50"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Gemma3ForCausalLM gains a text-only component mapping. Existing conditional-generation construction retains the default language_model. prefix; the vision stub is unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_c3de6c38489f4d4b9a9ead03fae4b289",
+          "call_eb7f8d532d2c4a819f713586040c0cee"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier Gemma3 entry describes the decoder assembly and separate local/global RoPE settings reused here, and explicitly records that vision loading remains unimplemented.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_961e885bf8c84629a8130a3cad5a8e1b"
+        ]
+      },
+      {
+        "text": "PR #25, \u201cLanguage layers for Mistral Small 3.1 and InternVL3,\u201d contains gakada's later report that gemma-3-1b cannot run because it uses Gemma3ForCausalLM. Its relationship to this fix is inferred from that exact architecture identifier, not an explicit commit reference. Gakada opened the PR and reported the problem; the supplied fix attribution is turboderp.",
+        "basis": "inference",
+        "evidence": [
+          "call_6dd27a0654a141c9b68bbce9cdc5b391",
+          "call_c3de6c38489f4d4b9a9ead03fae4b289"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d concerns a spelling correction. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading. Their connection to this inspection is only the shared config.py path; neither establishes a Gemma3 architecture defect.",
+        "basis": "inference",
+        "evidence": [
+          "call_21324f567cf740f3a28c952f62407023",
+          "call_b1a1ffd645de452ab049496aac1758c0",
+          "call_9cd0d9efdf4e409c82fd24f38c57ca50"
+        ]
+      }
+    ],
+    "limitations": [
+      "No checkpoint loading, conversion, generation or GPU execution was performed. Configuration agreement does not establish numerical or tensor-layout compatibility.",
+      "The scalar check transcribed layer scheduling and attention-scale arithmetic; it did not execute repository model code.",
+      "The five indexed causal-language-model configurations were read, but the eleven indexed conditional-generation configurations were not independently reread for this change.",
+      "Whole-tree Gemma3-name search found the adapter and registry references; exhaustive searches of every configuration-key consumer and generic constructor caller were not completed."
+    ],
+    "links": [
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Standalone Gemma3 dispatch with shared decoder assembly",
+        "claims": [
+          {
+            "text": "Config.from_directory selects a configuration class through the architecture registry. The added Gemma3TextConfig identifies Gemma3ForCausalLM and maps only the text component to Gemma3TextModel; Model.from_config defaults to that text component.",
+            "basis": "source",
+            "evidence": [
+              "call_a7e24e887f76464b87f6144cee40ec9a",
+              "call_c3de6c38489f4d4b9a9ead03fae4b289",
+              "call_9cd0d9efdf4e409c82fd24f38c57ca50",
+              "call_fe9cdaffbf4f4fc991061b579dc2941e"
+            ]
+          },
+          {
+            "text": "Gemma3TextModel delegates to Gemma3Model with key_prefix=''. All changed decoder keys\u2014including embedding, block norms, attention, MLP, final norm, output projection and its embedding alternative\u2014use that prefix. Existing construction keeps key_prefix='language_model.', preserving its prior names.",
+            "basis": "source",
+            "evidence": [
+              "call_c3de6c38489f4d4b9a9ead03fae4b289",
+              "call_c8b01242d201459d9d97613295895425"
+            ]
+          },
+          {
+            "text": "The new configuration copies the existing Gemma3 defaults while removing text_config nesting. It requires num_hidden_layers, falls back to vocabulary size 262208 only when the base configuration supplies none, and uses hidden/intermediate defaults 2304/9216, head dimension 256 and query/KV head defaults 8/4.",
+            "basis": "source",
+            "evidence": [
+              "call_c3de6c38489f4d4b9a9ead03fae4b289",
+              "call_9cd0d9efdf4e409c82fd24f38c57ca50"
+            ]
+          },
+          {
+            "text": "Global NEOX RoPE reads top-level settings with theta default 1,000,000. Local RoPE receives an empty dictionary, retaining theta 10,000 without checkpoint scaling. The shared decoder makes every sixth layer global by default, supplies local layers the configured window, and computes attention scale as query_pre_attn_scalar**(-0.5).",
+            "basis": "source",
+            "evidence": [
+              "call_c3de6c38489f4d4b9a9ead03fae4b289",
+              "call_9cd0d9efdf4e409c82fd24f38c57ca50",
+              "call_eb7f8d532d2c4a819f713586040c0cee"
+            ]
+          },
+          {
+            "text": "google/gemma-3-1b-it, google/gemma-3-1b-pt, google/gemma-3-1b-it-qat-int4-unquantized and google/gemma-3-1b-it-qat-q4_0-unquantized each match the new architecture and top-level layout. Each explicitly supplies widths 1152/6912, 26 layers, query/KV heads 4/1, head dimension and query scalar 256, window 512, period 6 and vocabulary 262144. Thus each overrides the width, head-count, window and vocabulary fallbacks; each supplies no RoPE scaling.",
+            "basis": "source",
+            "evidence": [
+              "call_1b26dfb33b3743a1abc22c306a8efc4d",
+              "call_33ed7c3608ac4572a3de5a15eb292774",
+              "call_fbda41ade0db41eeb282a668219db8d7",
+              "call_6e7b447b48264308b170cf0ca3d30b92",
+              "call_c3de6c38489f4d4b9a9ead03fae4b289"
+            ]
+          },
+          {
+            "text": "google/medgemma-27b-text-it also matches the new architecture and layout, but supplies widths 5376/21504, 62 layers, query/KV heads 32/16, head dimension 128, query scalar 168, window 1024 and vocabulary 262144. Its global settings include linear RoPE factor 8; the separately constructed local settings do not inherit that scaling.",
+            "basis": "source",
+            "evidence": [
+              "call_4474ac445344475fb397461f8bcbe613",
+              "call_c3de6c38489f4d4b9a9ead03fae4b289",
+              "call_9cd0d9efdf4e409c82fd24f38c57ca50"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription produced 22 local/4 global layers for 26 layers and 52 local/10 global layers for 62 layers. Query scalars 256 and 168 yielded scales 0.0625 and approximately 0.077151675 respectively.",
+            "basis": "execution",
+            "evidence": [
+              "call_21298f6a810244de8d0c8cf69238f83a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Gemma3ForCausalLM registration and top-level configuration parsing, reusing the existing Gemma3 decoder with unprefixed tensor keys."
+  },
+  "evidence": {
+    "call_a7e24e887f76464b87f6144cee40ec9a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "offset": 159,
+        "max_bytes": 8814
+      },
+      "result_sha256": "5bef1593543fd2ddb847a915b931743fa0a9f34b52f95a022af5fe8ce0b39dd0"
+    },
+    "call_c3de6c38489f4d4b9a9ead03fae4b289": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "offset": 932,
+        "max_bytes": 8041
+      },
+      "result_sha256": "19dea172388fc6cad775d5955b217fe036cdf2ffac866e93433e2501513a76e7"
+    },
+    "call_eb7f8d532d2c4a819f713586040c0cee": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6aa1449169a7076d61223fcf74b4e6ceb849327d",
+        "path": "exllamav3/models/gemma3.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "48eb55790bb421de94dfbb244257ac222cfcec9c4c61cc40c62197131a6f3745"
+    },
+    "call_ae2050a0e1424d3f81b5aa95ff406c03": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 24000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9",
+      "catalog_only": true
+    },
+    "call_61411209a58f41bab8d1e78555e5d333": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "5293b981ed3e5c7581463326b20686b32bcf070aa8096487b77369280ca21fbd",
+      "catalog_only": true
+    },
+    "call_ea8794e229524e1b84912f3a8cb5c6d4": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "6877c91642b9fc9e11ba8419b8a9dcd9264eac30f098ce9986e88232cd5bfffc",
+      "catalog_only": true
+    },
+    "call_961e885bf8c84629a8130a3cad5a8e1b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7e8974fcf5d11f5fdedb9f1af0c4eb2a2c25ad72cf9734dbdfbe25f9e7facd78"
+    },
+    "call_c8b01242d201459d9d97613295895425": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6aa1449169a7076d61223fcf74b4e6ceb849327d",
+        "query": "Gemma3",
+        "limit": 100
+      },
+      "result_sha256": "6fd15d6ded777e44d84d7a9b929c2271f2b923ca9283d3d395d625ca90bf3233"
+    },
+    "call_1b26dfb33b3743a1abc22c306a8efc4d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-1b-it",
+        "revision": "4b3263ad374eda07eb0fd1561af4b41f1d2db09a474795eab477506e137a724b",
+        "path": "config.json"
+      },
+      "result_sha256": "84016331235f0161b25634b04673b666c1cd313b6c978b0bd395137d91c012a1"
+    },
+    "call_fbda41ade0db41eeb282a668219db8d7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-1b-it-qat-int4-unquantized",
+        "revision": "e1851d2a9abcd141d2ba7540543b478e417518f85f4ff91a089d4854e4d9c048",
+        "path": "config.json"
+      },
+      "result_sha256": "75b31a21abbacc77c02278a56062084d3f1877783bfdfe5b2c538d809f780213"
+    },
+    "call_6e7b447b48264308b170cf0ca3d30b92": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-1b-it-qat-q4_0-unquantized",
+        "revision": "4de51a5af245e8385324166a320f19a642fb426ec1a9daff476864e48bcc8769",
+        "path": "config.json"
+      },
+      "result_sha256": "2202a65640a90ab56633de1e825737f5ae6e8d5032022ae0432e922463a73f70"
+    },
+    "call_33ed7c3608ac4572a3de5a15eb292774": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-1b-pt",
+        "revision": "b5f62573d8cd011928755cc04cea2f8f57567041e81fa38a6cb6c781a36fedf9",
+        "path": "config.json"
+      },
+      "result_sha256": "235648c204a7dd0ed5279b0bacb8b7a55b851044776064fc6460fcdf25cd0fe7"
+    },
+    "call_4474ac445344475fb397461f8bcbe613": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/medgemma-27b-text-it",
+        "revision": "d6bcc43c30a7ccc955f9f0ce7639c1398a3ee6b968ded1c9102881f9b0990651",
+        "path": "config.json"
+      },
+      "result_sha256": "24b00440c93385256fbd7d40c2287e7709de74a060aaa5071a513e43e3a2c25e"
+    },
+    "call_9cd0d9efdf4e409c82fd24f38c57ca50": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6aa1449169a7076d61223fcf74b4e6ceb849327d",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "31dadc6d2dfa9f82c9444116a18c76b558264751a966842c6a76977f1360167f"
+    },
+    "call_fe9cdaffbf4f4fc991061b579dc2941e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6aa1449169a7076d61223fcf74b4e6ceb849327d",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "2fbc28ec8588ebd89b5b89a6b1af072efaa86dd803e445b802148e707028b0cb"
+    },
+    "call_6dd27a0654a141c9b68bbce9cdc5b391": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a7ecac8e2a7e30db59aae39d53ac71c0c3d292a5135530886dea0d4c35e9cf18"
+    },
+    "call_b1a1ffd645de452ab049496aac1758c0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "ddd23b6bb868c3a1a3caf50c962cf177ca20aad26b84b5233161bfaf276027bb"
+    },
+    "call_21324f567cf740f3a28c952f62407023": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 3000
+      },
+      "result_sha256": "80a7cd9682281287d558b4cb7ff1333c0f85e81a73f76d159d33ef57e04e4c65"
+    },
+    "call_21298f6a810244de8d0c8cf69238f83a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nkeys=['head_dim','hidden_size','num_attention_heads','num_key_value_heads','query_pre_attn_scalar','attn_logit_softcapping','sliding_window','sliding_window_pattern','intermediate_size','rms_norm_eps','num_hidden_layers','tie_word_embeddings','final_logit_softcapping','read_rope_settings_default','Gemma3Model','model_classes']\nfor p in Path('.').rglob('*.py'):\n s=p.read_text()\n matches=[(i,l.strip()) for i,l in enumerate(s.splitlines(),1) if any(k in l for k in keys)]\n if matches and ('gemma' in str(p) or str(p).endswith(('architectures.py','config.py'))):\n  print(p); print('\\n'.join(f'{i}: {l}' for i,l in matches))\nprint('scalar transcription:',[(n,sum(bool((i+1)%6) for i in range(n)),n//6) for n in (26,62)],256**-.5,168**-.5)"
+        ]
+      },
+      "result_sha256": "f590d7eb26a997ecbe1f5b7b3b6b1284ae2dfd8b364976fcdeb1c0a2a3589c97"
+    }
+  }
+}

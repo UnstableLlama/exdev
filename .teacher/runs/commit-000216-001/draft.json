@@ -1,0 +1,425 @@
+{
+  "schema_version": 5,
+  "sha": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+  "parent_shas": [
+    "4e493719fbbb25c91142a65bfbc56791f18ccaec"
+  ],
+  "cutoff_date": "2025-06-02T01:54:25+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Generation had commented-out embedding plumbing, while Embedding.forward always performed vocabulary lookup. There was no implemented container connecting externally supplied vectors to prompt token IDs.",
+        "basis": "source",
+        "evidence": [
+          "call_dd39aec609dd47e5806ef670425e7478",
+          "call_8a4984164004443dabab21a27a13d669",
+          "call_c24d3ca6e45440aa92611ce98a39cd65"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The edits form one data path: allocate synthetic IDs, substitute them for prompt aliases, preserve the associated vectors on each job, and resolve those IDs during embedding lookup. Tokenizer substitution alone would send out-of-vocabulary IDs into the old lookup, so the generator and embedding changes supply necessary downstream support.",
+        "basis": "inference",
+        "evidence": [
+          "call_dd39aec609dd47e5806ef670425e7478"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Exports MMEmbedding and enables externally prepared embeddings through Tokenizer.encode, Generator.generate and Job. This is embedding injection infrastructure, not an image encoder or complete multimodal model implementation; multimodal rotary-position plumbing remains commented out.",
+        "basis": "source",
+        "evidence": [
+          "call_dd39aec609dd47e5806ef670425e7478",
+          "call_8212b0243a114343947bf6513b6b059d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the root entry's modules and loading-tokenization chapters. They establish the original CPU-preferred, float32-default embedding interface, sqrt(hidden_size) scaling, and tokenizer batching/decoding conventions.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_11bcb0bcec384e709141e37b51983673",
+          "call_fd23fc2123c24aba810e0fae17aa5fe7"
+        ]
+      },
+      {
+        "text": "The inspected discussions concern different problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension/toolchain problem; #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d reports installation trouble; #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d concerns chat mode; PR #13, \u201cFix a tokenizer issue while converting models without a bos_token_id defined,\u201d concerns absent BOS metadata; and #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d attributes conversion failure to tokenizer truncation.",
+        "basis": "source",
+        "evidence": [
+          "call_5791fd67689843b3846c29dc023789aa",
+          "call_db5bf3cdca6a489391202174b7cdb7f3",
+          "call_bff02a1bba8a4c3d8a10277a3986a2f3",
+          "call_7cadeecf7f78445d84b3ab087cfb235c",
+          "call_386e4ba66c3d430f8b86f72848d9955c"
+        ]
+      },
+      {
+        "text": "The discussion overlap is contextual, not evidence that this commit fixes those reports: #6/#7 traverse the changed package initializer, #12 names Job, and PR #13 names Tokenizer. None establishes motivation for indexed embeddings.",
+        "basis": "inference",
+        "evidence": [
+          "call_dd39aec609dd47e5806ef670425e7478",
+          "call_5791fd67689843b3846c29dc023789aa",
+          "call_db5bf3cdca6a489391202174b7cdb7f3",
+          "call_bff02a1bba8a4c3d8a10277a3986a2f3",
+          "call_7cadeecf7f78445d84b3ab087cfb235c"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch, tokenizer-backend, model-generation or GPU execution was performed. The scalar check models ID allocation and substitution only.",
+      "Device compatibility, placeholder-count errors, malformed embedding shapes and concurrent allocator access were not exercised.",
+      "Repository searches establish the internal callers of encode_special_or_unspecial, not compatibility with external callers of that now-required embeddings argument.",
+      "End-to-end compatibility with sampling penalties, token healing and every model subclass was not established."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "indexed-embeddings",
+        "title": "Carry indexed vectors from prompt aliases to model inputs",
+        "claims": [
+          {
+            "text": "MMTokenAllocator assigns consecutive ranges starting at 1,000,000,000. The source explicitly assumes ordinary vocabularies remain below one billion; this is a namespace boundary, not a model dimension or performance threshold. Each MMEmbedding reserves embeddings.shape[-2] IDs and stores the original embedding tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_dd39aec609dd47e5806ef670425e7478"
+            ]
+          },
+          {
+            "text": "MMEmbedding replaces -1 positions in the supplied token_string in place with consecutive synthetic IDs. It records the template's last dimension as full_length, the vector count as mm_length, and token_string[0].tolist() as the tokenizer substitution. Consequently, its practical template convention is a single token row, potentially containing ordinary wrapper tokens as well as embedding placeholders. The default alias includes the allocated first index.",
+            "basis": "source",
+            "evidence": [
+              "call_dd39aec609dd47e5806ef670425e7478"
+            ]
+          },
+          {
+            "text": "Tokenizer.encode_special_or_unspecial builds an alias-to-container dictionary, escapes aliases into a regex, and replaces matched spans with token_list. Other spans follow the existing special/ordinary encoding branches. Both internal callers, the scalar and list branches of encode, now supply embeddings; whole-parent-tree search found no additional callers of this helper. The public encode argument remains optional.",
+            "basis": "source",
+            "evidence": [
+              "call_dd39aec609dd47e5806ef670425e7478",
+              "call_c83783f4f52f41b78d16da259842d68d",
+              "call_8a594246456249789596fda335994af8"
+            ]
+          },
+          {
+            "text": "Generator.generate accepts one embedding list for a scalar prompt and one list per prompt for a batch. Tuple prompt components share their prompt's embedding list. The same objects go to tokenization and Job, whose new embeddings field defaults to an empty list. Job.prefill forwards that list as params['indexed_embeddings']; iterate_gen combines lists from ready jobs for the batched forward pass. Model.prefill and Model.forward already pass params through to module.forward, so no new model-level argument is necessary.",
+            "basis": "source",
+            "evidence": [
+              "call_dd39aec609dd47e5806ef670425e7478",
+              "call_810f08067250409394625f81c2ef6a73",
+              "call_96811d09f253427888b5ce4738bd359a"
+            ]
+          },
+          {
+            "text": "Embedding.forward separates IDs below the synthetic boundary from IDs inside each supplied container's half-open range. When any supplied range is active, it allocates [batch, sequence, hidden_size], fills ordinary positions from the vocabulary table, then gathers external rows using ID minus first_index. Optional sqrt(hidden_size) scaling happens before external rows are inserted, preserving supplied vectors without that scaling. If no supplied range is active, the existing vocabulary lookup path remains selected.",
+            "basis": "source",
+            "evidence": [
+              "call_dd39aec609dd47e5806ef670425e7478",
+              "call_8a4984164004443dabab21a27a13d669"
+            ]
+          },
+          {
+            "text": "The representation lets ordinary and external vectors share a sequence without enlarging the vocabulary table. Its caller-side preconditions include compatible vector width and complete range coverage for synthetic IDs. The mixed path allocates uninitialized output and does not validate coverage; it should not be described as validating arbitrary token/container combinations.",
+            "basis": "inference",
+            "evidence": [
+              "call_dd39aec609dd47e5806ef670425e7478"
+            ]
+          },
+          {
+            "text": "Decoding remains text-oriented: both decode_ branches filter IDs above the backend vocabulary size rather than reconstructing embedding aliases. The root entry's noted EOS filtering order also remains unchanged: ordinary decoding removes EOS before attempting to truncate at it. This commit does not repair or redefine that inherited decoding behavior.",
+            "basis": "source",
+            "evidence": [
+              "call_8a594246456249789596fda335994af8",
+              "call_dd39aec609dd47e5806ef670425e7478"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription checked adjacent allocations of lengths three and two, placeholder expansion inside ordinary wrapper IDs, repeated alias substitution, and subtraction back to vector rows [0,1,2]. All five allocated IDs belonged to exactly one range. This did not execute masked_scatter_, tensor indexing or model code.",
+            "basis": "execution",
+            "evidence": [
+              "call_a0f59323ec77401984f43e05a3febd83"
+            ]
+          },
+          {
+            "text": "Draft-model generation explicitly rejects jobs with embeddings, but that assertion is located in iterate_draftmodel_gen. The earlier Job.prefill draft-model call still receives synthetic input IDs without indexed_embeddings, so rejection does not protect every draft-model entry path.",
+            "basis": "source",
+            "evidence": [
+              "call_dd39aec609dd47e5806ef670425e7478",
+              "call_8212b0243a114343947bf6513b6b059d",
+              "call_810f08067250409394625f81c2ef6a73"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "draft-prefill-before-embedding-guard",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The explicit rejection of indexed embeddings with a draft model occurs after a reachable draft prefill call.",
+        "trigger": "An uncached job uses a draft model and has a synthetic embedding ID in a nonempty prompt-prefill slice.",
+        "expected_behavior": "Reject the unsupported combination before sending synthetic IDs into the draft model.",
+        "actual_behavior": "Generator.iterate calls Job.prefill first. Job.prefill calls draft_model.prefill without indexed_embeddings, allowing the draft embedding module to take ordinary vocabulary lookup for IDs starting at one billion. The later assertion in iterate_draftmodel_gen cannot prevent that earlier lookup.",
+        "locations": [
+          {
+            "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.prefill"
+          },
+          {
+            "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+            "path": "exllamav3/generator/generator.py",
+            "symbol": "Generator.iterate_draftmodel_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_dd39aec609dd47e5806ef670425e7478",
+          "call_d67bcbd993b740398e163f27c947b137",
+          "call_8212b0243a114343947bf6513b6b059d",
+          "call_810f08067250409394625f81c2ef6a73",
+          "call_96811d09f253427888b5ce4738bd359a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Searched generator prefill callers and inspected iteration ordering, both draft prefill sites, model dispatch and the changed embedding fallback. The direct Job.prefill caller is Generator.iterate; the other draft prefill site follows drafting and its new assertion.",
+            "evidence": [
+              "call_d67bcbd993b740398e163f27c947b137",
+              "call_8212b0243a114343947bf6513b6b059d",
+              "call_810f08067250409394625f81c2ef6a73",
+              "call_dd39aec609dd47e5806ef670425e7478"
+            ],
+            "limits": "No model execution or exact backend exception was observed. Fully cached prompts and prompts whose synthetic IDs are outside the prefill slice do not establish this trigger."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds synthetic-ID embedding injection across tokenization, jobs and model lookup, while leaving draft-model prefill insufficiently guarded."
+  },
+  "evidence": {
+    "call_dd39aec609dd47e5806ef670425e7478": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+        "max_bytes": 22000,
+        "offset": 0
+      },
+      "result_sha256": "722f64a19e315d5ccaa7f64b7f8e8fefd72a40c59fd2b7c80c3d469966f1ac99"
+    },
+    "call_8a4984164004443dabab21a27a13d669": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "path": "exllamav3/modules/embedding.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "da4f07b218ff7eebf6bc4b652b85f6c88c9b438c2b978e47f3dfad305fdddce9"
+    },
+    "call_c83783f4f52f41b78d16da259842d68d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "query": "encode_special_or_unspecial",
+        "limit": 100
+      },
+      "result_sha256": "251b36fd80f04fa47934f13aa5baf456a1e909b2c6c85bc7a8a82464837bd348"
+    },
+    "call_994a5f6cb1fe4f84966041d3f60ee247": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "query": "indexed_emb",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c24d3ca6e45440aa92611ce98a39cd65": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "query": "MMEmbedding",
+        "limit": 100
+      },
+      "result_sha256": "ef3074ee3f85a760061be02f099edc2348f5351ea44e7e10e17a43b12901028b"
+    },
+    "call_ef10e33dccae46ad89b55b0f73fc8aa8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/embedding.py",
+        "limit": 10,
+        "max_bytes": 4000
+      },
+      "result_sha256": "be37f7ca50b25c536a12f7b716ebcc0d1cbc1db3b7fc51ed62abd5180192136e",
+      "catalog_only": true
+    },
+    "call_11bcb0bcec384e709141e37b51983673": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_5791fd67689843b3846c29dc023789aa": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 20000
+      },
+      "result_sha256": "360f5cb8ec90c210744c8f630196f1bfb707b6721c700142c0514c1c0bebea9e"
+    },
+    "call_db5bf3cdca6a489391202174b7cdb7f3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "aebf0775cb5e7dac3ab30fe07e0ab9066a89ca41cc5fea77a7163582441fa2b3"
+    },
+    "call_09fcf7d96a9843d881ab21b9834dd0ab": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3ece69fdb466ee236a8c42e1a3876ca62cfcaf1658668b6b4dddf267a857b4cc"
+    },
+    "call_bff02a1bba8a4c3d8a10277a3986a2f3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "193d3e8b7a2f171db60109eecc4f60dcaa8c9dc73c9db2d6ab0896e80122eae0"
+    },
+    "call_7cadeecf7f78445d84b3ab087cfb235c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 12000
+      },
+      "result_sha256": "ffec4fe5bce8026c1f0d1d90eeffba70554ea5d0a8ab82a1c906b7d4c334d0b9"
+    },
+    "call_386e4ba66c3d430f8b86f72848d9955c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 24000
+      },
+      "result_sha256": "06899db9ee76826bdd8b234fa825785fcec3dee9ab4875f53a9d5968802fec2a"
+    },
+    "call_8a594246456249789596fda335994af8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "offset": 10000,
+        "max_bytes": 10500
+      },
+      "result_sha256": "2360032e409c680e36ebee7546a0436f422d2f2af56d6a11bf8fae875feac2ff"
+    },
+    "call_cde3f37535ab4ff891032c18e4c9ae09": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "query": "embeddings",
+        "limit": 100
+      },
+      "result_sha256": "23d199b48330007542065227ff5a06b33d2d3936ca93150ae8392b233c2d7f32"
+    },
+    "call_8212b0243a114343947bf6513b6b059d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "path": "exllamav3/generator/job.py",
+        "offset": 29000,
+        "max_bytes": 9500
+      },
+      "result_sha256": "71528f3936cadbad7b13bfce90c899e809082a713c9f79179af476d9d50be634"
+    },
+    "call_bfa037cc5ca047c281cb3ecf961e162d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "query": "past_ids",
+        "path": "exllamav3/generator",
+        "limit": 70
+      },
+      "result_sha256": "a4b73ec40825b9df74f010fc0f94a215ad90905ba7351b0383676e2f59b5595a"
+    },
+    "call_d67bcbd993b740398e163f27c947b137": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "query": ".prefill(",
+        "path": "exllamav3/generator",
+        "limit": 100
+      },
+      "result_sha256": "da2e2cc5473be5ec0a79fcd3c0ac8cea8eabda8ca6b7cd6178fc0e9edc21565e"
+    },
+    "call_810f08067250409394625f81c2ef6a73": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 8500,
+        "max_bytes": 12000
+      },
+      "result_sha256": "aaae4e1142b5b518f121f6a1dd343cb7a56aad22d8268e11d10aabd0e8252db0"
+    },
+    "call_96811d09f253427888b5ce4738bd359a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "path": "exllamav3/models/model.py",
+        "offset": 0,
+        "max_bytes": 13000
+      },
+      "result_sha256": "637b4acc822dd8f1804bca88795b1ca9cd6d645984ab9eca30691963a32003bd"
+    },
+    "call_a0f59323ec77401984f43e05a3febd83": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import re,json\nbase=10**9\nranges=[(base,3),(base+3,2)]\ntemplate=[7,-1,-1,-1,8]\nit=iter(range(base,base+3)); tokens=[next(it) if x==-1 else x for x in template]\naliases={'<image>':tokens}\nparts=re.split('('+'|'.join(re.escape(k) for k in aliases)+')','a<image>b<image>')\nexpanded=sum([aliases[p] if p in aliases else [ord(c) for c in p] for p in parts],[])\nassert expanded.count(base)==2\nassert all(sum(a<=t<a+n for a,n in ranges)==1 for t in range(base,base+5))\nprint(json.dumps({'template_ids':tokens,'expanded':expanded,'disjoint_indices_checked':5,'row_offsets':[t-base for t in tokens if t>=base]}))"
+        ]
+      },
+      "result_sha256": "c1f3b00c217292f1b58b10e03f97a1b667d42d20e70c5d94f44c5e9352da2cf4"
+    },
+    "call_aad982f8718b433f8c2e8b5788d91164": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "tokenizer/tokenizer.py",
+        "limit": 6,
+        "max_bytes": 3500
+      },
+      "result_sha256": "b1460c6eef150e4fd81a300c06440697e5fbac3917d9436d5690c9df991d2c73",
+      "catalog_only": true
+    },
+    "call_fd23fc2123c24aba810e0fae17aa5fe7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    }
+  }
+}

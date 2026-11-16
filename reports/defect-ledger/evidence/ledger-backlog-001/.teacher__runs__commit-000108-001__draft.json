@@ -1,0 +1,273 @@
+{
+  "schema_version": 5,
+  "sha": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+  "parent_shas": [
+    "cf0cbe0a10ae4dda9f49876df50c46c09a75567c"
+  ],
+  "cutoff_date": "2025-04-29T22:35:33+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Attention previously left Q/K normalization as TODOs in all three decoding paths.",
+        "basis": "source",
+        "evidence": [
+          "call_2374c3aa5aa648b3a64677568d2ef632"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change accepts optional RMSNorm modules and applies them after splitting projections into heads, before RoPE and attention. This normalizes each head's last dimension rather than the full concatenated projection.",
+        "basis": "source",
+        "evidence": [
+          "call_2374c3aa5aa648b3a64677568d2ef632",
+          "call_06e0125a77414007ae0921386022cac6",
+          "call_5f56afc493a84ee88741b76b14ac773a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This supplies an attention-layer capability, not a newly enabled model architecture: all seven direct Attention construction sites found in the parent omit these optional arguments, and the task changes no model builders.",
+        "basis": "source",
+        "evidence": [
+          "call_fcd12d5be89c43108fb605fb6951a0a2",
+          "call_6935c99690d64edd85cd5efeb5be571d",
+          "call_2374c3aa5aa648b3a64677568d2ef632",
+          "call_506b39a52eda4b5699c192aedb7c2e8e"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "An earlier entry distinguishes RMSNorm.forward_torch from native-dispatching forward; the new attention calls use forward, not the Torch reference implementation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ee14cf8c27db407b8424fcbebd91cd40"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository inference, CUDA kernel test, numerical parity test or performance benchmark was run. The scalar check uses Python double precision and does not reproduce GPU reductions, half-precision rounding or clamping.",
+      "Caller coverage covers literal Attention construction sites and inspected Python AST calls, not external consumers or dynamically constructed calls."
+    ],
+    "links": [
+      "203db0c3bfeb1273fbe15f2e9622e9aec391d53e"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Optional per-head Q/K RMS normalization",
+        "claims": [
+          {
+            "text": "When q_norm is supplied, Attention requires k_norm and registers both as submodules. Registration includes them in recursive loading, unloading, iteration and weight counting; RMSNorm loads its own keyed weight tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_2374c3aa5aa648b3a64677568d2ef632",
+              "call_32d98ed73fc043bfb83c91f9e1e8741f",
+              "call_5f56afc493a84ee88741b76b14ac773a"
+            ]
+          },
+          {
+            "text": "SDPA, uncached FlashAttention and cached FlashAttention all normalize Q and K with explicit half-precision output. V is unchanged. Cached attention receives normalized, subsequently rotary-transformed K; SDPA's existing sliding-window and softcapping exclusions remain.",
+            "basis": "source",
+            "evidence": [
+              "call_2374c3aa5aa648b3a64677568d2ef632",
+              "call_06e0125a77414007ae0921386022cac6"
+            ]
+          },
+          {
+            "text": "RMSNorm.forward flattens batch, sequence and head axes into rows and restores the original shape afterward. Its native implementation scales each row by reciprocal square root of mean square plus epsilon, then by weight plus optional constant bias. The native wrapper requires half weights, matching last-axis width and width divisible by four.",
+            "basis": "source",
+            "evidence": [
+              "call_5f56afc493a84ee88741b76b14ac773a",
+              "call_6059f462bfd24ac184a834cd55022420"
+            ]
+          },
+          {
+            "text": "A scalar illustration with heads [1,2,3,4] and [2,4,6,8], unit weights and epsilon 1e-6 produced a first component of 0.365148 under per-head normalization versus 0.230940 when normalizing the concatenated projection, demonstrating that the placement of the reshape matters.",
+            "basis": "execution",
+            "evidence": [
+              "call_609bdc67f35f47d9a3064ffd5550e49f"
+            ]
+          },
+          {
+            "text": "The RMSNorm file changes only by adding a TODO about a specialized Q/K kernel. The reused kernel launches 1024 threads per row and handles four elements per vector group; an illustrative width of 128 has only 32 such groups. This suggests a reason to investigate a smaller-head specialization, but does not establish that it would be faster.",
+            "basis": "inference",
+            "evidence": [
+              "call_506b39a52eda4b5699c192aedb7c2e8e",
+              "call_6059f462bfd24ac184a834cd55022420",
+              "call_609bdc67f35f47d9a3064ffd5550e49f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "asymmetric-norm-validation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The constructor enforces its stated paired-normalization invariant only when Q normalization is present.",
+        "trigger": "Construct Attention with q_norm=None and a non-null k_norm.",
+        "expected_behavior": "Reject the incomplete pair consistently with the assertion message requiring both norms or neither.",
+        "actual_behavior": "The else branch sets both attributes to None, silently discarding the supplied K norm. No inspected in-tree builder supplies either new argument, so the observed reach is the new constructor interface rather than an existing model workflow.",
+        "locations": [
+          {
+            "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_2374c3aa5aa648b3a64677568d2ef632",
+          "call_fcd12d5be89c43108fb605fb6951a0a2",
+          "call_6935c99690d64edd85cd5efeb5be571d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both constructor branches and inspected all seven direct construction sites found by whole-parent search.",
+            "evidence": [
+              "call_2374c3aa5aa648b3a64677568d2ef632",
+              "call_fcd12d5be89c43108fb605fb6951a0a2",
+              "call_6935c99690d64edd85cd5efeb5be571d"
+            ],
+            "limits": "No Attention object was instantiated; external and dynamic callers were not established."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional per-head Q/K RMSNorm before RoPE across all attention backends, reusing the existing native kernel without enabling it in model builders."
+  },
+  "evidence": {
+    "call_2374c3aa5aa648b3a64677568d2ef632": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "offset": 147,
+        "max_bytes": 2955
+      },
+      "result_sha256": "c5d83069085daa0881cbd813103c24cf83eddbf56ad79e3f0911698dac1dfa52"
+    },
+    "call_506b39a52eda4b5699c192aedb7c2e8e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "fd934384c4a750fd5e0744ce1f9c7044f8e982a2",
+        "offset": 3102,
+        "max_bytes": 576
+      },
+      "result_sha256": "be2338b50fb2bc54051f9f1ac954dab4aa26d992d77432132190445a0ac8a3cc"
+    },
+    "call_06e0125a77414007ae0921386022cac6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "c5ee7214e36bcc6d263651013a6bb36a77b5016951e9afc3b305584b65e77a82"
+    },
+    "call_5f56afc493a84ee88741b76b14ac773a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "13e789ec8030c0782700a781c83811fed5c8237b1ce2193cff45b83645256ff2"
+    },
+    "call_fcd12d5be89c43108fb605fb6951a0a2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+        "query": "Attention(",
+        "limit": 100
+      },
+      "result_sha256": "5655a1d89ad28aa7f79f47c9749e8cf0e5f647474279f6abdf19a257418be164"
+    },
+    "call_857766189e9444d092452a1494e40d14": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "rmsnorm.py",
+        "limit": 10,
+        "max_bytes": 4000
+      },
+      "result_sha256": "b59fa4138ef4c5a563f57d0b523011b652d38da482246e7acb530a537e942f0f",
+      "catalog_only": true
+    },
+    "call_32d98ed73fc043bfb83c91f9e1e8741f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "7a7ab484889d836131dbb2daeec67ed52b3dcefdbbddf1b50ac1e6a8008f16c6"
+    },
+    "call_e584b6e27ccc467e84161d938bd8cbd5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import pathlib\nfor p in pathlib.Path('.').rglob('*.py'):\n s=p.read_text()\n if 'attn = Attention(' in s:\n  start=s.index('attn = Attention('); end=s.index('\\n                ),',start)+19\n  print(str(p),s[start:end])\n"
+        ]
+      },
+      "result_sha256": "8d6b8eb0a85486325ac334ec390a3331f924480ca8010472bb23cbd74dbaab5a"
+    },
+    "call_6935c99690d64edd85cd5efeb5be571d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nfor p in pathlib.Path('.').rglob('*.py'):\n s=p.read_text(); t=ast.parse(s)\n for n in ast.walk(t):\n  if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='Attention': print(str(p),ast.get_source_segment(s,n))\n"
+        ]
+      },
+      "result_sha256": "b5c34b9885d18c82bd29d5ae575b1f7a058c5d4aa64ffd9fbe1a282a34daf1a0"
+    },
+    "call_463c79c9d4474d5d9d3c7255680ce4d6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+        "query": "void rms_norm",
+        "limit": 20
+      },
+      "result_sha256": "d0da71d0f9b277c09cc8b248b37570f084d446baf41cb5bc920c9605fa3778be"
+    },
+    "call_6059f462bfd24ac184a834cd55022420": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf0cbe0a10ae4dda9f49876df50c46c09a75567c",
+        "path": "exllamav3/exllamav3_ext/norm.cu",
+        "max_bytes": 12500
+      },
+      "result_sha256": "1c1a1a295e4f13aab490f4b390a2db9c824435ad971e4ddab51d702cf854193b"
+    },
+    "call_ee14cf8c27db407b8424fcbebd91cd40": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "203db0c3bfeb1273fbe15f2e9622e9aec391d53e",
+        "max_bytes": 10000
+      },
+      "result_sha256": "233461c4031ad07c861c5ef9ce3996b912e0595c704f813327fb5faa46fd4d7f"
+    },
+    "call_609bdc67f35f47d9a3064ffd5550e49f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\n# Scalar transcription of last-axis RMS normalization, two heads.\nx=[[1.,2.,3.,4.],[2.,4.,6.,8.]]; eps=1e-6\nper=[[v/math.sqrt(sum(t*t for t in row)/len(row)+eps) for v in row] for row in x]\nflat=[v for row in x for v in row]; whole=[v/math.sqrt(sum(t*t for t in flat)/len(flat)+eps) for v in flat]\nprint('per_head_first',per[0][0],'whole_projection_first',whole[0]); print('per_head_mean_squares',[sum(v*v for v in row)/len(row) for row in per]); print('illustrative_head_dim_128_vector_groups',128//4,'threads_per_block',1024)\nassert abs(per[0][0]-whole[0])>0.1\n"
+        ]
+      },
+      "result_sha256": "a8dc588f15d6d8ab4cc80a05ee16605237ca75f4d5667a69e46ac7ef1a78108b"
+    }
+  }
+}

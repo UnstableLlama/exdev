@@ -1,0 +1,273 @@
+{
+  "schema_version": 5,
+  "sha": "95c5097b3099de821058504a282d7f83cf3369b2",
+  "parent_shas": [
+    "2cc8f718dacbd75c2cfc3cc229dc787090333bde"
+  ],
+  "cutoff_date": "2025-05-31T07:52:40+09:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "All three attention decode paths tested the truth value of q_norm_tensor instead of testing whether fused normalization weights were absent.",
+        "basis": "source",
+        "evidence": [
+          "call_ea255cbac5eb456fb34b3133314da2b1",
+          "call_73aa0d50edbe490fa98b95d295335d23"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing `not self.q_norm_tensor` with `self.q_norm_tensor is None` makes dispatch depend on weight availability, not tensor contents.",
+        "basis": "source",
+        "evidence": [
+          "call_ea255cbac5eb456fb34b3133314da2b1"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The correction covers uncached SDPA, uncached Flash Attention and cached Flash Attention. It removes the tensor truth-value evaluation before fused RMSNorm/RoPE without changing normalization parameters or backend calls.",
+        "basis": "source",
+        "evidence": [
+          "call_ea255cbac5eb456fb34b3133314da2b1",
+          "call_73aa0d50edbe490fa98b95d295335d23"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the QK LayerNorm ancestor entry, which identifies the tensor-truth dispatch regression and inherited native normalization/bounds concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_fd14c63cffbb43ab96e5e3aa46e968ae"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d concerns conversion and a tokenizer-truncation diagnosis; #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, concerns scaling policy. Their relationship here is inferred only from attention/rope path overlap, not evidence that this fix addresses those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_c3095b297ac24e41a76664f27e88dcd9",
+          "call_865863ca52d043f29ad7785a17ad0daa",
+          "call_4cc6d424be90435ba861b6bb0be27290"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch, CUDA kernel or model workflow was executed. The Python check models control flow with a truth-rejecting object; it does not reproduce PyTorch's exception.",
+      "Native numerical correctness and memory safety remain unverified by GPU execution. Literal caller searches do not establish dynamic or external reach."
+    ],
+    "links": [
+      "f45eb4ce2090ca5db306cf863ee2f1826810e0ff"
+    ],
+    "chapters": [
+      {
+        "id": "attention",
+        "title": "Test fused normalization weights for absence",
+        "claims": [
+          {
+            "text": "Attention initializes normalization tensors to None and exposes loaded weights only for RMSNorm. LayerNorm therefore continues through separate Q/K normalization, while loaded RMSNorm with RoPE skips that fallback and passes its weights, epsilon and constant bias into RoPE.apply.",
+            "basis": "source",
+            "evidence": [
+              "call_73aa0d50edbe490fa98b95d295335d23",
+              "call_ea255cbac5eb456fb34b3133314da2b1"
+            ]
+          },
+          {
+            "text": "No-norm and no-RoPE short-circuit behavior is preserved. Standalone normalization still requests half output before rotation. RoPE.apply forwards optional weights to the native RMSNorm/rotation kernel, whose wrapper requires half Q/K and a one-dimensional Q normalization weight of head_dim elements.",
+            "basis": "source",
+            "evidence": [
+              "call_73aa0d50edbe490fa98b95d295335d23",
+              "call_c74c2ba56f7444fa8b2aee768fd5d98e",
+              "call_bce13ed0f65042f9bc878bbdc33f65cf"
+            ]
+          },
+          {
+            "text": "A bounded Python control-flow transcription showed that a present truth-rejecting weight raises under the old condition but selects the fused route under the new condition. Missing weights, absent RoPE and absent normalization retained their branch results.",
+            "basis": "execution",
+            "evidence": [
+              "call_ffef3140733148fc98aff80da7eff51d"
+            ]
+          },
+          {
+            "text": "The ancestor's dispatch defect is removed by all three substitutions. Its native reduction and padded-read concerns are carried over: the task changes no native code, and successful dispatch alone does not establish correct fused-kernel execution.",
+            "basis": "source",
+            "evidence": [
+              "call_ea255cbac5eb456fb34b3133314da2b1",
+              "call_bce13ed0f65042f9bc878bbdc33f65cf",
+              "call_94522b0db4044e13ad19634f8b5d4b94"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-fused-rope-concerns",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly reachable fused path retains conflicting shared reduction writes and unguarded padded input reads.",
+        "trigger": "Fused normalization with nonuniform lane values; or RoPE with a head width requiring padding, such as 80, or shorter partial-rotary frequencies.",
+        "expected_behavior": "Store one complete reduction per warp and restrict frequency and weight reads to their logical arrays.",
+        "actual_behavior": "Every lane writes its shuffle-down result to the same per-warp sums slot. inv_freq[t] and the normalization half2 weight read are unguarded. Attention's three decode methods reach RoPE.apply; the inspected science caller also invokes rotation but supplies no normalization weights.",
+        "locations": [
+          {
+            "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_bce13ed0f65042f9bc878bbdc33f65cf",
+          "call_94522b0db4044e13ad19634f8b5d4b94",
+          "call_38de610fbc98478abc8399d2f0ca4648",
+          "call_b2fe0bc679ac4baeab2ed51679068e36",
+          "call_98df351476e948eeb4062701ec52d196"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared native loads and reduction writes with the reduction helper, Python wrapper, attention callers and task diff.",
+            "evidence": [
+              "call_bce13ed0f65042f9bc878bbdc33f65cf",
+              "call_94522b0db4044e13ad19634f8b5d4b94",
+              "call_c74c2ba56f7444fa8b2aee768fd5d98e",
+              "call_ea255cbac5eb456fb34b3133314da2b1"
+            ],
+            "limits": "No GPU race or memory-error reproduction."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Launch arithmetic for head width 80 gives 64 x lanes but only 40 full-width frequency entries.",
+            "evidence": [
+              "call_ffef3140733148fc98aff80da7eff51d"
+            ],
+            "limits": "Python integer arithmetic only, not kernel execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Corrects None checks across all attention backends, restoring dispatch to fused RMSNorm/RoPE while leaving inherited native-kernel concerns unchanged."
+  },
+  "evidence": {
+    "call_ea255cbac5eb456fb34b3133314da2b1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "95c5097b3099de821058504a282d7f83cf3369b2",
+        "offset": 162,
+        "max_bytes": 1619
+      },
+      "result_sha256": "065dc21d387058539754d6059836699ee36968936837c1440c516179008bde6d"
+    },
+    "call_73aa0d50edbe490fa98b95d295335d23": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "4948201bae8cac4f8f597b080e8791bd3de5098eb5d5a798102deb6b1e67f72c"
+    },
+    "call_fd14c63cffbb43ab96e5e3aa46e968ae": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "max_bytes": 16384
+      },
+      "result_sha256": "dd0f5694362a99c401c34071b84ecb4d592e475e0099a56fed58b340495b2acb"
+    },
+    "call_c74c2ba56f7444fa8b2aee768fd5d98e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "a7ae0793d6deb1b7a447f44bf789af1e363eed8a9fb9ab2a99de688f5528d8d0"
+    },
+    "call_bce13ed0f65042f9bc878bbdc33f65cf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b71eecf05983b3e7e834c2debe54eb04568183607db947a9277d5f9a88df45ce"
+    },
+    "call_b2fe0bc679ac4baeab2ed51679068e36": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+        "query": ".rope(",
+        "limit": 100
+      },
+      "result_sha256": "8cd8b846d9a2583835aca7128e26a825cab45321c1adf2e167e3608ec25391c4"
+    },
+    "call_38de610fbc98478abc8399d2f0ca4648": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+        "query": "rope.apply",
+        "limit": 100
+      },
+      "result_sha256": "de88e25c455ecf541786a2cd8d9bdbf14511e3c7e451bf3cb8299a0acee1c9e3"
+    },
+    "call_c3095b297ac24e41a76664f27e88dcd9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "ea05edbb2a8943de0a64be3b434df310b9f317db60c55d56ca1604ae6ad30b1d"
+    },
+    "call_865863ca52d043f29ad7785a17ad0daa": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a6eeb3c4fb1faae43746882e31ab2d8c8ce64241b04e9d4afbb860ccf2997032"
+    },
+    "call_4cc6d424be90435ba861b6bb0be27290": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 12000
+      },
+      "result_sha256": "fa7c1f81e77193b0e7ea983aab34f8fefdc5bbe2b2879d13be239b491be4f771"
+    },
+    "call_94522b0db4044e13ad19634f8b5d4b94": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+        "path": "exllamav3/exllamav3_ext/reduction.cuh",
+        "max_bytes": 5000
+      },
+      "result_sha256": "0ad70125969a695bff216d9c65b643089b8fe40cc74cd51b98ebedad02193fb1"
+    },
+    "call_98df351476e948eeb4062701ec52d196": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cc8f718dacbd75c2cfc3cc229dc787090333bde",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "d6b7c53d2ed2d625adc7b9bd925b2541f6b66e9890dee7e77232ee521ebd3a5a"
+    },
+    "call_ffef3140733148fc98aff80da7eff51d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "class Weight:\n def __bool__(self): raise RuntimeError('truth requested')\nw=Weight()\nfor norm,rope,t in [(True,True,w),(True,True,None),(True,False,w),(False,True,w)]:\n try: old=bool(norm and (not rope or not t))\n except RuntimeError: old='truth requested'\n new=bool(norm and (not rope or t is None))\n print(norm,rope,t is None,old,new)\nd=80\nprint('width',d,'launched lanes',((d//2+31)//32)*32,'frequency entries',d//2)"
+        ]
+      },
+      "result_sha256": "70eb28057bab078e112217be38b9935c305d11d1a9e4e9c6ec7f7c694528cb99"
+    }
+  }
+}

@@ -1,0 +1,116 @@
+diff --git a/teacher/architecture_evidence.py b/teacher/architecture_evidence.py
+index 33ff31e..88ad829 100644
+--- a/teacher/architecture_evidence.py
++++ b/teacher/architecture_evidence.py
+@@ -186,7 +186,7 @@ def load_bundle(repo,sha,path):
+                 if name!='__metadata__' and (not isinstance(value,dict) or set(value)!={'dtype','shape','data_offsets'}):raise ValueError('Only tensor header metadata allowed')
+         if not any(r['status'] in ('complete','complete_with_absences','mirror_historical_unverified_identity') and r['repo']==item.get('repo_id') and r['revision']==item.get('revision') for r in reports):raise ValueError('Unselected reference object')
+         if item.get('kind')=='hf_file':
+-            if Path(item['path']).name not in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json'):raise ValueError('Non-reference file or weight payload forbidden')
++            if Path(item['path']).name not in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json','preprocessor_config.json','processor_config.json'):raise ValueError('Non-reference file or weight payload forbidden')
+         elif item.get('kind')!='safetensors_header' or item.get('artifact_role')!='tensor_header':raise ValueError('Weight payload forbidden')
+     from .mirror_evidence import SCHEME, validate_selection
+     for report in reports:
+diff --git a/teacher/mirror_evidence.py b/teacher/mirror_evidence.py
+index 13a8058..3f732d6 100644
+--- a/teacher/mirror_evidence.py
++++ b/teacher/mirror_evidence.py
+@@ -16,7 +16,7 @@ HISTORICAL = 'mirror_historical_unverified_identity'
+ HISTORICAL_NOTICE = 'Pre-cutoff mirror copy; identity with the official file at that date could not be checked because the official history is gated.'
+ NOTICE = 'Bytes retrieved from a hash-verified ModelScope mirror. Revision identifies the verified file set, not an official Git commit.'
+ ROLES = {'config.json', 'tokenizer_config.json', 'tokenizer.json',
+-         'special_tokens_map.json', 'added_tokens.json', 'generation_config.json'}
++         'special_tokens_map.json', 'added_tokens.json', 'generation_config.json','preprocessor_config.json','processor_config.json'}
+ 
+ 
+ def digest(data):
+diff --git a/teacher/root_evidence.py b/teacher/root_evidence.py
+index 29a42d5..276b120 100644
+--- a/teacher/root_evidence.py
++++ b/teacher/root_evidence.py
+@@ -156,7 +156,7 @@ def recover_hf(architecture, cache, repo=None, cutoff=CUTOFF, reference_only=Fal
+                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='safetensors_header',
+                                      repo_id=repo,revision=sha,path=path,artifact_role='tensor_header'))
+                 headers.append(path)
+-            elif not path.lower().endswith(WEIGHTS) and (not reference_only or Path(path).name in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json')):
++            elif not path.lower().endswith(WEIGHTS) and (not reference_only or Path(path).name in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json','preprocessor_config.json','processor_config.json')):
+                 data,_=fetch(url)
+                 evidence.append(item('hf:'+architecture+':'+path,url,data,pin['date'],kind='hf_file',
+                                      repo_id=repo,revision=sha,path=path,artifact_role='non_weight'))
+diff --git a/tests/test_architecture_evidence.py b/tests/test_architecture_evidence.py
+index be8fd96..0a61e5e 100644
+--- a/tests/test_architecture_evidence.py
++++ b/tests/test_architecture_evidence.py
+@@ -39,7 +39,7 @@ class ArchitectureTests(unittest.TestCase):
+ 
+     def test_recovery_never_fetches_weights(self):
+         rows=[{'id':'a'*40,'date':'2020-01-01T00:00:00Z'}]
+-        tree=[{'type':'file','path':p} for p in ['config.json','tokenizer_config.json','model.bin','model.safetensors','malicious.py']]
++        tree=[{'type':'file','path':p} for p in ['config.json','tokenizer_config.json','model.bin','model.safetensors','malicious.py','preprocessor_config.json','processor_config.json']]
+         header=b'{}';calls=[]
+         def fetch(url,byte_range=None,**kw):
+             calls.append((url,byte_range))
+@@ -48,6 +48,8 @@ class ArchitectureTests(unittest.TestCase):
+             return b'{}',{}
+         with patch('teacher.root_evidence.pages',side_effect=[iter([rows]),iter([tree])]),patch('teacher.root_evidence.fetch',side_effect=fetch):
+             items,_=recover_hf('Demo',self.root,repo='org/demo',cutoff='2021-01-01T00:00:00Z',reference_only=True)
++        self.assertTrue({'preprocessor_config.json','processor_config.json'} <= {x['path'] for x in items})
++        self.assertTrue(all('/resolve/'+('a'*40)+'/' in u for u,_ in calls))
+         self.assertFalse(any('model.bin' in u or 'malicious.py' in u for u,_ in calls))
+         self.assertTrue(all(r is not None for u,r in calls if 'safetensors' in u))
+         self.assertTrue(all(x['artifact_role'] in ('non_weight','tensor_header') for x in items))
+@@ -65,6 +67,16 @@ class ArchitectureTests(unittest.TestCase):
+         self.assertEqual(report['status'],'incomplete')
+         self.assertNotIn('tokenizer_config.json',report['absent_at_revision'])
+ 
++    def test_published_processor_download_failure_is_incomplete(self):
++        rows=[{'id':'a'*40,'date':'2020-01-01T00:00:00Z'}]
++        tree=[{'type':'file','path':p} for p in ('config.json','preprocessor_config.json','processor_config.json')]
++        with patch('teacher.root_evidence.pages',side_effect=[iter([rows]),iter([tree])]),patch('teacher.root_evidence.fetch',side_effect=[(b'{}',{}),OSError('unreadable'),(b'{}',{})]):
++            items,report=recover_hf('Demo',self.root,repo='org/demo',cutoff='2021-01-01T00:00:00Z',reference_only=True)
++        self.assertEqual(report['status'],'incomplete')
++        self.assertEqual(report['failures'][0]['path'],'preprocessor_config.json')
++        self.assertNotIn('preprocessor_config.json',report['absent_at_revision'])
++        self.assertIn('processor_config.json',{x['path'] for x in items})
++
+     def test_guidance_legacy_and_new_contract(self):
+         old=FreshSession(self.packet).initial[0]['content'];self.assertNotIn('read the selected callee',old)
+         directory=self.root/'evidence';directory.mkdir()
+@@ -95,13 +107,13 @@ class ArchitectureTests(unittest.TestCase):
+         cutoff=self.git('show','-s','--format=%cI',sha);directory=self.root/'evidence';directory.mkdir()
+         (directory/'000001-unreferenced.json').write_text(json.dumps({'task_sha':sha,'cutoff':cutoff,'complete':True,'limit':100,'truncated':False,'items':[]}))
+         items=[]
+-        for name,data,kind,role in [('config.json',b'{"architectures":["Demo"]}','hf_file','non_weight'),('tokenizer_config.json',b'{}','hf_file','non_weight'),('model.safetensors',b'{"w":{"dtype":"F16","shape":[1],"data_offsets":[0,2]}}','safetensors_header','tensor_header')]:
++        for name,data,kind,role in [('config.json',b'{"architectures":["Demo"]}','hf_file','non_weight'),('tokenizer_config.json',b'{}','hf_file','non_weight'),('preprocessor_config.json',b'{}','hf_file','non_weight'),('processor_config.json',b'{}','hf_file','non_weight'),('model.safetensors',b'{"w":{"dtype":"F16","shape":[1],"data_offsets":[0,2]}}','safetensors_header','tensor_header')]:
+             items.append(item(name,'https://huggingface.co/org/demo/resolve/'+('a'*40)+'/'+name,data,cutoff,kind=kind,artifact_role=role,repo_id='org/demo',revision='a'*40,path=name))
+         bundle={'task_sha':sha,'cutoff':cutoff,'trigger':trigger(self.repo,sha),'items':items,'selections':[{'architecture':'Demo','repo':'org/demo','revision':'a'*40,'date':cutoff,'status':'complete','reason':'Task-named fixture','candidates_considered':['org/demo']}]}
+         ref=directory/'000001-references.json';ref.write_text(json.dumps(bundle))
+         (directory/'000001-closed.json').write_text(json.dumps({'task_sha':sha,'cutoff':cutoff,'complete':True,'rule':'salience-v2','limit':20,'truncated':False,'items':[]}))
+         packet=self.root/'references';m=prepare(self.repo,sha,1,packet,directory)
+-        self.assertEqual(len(m['evidence']),3)
++        self.assertEqual(len(m['evidence']),5)
+         opening=json.loads(FreshSession(packet).initial[1]['content'])
+         self.assertEqual(opening['evidence_catalog'],[])
+         self.assertEqual(len(json.loads(opening['evidence_index']['text'])),1)
+diff --git a/tests/test_mirror_evidence.py b/tests/test_mirror_evidence.py
+index c2dd2e5..0a1cadf 100644
+--- a/tests/test_mirror_evidence.py
++++ b/tests/test_mirror_evidence.py
+@@ -53,6 +53,17 @@ class MirrorTests(unittest.TestCase):
+         self.assertFalse(any('weights.bin' in u or 'model.py' in u for u,_ in self.calls))
+         self.assertEqual(entries[0]['mirror_provenance']['official_hash'],git_blob(self.data['config.json']))
+ 
++    def test_processor_metadata_requires_matching_official_hashes(self):
++        for name in ('preprocessor_config.json','processor_config.json'):
++            data=b'{"processor":"Demo"}';self.data[name]=data
++            self.official['siblings'].append(dict(rfilename=name,size=len(data),blobId=git_blob(data)))
++            self.mirror['Data']['Files'].append(dict(Type='blob',Path=name,Revision='b'*40,Sha256=digest(data),Size=len(data),CommittedDate=1577923200))
++        entries,report=self.recover()
++        self.assertTrue({'preprocessor_config.json','processor_config.json'} <= {e['path'] for e in entries})
++        validate_selection(report,entries,'2021-01-01T00:00:00Z')
++        self.data['processor_config.json']=b'altered'
++        with self.assertRaises(ValueError):self.recover()
++
+     def test_fail_closed_for_mismatch_missing_and_future(self):
+         for what in ['blob','weight','masked','date','creation','missing','bytes']:
+             with self.subTest(what=what):

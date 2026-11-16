@@ -1,0 +1,393 @@
+{
+  "schema_version": 5,
+  "sha": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+  "parent_shas": [
+    "70e79cc880a40aa0aa7a41cc80c574622a658197"
+  ],
+  "cutoff_date": "2025-04-13T15:36:20+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The ordinary FP16 loading path previously constructed a linear layer from the complete weight tensor. This change adds constructor parameters for selecting input and output feature ranges.",
+        "basis": "source",
+        "evidence": [
+          "call_4cb6eee5545044a3a1d378759e9a0dc4",
+          "call_bccdbd74caed4108a03f081e83c8d2bc"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Loading the full weight on CPU, copying the selected region into independent storage, and then transferring that storage to the target device can avoid placing the full weight on the GPU. This is host-side slicing, not partial file I/O: get_tensor still reads the complete stored tensor.",
+        "basis": "inference",
+        "evidence": [
+          "call_4cb6eee5545044a3a1d378759e9a0dc4",
+          "call_bccdbd74caed4108a03f081e83c8d2bc",
+          "call_fdda44a20da6404bb6e96f0e36b2e69b"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The new range parameters are forwarded only by the ordinary weight-key branch. The existing fused-weight frange branch and EXL3 loader retain their previous selection mechanisms.",
+        "basis": "source",
+        "evidence": [
+          "call_0eae97b16bde48a2a3054866546a8265",
+          "call_4cb6eee5545044a3a1d378759e9a0dc4"
+        ]
+      },
+      {
+        "text": "Linear.get_tensors now returns an empty dictionary when self.device is unset instead of unconditionally dereferencing self.inner.",
+        "basis": "source",
+        "evidence": [
+          "call_4cb6eee5545044a3a1d378759e9a0dc4"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent entry describes memory-first tensor lookup with disk fallback. That is context for the tensor source, rather than evidence of successful sliced loading.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_411eb5f608ce4a4d926b50f1152c7eb4"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure and the reporter's environment workaround. It does not establish a connection to FP16 slicing.",
+        "basis": "source",
+        "evidence": [
+          "call_17464cdb1ab74179af8de4736ed89a73"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch loading, CUDA transfer, native loader, or matrix multiplication was executed. The standard-library check models indexing and shape arithmetic only.",
+      "Peak memory and loading-time effects remain unmeasured; the full source weight still occupies host storage.",
+      "Range validation and end-to-end model use of the new parameters were not demonstrated."
+    ],
+    "links": [
+      "70e79cc880a40aa0aa7a41cc80c574622a658197"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "CPU-staged FP16 feature slicing",
+        "claims": [
+          {
+            "text": "Linear stores full_in_features, full_out_features and starting feature indices. LinearFP16 transposes checkpoint weights into input-by-output layout, then slices an axis only when its stored size equals the corresponding full size and differs from the requested size. Output slicing also slices the bias; input slicing leaves the bias unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_4cb6eee5545044a3a1d378759e9a0dc4",
+              "call_bccdbd74caed4108a03f081e83c8d2bc"
+            ]
+          },
+          {
+            "text": "For a sliced layer, LinearFP16 allocates and copies a new weight tensor rather than retaining just a view of the complete backing storage. Linear then sets swap_device and calls the existing unswap_cpu method, which transfers weight and bias and clears swap_device.",
+            "basis": "source",
+            "evidence": [
+              "call_bccdbd74caed4108a03f081e83c8d2bc",
+              "call_4cb6eee5545044a3a1d378759e9a0dc4",
+              "call_bde2fa8ba9b248c8ab19f9719bc39807"
+            ]
+          },
+          {
+            "text": "A scalar indexing transcription confirmed that selecting input indices 2\u20134 and output indices 4\u20137 after transposition produces the corresponding 3-by-4 submatrix. This checks axis interpretation, not tensor-library or kernel behavior.",
+            "basis": "execution",
+            "evidence": [
+              "call_e84bded617e84185b922cee3790ff9a9"
+            ]
+          },
+          {
+            "text": "The existing pad_to default of 128 rounds output width up to a multiple of 128. Padding still precedes the new slicing step, and LinearFP16 receives that padded width rather than out_features_unpadded.",
+            "basis": "source",
+            "evidence": [
+              "call_0eae97b16bde48a2a3054866546a8265",
+              "call_4cb6eee5545044a3a1d378759e9a0dc4"
+            ]
+          },
+          {
+            "text": "Module.load now forwards keyword arguments to children. Attention, Embedding, Linear and RMSNorm accept them, but Attention still calls super().load(device) without forwarding them. The slice controls are constructor arguments, not newly consumed load keywords.",
+            "basis": "source",
+            "evidence": [
+              "call_e90c559e55624ce8b48195a02a4a1a3b",
+              "call_5c81742b72b646f18ecfb2ac8ae00dff",
+              "call_2a23dc0532304aa6a0a5901502ee72a5",
+              "call_4cb6eee5545044a3a1d378759e9a0dc4",
+              "call_61bc6da397c4423dbefef38242a3b9de"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "default-cpu-staging",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "Omitting the optional full-size parameters selects the sliced loading route even without requesting a slice.",
+        "trigger": "Construct Linear with ordinary integer dimensions and leave full_in_features and full_out_features at None.",
+        "expected_behavior": "An unsliced request would retain direct target-device weight loading.",
+        "actual_behavior": "Integer dimensions compare unequal to None, so is_sliced is true. The ordinary FP16 branch stages the complete weight on CPU, explicitly copies it, and transfers it through unswap_cpu.",
+        "locations": [
+          {
+            "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_4cb6eee5545044a3a1d378759e9a0dc4",
+          "call_bccdbd74caed4108a03f081e83c8d2bc",
+          "call_d86479a35b854b74a56c8270cea29437"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent constructor search shows attention and MLP construction sites omitting the new parameters; the task does not update those constructions. The changed route applies when their ordinary FP16 weight branch is selected, not their EXL3 branch.",
+            "evidence": [
+              "call_d86479a35b854b74a56c8270cea29437",
+              "call_0eae97b16bde48a2a3054866546a8265",
+              "call_4cb6eee5545044a3a1d378759e9a0dc4"
+            ],
+            "limits": "No performance measurement or model loading execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the default comparison and obtained true.",
+            "evidence": [
+              "call_e84bded617e84185b922cee3790ff9a9"
+            ],
+            "limits": "Python predicate only."
+          }
+        ]
+      },
+      {
+        "id": "padding-before-slicing",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Padding the full source tensor to the local output shape can fail before slicing is reached.",
+        "trigger": "Load a full 512-by-64 weight into a Linear requesting 130 outputs and 64 inputs, with full_out_features=512, first_out_feature=0 and the default pad_to=128.",
+        "expected_behavior": "Select the requested output region and pad the local result to 256 outputs.",
+        "actual_behavior": "pad_out first allocates a 256-by-64 tensor and attempts to assign the full 512-by-64 source into it. The incompatible assignment precedes LinearFP16's slicing.",
+        "locations": [
+          {
+            "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load_fp16"
+          }
+        ],
+        "source_evidence": [
+          "call_0eae97b16bde48a2a3054866546a8265",
+          "call_4cb6eee5545044a3a1d378759e9a0dc4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search locates Linear.load as the direct caller of load_fp16; it tries FP16 after EXL3 lookup fails. The observation concerns the newly parameterized ordinary weight branch.",
+            "evidence": [
+              "call_d64e0b6c7b024b37b0b186199aab53c2",
+              "call_0eae97b16bde48a2a3054866546a8265",
+              "call_4cb6eee5545044a3a1d378759e9a0dc4"
+            ],
+            "limits": "No existing model construction requesting this new slice was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the padded destination width as 256 and verified that the 512-row source exceeds it.",
+            "evidence": [
+              "call_e84bded617e84185b922cee3790ff9a9"
+            ],
+            "limits": "Shape arithmetic only; the PyTorch assignment and its exception were not executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-native-read-wait",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited GPU disk-read failure synchronization risk is unchanged, although CPU-staged weights bypass its copy worker.",
+        "trigger": "A GPU-target mt_fread read fails while the copy worker waits on an empty queue, with no later enqueue.",
+        "expected_behavior": "Wake the worker and report the I/O failure.",
+        "actual_behavior": "The reader sets load_failed without notifying the condition variable; the wait predicate checks only queue nonemptiness, so joining the worker may not complete.",
+        "locations": [
+          {
+            "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_read"
+          }
+        ],
+        "source_evidence": [
+          "call_70c40bedc6814f099d37680de0761581",
+          "call_fdda44a20da6404bb6e96f0e36b2e69b",
+          "call_4cb6eee5545044a3a1d378759e9a0dc4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the inherited implementation and its get_tensor caller after reading the ancestor observation. The task leaves native loading unchanged. CPU-staged ordinary weights avoid the copy worker; GPU-loaded biases and other direct GPU disk reads can still reach it.",
+            "evidence": [
+              "call_2cc7cd3dbdc847e08d74d21c6dc95ea7",
+              "call_70c40bedc6814f099d37680de0761581",
+              "call_fdda44a20da6404bb6e96f0e36b2e69b",
+              "call_4cb6eee5545044a3a1d378759e9a0dc4"
+            ],
+            "limits": "No concurrent execution or injected read failure."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds CPU-staged FP16 feature slicing and keyword-tolerant loading interfaces; default staging and padding-before-slicing introduce compatibility concerns."
+  },
+  "evidence": {
+    "call_5c81742b72b646f18ecfb2ac8ae00dff": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "offset": 181,
+        "max_bytes": 7512
+      },
+      "result_sha256": "3eaadc69b8d04143d2280a9d404143ff6d4d2007068a79deea3b1b117f3f9145"
+    },
+    "call_2a23dc0532304aa6a0a5901502ee72a5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "offset": 671,
+        "max_bytes": 7512
+      },
+      "result_sha256": "f026832edd229ccb5fc79e9ef36f603a4cc016a41388a148e88fad7928494b4f"
+    },
+    "call_4cb6eee5545044a3a1d378759e9a0dc4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "offset": 1268,
+        "max_bytes": 7512
+      },
+      "result_sha256": "19970d802ba42eb7f210a1655848b2ce1502f5542e98b4b8297bf6292f202a68"
+    },
+    "call_e90c559e55624ce8b48195a02a4a1a3b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "offset": 4392,
+        "max_bytes": 7512
+      },
+      "result_sha256": "473aa7f184a96b26f4d61b8edd0572e43b325a3680f8b927c41c4bcea0a23e7d"
+    },
+    "call_bccdbd74caed4108a03f081e83c8d2bc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "offset": 5028,
+        "max_bytes": 7512
+      },
+      "result_sha256": "5d64792c5f5650da58d5513573c2ec78e431b1bad691eefad391c4b02a349434"
+    },
+    "call_61bc6da397c4423dbefef38242a3b9de": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "offset": 7074,
+        "max_bytes": 7512
+      },
+      "result_sha256": "51663fb6dd42309da79fadd7bf8c4f02378739fd207f202c93c57ecf0d5d412c"
+    },
+    "call_0eae97b16bde48a2a3054866546a8265": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "3c94197e01f41f2f0d9c10998a9a2cd4f5918520bb8ee8e3de6a40db6eb9a62b"
+    },
+    "call_bde2fa8ba9b248c8ab19f9719bc39807": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "7af323d3658ac26e94101c17b9deadbabdffb1fbb9b39148924c4d382ccbda1d"
+    },
+    "call_d86479a35b854b74a56c8270cea29437": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "query": "Linear(",
+        "limit": 100
+      },
+      "result_sha256": "676070e304067982f8faa46e1bad501326bc2d4ff944ba930a43f84d3f2ef957"
+    },
+    "call_d64e0b6c7b024b37b0b186199aab53c2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "query": "load_fp16",
+        "limit": 100
+      },
+      "result_sha256": "15c8591b4e73381a02d4106f817f15b15c149b365be53b37022a049ed302a981"
+    },
+    "call_17464cdb1ab74179af8de4736ed89a73": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fce6fdc90a8d59ca9e3287e1437f4657ac7ce0dc4e4f0840d319fe57eddb08b1"
+    },
+    "call_411eb5f608ce4a4d926b50f1152c7eb4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d56ecf3a2cd1ea713964d1d2b9a67230f19b3c6d0ad205d52072352045b0097f"
+    },
+    "call_fdda44a20da6404bb6e96f0e36b2e69b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "013c227130120b71a3f9b80fb1c16f81c8d88bbd27e2c4be696ccdbfc3209803"
+    },
+    "call_70c40bedc6814f099d37680de0761581": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "max_bytes": 20000
+      },
+      "result_sha256": "ec0e5666a251bc1fd5ba5235d26407a1b7501c1b9a1753532864fe64c5a6dc56"
+    },
+    "call_2cc7cd3dbdc847e08d74d21c6dc95ea7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+        "query": "stloader_read",
+        "limit": 30
+      },
+      "result_sha256": "ae37f008850c3baf270adbc99c76fc9793c55f20cfa4e45c285c022d77c385d0"
+    },
+    "call_e84bded617e84185b922cee3790ff9a9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "w=[[100*r+c for c in range(8)] for r in range(12)]\nt=list(map(list,zip(*w)))\ns=[row[4:8] for row in t[2:5]]\nassert s==[[w[o][i] for o in range(4,8)] for i in range(2,5)]\nprint('slice shape:',len(s),len(s[0]),'values:',s)\nprint('default is_sliced:',8 != None or 12 != None)\nout=130; padded=(out+128-1)//128*128\nprint('padding-before-slicing example: full source (512, 64), destination', (padded,64), 'source rows exceed destination:',512>padded)"
+        ]
+      },
+      "result_sha256": "c33594360f20b355735a8ddc18ba3bda5b625b7dfaa3a0f98ff26431da8b63b7"
+    }
+  }
+}

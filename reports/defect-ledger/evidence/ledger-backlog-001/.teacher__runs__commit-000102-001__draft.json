@@ -1,0 +1,709 @@
+{
+  "schema_version": 5,
+  "sha": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+  "parent_shas": [
+    "cf15bab0733bfecf327281987286b413299d353d"
+  ],
+  "cutoff_date": "2025-04-28T01:01:38+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "refactor",
+    "problem": [
+      {
+        "text": "Architecture identifiers and config/model associations were duplicated between the central registry and individual configuration constructors.",
+        "basis": "source",
+        "evidence": [
+          "call_3ba7866e756041489a361480d6fa41ed"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change makes each configuration class declare arch_string and each model class declare config_class. The registry derives its existing three-field records from those attributes, retaining an explicit list of supported models.",
+        "basis": "source",
+        "evidence": [
+          "call_3ba7866e756041489a361480d6fa41ed"
+        ]
+      },
+      {
+        "text": "This reduces repeated registration metadata without introducing automatic discovery. The tradeoff is that registration now depends on correct class attributes rather than independently written registry entries.",
+        "basis": "inference",
+        "evidence": [
+          "call_3ba7866e756041489a361480d6fa41ed"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "A standard-library comparison of the parent registry with a symbolic transcription of the new definitions found the same eight architecture/config/model associations.",
+        "basis": "execution",
+        "evidence": [
+          "call_32dbb877939a4f71ac7578d9c4b3c36a"
+        ]
+      },
+      {
+        "text": "The normal Config.from_directory interface remains unchanged. Direct subclasses of Config must adapt to the removed expect_arch positional parameter; constructor arch_string keyword overrides no longer determine architecture validation.",
+        "basis": "source",
+        "evidence": [
+          "call_ffd8f68f39794e96a22fbae7c6d4b0e8",
+          "call_3ba7866e756041489a361480d6fa41ed",
+          "call_f8d7863f37414d09b1b8b7589c31b4e6"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d proposes only \u201ccontaing -> containing.\u201d Its relationship to this change is inferred solely from the shared filename; the task does not make that correction.",
+        "basis": "inference",
+        "evidence": [
+          "call_c2666d88a56648eb851c0449f6c8bf8c",
+          "call_ffd8f68f39794e96a22fbae7c6d4b0e8",
+          "call_3ba7866e756041489a361480d6fa41ed"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d includes config.py's RopeSettings import in its traceback and reports a compiler/environment workaround. The inferred overlap is that unchanged import line, not the architecture-validation logic.",
+        "basis": "inference",
+        "evidence": [
+          "call_db2a95295c4049d6af9131a5af11c78b",
+          "call_ffd8f68f39794e96a22fbae7c6d4b0e8",
+          "call_3ba7866e756041489a361480d6fa41ed"
+        ]
+      },
+      {
+        "text": "Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns quantization regularization. Issue #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d concerns native compilation. Neither discussion establishes a connection to this metadata refactor.",
+        "basis": "inference",
+        "evidence": [
+          "call_229231c0877f4b7992ed38af8bb50b26",
+          "call_37baa277d73b4da08d0b3b17eafe1206",
+          "call_3ba7866e756041489a361480d6fa41ed"
+        ]
+      }
+    ],
+    "limitations": [
+      "No package import, model loading, inference or GPU test was executed. The registry comparison and assertion check are symbolic/scalar transcriptions, not execution of the changed repository.",
+      "Model configuration checks establish architecture-string matching only, not weight-format compatibility or successful model construction. Dimensions, numerical defaults and model-specific execution behavior were not validated.",
+      "Literal parent-tree searches do not establish compatibility for external subclasses, dynamic callers or imports of the former gemma module."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Class-owned architecture metadata",
+        "claims": [
+          {
+            "text": "ARCHITECTURES keeps the keys LlamaForCausalLM, MistralForCausalLM, Qwen2ForCausalLM, Phi3ForCausalLM, Gemma2ForCausalLM, DeciLMForCausalLM, Glm4ForCausalLM and CohereForCausalLM. Each record still exposes architecture, config_class and model_class; the comprehension now obtains all three through the listed model class.",
+            "basis": "source",
+            "evidence": [
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          },
+          {
+            "text": "Config.from_directory reads config.json, requires one supported architectures entry, looks up its config_class and invokes that class with directory and kwargs. Config.__init__ then reads the file again and compares its architecture with self.arch_string instead of a constructor argument. Registry selection and validation therefore share the configuration class's declaration.",
+            "basis": "source",
+            "evidence": [
+              "call_ffd8f68f39794e96a22fbae7c6d4b0e8",
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          },
+          {
+            "text": "MistralConfig and Qwen2Config still inherit LlamaConfig. Their class-level arch_string overrides replace the explicit keyword forwarded through the Llama constructor. The inherited constructor continues passing LlamaModel as the instance's model_class; adding model-class config_class attributes does not change that existing data flow.",
+            "basis": "source",
+            "evidence": [
+              "call_0262c21d7c7641399c7400951435af63",
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          },
+          {
+            "text": "gemma.py is renamed gemma2.py and the registry import follows the rename. The parent-tree literal search for .gemma found only that registry import. The diff provides no compatibility module at the old path.",
+            "basis": "source",
+            "evidence": [
+              "call_5891990f531c4b4492cad94d7305ab83",
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          },
+          {
+            "text": "The inspected configs for TinyLlama/TinyLlama-1.1B-Chat-v1.0, mistralai/Mistral-7B-v0.1, Qwen/Qwen2.5-0.5B, microsoft/Phi-3-mini-4k-instruct and unsloth/gemma-2-2b respectively match the retained Llama, Mistral, Qwen2, Phi3 and Gemma2 architecture strings. This checks dispatch identifiers, not dimensions or defaults.",
+            "basis": "source",
+            "evidence": [
+              "call_30192523db9b4551854d885949ba7aa5",
+              "call_743c4c9691844e50be87282d8685a031",
+              "call_a47d9b88cad64279bea6d0952b164e52",
+              "call_0f32cfeb0b554e1d89a2e80c0f9b71d1",
+              "call_60cc52624f5040e1a4ecabf0888fbd0a",
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          },
+          {
+            "text": "Each inspected CohereLabs config\u2014aya-23-35B, aya-23-8B, aya-expanse-32b, aya-expanse-8b, c4ai-command-r-08-2024, c4ai-command-r-plus, c4ai-command-r-plus-08-2024, c4ai-command-r-plus-4bit, c4ai-command-r-v01 and c4ai-command-r-v01-4bit\u2014declares CohereForCausalLM and therefore matches the retained dispatch identifier. No model-specific dimensional or default compatibility is asserted.",
+            "basis": "source",
+            "evidence": [
+              "call_6753a722e5e344669ea5a22a82ce0626",
+              "call_81faae4311ae46fc97e24a4e22d65d4a",
+              "call_9b5b6b228bdf45eb8520d8d041987ab7",
+              "call_b07e06bad9804b8883403def93d2e7da",
+              "call_ff3fcf01e2d84fd89c1f2a91115707d4",
+              "call_f965e4113d354041b5b4607b91189da1",
+              "call_2f381c3acf164a3d8b0262185b2b38f1",
+              "call_953ea84ec9234c4c941fc8e7224f97f9",
+              "call_eeecad84e16b4bf38020ef3813959dc4",
+              "call_ec9cb9297ef0486baacd07282cda911d",
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          },
+          {
+            "text": "Each inspected Deci config\u2014DeciCoder-6B, DeciLM-6b, DeciLM-6b-instruct, DeciLM-7B, DeciLM-7B-instruct and DeciLM-7B-instruct-GGUF\u2014declares DeciLMForCausalLM. The same identifier appears in nvidia/Llama-3_1-Nemotron-51B-Instruct, nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1, nvidia/Llama-3_1-Nemotron-Ultra-253B-v1 and nvidia/Llama-3_3-Nemotron-Super-49B-v1. All match the retained registry key; matching that key alone does not establish construction or loading compatibility.",
+            "basis": "source",
+            "evidence": [
+              "call_2dc1795c673745b58ca27c065b6f8aea",
+              "call_c012c9df5ae548d8988b3027d8142ffa",
+              "call_cc25fb610de0444bbe7046022af3d678",
+              "call_bf3c2038f28246619daba6af10c9fa0b",
+              "call_9a591149fed84a73892ff8cff62596a3",
+              "call_0ca010f828d04e4fa04cd215f51d304a",
+              "call_d846214e3c6a476492493fa067453ad3",
+              "call_038fe05132c84b9881f87ea7a4b7222e",
+              "call_04b44aa7729f4b5fb9138c21ef45950a",
+              "call_352538d464e943f9845e651dd92fd2b2",
+              "call_3dafe600b7624095a56a6084beb158a7",
+              "call_14183a5b1a0547a29608648c54d345c1",
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          },
+          {
+            "text": "Each inspected zai-org config\u2014GLM-4-32B-0414, GLM-4-32B-Base-0414, GLM-4-9B-0414, GLM-Z1-32B-0414, GLM-Z1-9B-0414 and GLM-Z1-Rumination-32B-0414\u2014declares Glm4ForCausalLM and matches the retained dispatch identifier. Their differing dimensions are outside this metadata-equivalence check.",
+            "basis": "source",
+            "evidence": [
+              "call_4a0554a2a7c244e4a9f79a9b52a83988",
+              "call_a0ba7c2528ed4ccfae4d25a8d3c33874",
+              "call_7691375911a64dd9908b5c5287bd1a5a",
+              "call_9239f5982ebc4bac818292894191df75",
+              "call_304d306ad1ee42349f3e348c0f5fab5d",
+              "call_7e2253352b2142d1a6a6460e35c76884",
+              "call_3ba7866e756041489a361480d6fa41ed"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "architecture-mismatch-diagnostic",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Config.__init__ removes expect_arch from its parameters but retains its reference in the assertion message.",
+        "trigger": "With assertions enabled, instantiate a configuration class against a file whose single architecture differs from that class's arch_string.",
+        "expected_behavior": "Reject the mismatch with an AssertionError identifying the actual and expected architectures.",
+        "actual_behavior": "Evaluating the failure message references undefined expect_arch and raises NameError instead. Matching architectures do not evaluate this message. Ordinary Config.from_directory selects the matching configuration class first, so a stable supported config does not trigger this branch through that factory.",
+        "locations": [
+          {
+            "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+            "path": "exllamav3/models/config.py",
+            "symbol": "Config.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_3ba7866e756041489a361480d6fa41ed",
+          "call_ffd8f68f39794e96a22fbae7c6d4b0e8",
+          "call_e3f59ae697854ec69de6c53c606a7eaf",
+          "call_73b04629e3374721a11f6be54693fffb",
+          "call_0262c21d7c7641399c7400951435af63"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the changed assertion, all eight configuration constructor chains and the factory's config_class invocation. Whole-parent literal searches located configuration definitions and factory callers across examples, conversion, evaluation and tests; these broader entry points are not evidence that every workflow triggers a mismatch.",
+            "evidence": [
+              "call_3ba7866e756041489a361480d6fa41ed",
+              "call_ffd8f68f39794e96a22fbae7c6d4b0e8",
+              "call_0262c21d7c7641399c7400951435af63",
+              "call_e3f59ae697854ec69de6c53c606a7eaf",
+              "call_73b04629e3374721a11f6be54693fffb"
+            ],
+            "limits": "External and dynamically constructed callers were not established."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Executed the changed assertion with a minimal stand-in object: the matching Llama identifier passed, while a Qwen2 identifier raised NameError for expect_arch.",
+            "evidence": [
+              "call_32dbb877939a4f71ac7578d9c4b3c36a"
+            ],
+            "limits": "This reproduces the assertion expression only; it does not import the package or execute the full Config constructor."
+          }
+        ]
+      }
+    ],
+    "summary": "Moves architecture registration metadata onto config and model classes while preserving the eight registry mappings; the mismatch diagnostic retains an undefined variable."
+  },
+  "evidence": {
+    "call_3ba7866e756041489a361480d6fa41ed": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "151edc00b202b645fcfa2cc2c679d7ef381916fb",
+        "offset": 0,
+        "max_bytes": 16000
+      },
+      "result_sha256": "e6c07d2857d72de96aa1d1e8e440aa8471f03520897780a9b1f657d1341c87cb"
+    },
+    "call_ffd8f68f39794e96a22fbae7c6d4b0e8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "b92de8817507087fcd534c15ea865b7d5e4729fc8ce45b356f9a32abccdb1b54"
+    },
+    "call_20a7b0cb08204cfab0a118df93ea5cd0": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16000
+      },
+      "result_sha256": "32b1e4c52cf4afd284549bef64124115b39803238a2172f3dda502404ffd79d4",
+      "catalog_only": true
+    },
+    "call_e3f59ae697854ec69de6c53c606a7eaf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "query": "Config(",
+        "limit": 200
+      },
+      "result_sha256": "e8317a53541e00b7280a04c4f25ba814c58e45183e4f09c0fc9a4829a22e8ee8"
+    },
+    "call_73b04629e3374721a11f6be54693fffb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "query": "from_directory(",
+        "limit": 100
+      },
+      "result_sha256": "22263af1b6769cf38a452446ac5752fdedc11bbc024a5e9006c825a6cd2dfee9"
+    },
+    "call_f8d7863f37414d09b1b8b7589c31b4e6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "query": "arch_string",
+        "limit": 100
+      },
+      "result_sha256": "5c08f771bb5023d2a4eb466fbdaca1475b33f70d6c7d7b45a4f51bcf37389508"
+    },
+    "call_613edc3642a3417b9eb2f0803e6841ff": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "query": "architectur",
+        "limit": 100
+      },
+      "result_sha256": "e4ae1e66d55a2b62ea1661c91d90d523e7f63a6630fde9d8c2f5d8ae844a1ae0"
+    },
+    "call_c2666d88a56648eb851c0449f6c8bf8c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 12000
+      },
+      "result_sha256": "a4d09e7da4302699aae68739e2499ff83c12e3c420b35ca18dcc9e44f5a3dd66"
+    },
+    "call_db2a95295c4049d6af9131a5af11c78b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "aae1a753c4ba300aa2578ed7302fca7d78004c268e6c55075a464c0f9096aaf7"
+    },
+    "call_229231c0877f4b7992ed38af8bb50b26": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ce757c02f77d4714551718d8f8f6d61dc7f11cd411b404bc1880f92d8a0e728f"
+    },
+    "call_37baa277d73b4da08d0b3b17eafe1206": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "cef9bbf16c71b4cd9772fa07e58e1de599d79a7f3d860593f8f779ab3a3f6442"
+    },
+    "call_6753a722e5e344669ea5a22a82ce0626": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-35B",
+        "revision": "36500dd4d42b63b409803cf220ba1b023d5fda5fcb4d81ef3b6708dd1293c0de",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "b6243b32a11a0486fea3e1d1be955dda0e3d8b98a1060e6e93a593a413c71103"
+    },
+    "call_81faae4311ae46fc97e24a4e22d65d4a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-23-8B",
+        "revision": "f80bfe68f01dba0f068111abc911c1f3053bfc08d6a579515d831a93f0b390d3",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "c8e6b4867c6e84b5222ef86b045e6b3a193c039c1a436a1a79657ff58e9d57b9"
+    },
+    "call_9b5b6b228bdf45eb8520d8d041987ab7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-32b",
+        "revision": "486da7488c905bf511e4cd4cdfc7c4e939fd156ae21022f18f1b47f5e339307d",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "3f56003d25068c0cd09e3075634d0b7b70ef0daa57ab1e9dd0f82be89c9b2fda"
+    },
+    "call_b07e06bad9804b8883403def93d2e7da": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/aya-expanse-8b",
+        "revision": "f0cdb4dc978366148a634945645744b3bdc6280f5f61f5a4d6892285becfe74f",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "51a034482c3ac9ff56bf3fdea856bcc1e8fa1f6fab3c913576407caf008dddde"
+    },
+    "call_ff3fcf01e2d84fd89c1f2a91115707d4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-08-2024",
+        "revision": "5e0338cf217ff8ec27dd5d70bf799f87e58d9194524b41a733ef4a1a6b0f9535",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "96651b8c5733d587b59c596f89170d2787489983d103c4019f9bae1f78595df2"
+    },
+    "call_f965e4113d354041b5b4607b91189da1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus",
+        "revision": "ea6af2bd1336d211c5d3002744b3908d3baf6fe3c55ef03f0057f88586345aaa",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "84c4a9e3a76f621bf1fef28723fcd4a73b9c28a42d9a878b0c90e1001dc97774"
+    },
+    "call_2f381c3acf164a3d8b0262185b2b38f1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-08-2024",
+        "revision": "9ccaf7a1a168d85d97c5bfa083f821f674d69c0fb96ab0f68ebff066bd20c689",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "01efa56ec47dad5478f952cc71fc156f9b9497a729b37834f121673be4440e42"
+    },
+    "call_953ea84ec9234c4c941fc8e7224f97f9": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-plus-4bit",
+        "revision": "8fe0d0a0fe4e3d0b331690a197be3b0d8ad679e44adfd34d548caf52d1d3c087",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "8932d219ab4e6cbc5ab6d8bf4aef2428f6f2445c65ca8b4e2e6a468cd9adaf7e"
+    },
+    "call_eeecad84e16b4bf38020ef3813959dc4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01",
+        "revision": "25bfd60077f17ffb22aaf1aa3aaca00d949f42d81423eef0f9b64687be4fea67",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "0922281383c8eee41c8901ea39088128360fa9d835a75085c89f140060dff0f4"
+    },
+    "call_ec9cb9297ef0486baacd07282cda911d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r-v01-4bit",
+        "revision": "23624e8f1164105511e99738152d695f91d2f4bc6eb9574cfe327bde64e03dee",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "8b834529cb8c8de4c42508294fd073f9f6e11a6be9f26e246c1fb8919098ba34"
+    },
+    "call_2dc1795c673745b58ca27c065b6f8aea": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciCoder-6B",
+        "revision": "c4af0b530b0cf83087d372ca481c0a3675a19ccf",
+        "path": "config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "4f5a2b385a81289c3c8424039045468832e9ab682171d4acb63f1952f03984c4"
+    },
+    "call_c012c9df5ae548d8988b3027d8142ffa": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-6b",
+        "revision": "03eb969aed83757e89bbf329bd8ac6b2c9499748",
+        "path": "config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9ca0b05f147ccbd8e484538983b3787f03fd75cd37e42e5687c58b9316a74307"
+    },
+    "call_cc25fb610de0444bbe7046022af3d678": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-6b-instruct",
+        "revision": "423fbcaec045b0f4c3917b6ab974bf28605ceb57",
+        "path": "config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0ed9f43478555b9a094e49e549a02ae3f8e4aad885f3106c7bc392515b8170a8"
+    },
+    "call_bf3c2038f28246619daba6af10c9fa0b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-7B",
+        "revision": "c3c9f4226801dc0433f32aebffe0aac68ee2f051",
+        "path": "config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "92f1ca830ec98bd862714c542cf68984d7d3e3e414cf2d32b378a325c63f7276"
+    },
+    "call_9a591149fed84a73892ff8cff62596a3": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-7B-instruct",
+        "revision": "4adc7aa9efe61b47b0a98b2cc94527d9c45c3b4f",
+        "path": "config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1ca18298abbbd9e2b6386afbc28a1cb16c6402c3b94f563e375eba1605aae911"
+    },
+    "call_0ca010f828d04e4fa04cd215f51d304a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Deci/DeciLM-7B-instruct-GGUF",
+        "revision": "9d724a12bd36e8a884f147751ea207ed56a98035",
+        "path": "config.json",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c06a7225dd174bc31b592e40c8584b32767ae6fcc2fd855654cc6bfb8b818e12"
+    },
+    "call_d846214e3c6a476492493fa067453ad3": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-51B-Instruct",
+        "revision": "2e9bdbfa8e1ab73ce98f5960143cf927192d59e7",
+        "path": "config.json",
+        "max_bytes": 24000
+      },
+      "result_sha256": "96106afe9b4c71ecb8f270b4b2ad5014cd8a5e8f9a6b580ca6c7ed69b5741116"
+    },
+    "call_038fe05132c84b9881f87ea7a4b7222e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "max_bytes": 60000
+      },
+      "result_sha256": "57135c6e64da23d42ba004f3a66217eb71e862dbc72dcf0e268d40a00574adde"
+    },
+    "call_04b44aa7729f4b5fb9138c21ef45950a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "offset": 60000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "d0a2610ed0f2d0d8f91d87e78aac0bee200d7c07e5c5ab7b9cfa78768b7ef1ff"
+    },
+    "call_91e05b048f2d40c781aa26b3923b38ad": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "max_bytes": 80000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_352538d464e943f9845e651dd92fd2b2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "max_bytes": 65536
+      },
+      "result_sha256": "d75c5306c1764fdb438c52f21f35319965c3030904fdc1788e10736c935573d6"
+    },
+    "call_3dafe600b7624095a56a6084beb158a7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1",
+        "revision": "e155ab2c2de4c7656884e7bf63d3d2e4b266f993",
+        "path": "config.json",
+        "offset": 65536,
+        "max_bytes": 16000
+      },
+      "result_sha256": "b82cce015b0f30930ec25dea1eb49a0fc2d0b9f094ca42e15944c35a68f71943"
+    },
+    "call_14183a5b1a0547a29608648c54d345c1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_3-Nemotron-Super-49B-v1",
+        "revision": "4605d825c59945d6f8a195826ae8ff3366653f83",
+        "path": "config.json",
+        "max_bytes": 65536
+      },
+      "result_sha256": "2f1208946964481b753aa3e8e97d0a2d7e3f3a1284419a1701641b7bf9efa5bc"
+    },
+    "call_4a0554a2a7c244e4a9f79a9b52a83988": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-32B-0414",
+        "revision": "dc842812afac55db3a8aca4484ca6f3c60bd472f",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "e5fd914d27e7da7af4eb8007177d63ec1055c77766f4a61963386da51d880c7c"
+    },
+    "call_a0ba7c2528ed4ccfae4d25a8d3c33874": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-32B-Base-0414",
+        "revision": "7675abea82951aaaedeb19014bab4e8f88c2d7a5",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "9305c01b7222f5cdd0239b3601a7fc685b5de3c9ea06cd7afc9edff9b1be87ea"
+    },
+    "call_7691375911a64dd9908b5c5287bd1a5a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-4-9B-0414",
+        "revision": "645b8482494e31b6b752272bf7f7f273ef0f3caf",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "5942a0320722db491ab7aa97682ad664067c60622940e471e24245f23d684257"
+    },
+    "call_9239f5982ebc4bac818292894191df75": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-Z1-32B-0414",
+        "revision": "93593a027f03a597582d1db7e84894a0a8fa027e",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "e3cb93c4d19269fda76a109597d73810d8da8d9a4c316560b0bb54b8d91fc828"
+    },
+    "call_304d306ad1ee42349f3e348c0f5fab5d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-Z1-9B-0414",
+        "revision": "66907f8ddffdcdcafb7e8c9e96b7366449176c1a",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "1fc3f3dca2f6b00197951dcc0e90cc92dde0e9d2689dae007af94ad1406b21cb"
+    },
+    "call_7e2253352b2142d1a6a6460e35c76884": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "zai-org/GLM-Z1-Rumination-32B-0414",
+        "revision": "6ae9ac6152a7d85761409d6d6ef201d9e8e8aeb1",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "e12226795f906d0f7369a8a9292c5034cb243bb25cbce4c0b53d22aad4fa00a5"
+    },
+    "call_a47d9b88cad64279bea6d0952b164e52": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "508171009a18b3e4385b0c25a10de5fc1ced24ac1de2298fcfc6506b6d26c78d"
+    },
+    "call_30192523db9b4551854d885949ba7aa5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "2645648f5573db4fedf5850ec364d621c00a0b5d3b44ac1672554d301486127f"
+    },
+    "call_0f32cfeb0b554e1d89a2e80c0f9b71d1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "microsoft/Phi-3-mini-4k-instruct",
+        "revision": "0a67737cc96d2554230f90338b163bc6380a2a85",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "2d258e5882567e4bd9b41843bdd30e4dec196aa5815f45f737c2cec34d81029f"
+    },
+    "call_743c4c9691844e50be87282d8685a031": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-7B-v0.1",
+        "revision": "7231864981174d9bee8c7687c24c8344414eae6b",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "34214157e54f69c0201a1a6cbf088d2959c28c409802bd997e624d2f9e6a6ed6"
+    },
+    "call_60cc52624f5040e1a4ecabf0888fbd0a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "unsloth/gemma-2-2b",
+        "revision": "25319945f7fd83b8b903e12081777b7eef2ba993",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "11c2238dd049c2e8851d003df96c8b87569ae63cc2ff43485f94281a351c26f5"
+    },
+    "call_0262c21d7c7641399c7400951435af63": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor n in ['llama','mistral','qwen2','phi3','gemma','decilm','glm4','cohere']:\n s=Path('exllamav3/models/'+n+'.py').read_text(); print('\\nFILE',n); print(s[:s.find('    def __init__',s.find('class '+ {'llama':'LlamaModel','mistral':'MistralModel','qwen2':'Qwen2Model','phi3':'Phi3Model','gemma':'Gemma2Model','decilm':'DeciLMModel','glm4':'Glm4Model','cohere':'CohereModel'}[n]))])\n"
+        ]
+      },
+      "result_sha256": "2c07ca1cd8a17173995cc3466aaa0005fc6da1ed3a4e3052cd7a066758a3cfba"
+    },
+    "call_32dbb877939a4f71ac7578d9c4b3c36a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast\nfrom pathlib import Path\np=Path('exllamav3/models')\nt=ast.parse((p/'architectures.py').read_text()); d=next(n.value for n in t.body if isinstance(n,ast.Assign) and any(isinstance(x,ast.Name) and x.id=='ARCHITECTURES' for x in n.targets))\nold={k.value:{kk.value:(vv.id if isinstance(vv,ast.Name) else vv.value) for kk,vv in zip(v.keys,v.values)} for k,v in zip(d.keys,d.values)}\nnames=['Llama','Mistral','Qwen2','Phi3','Gemma2','DeciLM','Glm4','Cohere']\nnew={n+'ForCausalLM':{'architecture':n+'ForCausalLM','config_class':n+'Config','model_class':n+'Model'} for n in names}\nprint('transcribed new registry equals parent symbolic registry:',new==old,'entries:',len(new))\ndef check(arch):\n self=type('C',(),{'arch_string':'LlamaForCausalLM','config_filename':'config.json'})()\n assert arch == self.arch_string, f'Unexpected architecture {arch} in {self.config_filename}, should be {expect_arch}.'\nfor s in ['LlamaForCausalLM','Qwen2ForCausalLM']:\n try: check(s); print(s,'passes')\n except Exception as e: print(s,type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "e26036262fd700c0d26e98c5febd1024e2ce7be93100555a0b312906d785f491"
+    },
+    "call_5891990f531c4b4492cad94d7305ab83": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf15bab0733bfecf327281987286b413299d353d",
+        "query": ".gemma",
+        "limit": 100
+      },
+      "result_sha256": "944c504a1506e1c01c7e8d380ac0e876fc706bd79561d6e90ea38847a5d434b4"
+    }
+  }
+}

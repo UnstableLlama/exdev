@@ -1,0 +1,215 @@
+{
+  "schema_version": 5,
+  "sha": "5ad79b071f48d26906d737b5c6b4d97e9cb0a457",
+  "parent_shas": [
+    "27c13b11e32af575c9684dd3d2905c55ef6eab9a"
+  ],
+  "cutoff_date": "2025-06-02T01:56:06+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Autosplit hard-coded its initial dummy input as a batch of integer token IDs, preventing models from specifying a different input shape or dtype.",
+        "basis": "source",
+        "evidence": [
+          "call_0ed33ea70b524c3eb5465cfdc30c56c2",
+          "call_b2ca825cba764c7f8d1445a6c7ab3b0f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Moving that specification into an overridable model method preserves the text-model default while allowing specialized models to reuse the existing loading and memory-probing loop.",
+        "basis": "inference",
+        "evidence": [
+          "call_0ed33ea70b524c3eb5465cfdc30c56c2",
+          "call_b2ca825cba764c7f8d1445a6c7ab3b0f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This supplies an extension point, not a vision implementation: the diff adds no specialized override, architecture registration or image preprocessing.",
+        "basis": "source",
+        "evidence": [
+          "call_0ed33ea70b524c3eb5465cfdc30c56c2"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root models entry was read; it describes the existing sequential dummy-forward autosplit mechanism and single-device alternative.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_5aace224e9e645fe96f3ca5b80fb1ac1"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d and issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d concern native-extension import/build failures. Their relationship to this change is only an inferred file overlap: both tracebacks pass through model.py, whereas this diff changes autosplit input metadata, not imports.",
+        "basis": "inference",
+        "evidence": [
+          "call_f543c2c276ce4675bae0755a968be6c2",
+          "call_65f0a0abc43647628ec8ff6a4d895415",
+          "call_0ed33ea70b524c3eb5465cfdc30c56c2"
+        ]
+      }
+    ],
+    "limitations": [
+      "No GPU loading or memory-placement tests were run. A scalar arithmetic check would not establish the behavior of this dispatch-only change.",
+      "Arbitrary initial shape does not remove downstream requirements: autosplit still forwards one zero-filled tensor with empty parameter dictionaries, bypasses Model.prepare_inputs, and assumes three-dimensional state when processing a logits_output module.",
+      "No concrete non-text override was supplied or executed; compatibility with particular vision models remains unestablished."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Model-defined dummy inputs for autosplit",
+        "claims": [
+          {
+            "text": "Model.default_load_shape_dtype(chunk_size) returns ((1, chunk_size), torch.long). The leading 1 preserves the single-batch probe; chunk_size remains the requested probe sequence length. _load_autosplit now obtains both initial metadata values through self, enabling subclass dispatch without changing its arguments.",
+            "basis": "source",
+            "evidence": [
+              "call_0ed33ea70b524c3eb5465cfdc30c56c2"
+            ]
+          },
+          {
+            "text": "The metadata feeds torch.zeros on the selected load device. After the first module, autosplit retains intermediate tensor shape and dtype for retries; an out-of-memory failure unloads the module, discards the dummy tensor and advances to another device. Thus the new hook changes the initial probe, not the splitting policy or intermediate-state recovery mechanism.",
+            "basis": "source",
+            "evidence": [
+              "call_b2ca825cba764c7f8d1445a6c7ab3b0f",
+              "call_0ed33ea70b524c3eb5465cfdc30c56c2"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree search found no existing default_load_shape_dtype definition or use. The sole direct caller of _load_autosplit is load_gen; its explicit-device branch instead calls _load_single and does not use the new hook. load consumes load_gen for synchronous loading.",
+            "basis": "source",
+            "evidence": [
+              "call_b3921424efe048d5bac61dd2c2bee2c9",
+              "call_c0037f28473a42aeb380ff70db411887",
+              "call_b2ca825cba764c7f8d1445a6c7ab3b0f"
+            ]
+          },
+          {
+            "text": "The constructor also initializes an empty model-level caps dictionary. This is separate from the module.caps checks used by autosplit for CPU preference and logits handling; the new shape hook does not depend on it. The remaining edits correct quotation in the component assertion message and add a trailing parameter comma.",
+            "basis": "source",
+            "evidence": [
+              "call_0ed33ea70b524c3eb5465cfdc30c56c2",
+              "call_277a168594564a7b9d6f4ad82cea4b4b",
+              "call_b2ca825cba764c7f8d1445a6c7ab3b0f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds an overridable autosplit input-shape/dtype hook while preserving the integer-token default, plus an empty model capability dictionary."
+  },
+  "evidence": {
+    "call_0ed33ea70b524c3eb5465cfdc30c56c2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "5ad79b071f48d26906d737b5c6b4d97e9cb0a457",
+        "offset": 204,
+        "max_bytes": 1558
+      },
+      "result_sha256": "979682ebaf395e6cbecfffcc00c3b3e832ec6055ee3d9fcc281615a9d69ebb9e"
+    },
+    "call_b2ca825cba764c7f8d1445a6c7ab3b0f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "db15688c0ffcd5b4bc6a9211c0f6ca049a5b44a198b8274b4304fc2b1f147603"
+    },
+    "call_33366ef7a4444bdb8d7b619feb729c25": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "max_bytes": 5000,
+        "limit": 20
+      },
+      "result_sha256": "a8f8339a6b8710d9be0ae98845d312f2b75ebbe99795024455a79e8d0fa76273",
+      "catalog_only": true
+    },
+    "call_1ca467d4e6934ad9900eba41a9c24e10": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "offset": 9,
+        "limit": 20,
+        "max_bytes": 5000
+      },
+      "result_sha256": "2a43fc8f650216ed02ab399bf1a33f9a0f443c85d4928e1397d5524413937262",
+      "catalog_only": true
+    },
+    "call_5aace224e9e645fe96f3ca5b80fb1ac1": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_b3921424efe048d5bac61dd2c2bee2c9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+        "query": "default_load_shape_dtype",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_277a168594564a7b9d6f4ad82cea4b4b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+        "query": ".caps",
+        "limit": 200
+      },
+      "result_sha256": "c7c16ebb56125f8ce4c0b0c997013ccfc9d9f41a6fd98fa681d2e8fb5a02b7f5"
+    },
+    "call_4dcdd332b5434be3b930e1f18b286637": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+        "query": "vision",
+        "limit": 100
+      },
+      "result_sha256": "70268cac6f7a23b4b4fee7a20033a640e35c5885adaa0025d9ba001fda519046"
+    },
+    "call_f543c2c276ce4675bae0755a968be6c2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "c4975e22ea487d7aa3313983c681df0ddc262455459594bebd8093143a5166e5"
+    },
+    "call_65f0a0abc43647628ec8ff6a4d895415": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6c2a6e81a27735b06f635ee5017121e33a9abcd7cbad3b6b4094d22cae6f5a3c"
+    },
+    "call_c0037f28473a42aeb380ff70db411887": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "27c13b11e32af575c9684dd3d2905c55ef6eab9a",
+        "query": "_load_autosplit",
+        "limit": 100
+      },
+      "result_sha256": "5db18e4dbcdac97dea7f118f6d3509ec63da8328254f61eee025831088183972"
+    }
+  }
+}

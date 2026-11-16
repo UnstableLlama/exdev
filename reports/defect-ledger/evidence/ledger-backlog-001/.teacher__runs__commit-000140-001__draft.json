@@ -1,0 +1,326 @@
+{
+  "schema_version": 5,
+  "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+  "parent_shas": [
+    "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+  ],
+  "cutoff_date": "2025-05-11T15:35:09+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Explicit single-device loading performed immediate module loads, unlike autosplit loading, which already bracketed eligible modules with deferred loading.",
+        "basis": "source",
+        "evidence": [
+          "call_723d1ad524674cbe8dc41d2bb9f36e8e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change reuses the existing module-scoped batching lifecycle rather than introducing another loader. Reduced per-tensor loading overhead is a plausible rationale, not a measured improvement.",
+        "basis": "inference",
+        "evidence": [
+          "call_a38a5c0f8fc349a999d3a32bb1867258",
+          "call_ff8a603cda5d4425b6bb66288a150492"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "For eligible modules, _load_single now begins deferral, constructs the module, and flushes pending reads before advancing progress. CPU-preferred placement remains unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_a38a5c0f8fc349a999d3a32bb1867258"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier deferred-loader entry explicitly identified single-device loading as not adopting this lifecycle.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_d4af7425167044cf8df1bfc8f670c490"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension import failure; issue #33, \u201cError converting model,\u201d ultimately reports too many open files during conversion. Their relevance here is inferred only from model.py and Safetensors-loader overlap, respectively; neither establishes motivation or validation for this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_8d97e797d3844251ae040faa36798815",
+          "call_f49936525f4244288c669fdd8ba082e9",
+          "call_a4e0353a8b024a2b8f56e708941a3281",
+          "call_a38a5c0f8fc349a999d3a32bb1867258"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository loading implementation or CUDA kernel was executed; throughput, peak memory and stream behavior remain unmeasured.",
+      "The scalar check models chunk and pair coverage only, not conversion rounding or zero-block CUDA launch behavior.",
+      "Compatibility across every module constructor and checkpoint was not established."
+    ],
+    "links": [
+      "647bb7d549b8485ad052ac0650148bd35fcee6d4"
+    ],
+    "chapters": [
+      {
+        "id": "loading",
+        "title": "Deferred loading for explicit single-device placement",
+        "claims": [
+          {
+            "text": "load_gen selects _load_single when device is explicitly supplied; load consumes that generator. This is distinct from autosplit, even when autosplit happens to use only one GPU.",
+            "basis": "source",
+            "evidence": [
+              "call_723d1ad524674cbe8dc41d2bb9f36e8e"
+            ]
+          },
+          {
+            "text": "Eligibility is recursive: leaves permit deferral and composites require all children to permit it. Sliced Linear instances and multi-slice GatedMLP instances opt out. Packed EXL3 su/sv reads and fused FP16 weight reads explicitly bypass deferral where values are needed during construction.",
+            "basis": "source",
+            "evidence": [
+              "call_bb343cd34e964eaf80fe4e43cfc7f4ae",
+              "call_03640904636b4ff0a51cd7b990758242",
+              "call_e0d8bf78d5e7466d99318771331d8cc6"
+            ]
+          },
+          {
+            "text": "Only mt_fread switches to deferred reads; the Python backend and no_defer requests stay immediate. Deferred get_tensor returns allocated destinations and records pending transfers. Transposition, padding and FP32-to-FP16 conversion may require temporary storage alongside the final allocation.",
+            "basis": "source",
+            "evidence": [
+              "call_ff8a603cda5d4425b6bb66288a150492"
+            ]
+          },
+          {
+            "text": "The flush groups requests by CPU/CUDA and filename, sorts tensors by descending byte size, and splits transfers into at most 2 MiB jobs. CUDA workers stage file bytes through pinned host buffers. Temporary tensors are subsequently transposed as needed and copied into destination regions; successful completion clears deferred state.",
+            "basis": "source",
+            "evidence": [
+              "call_ff8a603cda5d4425b6bb66288a150492",
+              "call_301d3610813b40cda9ac838d9aa2e0f2"
+            ]
+          },
+          {
+            "text": "The inherited odd-element BF16 CUDA conversion gap remains unchanged and becomes reachable through eligible explicit-device loads. A scalar transcription covered all two elements for an even tensor, but left one uncovered for both three elements and 1,048,577 elements spanning two chunks.",
+            "basis": "execution",
+            "evidence": [
+              "call_6bc1f94f9a9f48d7a63674640f696900",
+              "call_5f5d7e6c54f04b58a5449d7862302067",
+              "call_a38a5c0f8fc349a999d3a32bb1867258"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-deferred-bf16-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged deferred CUDA BF16 converter processes pairs only; adopting it for explicit-device loading extends exposure to its missing odd-element tail.",
+        "trigger": "An eligible module requests a file-backed, odd-element BF16 tensor on CUDA through mt_fread with conversion to FP16 enabled and without no_defer.",
+        "expected_behavior": "Every element is converted to FP16 before consumption.",
+        "actual_behavior": "The helper launches conversion for numel / 2 pairs, leaving the final odd element unconverted. A one-element final chunk computes zero launch blocks; runtime handling is untested.",
+        "locations": [
+          {
+            "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          },
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model._load_single"
+          }
+        ],
+        "source_evidence": [
+          "call_5f5d7e6c54f04b58a5449d7862302067",
+          "call_301d3610813b40cda9ac838d9aa2e0f2",
+          "call_a38a5c0f8fc349a999d3a32bb1867258"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search locates the direct call in stloader_deferred_cuda. Inspection traces it through end_deferred_load and the newly bracketed _load_single. The task changes only model.py, carrying over the converter unchanged.",
+            "evidence": [
+              "call_8b45474ccd6946f78c292046c4e001ba",
+              "call_301d3610813b40cda9ac838d9aa2e0f2",
+              "call_ff8a603cda5d4425b6bb66288a150492",
+              "call_a38a5c0f8fc349a999d3a32bb1867258"
+            ],
+            "limits": "Conditional reach only; no affected checkpoint was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Standard-library Python modeled the inspected 2 MiB chunking and integer pair counts for even, odd and multi-chunk tensors.",
+            "evidence": [
+              "call_6bc1f94f9a9f48d7a63674640f696900"
+            ],
+            "limits": "Not execution of the repository kernel; bounded integer arithmetic does not test GPU conversion or synchronization."
+          }
+        ]
+      }
+    ],
+    "summary": "Extends module-scoped deferred loading to explicit single-device loads, preserving eligibility and placement rules; performance is unmeasured and the inherited odd-element BF16 conversion gap persists."
+  },
+  "evidence": {
+    "call_a38a5c0f8fc349a999d3a32bb1867258": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "offset": 176,
+        "max_bytes": 841
+      },
+      "result_sha256": "5fd1dd6c7f04857f762af4e8d32b434de4a8515b2b637bc2ca1cc65de5c1ff98"
+    },
+    "call_ff8a603cda5d4425b6bb66288a150492": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_723d1ad524674cbe8dc41d2bb9f36e8e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "41e9edf406ab6e409935bd573e4519043b64d03918c3f6b3f567af298471c979"
+    },
+    "call_30eb7b07213a4e3485575fcdc7f222bf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "query": "can_defer_load",
+        "limit": 100
+      },
+      "result_sha256": "7701127d8d7eba2d137ef19f7b992c295ad137c7b4c4b3244d3361348ddc4d45"
+    },
+    "call_bb343cd34e964eaf80fe4e43cfc7f4ae": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "9b6975e0608cb65d65b8e36c780e5328139495f3fea96c99ba250cffafa74a17"
+    },
+    "call_03640904636b4ff0a51cd7b990758242": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 4500,
+        "max_bytes": 5500
+      },
+      "result_sha256": "ba4914a967eac005582affa816e445f62b6717511865a8ee33376122c4d1ea82"
+    },
+    "call_e0d8bf78d5e7466d99318771331d8cc6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 5900,
+        "max_bytes": 2300
+      },
+      "result_sha256": "72b0b4a3c79bd202cb8bb133c65107255343ae86c7d94ba19e2a47f5aa1b2f5c"
+    },
+    "call_8d97e797d3844251ae040faa36798815": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ef644847665af1a3749128371e62da0e0bb8f0ffe4b6bd28150959f97d61b43b"
+    },
+    "call_f49936525f4244288c669fdd8ba082e9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "42f6f9f77302e3cdb426ef307c92c25032fb9c0bfa107e8bd29ac705115fb8ba"
+    },
+    "call_a4e0353a8b024a2b8f56e708941a3281": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "d8dadd011dc4f8d98b78b8740a29c3cbe6d397f24ba7a7b804000eec3189cb13"
+    },
+    "call_f7e3252cf52447babaa31c75bf8d4f6c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "begin_deferred_load",
+        "limit": 10,
+        "max_bytes": 4000
+      },
+      "result_sha256": "b1873af8e2f60849b9153079f37de11b7a46b5701f0eedd5cc3eba4a64a7a94b",
+      "catalog_only": true
+    },
+    "call_d4af7425167044cf8df1bfc8f670c490": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "061e4dce54d3bb9055e5308e37b95f431258d57cae23de19023d4c772984212d"
+    },
+    "call_b9f380ecbfec41ca99e4a25424d2a297": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/exllamav3_ext/stloader.cu",
+        "max_bytes": 9000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_8b45474ccd6946f78c292046c4e001ba": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "query": "inplace_bf16_to_fp16",
+        "limit": 30
+      },
+      "result_sha256": "d638b325b2215d9ae49955a93faa11f0f63cf2d4326f95070b5696f54299191a"
+    },
+    "call_5f5d7e6c54f04b58a5449d7862302067": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+        "max_bytes": 7000
+      },
+      "result_sha256": "313d816cfbdf8b70471c6619d333fc7e37d06f52c3670cee53cdce5ac271f384"
+    },
+    "call_301d3610813b40cda9ac838d9aa2e0f2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "offset": 6500,
+        "max_bytes": 11000
+      },
+      "result_sha256": "36db914d6edeb91ce8826394385f0ab41635a28f95349a8605d4c6fb275a39a4"
+    },
+    "call_6bc1f94f9a9f48d7a63674640f696900": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "chunk=2*1024**2\nfor n in (2,3,1048577):\n sizes=[min(chunk,2*n-s) for s in range(0,2*n,chunk)]\n covered=sum(2*((b//2)//2) for b in sizes)\n print(n, sizes, covered, n-covered)\n"
+        ]
+      },
+      "result_sha256": "83fef23e873269a3be9a55eeaf63aa45641307069c8da3f69324f5d41c5a667c"
+    }
+  }
+}

@@ -1,0 +1,247 @@
+{
+  "schema_version": 5,
+  "sha": "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+  "parent_shas": [
+    "94514ae02a7d2b14cd3348b94b64e2b3388139c7"
+  ],
+  "cutoff_date": "2025-06-02T01:57:27+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Ordinary MLP projections implicitly used Linear's 128-element alignment. Because both projections disallow input padding, hidden and intermediate widths not divisible by 128 could fail construction.",
+        "basis": "source",
+        "evidence": [
+          "call_27899c0506db4650ae34875e776164c2",
+          "call_088845fa60064d13b92923449748037e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change exposes pad_to on MLP and forwards it to both projections. Setting pad_to=1 preserves the requested dimensions without removing Linear's input-padding assertion; the default 128 preserves prior behavior.",
+        "basis": "source",
+        "evidence": [
+          "call_a0af1b039f0941b8a6b1801e5d01c226",
+          "call_088845fa60064d13b92923449748037e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This enables callers to construct unpadded ordinary MLPs, rather than changing GatedMLP or automatically selecting unpadded storage for existing models. The whole-parent-tree MLP search found no ordinary MLP construction sites or subclasses.",
+        "basis": "source",
+        "evidence": [
+          "call_a0af1b039f0941b8a6b1801e5d01c226",
+          "call_c9cde48334f0414c98112c8538408749"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial modules entry was read. It establishes the original distinction between ordinary down(silu(up(x))) computation and GatedMLP's selectable activation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_8a2cdb527e5a4811b8f5a26d4106e45b"
+        ]
+      },
+      {
+        "text": "Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports sliced GatedMLP loading failure. Issues #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d report quantization failures. Their connection here is inferred only from shared mlp.py/linear.py paths; none establishes that this ordinary-MLP change fixes those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_2e75e6b9af2546d684c276977f6a9613",
+          "call_4666d5c28e4a4fe1bbf20051f5c3bb20",
+          "call_34ddeb9d3c6e49a5873cb3852a7a75d1",
+          "call_a0af1b039f0941b8a6b1801e5d01c226"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model, tensor loader, PyTorch operation or GPU kernel was executed. The scalar check establishes dimension arithmetic only, not arbitrary-width FP16 or EXL3 runtime compatibility.",
+      "The repository search establishes no ordinary MLP constructor callers; dynamic or external callers remain outside that evidence."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Optional unpadded ordinary MLP projections",
+        "claims": [
+          {
+            "text": "pad_to is an alignment multiple, not a dtype selector. Linear rounds each dimension with ceil(width/pad_to)*pad_to. Passing the same alignment to up and down keeps their intermediate dimensions consistent; using 1 leaves both hidden and intermediate widths exact.",
+            "basis": "source",
+            "evidence": [
+              "call_a0af1b039f0941b8a6b1801e5d01c226",
+              "call_088845fa60064d13b92923449748037e"
+            ]
+          },
+          {
+            "text": "For ordinary weights, Linear.load_fp16 passes the resolved dimensions as loader padding targets and constructs LinearFP16 with them. LinearFP16.forward preserves leading dimensions and uses its out_features for the output width, selecting torch.matmul when input and output dtypes agree and ext.hgemm otherwise. The patch changes dimension preparation, not that execution dispatch.",
+            "basis": "source",
+            "evidence": [
+              "call_088845fa60064d13b92923449748037e",
+              "call_8a57b4e0edeb465ab0dd2ed562c1b64f",
+              "call_a0af1b039f0941b8a6b1801e5d01c226"
+            ]
+          },
+          {
+            "text": "A standard-library transcription checked widths 130 and 257: alignment 128 produces 256 and 384 and fails both input-equality conditions; alignment 1 preserves 130 and 257 and satisfies them. It also checked identity for widths 1 through 1024 at alignment 1.",
+            "basis": "execution",
+            "evidence": [
+              "call_46d94011a71b4cc3995e940b2abd6bdb"
+            ]
+          },
+          {
+            "text": "MLP.forward remains up \u2192 SiLU \u2192 down with its existing output-dtype conversion. The newly accepted activation_fn argument is not stored or consumed, unlike GatedMLP's existing activation selector.",
+            "basis": "source",
+            "evidence": [
+              "call_27899c0506db4650ae34875e776164c2",
+              "call_a0af1b039f0941b8a6b1801e5d01c226"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "ignored-activation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The added activation_fn parameter silently has no effect.",
+        "trigger": "An external caller constructs an otherwise valid MLP with activation_fn=\"gelu\" and then calls forward.",
+        "expected_behavior": "Honor the requested activation or explicitly reject unsupported selections.",
+        "actual_behavior": "The constructor ignores activation_fn and forward unconditionally applies F.silu. No in-tree ordinary MLP constructor caller was found, so demonstrated reach is the exposed API rather than an existing model workflow.",
+        "locations": [
+          {
+            "commit": "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "MLP.__init__ / MLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_a0af1b039f0941b8a6b1801e5d01c226",
+          "call_27899c0506db4650ae34875e776164c2",
+          "call_c9cde48334f0414c98112c8538408749"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the complete patch with the parent constructor and forward method; searched the whole parent tree for MLP references and inspected transformer consumers.",
+            "evidence": [
+              "call_a0af1b039f0941b8a6b1801e5d01c226",
+              "call_27899c0506db4650ae34875e776164c2",
+              "call_c9cde48334f0414c98112c8538408749",
+              "call_ff23b92269fb4d12bc35438f9796e6da"
+            ],
+            "limits": "No runtime activation comparison or external caller inspection."
+          }
+        ]
+      }
+    ],
+    "summary": "Exposes ordinary MLP projection alignment so pad_to=1 preserves unpadded dimensions, retaining the default 128 alignment. Also adds an activation_fn argument that remains unused."
+  },
+  "evidence": {
+    "call_a0af1b039f0941b8a6b1801e5d01c226": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+        "offset": 168,
+        "max_bytes": 1502
+      },
+      "result_sha256": "7f4c1350d0da961f7e910fdab1d0a0d27f4a5090fe803e75a7e9bbadc5767372"
+    },
+    "call_27899c0506db4650ae34875e776164c2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "67d3ece9d0d10576f0681070dfadf20bf98bdab9f4113d3ea0544df924dea465"
+    },
+    "call_088845fa60064d13b92923449748037e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "5d50fc353093ebd2afc8c8afc837c22062eee143acd0eec4c34c7783879f27f5"
+    },
+    "call_c9cde48334f0414c98112c8538408749": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+        "query": "MLP",
+        "limit": 200
+      },
+      "result_sha256": "307aacc478385ae9f3b18b31c8add1033af0f4897d81dabdd64b823ee8b25b3d"
+    },
+    "call_8a2cdb527e5a4811b8f5a26d4106e45b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_8a57b4e0edeb465ab0dd2ed562c1b64f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "ff79e6b70830c6743673877232fe9d57f140a3525c6c4bd02b016bf55e6fd75a"
+    },
+    "call_2e75e6b9af2546d684c276977f6a9613": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 16000
+      },
+      "result_sha256": "04c55eee1c19f0ffef3e311c28e7482b54d67692bf9835595e1139d9a9bd1bcd"
+    },
+    "call_4666d5c28e4a4fe1bbf20051f5c3bb20": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "928744c707613857f0d0a74b3d70d0bbbd68202e4d79c7781fb2785529ff6661"
+    },
+    "call_34ddeb9d3c6e49a5873cb3852a7a75d1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7665f2d2585d39ed052df698df5946aabe6c9d5d1463d6827c7d65af4f907044"
+    },
+    "call_ff23b92269fb4d12bc35438f9796e6da": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_46d94011a71b4cc3995e940b2abd6bdb": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for p in (128,1):\n h,i=130,257\n ph=(h+p-1)//p*p; pi=(i+p-1)//p*p\n print({'pad_to':p,'up_shape':(ph,pi),'down_shape':(pi,ph),'up_input_assert':h==ph,'down_input_assert':i==pi})\nassert all((n+1-1)//1*1==n for n in range(1,1025))\nprint('pad_to=1 preserves all widths 1..1024')"
+        ]
+      },
+      "result_sha256": "9de051f98a57f76699d0f69c660de32bd8dd4cb5631c99e8572476420b0dfcd6"
+    }
+  }
+}

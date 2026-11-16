@@ -1,0 +1,323 @@
+{
+  "schema_version": 5,
+  "sha": "9bde46e775df21d54d78a0fbe78b1490bf311a5a",
+  "parent_shas": [
+    "c02ba9e2cf327335719bd34cb1e339afd98c5710"
+  ],
+  "cutoff_date": "2025-06-02T01:59:20+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The change adds an exported convolution component with separate 2D and 3D forward paths, without integrating it into a model architecture.",
+        "basis": "source",
+        "evidence": [
+          "call_1629b4592ada4822953f44b5eaefbcbb",
+          "call_b6150991f10d4f5bb9af12703e85dde8"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The output reshaping suggests a patch-projection component for producing token sequences rather than a general-purpose convolution wrapper. This interpretation follows the channel-last 2D output and the patch-sized 3D input view.",
+        "basis": "inference",
+        "evidence": [
+          "call_b6150991f10d4f5bb9af12703e85dde8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Consumers can import Conv from exllamav3.modules. Whole-parent-tree searches found no Conv constructor calls or F.conv calls; the task adds no model-side caller.",
+        "basis": "source",
+        "evidence": [
+          "call_1629b4592ada4822953f44b5eaefbcbb",
+          "call_b0d7c997e28940c1a639e23c593836bd",
+          "call_15763d3591074442b8adfe98691b6218",
+          "call_b6150991f10d4f5bb9af12703e85dde8"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial modules entry establishes the custom Module lifecycle and device boundary. The LayerNorm introduction entry documents the optional-bias loading and tensor-export pattern that Conv closely follows.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_f336016b5a314a579ce5e45356db56d0",
+          "call_eb0d0fec677d4426ac1226dd809bf72d"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d reports a conversion-time file-opening failure, subsequently diagnosed as too many open files, and later discusses GLM4 generation problems. Its connection here is only an inferred shared loader dependency: its traceback names safetensors.get_tensor, which Conv.load now calls. It is not evidence of a convolution failure or motivation for this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_8cf8aa20185647c383eccf9c8da23329",
+          "call_ef9ef0c7ed724786aa3867716f50cda4",
+          "call_b6150991f10d4f5bb9af12703e85dde8"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch convolution, repository implementation, GPU test or model integration test was executed. The scalar check validates layout arithmetic only.",
+      "Checkpoint shape compatibility, input contiguity for the 3D view, and device/dtype compatibility are not validated by Conv itself; successful execution depends on suitable caller inputs and loaded tensors.",
+      "Existing get_tensor call sites were searched, but only the closely matching LayerNorm loading pattern and portions of the loader were inspected in detail; loader-wide compatibility is not established."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "39e400d16aa506a98f6da102176b3310b95022f0"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Convolution-backed patch projection",
+        "claims": [
+          {
+            "text": "Conv subclasses the custom Module base. Its constructor stores channel counts and kernel_size, rejects non-null qmap, and restricts len(kernel_size) to 2 or 3. These numbers select spatial dimensionality, not precision or performance tiers.",
+            "basis": "source",
+            "evidence": [
+              "call_b6150991f10d4f5bb9af12703e85dde8",
+              "call_10264379a71f480c82d7e2cb3ecd62d3"
+            ]
+          },
+          {
+            "text": "load requests <key>.weight and optional <key>.bias on the selected device with float2half=True, then caches their combined element count. This matches LayerNorm's loading pattern without its float32 working copies. get_tensors exports contiguous tensors under the original keys; unload clears tensors and device but retains the cached count.",
+            "basis": "source",
+            "evidence": [
+              "call_b6150991f10d4f5bb9af12703e85dde8",
+              "call_4a629b63fde44d7c8a5bfe5e74dd452e"
+            ]
+          },
+          {
+            "text": "The inspected file-backed loader paths convert float32 weights to float16 when float2half is enabled, and also convert bfloat16 unless allow_bf16 is enabled. Conv does not cast its input or create alternate parameter representations.",
+            "basis": "source",
+            "evidence": [
+              "call_7c3314e57934413c95f6fcb6491dfab5",
+              "call_b6150991f10d4f5bb9af12703e85dde8"
+            ]
+          },
+          {
+            "text": "The 2D path calls F.conv2d with kernel_size in the stride position, then flattens spatial dimensions and permutes channels last: [B,C,H',W'] becomes contiguous [B,H'W',C]. The loaded weight determines the actual filter shape; the constructor tuple supplies stride rather than constructing or validating that weight.",
+            "basis": "source",
+            "evidence": [
+              "call_b6150991f10d4f5bb9af12703e85dde8"
+            ]
+          },
+          {
+            "text": "The 3D path first views the input as [-1,in_channels,k0,k1,k2], calls F.conv3d with the same tuple as stride, and returns y.view(-1,out_channels).unsqueeze(0). With matching kernel-sized filters, each input patch produces one output vector and the result is [1,patch_count,out_channels]. Unlike the 2D path, it imposes a leading dimension of one and does not preserve a separate incoming batch dimension.",
+            "basis": "source",
+            "evidence": [
+              "call_b6150991f10d4f5bb9af12703e85dde8"
+            ]
+          },
+          {
+            "text": "A standard-library layout transcription checked the 2D permutation from [2,3,2,4] to [2,8,3], including channel ordering. A separate element-count check mapped 480 input elements to five [3,2,4,4] patches, yielding the conditional output shape [1,5,7] for seven output channels and one spatial result per patch.",
+            "basis": "execution",
+            "evidence": [
+              "call_8e1661a487fa4e05b668f9dd51dc603a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "conv-output-dtype-unused",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Conv accepts output-dtype controls but neither forward branch applies them.",
+        "trigger": "A direct caller supplies constructor-level or forward-call out_dtype different from the convolution result dtype.",
+        "expected_behavior": "The returned tensor honors the requested output dtype, following the neighboring LayerNorm interface.",
+        "actual_behavior": "The constructor stores self.out_dtype, but forward reads neither dtype option and returns the reshaped convolution result unchanged.",
+        "locations": [
+          {
+            "commit": "9bde46e775df21d54d78a0fbe78b1490bf311a5a",
+            "path": "exllamav3/modules/conv.py",
+            "symbol": "Conv.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_b6150991f10d4f5bb9af12703e85dde8",
+          "call_4a629b63fde44d7c8a5bfe5e74dd452e",
+          "call_b0d7c997e28940c1a639e23c593836bd"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the new constructor and both forward branches with LayerNorm's explicit output conversion. The whole-parent-tree Conv( search found no callers, and the task adds only the class and package export, so the demonstrated reach is the newly exposed direct-call API, not an existing model workflow.",
+            "evidence": [
+              "call_b6150991f10d4f5bb9af12703e85dde8",
+              "call_4a629b63fde44d7c8a5bfe5e74dd452e",
+              "call_b0d7c997e28940c1a639e23c593836bd",
+              "call_1629b4592ada4822953f44b5eaefbcbb"
+            ],
+            "limits": "No runtime dtype test was performed; external or dynamically constructed callers were not established."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds an exported, unquantized 2D/3D convolution module that produces token-shaped outputs; its output-dtype options remain unused."
+  },
+  "evidence": {
+    "call_1629b4592ada4822953f44b5eaefbcbb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9bde46e775df21d54d78a0fbe78b1490bf311a5a",
+        "offset": 165,
+        "max_bytes": 3244
+      },
+      "result_sha256": "fc952f6613e1c39817f137914f5ef78556ba1e61454511a928ee4d972997d840"
+    },
+    "call_b6150991f10d4f5bb9af12703e85dde8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9bde46e775df21d54d78a0fbe78b1490bf311a5a",
+        "offset": 639,
+        "max_bytes": 2770
+      },
+      "result_sha256": "0916ebef5560d04c06d80a62ed4e0726005ec501471c69b30da0761581642a89"
+    },
+    "call_10264379a71f480c82d7e2cb3ecd62d3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_06c683f487594dc6ba567cfb8db05a89": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/module.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "051a1958c2e50cedff8818fac2767e1cb258e31a71dbef8f595954429cb1969e",
+      "catalog_only": true
+    },
+    "call_f336016b5a314a579ce5e45356db56d0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_544752efe9f24331a9e5c5c33369297a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "query": "conv",
+        "limit": 100
+      },
+      "result_sha256": "d884ce4c469115b26be7e0ca613d4215ace4f67b4fbb0505f5ba698a5a23eed8"
+    },
+    "call_b0d7c997e28940c1a639e23c593836bd": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "query": "Conv(",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_15763d3591074442b8adfe98691b6218": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "query": "F.conv",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_80b0bb8d1c4e4671886ef39c06c1e21f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "query": ".get_tensor(",
+        "limit": 100
+      },
+      "result_sha256": "23e36b0f5440dee510fcebddd7a81d6dd9d2aef9591c6f4e44b30e34f206fc5b"
+    },
+    "call_4a629b63fde44d7c8a5bfe5e74dd452e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "path": "exllamav3/modules/layernorm.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "6b87f4749b36f861b2b234f4a4521cb74db87111cdca7d69bce241df3f3e52f1"
+    },
+    "call_1b978b6895a7463e8553c8f367ecba7f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/layernorm.py",
+        "max_bytes": 3000
+      },
+      "result_sha256": "47989a40336ec0efe09a9609a027cf6023d62d06ddcb66a3bb7c9439c2709c26",
+      "catalog_only": true
+    },
+    "call_eb0d0fec677d4426ac1226dd809bf72d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "max_bytes": 8000
+      },
+      "result_sha256": "6a4e5f90d3d7233564fe7554e4030d70b4205bec6d8eb645252faf2ade09acb0"
+    },
+    "call_8e1661a487fa4e05b668f9dd51dc603a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "B,C,H,W=2,3,2,4\nsrc=list(range(B*C*H*W))\nout=[[[src[((b*C+c)*H+h)*W+w] for c in range(C)] for h in range(H) for w in range(W)] for b in range(B)]\nassert len(out)==B and len(out[0])==H*W and len(out[0][0])==C\nassert out[0][0]==[0,8,16] and out[1][-1]==[31,39,47]\nP,I,Kt,Kh,Kw,O=5,3,2,4,4,7\nn=P*I*Kt*Kh*Kw\nassert n//(I*Kt*Kh*Kw)==P\nprint({'2d_relayout_shape':[B,H*W,C], 'first_token':out[0][0], 'last_token':out[1][-1], '3d_input_elements':n,'3d_patch_view':[P,I,Kt,Kh,Kw],'3d_output_if_one_spatial_result_per_patch':[1,P,O]})"
+        ]
+      },
+      "result_sha256": "954a209b9f945777d2dc08ef0bbe2d09129b644f8084f42142b08774a83dd495"
+    },
+    "call_52908e5269cc4016a824d60d22e955c7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 16500,
+        "max_bytes": 8500
+      },
+      "result_sha256": "05e1d17ad573ff7478c399291e7d3b2d4d99665260a5de10f3ed1c0c287f002c"
+    },
+    "call_7c3314e57934413c95f6fcb6491dfab5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 7500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "bfc0e9e15d724dbfd6241906db8de22468521de5e2b3b3490c6a03d9b596f7c7"
+    },
+    "call_8cf8aa20185647c383eccf9c8da23329": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1a5faa4e8a6f8f7e34cbf4684537c57a3a70841a4a5997ac906982440a63b0d3"
+    },
+    "call_ef9ef0c7ed724786aa3867716f50cda4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 32000
+      },
+      "result_sha256": "e7ddc7ed9ca4cdeb862f55d938b2f83ceead214bc32047fce91ad571f27b08aa"
+    }
+  }
+}

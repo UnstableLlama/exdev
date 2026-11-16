@@ -1,0 +1,271 @@
+{
+  "schema_version": 5,
+  "sha": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+  "parent_shas": [
+    "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8"
+  ],
+  "cutoff_date": "2025-04-29T22:34:32+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Quantization lacked the image-dump hooks added here for inspecting original and regularized weight matrices.",
+        "basis": "source",
+        "evidence": [
+          "call_d27a072e16ad46fdb87ad63789512ef9",
+          "call_c0a09fa0c7d54efc8abf5db35a74aaf1"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation makes visualization opt-in and copies tensors before modifying their display values, separating diagnostic normalization from quantization data.",
+        "basis": "source",
+        "evidence": [
+          "call_d27a072e16ad46fdb87ad63789512ef9",
+          "call_fc73f96fd5814137b431daefef80461f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Image dumping introduces CPU copies, color-array construction and synchronous image writes. These support the documentation's qualitative memory, disk-space and latency warnings; their magnitude is not measured.",
+        "basis": "inference",
+        "evidence": [
+          "call_fc73f96fd5814137b431daefef80461f",
+          "call_27244c56ff9348ad8b2678644b593a7e"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure and the reporter's environment workaround. Its connection here is only inferred from the matching convert.py import line, not evidence that image dumping addresses that failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_2ee456a33d1443c6bbb717693f7b3184",
+          "call_edcd1d6ce2004a21b7885a8ded34f20a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository conversion, GPU operation, matplotlib colormap or Pillow image save was executed. Installed-library compatibility and filesystem behavior remain unverified.",
+      "The scalar check uses Python floating-point arithmetic and supplied statistics, not PyTorch float32 reductions or image encoding."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "image-dump",
+        "title": "Optional weight visualization during conversion",
+        "claims": [
+          {
+            "text": "The parser accepts -img and --image_dump. prepare copies the current invocation's flag into image_dump for both new and resumed jobs; prepare_env creates work_dir/images even when dumping is disabled.",
+            "basis": "source",
+            "evidence": [
+              "call_d27a072e16ad46fdb87ad63789512ef9",
+              "call_719c3441403b482b9936a877c2991f72"
+            ]
+          },
+          {
+            "text": "main dumps loaded Linear quantization targets selected by a truthy qmap and non-null device, before swapping their original weights to CPU. Original images use images/<linear.key>.jpg. A second path, images/<linear.key>.reg.jpg, passes through Linear.convert_exl3 to quantize_exl3, where weight_r is saved after regularize and before ldlq. These are pre-quantization diagnostics, not pictures of reconstructed quantized weights.",
+            "basis": "source",
+            "evidence": [
+              "call_719c3441403b482b9936a877c2991f72",
+              "call_d27a072e16ad46fdb87ad63789512ef9",
+              "call_fd09eac8f7e34d3ea828517071ea61ed",
+              "call_c0a09fa0c7d54efc8abf5db35a74aaf1",
+              "call_15e58427e80d410ba8d2349233cb704c"
+            ]
+          },
+          {
+            "text": "Both conversion APIs append optional save_reg=None parameters. save_tensor_image imports matplotlib.cm and PIL.Image only when called, detaches and copies its input to CPU float32, clamps to mean \u00b1 3 standard deviations, and normalizes by the resulting six-standard-deviation span plus 1e-8. It applies gnuplot2, drops alpha, multiplies RGB by 255, converts to uint8 and saves the image.",
+            "basis": "source",
+            "evidence": [
+              "call_fd09eac8f7e34d3ea828517071ea61ed",
+              "call_c0a09fa0c7d54efc8abf5db35a74aaf1",
+              "call_fc73f96fd5814137b431daefef80461f"
+            ]
+          },
+          {
+            "text": "A scalar transcription with mean 0 and standard deviation 1 mapped values at or below -3 to 0, the mean to approximately 0.5, and values at or above 3 to approximately 1. A finite constant input with zero standard deviation mapped to 0 because of the denominator epsilon.",
+            "basis": "execution",
+            "evidence": [
+              "call_8240f9545d0a4ff5b11032d26d479b30"
+            ]
+          },
+          {
+            "text": "Independent normalization emphasizes each matrix's internal pattern rather than preserving a shared absolute color scale between original and regularized weights. Clipping also deliberately discards outlier magnitude in the visualization.",
+            "basis": "inference",
+            "evidence": [
+              "call_fc73f96fd5814137b431daefef80461f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "documentation-dump-scope",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The added documentation overstates coverage as \u201call tensors\u201d and omits the leading -- from the long option.",
+        "trigger": "Following the new image-dump option description.",
+        "expected_behavior": "Documentation names --image_dump and describes images of selected linear weights and their regularized forms.",
+        "actual_behavior": "The text says \u201c-img / image_dump\u201d and \u201call tensors,\u201d whereas the parser registers --image_dump and main only dumps its selected Linear quantization targets.",
+        "locations": [
+          {
+            "commit": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+            "path": "doc/convert.md",
+            "symbol": "image_dump option description"
+          }
+        ],
+        "source_evidence": [
+          "call_27244c56ff9348ad8b2678644b593a7e",
+          "call_d27a072e16ad46fdb87ad63789512ef9",
+          "call_719c3441403b482b9936a877c2991f72"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the added documentation with the parser registration and the linear-target selection surrounding the image writes.",
+            "evidence": [
+              "call_27244c56ff9348ad8b2678644b593a7e",
+              "call_d27a072e16ad46fdb87ad63789512ef9",
+              "call_719c3441403b482b9936a877c2991f72"
+            ],
+            "limits": "No CLI invocation or image generation was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional JPEG diagnostics for original and regularized linear weights, using per-tensor clipped color normalization."
+  },
+  "evidence": {
+    "call_27244c56ff9348ad8b2678644b593a7e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+        "offset": 184,
+        "max_bytes": 7491
+      },
+      "result_sha256": "72f592085477921212df11f77ca49fdc594638342aebf52f452c2ca3fad52bbc"
+    },
+    "call_d27a072e16ad46fdb87ad63789512ef9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+        "offset": 690,
+        "max_bytes": 3848
+      },
+      "result_sha256": "5e99e8c7d4bdd396b7f33b49579306d09672ccd6f5cd8ce8c460a359473412e2"
+    },
+    "call_fd09eac8f7e34d3ea828517071ea61ed": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+        "offset": 4538,
+        "max_bytes": 848
+      },
+      "result_sha256": "df7f39f0a945c68c63f4937c4acabc865f1f25c8d5a3fd58138b4494440280fa"
+    },
+    "call_c0a09fa0c7d54efc8abf5db35a74aaf1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+        "offset": 5386,
+        "max_bytes": 1451
+      },
+      "result_sha256": "cd13025efbfb8b64a046e0ec5c9aaddcf849ca5b2055108c1a01cae6d29618bf"
+    },
+    "call_fc73f96fd5814137b431daefef80461f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+        "offset": 6837,
+        "max_bytes": 838
+      },
+      "result_sha256": "eb1c5c57e488d0a2379675a96539e1bf6a2f657e6120baa849215252dd5ca09e"
+    },
+    "call_719c3441403b482b9936a877c2991f72": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 23000
+      },
+      "result_sha256": "8fcc0b15fd49d253297a41856dc0cec1811acb4143a13c1c0e0205eb384003a3"
+    },
+    "call_e50edd7831f24b15b6b8935585b71f62": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "query": "image_dump"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_ef320ef4c4934517824e0fae07d9ca27": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "query": "convert_model"
+      },
+      "result_sha256": "1e033972b046c9d0e344bbfd11ff7dd35ac79627a8c51e05cc1ddf2d83e355c5"
+    },
+    "call_b866076ef97047bc88e2d5c222e3248a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "query": "image",
+        "path": "exllamav3"
+      },
+      "result_sha256": "4e6c9a3a28c462903971a2e9919627821d99c3247efac3ba8685f3d4e88e4c48"
+    },
+    "call_edcd1d6ce2004a21b7885a8ded34f20a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "path": "convert.py",
+        "max_bytes": 3000
+      },
+      "result_sha256": "005aa3bf1d4e254f82c7c5985334dbfb69de9a398326c807fea79b6970168e52"
+    },
+    "call_15e58427e80d410ba8d2349233cb704c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 25000,
+        "max_bytes": 11000
+      },
+      "result_sha256": "8bbea116abf356e49a6a53634443417a2b03ddc9f628311d74adb278a7779890"
+    },
+    "call_2ee456a33d1443c6bbb717693f7b3184": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "cf25caa1b1af5a136bf9c6691975523420a12a0570616817e3e8a5b0d31aabd2"
+    },
+    "call_2bbccfa9de4b4b03acc6280365c37b52": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "query": "image-dump"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8240f9545d0a4ff5b11032d26d479b30": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def norm(x,mu,s):\n lo,hi=mu-3*s,mu+3*s\n return (min(hi,max(lo,x))-lo)/(hi-lo+1e-8)\nprint('mu=0 sigma=1:',[(x,norm(x,0,1)) for x in [-4,-3,0,3,4]])\nprint('constant:',norm(7,7,0))"
+        ]
+      },
+      "result_sha256": "4b3da7be0aaea163a340d6136722bb18b6d0a570efaa1764917e83a978562c18"
+    }
+  }
+}

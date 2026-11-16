@@ -53,6 +53,17 @@ class MirrorTests(unittest.TestCase):
         self.assertFalse(any('weights.bin' in u or 'model.py' in u for u,_ in self.calls))
         self.assertEqual(entries[0]['mirror_provenance']['official_hash'],git_blob(self.data['config.json']))
 
+    def test_processor_metadata_requires_matching_official_hashes(self):
+        for name in ('preprocessor_config.json','processor_config.json'):
+            data=b'{"processor":"Demo"}';self.data[name]=data
+            self.official['siblings'].append(dict(rfilename=name,size=len(data),blobId=git_blob(data)))
+            self.mirror['Data']['Files'].append(dict(Type='blob',Path=name,Revision='b'*40,Sha256=digest(data),Size=len(data),CommittedDate=1577923200))
+        entries,report=self.recover()
+        self.assertTrue({'preprocessor_config.json','processor_config.json'} <= {e['path'] for e in entries})
+        validate_selection(report,entries,'2021-01-01T00:00:00Z')
+        self.data['processor_config.json']=b'altered'
+        with self.assertRaises(ValueError):self.recover()
+
     def test_fail_closed_for_mismatch_missing_and_future(self):
         for what in ['blob','weight','masked','date','creation','missing','bytes']:
             with self.subTest(what=what):

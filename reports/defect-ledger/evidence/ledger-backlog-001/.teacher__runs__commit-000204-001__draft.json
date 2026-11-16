@@ -1,0 +1,460 @@
+{
+  "schema_version": 5,
+  "sha": "1ad855ada6db1e3ad06b679acd08737f6edd101b",
+  "parent_shas": [
+    "f8dc9975fe88c79fcf1a12f2160974b5442695dd"
+  ],
+  "cutoff_date": "2025-05-30T19:42:49+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "After quantization completed, computing the diagnostic proxy error could still abort conversion on an out-of-memory exception.",
+        "basis": "source",
+        "evidence": [
+          "call_ae3941d6373a40a49369e1085efe0990",
+          "call_d5a362ef0a5b455da87e1da197aff1bd"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change treats metric availability separately from quantized-weight availability: it preserves completed quantization and substitutes a negative sentinel when metric computation runs out of memory.",
+        "basis": "source",
+        "evidence": [
+          "call_ae3941d6373a40a49369e1085efe0990"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Conversion can proceed past a caught metric OoM, displaying '(OoM)' instead of a numeric error. This is not general OoM recovery: earlier quantization and subsequent reconstruction or packing remain outside the handler.",
+        "basis": "source",
+        "evidence": [
+          "call_2aeb5cc376f24b9a8abd7b391fedd794",
+          "call_ae3941d6373a40a49369e1085efe0990",
+          "call_d5a362ef0a5b455da87e1da197aff1bd"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root quantizer entry describes the existing Hessian-guided quantization, working-space diagnostic and CPU-buffer memory tradeoff. The image-dump entry establishes the optional diagnostic path through Linear.convert_exl3 into quantize_exl3; neither entry supplies evidence of successful OoM recovery.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_4e8a0c02aec14a98abc6485bdcae0962",
+          "call_97453f707d474f2f92fb3a3a45135004"
+        ]
+      },
+      {
+        "text": "Issue #34, 'torch._C._LinAlgError on last layer of quant', principally reports Cholesky failure. A later comment reports einsum GEMM errors and a chunked workaround. Its possible connection is inferred from the same einsum metric mechanism; neither that comment nor the traceback establishes the specific OutOfMemoryError caught here.",
+        "basis": "inference",
+        "evidence": [
+          "call_04f7b6164e554c53b3aadc6963dd4e88",
+          "call_ae3941d6373a40a49369e1085efe0990"
+        ]
+      },
+      {
+        "text": "Other conversion reports concern distinct stages: #8 reports an invalid reshape, #11 a bias datatype assertion, #16 an invalid CUDA configuration, #38 Nemotron tensor dimensions, #43 abliterated Qwen3 Cholesky failure, and PR #13 missing bos_token_id handling. Their connection here is only inferred from shared conversion files or call chains, not evidence that this patch fixes them.",
+        "basis": "inference",
+        "evidence": [
+          "call_86552a81f4704e749328125893d26edc",
+          "call_b33eeddcd9ce45cb964eea852a2a17b1",
+          "call_12f3f8c90ff24f11bae48f427f4d80fb",
+          "call_672a9bb42a0b41039e280aeed79f090b",
+          "call_b09c2b796fab4cebba2013cc433f2163",
+          "call_8db14873c975422c9afe015d5079f9c3",
+          "call_ae3941d6373a40a49369e1085efe0990"
+        ]
+      },
+      {
+        "text": "PR #26, 'Superior 3INST parameters', discusses codebook experiments; #33, 'Error converting model', begins with file-opening failure and later discusses GLM inference; #42 reports NaNs and Cholesky failure at 3.0 bpw. Shared quantizer or conversion paths provide only an inferred contextual connection, not a demonstrated motivation for this patch.",
+        "basis": "inference",
+        "evidence": [
+          "call_c072966272aa469da06f8ad0cbcd9514",
+          "call_fcaa68c95eb647d6b6d271446a209514",
+          "call_6b7699d8d2de4f95bd4488e165f0739b",
+          "call_894ce137bf1f4ca497da6afe8576045d",
+          "call_0bb79e71638148a699b56fe6e4d9ae5f",
+          "call_ae3941d6373a40a49369e1085efe0990"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch conversion, actual allocation failure, CUDA kernel or allocator recovery was executed. Clearing local references does not establish that subsequent allocations succeed.",
+      "The scalar check uses Python binary64 arithmetic and transcribed expressions, not PyTorch einsum or GPU reduction ordering.",
+      "The handler specifically catches torch.OutOfMemoryError; coverage of other allocator or GEMM failure representations is unestablished."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11"
+    ],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Make proxy-error computation optional under memory pressure",
+        "claims": [
+          {
+            "text": "quantize_exl3 computes the metric after ldlq returns reconstructed working weights and encoded indices. With E = weight_r \u2212 weight_q, each einsum sums A[i,k] H[i,j] A[j,k] over all indices: the numerator uses E and the denominator uses weight_r. The existing 1e-8 floor prevents division by a zero or very small denominator.",
+            "basis": "source",
+            "evidence": [
+              "call_d5a362ef0a5b455da87e1da197aff1bd"
+            ]
+          },
+          {
+            "text": "Even when working weights were moved to CPU by the existing greater-than-5e8-element threshold, the metric transfers H, E and W to the selected compute device. The patch encloses subtraction, transfers, contractions and normalization in one try block; it does not implement chunking or CPU retry.",
+            "basis": "source",
+            "evidence": [
+              "call_d5a362ef0a5b455da87e1da197aff1bd",
+              "call_ae3941d6373a40a49369e1085efe0990"
+            ]
+          },
+          {
+            "text": "On success the formula is unchanged. On torch.OutOfMemoryError, weight_r, E, W and Hd are set to None and proxy_err becomes -1.0. Assignments replace deletions on the normal path too, while the exception path can clear names even if failure occurred before their initialization. Quantized weights and encoded indices remain available for the unchanged downstream work.",
+            "basis": "source",
+            "evidence": [
+              "call_ae3941d6373a40a49369e1085efe0990",
+              "call_d5a362ef0a5b455da87e1da197aff1bd"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree searches locate one direct quantize_exl3 caller, Linear.convert_exl3, which forwards the metric unchanged after constructing LinearEXL3. Its two callers are conversion main and test_quant_dequant. Main is updated to format nonnegative values with six decimals and otherwise show '(OoM)'; the test remains on its old upper-bound-only interpretation.",
+            "basis": "source",
+            "evidence": [
+              "call_b71a145eba9049f5a54bfdc0acf15576",
+              "call_7970f2e8f90945318464428a02ae02e1",
+              "call_70a9370d8e854ddfa0935fe6c2b47d70",
+              "call_7dfbdc899f1840bd805a6f8b2bb6a562",
+              "call_1bc5fb77484d45b3befde59b61cb9cb8",
+              "call_2aeb5cc376f24b9a8abd7b391fedd794"
+            ]
+          },
+          {
+            "text": "The paired edits implement a producer/consumer contract: -1.0 means unavailable rather than exceptionally good accuracy, and conversion's display translates that status. Skipping this diagnostic favors retaining completed quantization work over obtaining a metric, without changing the encoded output algorithm.",
+            "basis": "inference",
+            "evidence": [
+              "call_ae3941d6373a40a49369e1085efe0990",
+              "call_2aeb5cc376f24b9a8abd7b391fedd794"
+            ]
+          },
+          {
+            "text": "A bounded scalar transcription produced numerator 0.46 and denominator 46 for E = 0.1W, yielding approximately 0.01. It also confirmed that -1.0 passes every existing proxy-error test threshold for K=1 through 8.",
+            "basis": "execution",
+            "evidence": [
+              "call_586cc18cefd64727938507ad32941ecb"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "proxy-sentinel-test",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged quantization test accepts an unavailable metric as satisfying its accuracy bound.",
+        "trigger": "Metric computation raises a caught OutOfMemoryError, and subsequent reconstruction and packing succeed so test_quant_dequant receives proxy_err=-1.0.",
+        "expected_behavior": "The proxy-error check should distinguish an unavailable metric from a measured error below its threshold.",
+        "actual_behavior": "assert proxy_err < max_proxy_err_per_K[K] accepts -1.0 for every tested bitrate. Independent weight checks still run, so this does not establish that the entire test passes.",
+        "locations": [
+          {
+            "commit": "1ad855ada6db1e3ad06b679acd08737f6edd101b",
+            "path": "tests/test_quant_fn.py",
+            "symbol": "test_quant_dequant"
+          }
+        ],
+        "source_evidence": [
+          "call_1bc5fb77484d45b3befde59b61cb9cb8",
+          "call_ae3941d6373a40a49369e1085efe0990",
+          "call_7dfbdc899f1840bd805a6f8b2bb6a562",
+          "call_7970f2e8f90945318464428a02ae02e1"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the new sentinel through the sole direct quantizer caller to both located consumers; conversion main handles it, but the test does not.",
+            "evidence": [
+              "call_70a9370d8e854ddfa0935fe6c2b47d70",
+              "call_7970f2e8f90945318464428a02ae02e1",
+              "call_1bc5fb77484d45b3befde59b61cb9cb8"
+            ],
+            "limits": "Reach is the inspected repository call sites, not external callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Compared -1.0 with all eight transcribed test thresholds; all comparisons returned true.",
+            "evidence": [
+              "call_586cc18cefd64727938507ad32941ecb"
+            ],
+            "limits": "No repository test or real OoM was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Catches OoM during post-quantization proxy-error computation and reports an unavailable metric while allowing conversion to continue; the existing accuracy test does not recognize the new sentinel."
+  },
+  "evidence": {
+    "call_2aeb5cc376f24b9a8abd7b391fedd794": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1ad855ada6db1e3ad06b679acd08737f6edd101b",
+        "offset": 184,
+        "max_bytes": 2424
+      },
+      "result_sha256": "8b0d1c86d49f7d5b8dea67f14e521bc9459902f5ba57e62823d1001a91aa4290"
+    },
+    "call_ae3941d6373a40a49369e1085efe0990": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1ad855ada6db1e3ad06b679acd08737f6edd101b",
+        "offset": 1189,
+        "max_bytes": 1419
+      },
+      "result_sha256": "f89b54773d72ae7f20b4934e1f9dd3defbf8724d756c21fd4b8937d935e02e5c"
+    },
+    "call_b71a145eba9049f5a54bfdc0acf15576": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "query": "proxy_err",
+        "limit": 100
+      },
+      "result_sha256": "a2312185f08598a8c05a78d9c773c04001c4560cbcb40e0c401194dc50f595d1"
+    },
+    "call_d5a362ef0a5b455da87e1da197aff1bd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 24000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "a9ebc91ca079c8ade398e12378409e7d1e772572a402af073f73bd48b4ba4704"
+    },
+    "call_7970f2e8f90945318464428a02ae02e1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "query": "convert_exl3(",
+        "limit": 100
+      },
+      "result_sha256": "c0447cc66cd3eb8190f356a192dcf51f8de397ba9e104241296dbf29b7ba13f6"
+    },
+    "call_70a9370d8e854ddfa0935fe6c2b47d70": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "query": "quantize_exl3(",
+        "limit": 100
+      },
+      "result_sha256": "03e9117c6ebb302b7750050f5893194cf9cd86e439c18231796aa691551fc88b"
+    },
+    "call_7dfbdc899f1840bd805a6f8b2bb6a562": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 6500,
+        "max_bytes": 3500
+      },
+      "result_sha256": "eb32ea4041e70e5cabfffcd50991f9f3ca56f4519878b2acdb49e698367f5713"
+    },
+    "call_1bc5fb77484d45b3befde59b61cb9cb8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "path": "tests/test_quant_fn.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "163e5a4cd36f799c8c2bf668eb270d22f4a738fa17978c4c23d18f4955c073df"
+    },
+    "call_43f7ac77d7b840bdadec310e9ebb8044": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 14000,
+        "max_bytes": 4800
+      },
+      "result_sha256": "0f6e58ac539c6e29f8b1be716d8a176c88c2a9ab464d54aab63a330b4c6f9041"
+    },
+    "call_d0ceb158fe6a4487a7add2e3922d3262": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "quantize.py",
+        "limit": 5
+      },
+      "result_sha256": "6c67cb41f246494de4b2c3f6299a2d6a76c5367ef562a0063ebe5f11de27c235",
+      "catalog_only": true
+    },
+    "call_97453f707d474f2f92fb3a3a45135004": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "0b2dba5ac5aab77fb9d9aabdda72ceb5befa8b11",
+        "max_bytes": 16384
+      },
+      "result_sha256": "64cb1ac959631fb430e53d725ff42c24a8593b1b0474f884a28a8716a32280e7"
+    },
+    "call_86552a81f4704e749328125893d26edc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 20000
+      },
+      "result_sha256": "c3aff1c80a65e732d2db52a7ffab677dfe726f23bb4f6cf3f6b668f31d479282"
+    },
+    "call_b33eeddcd9ce45cb964eea852a2a17b1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 20000
+      },
+      "result_sha256": "03f81afd0588c405efa58138a73036a7379f0f0bbfe3eb2a0e384eb00181a3f3"
+    },
+    "call_12f3f8c90ff24f11bae48f427f4d80fb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "82fb1cb414913e24fd7a0b2be044bac7aef74abfa93eb7d4f01b2a4f17b97d91"
+    },
+    "call_672a9bb42a0b41039e280aeed79f090b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "0b48407806372486b6b6ae87e6836a8abcc39ded1329ebd6723e49df7743c079"
+    },
+    "call_b09c2b796fab4cebba2013cc433f2163": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 20000
+      },
+      "result_sha256": "58cbef9c4b70ad6bbf5892fa96f77f4960c29caedf800751d3537f57fc9a6581"
+    },
+    "call_8db14873c975422c9afe015d5079f9c3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 12000
+      },
+      "result_sha256": "90d13280057f848eda082e4941c5a9cefce81b4c41172f430a0fe5d3b7426ddd"
+    },
+    "call_c072966272aa469da06f8ad0cbcd9514": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3de4bfe5f6c2cf879b250c25867c4dc3735c42bf40aed1887fc81bf5c1516e88"
+    },
+    "call_9b7a6f5d2d1e4914bd08212185a20667": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16000,
+        "max_bytes": 110000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_4f850a2b03a649e4b76bd864d839d105": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16000,
+        "max_bytes": 65536
+      },
+      "result_sha256": "6ca472343292f757171b75f2e596bc1f8f82fec6989d8b31390d3b116bf2b444"
+    },
+    "call_fcaa68c95eb647d6b6d271446a209514": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 81536,
+        "max_bytes": 40000
+      },
+      "result_sha256": "d57b62252c25dce065501c586ff73b950d04baebdd7ac70aa85cc26459187f47"
+    },
+    "call_6b7699d8d2de4f95bd4488e165f0739b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 20000
+      },
+      "result_sha256": "fdeed419bdd8166406acb884ab9703da2af49611bc83f1f06dc048eae1271a46"
+    },
+    "call_894ce137bf1f4ca497da6afe8576045d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 20000,
+        "max_bytes": 30000
+      },
+      "result_sha256": "0ceb61da830222cd3c3ff3acc2b9ba8cd259b9de61ca8c0fbc49e387568e5218"
+    },
+    "call_04f7b6164e554c53b3aadc6963dd4e88": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "7721d5a87f30d6aac8eff46313d792bd55aefa9516ce9f5116fbc2b700a31c4a"
+    },
+    "call_0bb79e71638148a699b56fe6e4d9ae5f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 20000
+      },
+      "result_sha256": "d0d501053a9a27e117052cc8af465916fd4ecdcb2620fb6680f5b69320a3d14e"
+    },
+    "call_686fe7020e4b49a48413f99ded3103d9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "quantize.py",
+        "offset": 15,
+        "limit": 5
+      },
+      "result_sha256": "d7bdc1a7167853366b0374955ae0f102f8fcf173cc0aabe1a06e8eeb0d3ed8b9",
+      "catalog_only": true
+    },
+    "call_4e8a0c02aec14a98abc6485bdcae0962": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantizer",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3abf5ee297216a3032be9c0a0b22bd4bbbddb41ff6825316a8b4814bd70c166"
+    },
+    "call_e7f108f7125a4e52870ad9f02a0b24fc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "query": "OutOfMemoryError",
+        "limit": 100
+      },
+      "result_sha256": "d119a33a0e2566ccb82cf705b59254560fa2778d18bebfca2e358422d17e0b74"
+    },
+    "call_586cc18cefd64727938507ad32941ecb": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "thresholds={1:.5,2:.1,3:.05,4:.01,5:.005,6:.005,7:.005,8:.005}\nprint('sentinel passes proxy thresholds:',[k for k,v in thresholds.items() if -1.0<v])\nW=[[1.,2.],[3.,4.]]; E=[[.1,.2],[.3,.4]]; H=[[2.,.5],[.5,1.]]\nf=lambda A:sum(A[i][k]*H[i][j]*A[j][k] for i in range(2) for j in range(2) for k in range(2))\nprint('quadratic numerator, denominator, ratio:',f(E),f(W),f(E)/max(f(W),1e-8))\nprint('display:',repr(f'{-1.:8.6f}' if -1.>=0 else '(OoM)   '))"
+        ]
+      },
+      "result_sha256": "aab07195853c8d3c44e4cfe57580417fb999b6ae38a481fa88dd613806683a3a"
+    }
+  }
+}

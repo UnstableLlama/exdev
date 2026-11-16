@@ -1,0 +1,294 @@
+{
+  "schema_version": 5,
+  "sha": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+  "parent_shas": [
+    "c4867edd0d31ea9fb052668874ae52fad0e91a0f"
+  ],
+  "cutoff_date": "2025-05-08T23:19:45+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Unresolved replacement characters could keep accumulating output in Job's held buffers instead of streaming it. The parent returned metadata-only events whenever re-decoding still contained \ufffd.",
+        "basis": "source",
+        "evidence": [
+          "call_580f8ffeba384dd29447142ef75f6997"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change retains short-buffer waiting but flushes when the re-decoded string exceeds 20 characters. This trades continued Unicode reconstruction for forward progress; it is a character-length heuristic, not a timeout or token limit.",
+        "basis": "source",
+        "evidence": [
+          "call_2fca40b8b43e4f5b88e87ed423886144",
+          "call_580f8ffeba384dd29447142ef75f6997"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The escape flush emits the existing held_text and associated token/probability/logit buffers, clears them, and continues generation without EOS. It does not replace held_text with test_decode on this failure branch.",
+        "basis": "source",
+        "evidence": [
+          "call_2fca40b8b43e4f5b88e87ed423886144",
+          "call_580f8ffeba384dd29447142ef75f6997"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d reports compilation failures and was closed without an identified solution; its text does not establish a connection to this streaming change.",
+        "basis": "source",
+        "evidence": [
+          "call_2ae57eee9ac64b0183e8afb8542a9070"
+        ]
+      },
+      {
+        "text": "The earlier generation entry records a banned-string checkpoint attribute error and a terminal-budget bypass. Both remain in the inspected parent code and are untouched by this patch.",
+        "basis": "source",
+        "evidence": [
+          "call_580f8ffeba384dd29447142ef75f6997",
+          "call_2fca40b8b43e4f5b88e87ed423886144"
+        ]
+      }
+    ],
+    "limitations": [
+      "No tokenizer, tensor-buffer implementation, model generation or repository tests were executed. The scalar check models only string predicates and branch ordering.",
+      "No tuning evidence establishes why 20 characters is the appropriate cutoff. The condition does not guarantee bounded elapsed waiting when decoded length does not grow."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Escape from unresolved Unicode buffering",
+        "claims": [
+          {
+            "text": "receive_sample appends token pieces and optional output data before checking stop tokens and the generation budget. Only held text containing one through four replacement characters enters the re-decode branch; five or more already bypass that branch. Successful re-decoding replaces held_text and proceeds to string checks.",
+            "basis": "source",
+            "evidence": [
+              "call_580f8ffeba384dd29447142ef75f6997"
+            ]
+          },
+          {
+            "text": "On unsuccessful re-decoding, the patch changes only emit_held: false through length 20, true above 20. emit appends an event either way and returns the EOS flag and sampled token, so holding text never meant suspending the sampling loop itself.",
+            "basis": "source",
+            "evidence": [
+              "call_2fca40b8b43e4f5b88e87ed423886144",
+              "call_580f8ffeba384dd29447142ef75f6997"
+            ]
+          },
+          {
+            "text": "Whole-parent search found one direct receive_sample call site in generator.py. It consumes sampled logits, tests the returned EOS flag, and otherwise continues ordinary or speculative sampling; the new flush therefore does not mark the job completed.",
+            "basis": "source",
+            "evidence": [
+              "call_9a1d3b93b61042769a0cdef8aa30aee6",
+              "call_724c74e0a9b844faa2c911f9a4a42278"
+            ]
+          },
+          {
+            "text": "A standard-library predicate transcription confirmed that a single replacement character followed by ordinary characters remains held at length 20 and selects flushing at length 21. A 21-character fixture ending in 'bad' also selects this return before string matching.",
+            "basis": "execution",
+            "evidence": [
+              "call_4bb4cd8bbbd248229906abacec723c95"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unicode-flush-bypasses-string-checks",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new escape flush can expose banned text or miss a stop string.",
+        "trigger": "Before token-budget termination, held_text contains one through four replacement characters, re-decoding still contains one, and test_decode exceeds 20 characters while the buffer contains a configured banned or stop string.",
+        "expected_behavior": "Apply string suppression or stopping before emitting the buffered text.",
+        "actual_behavior": "The new branch returns through emit_held=True before either string matcher runs, emitting and clearing the buffer. The sole located direct caller continues sampling because EOS is false.",
+        "locations": [
+          {
+            "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample"
+          }
+        ],
+        "source_evidence": [
+          "call_2fca40b8b43e4f5b88e87ed423886144",
+          "call_580f8ffeba384dd29447142ef75f6997",
+          "call_724c74e0a9b844faa2c911f9a4a42278",
+          "call_9a1d3b93b61042769a0cdef8aa30aee6"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Checked the new predicate with \ufffd followed by 17 x characters and 'bad': length 21 selects the early flush.",
+            "evidence": [
+              "call_4bb4cd8bbbd248229906abacec723c95"
+            ],
+            "limits": "Assumes the stated tokenizer output; does not execute the tokenizer or native string matcher."
+          }
+        ]
+      },
+      {
+        "id": "retained-checkpoint-token-attribute",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited banned-string rewind still restores the wrong token-buffer attribute.",
+        "trigger": "A full banned-string match reaches rewind_checkpoint.",
+        "expected_behavior": "Restore held_tokens so rejected IDs appear only in suppressed_tokens.",
+        "actual_behavior": "The code assigns self.held_token instead of self.held_tokens; the subsequent flush can emit rejected IDs from the unchanged buffer. This remains reachable through the single located receive_sample caller.",
+        "locations": [
+          {
+            "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample.rewind_checkpoint"
+          }
+        ],
+        "source_evidence": [
+          "call_580f8ffeba384dd29447142ef75f6997",
+          "call_2fca40b8b43e4f5b88e87ed423886144",
+          "call_9a1d3b93b61042769a0cdef8aa30aee6"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared checkpoint restoration with the buffer read by emit and confirmed the task leaves both unchanged.",
+            "evidence": [
+              "call_580f8ffeba384dd29447142ef75f6997",
+              "call_2fca40b8b43e4f5b88e87ed423886144"
+            ],
+            "limits": "Tensor operations were not executed."
+          }
+        ]
+      },
+      {
+        "id": "retained-terminal-string-bypass",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited token-budget flush still precedes banned-string checking.",
+        "trigger": "A non-stop token completes a banned string when new_tokens reaches max_new_tokens minus num_draft_tokens.",
+        "expected_behavior": "Suppress the banned string before terminal emission.",
+        "actual_behavior": "receive_sample flushes held output and returns EOS before reaching the banned-string matcher. The located generator caller then completes the job.",
+        "locations": [
+          {
+            "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample"
+          }
+        ],
+        "source_evidence": [
+          "call_580f8ffeba384dd29447142ef75f6997",
+          "call_2fca40b8b43e4f5b88e87ed423886144",
+          "call_724c74e0a9b844faa2c911f9a4a42278"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected terminal branch ordering and caller EOS handling; neither is changed by the patch.",
+            "evidence": [
+              "call_580f8ffeba384dd29447142ef75f6997",
+              "call_724c74e0a9b844faa2c911f9a4a42278"
+            ],
+            "limits": "No generation execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Flushes unresolved Unicode output once re-decoded text exceeds 20 characters, avoiding prolonged holding but introducing an early-flush path that bypasses string checks."
+  },
+  "evidence": {
+    "call_2fca40b8b43e4f5b88e87ed423886144": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2e7b00d3b0d1731e86d127b992ae6298dd70a504",
+        "offset": 222,
+        "max_bytes": 704
+      },
+      "result_sha256": "2c319a914d8c019034c41aa4a4d73241193bb432ff60afe168c090d61d67459e"
+    },
+    "call_580f8ffeba384dd29447142ef75f6997": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "path": "exllamav3/generator/job.py",
+        "offset": 16000,
+        "max_bytes": 19000
+      },
+      "result_sha256": "faabe89d29f593add259ee2eb3acedd00688e1795a68fd5d12777ae53d395638"
+    },
+    "call_b2407e62cc6c4e6789c9a4960747b1cb": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "max_bytes": 16384
+      },
+      "result_sha256": "2d931c5df3cd8e5482bcb06d0a1a6d540d631c45e27b80803f3a5ea1e3833613"
+    },
+    "call_0777fe0e414d4096aa6fd2493a918e37": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f6e224671cf1acd067e79899a1ab9164bd9529f50e19b372cfde44ee97664cc6"
+    },
+    "call_4db9513508ad4a43838af994342c953c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "offset": 16384,
+        "max_bytes": 6000
+      },
+      "result_sha256": "46408465c2ee6e58d5a9559e17e3a68044c895ae9fbc960c84151cfa7f82e6a5"
+    },
+    "call_9a1d3b93b61042769a0cdef8aa30aee6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "query": "receive_sample",
+        "limit": 100
+      },
+      "result_sha256": "82d2ab8664d59bfff6e5f2319a67dffeebeb9c934d14ccd6a5be7c6c31421d95"
+    },
+    "call_724c74e0a9b844faa2c911f9a4a42278": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 16000,
+        "max_bytes": 4800
+      },
+      "result_sha256": "e8567dce1f2529594ec90e9808c65d1d89dbccf8fa60820b9b7d3e7d96562e06"
+    },
+    "call_2ae57eee9ac64b0183e8afb8542a9070": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9933d2d0619d0e7d675fca0e19b15821664b3634992f37a22c8bba87e59f894c"
+    },
+    "call_4bb4cd8bbbd248229906abacec723c95": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nrows=[]\nfor n in (20,21):\n t='\\ufffd'+'x'*(n-1)\n rows.append({'length':len(t),'replacement_count':t.count('\\ufffd'),'old_flush':False,'new_flush':len(t)>20})\nt='\\ufffd'+'x'*17+'bad'\nprint(json.dumps({'boundaries':rows,'banned_fixture':{'text':t,'length':len(t),'flush_before_string_checks':1<=t.count('\\ufffd')<5 and len(t)>20},'rewind_attribute_model':dict(held_tokens=[7],held_token=[])}))"
+        ]
+      },
+      "result_sha256": "c59d916c0418feadfcc315fe1838a732656f8539fc4b0ff572c47c7a87689f00"
+    }
+  }
+}

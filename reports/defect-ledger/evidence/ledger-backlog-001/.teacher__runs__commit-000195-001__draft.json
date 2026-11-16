@@ -1,0 +1,241 @@
+{
+  "schema_version": 5,
+  "sha": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+  "parent_shas": [
+    "8b1fccf7a6bfdcce65008c1fd456994ee4423685"
+  ],
+  "cutoff_date": "2025-05-27T11:27:51+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The change adds a native operation for cyclically moving selected cache pages in place.",
+        "basis": "source",
+        "evidence": [
+          "call_c9324f9c32734247865a3b03d77658ca"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Saving the first selected page in caller-provided scratch permits each subsequent page to overwrite its predecessor, then restores the saved page into the last position. Scratch storage is one page rather than a full cache copy.",
+        "basis": "source",
+        "evidence": [
+          "call_c9324f9c32734247865a3b03d77658ca"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "cache_rotate becomes a Python extension entry point. The parent-tree search found no existing callers; the task adds a direct test caller but no generation-path integration.",
+        "basis": "source",
+        "evidence": [
+          "call_19c4aa55df1744b686f266bcf3b46828",
+          "call_0354daa0d15e48ec9f350069abe8ee2a",
+          "call_e1a2eb99e67347609255d15340854c1d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root runtime chapter was read. It establishes the earlier pybind interface and caller-owned CUDA buffers as architectural context; its recorded elementwise-kernel defects concern functions this change does not modify.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_f9dbfa2b1ab54f3290692a68aa2ce89c"
+        ]
+      }
+    ],
+    "limitations": [
+      "No extension build, CUDA execution or performance measurement was performed. The Python computation models rotation and address arithmetic only.",
+      "The reasons for choosing 128 blocks and 512 threads are not established by the inspected evidence.",
+      "The wrapper does not establish contiguity, matching CUDA devices, valid unique page indices, nonempty order or nonaliasing scratch; behavior outside those caller preconditions was not executed."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "cache-rotate",
+        "title": "In-place cache-page rotation",
+        "claims": [
+          {
+            "text": "The declaration and binding expose cache_rotate(cache, order, temp). The wrapper selects the cache device and current CUDA stream, checks cache rank greater than one, one-dimensional int32 order, and scratch byte size equal to one page. Despite the comment saying \u201clong,\u201d the implemented order dtype is kInt, matching the test.",
+            "basis": "source",
+            "evidence": [
+              "call_c6ba134eaf9245d697f6f1bad265dfb9",
+              "call_19c4aa55df1744b686f266bcf3b46828",
+              "call_c9324f9c32734247865a3b03d77658ca",
+              "call_e1a2eb99e67347609255d15340854c1d"
+            ]
+          },
+          {
+            "text": "Each of 128 blocks owns a byte interval within every page. Its 512 threads copy uint4 vectors, 16 bytes per transfer, with an 8192-byte thread-loop stride. Each thread follows the complete rotation for its own offsets; this partitions work across page contents rather than across dependent page moves.",
+            "basis": "source",
+            "evidence": [
+              "call_c9324f9c32734247865a3b03d77658ca"
+            ]
+          },
+          {
+            "text": "The test compares three successive rotations against sequential PyTorch page copies with exact tolerances. It covers eight shapes and full or quarter-length random permutations on hard-coded cuda:2, but its dtype parameter does not control cache allocation.",
+            "basis": "source",
+            "evidence": [
+              "call_e1a2eb99e67347609255d15340854c1d"
+            ]
+          },
+          {
+            "text": "A standard-library scalar check rotated order [4,1,3] over six labeled pages to [0,3,2,4,1,5]. The supplied test shapes produce block lengths from 64 to 8192 bytes, all divisible by 16, so they avoid vector-tail cases.",
+            "basis": "execution",
+            "evidence": [
+              "call_494aa88721cc488083738f6f98ee32c5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unchecked-vector-partition",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Accepted page sizes can produce out-of-range vector accesses and unsigned block-length underflow.",
+        "trigger": "Call the exposed function with a contiguous uint8 cache shaped (2,129), valid int32 order [0,1], and 129-byte scratch.",
+        "expected_behavior": "Rotate the two pages without accessing outside their storage, or reject unsupported sizes.",
+        "actual_behavior": "The wrapper accepts these dimensions. Each block initially receives two bytes, but copies 16-byte vectors. Block 65 begins at byte 130 while its clamped end is 129; unsigned subtraction produces a huge nonzero length instead of skipping the block.",
+        "locations": [
+          {
+            "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+            "path": "exllamav3/exllamav3_ext/generator/cache.cu",
+            "symbol": "cache_rotate_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_c9324f9c32734247865a3b03d77658ca",
+          "call_0354daa0d15e48ec9f350069abe8ee2a",
+          "call_e1a2eb99e67347609255d15340854c1d"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the interval calculation and 64-bit unsigned subtraction; obtained 18446744073709551615 for block 65. Parent search found no callers; the added test uses aligned sizes, so the demonstrated reach is unsupported inputs to the new extension API.",
+            "evidence": [
+              "call_494aa88721cc488083738f6f98ee32c5"
+            ],
+            "limits": "No CUDA memory access was executed; unsigned arithmetic was modeled explicitly."
+          }
+        ]
+      },
+      {
+        "id": "unused-test-dtype",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The apparent float32 test coverage repeats half-precision allocations.",
+        "trigger": "Run test_rope with cache_dtype=torch.float.",
+        "expected_behavior": "Allocate and rotate a float32 cache for that parameter case.",
+        "actual_behavior": "torch.randn explicitly uses torch.half regardless of cache_dtype, so both dtype cases exercise half storage.",
+        "locations": [
+          {
+            "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+            "path": "tests/test_cache_rotate.py",
+            "symbol": "test_rope"
+          }
+        ],
+        "source_evidence": [
+          "call_e1a2eb99e67347609255d15340854c1d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the pytest dtype parametrization with the allocation expression.",
+            "evidence": [
+              "call_e1a2eb99e67347609255d15340854c1d"
+            ],
+            "limits": "Tests were not executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a bound CUDA page-rotation primitive with one-page scratch and reference tests. Inspection identifies unchecked vector-size constraints and ineffective float32 test coverage."
+  },
+  "evidence": {
+    "call_19c4aa55df1744b686f266bcf3b46828": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "offset": 157,
+        "max_bytes": 6050
+      },
+      "result_sha256": "38c9f0ce9a9c0070376835230eb002696c51e1f87550e81bb20f2c5dda18665d"
+    },
+    "call_c9324f9c32734247865a3b03d77658ca": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "offset": 1055,
+        "max_bytes": 2851
+      },
+      "result_sha256": "55884c15cc9ce3d109b3137f58bac916be8a11b056319d738766e0b271990dee"
+    },
+    "call_c6ba134eaf9245d697f6f1bad265dfb9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "offset": 3906,
+        "max_bytes": 480
+      },
+      "result_sha256": "f69c65ab12edaada041e5bbc037badf97b18fe235765fb2e948cbc3b04025188"
+    },
+    "call_e1a2eb99e67347609255d15340854c1d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "offset": 4386,
+        "max_bytes": 1820
+      },
+      "result_sha256": "02e1b0427c9978bb4d3a33398e36b14ea06d6c636f21f43cea5eca658201b299"
+    },
+    "call_0354daa0d15e48ec9f350069abe8ee2a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8b1fccf7a6bfdcce65008c1fd456994ee4423685",
+        "query": "cache_rotate",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_40e5c2b247a44b15a6149629888ec7ae": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "bindings.cpp",
+        "limit": 20,
+        "max_bytes": 4000
+      },
+      "result_sha256": "f4f21d3ceae9693f59ffe07ee2affabcb5c9a1834a130067a91528011fb254cc",
+      "catalog_only": true
+    },
+    "call_f9dbfa2b1ab54f3290692a68aa2ce89c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "runtime",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de1b97ae94bf13488b4bad98c6eb3de8b285753d46b56295711c375be802464"
+    },
+    "call_494aa88721cc488083738f6f98ee32c5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "sizes=[256*x*2 for x in (2048,1024,1024,1024,512,512,48,16)]\nprint('test page bytes:',sizes)\nprint('test block bytes:',[(p+127)//128 for p in sizes])\np=129;b=(p+127)//128\nprint('129-byte page: block_size',b,'block65 begin',65*b,'end',min(66*b,p),'unsigned64 length',(min(66*b,p)-65*b)%(1<<64))\na=list(range(6));order=[4,1,3];t=a[order[0]]\nfor x,y in zip(order,order[1:]):a[x]=a[y]\na[order[-1]]=t\nprint('rotation',a)\nprint('nominal test cases',8*2*2,'distinct dtype actually used: half')"
+        ]
+      },
+      "result_sha256": "1123d4ff5ea6a3ddeea4f3b5179502854976d9d15aeaa490f0cc2ef0eec23348"
+    }
+  }
+}

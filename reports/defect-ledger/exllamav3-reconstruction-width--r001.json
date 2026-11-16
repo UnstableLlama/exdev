@@ -1,0 +1,179 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "trigger": "Construct LinearEXL3 with compatible scales, in_features=32, out_features=144 and an int16 trellis of shape (2,9,16), then call get_inner_weight_tensor with valid device storage.",
+  "expected_behavior": "Reject unsupported dimensions or reconstruct every element using the actual output stride.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Inspected constructor, helper, both direct callers and native launch checks. No width-divisibility check protects a direct helper call.",
+      "evidence": [
+        "call_b256bacec3d84919b4ad665993c909b8",
+        "call_9e33d352c5654444895d57910d627e3f",
+        "call_fd92a1dd8abf4e23af57083162458b94"
+      ],
+      "limits": "Normal model-loading reach was not established."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Enumerated kernel output addresses for complete and incomplete column groups.",
+      "evidence": [
+        "call_b4f660785ba547f0bc7bbb7eb05f44c7"
+      ],
+      "limits": "CPU integer indexing model only; no repository kernel ran."
+    }
+  ],
+  "defect_id": "exllamav3-reconstruction-width",
+  "revision_id": "r001",
+  "supersedes": null,
+  "description": "Reconstruction accepts incomplete column groups and derives its row stride from the truncated grid.",
+  "actual_behavior": "The inherited cols/8 launch truncation and grid-derived stride leave storage unwritten and use an incorrect layout for partial column groups. At 210 torch.empty replaces torch.zeros, so the unwritten part ceases to have a zero fallback.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "status": "source_supported",
+      "rationale": "Root tree constructor has no width-divisibility guard; native wrapper checks dimensional ratios only, launches cols/8 blocks, and kernel derives blocks_n from gridDim.x."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "49ac13c04f4c622582e2d519f2d135a53c1c4eaf",
+      "run": ".teacher/runs/commit-000210-001",
+      "local_id": "incomplete-reconstruction-width",
+      "finding": {
+        "id": "incomplete-reconstruction-width",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "A previously unguarded partial-width reconstruction can now return unwritten allocation contents.",
+        "trigger": "Construct LinearEXL3 with compatible scales, in_features=32, out_features=144 and an int16 trellis of shape (2,9,16), then call get_inner_weight_tensor with valid device storage.",
+        "expected_behavior": "Reject unsupported dimensions or reconstruct every element using the actual output stride.",
+        "actual_behavior": "The inspected constructor and native shape checks permit these dimensions. The kernel launches one column block, uses a 128-element row stride and writes only 4096 of 4608 allocated elements; the remaining storage is no longer initialized to zero.",
+        "locations": [
+          {
+            "commit": "49ac13c04f4c622582e2d519f2d135a53c1c4eaf",
+            "path": "exllamav3/modules/quant/exl3.py",
+            "symbol": "LinearEXL3.get_inner_weight_tensor"
+          },
+          {
+            "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+            "path": "exllamav3/exllamav3_ext/quant/reconstruct.cu",
+            "symbol": "reconstruct"
+          }
+        ],
+        "source_evidence": [
+          "call_b256bacec3d84919b4ad665993c909b8",
+          "call_9e33d352c5654444895d57910d627e3f",
+          "call_b933a75f6c7047b9a1dd28f156b96eda",
+          "call_fd92a1dd8abf4e23af57083162458b94"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected constructor, helper, both direct callers and native launch checks. No width-divisibility check protects a direct helper call.",
+            "evidence": [
+              "call_b256bacec3d84919b4ad665993c909b8",
+              "call_9e33d352c5654444895d57910d627e3f",
+              "call_fd92a1dd8abf4e23af57083162458b94"
+            ],
+            "limits": "Normal model-loading reach was not established."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated kernel output addresses for complete and incomplete column groups.",
+            "evidence": [
+              "call_b4f660785ba547f0bc7bbb7eb05f44c7"
+            ],
+            "limits": "CPU integer indexing model only; no repository kernel ran."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit210-001-draft.json",
+      "sha256": "e123d9a88847f15b1872bda61cc4c8c318590422bdd093db474fb8326453ebac"
+    },
+    {
+      "file": "evidence/commit210-001-transcript.json",
+      "sha256": "19c57f983525419bb745d31de32fe4cea011ee07b6a8fcd12f91c9e8c0780161"
+    },
+    {
+      "file": "evidence/commit210-001-verdict.md",
+      "sha256": "2f488f6d71d902dcdce99e8de0e2d9f6d02c880100247d29d3e8da0e22f98c32"
+    },
+    {
+      "file": "evidence/commit210-001-root-reconstruct.cu",
+      "sha256": "b6706140824639121786d7f71a885eecbd12cb982100b1790e403095ad667db2"
+    },
+    {
+      "file": "evidence/commit210-001-root-exl3.py",
+      "sha256": "53b6269e3d25bd9d5464a23534e5d9ef9065b49eb99b17fa06c7876794084652"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit210-001-draft.json",
+      "source_id": "evidence/commit210-001-draft.json",
+      "content_sha256": "e123d9a88847f15b1872bda61cc4c8c318590422bdd093db474fb8326453ebac",
+      "available_at": "2026-11-16T11:20:55.933524+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit210-001-transcript.json",
+      "source_id": "evidence/commit210-001-transcript.json",
+      "content_sha256": "19c57f983525419bb745d31de32fe4cea011ee07b6a8fcd12f91c9e8c0780161",
+      "available_at": "2026-11-16T11:20:55.933524+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit210-001-verdict.md",
+      "source_id": "evidence/commit210-001-verdict.md",
+      "content_sha256": "2f488f6d71d902dcdce99e8de0e2d9f6d02c880100247d29d3e8da0e22f98c32",
+      "available_at": "2026-11-16T11:20:55.933524+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit210-001-root-reconstruct.cu",
+      "source_id": "evidence/commit210-001-root-reconstruct.cu",
+      "content_sha256": "b6706140824639121786d7f71a885eecbd12cb982100b1790e403095ad667db2",
+      "available_at": "2026-11-16T11:20:55.933524+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit210-001-root-exl3.py",
+      "source_id": "evidence/commit210-001-root-exl3.py",
+      "content_sha256": "53b6269e3d25bd9d5464a23534e5d9ef9065b49eb99b17fa06c7876794084652",
+      "available_at": "2026-11-16T11:20:55.933524+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "49ac13c04f4c622582e2d519f2d135a53c1c4eaf",
+      "available_at": "2025-05-31T16:57:09+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "49ac13c04f4c622582e2d519f2d135a53c1c4eaf"
+    ],
+    "limits": "Only these source trees inspected; no continuous range asserted. Direct constructor/helper reach only, not normal model-loading reach."
+  },
+  "recorded_at": "2026-11-16T11:20:55.933524+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "210 changes the consequence, not the introduction of the missing width check/wrong stride. Suspected; source inspection and scalar addressing model only, no CUDA or allocator execution.",
+    "Original finding preserved verbatim; canonical-use location correction: reconstruct.cu should be cited at the task SHA, not its parent. Reviewer material never teacher input."
+  ]
+}

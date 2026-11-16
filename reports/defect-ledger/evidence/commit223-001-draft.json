@@ -1,0 +1,214 @@
+{
+  "schema_version": 5,
+  "sha": "95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225",
+  "parent_shas": [
+    "08f7e1b1fcced3ba38e83d5ab1e426051eb02553"
+  ],
+  "cutoff_date": "2025-06-02T02:02:11+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Ordinary MLP accepted activation_fn but ignored it: forward always applied SiLU.",
+        "basis": "source",
+        "evidence": [
+          "call_800507643ca842c185878503bc45dce0"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The constructor now resolves the activation once and forward invokes that callable between the up and down projections. Storing the callable and replacing the hard-coded call are dependent edits.",
+        "basis": "source",
+        "evidence": [
+          "call_678f89cd89d94c01b8e058e52277a7cc"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The default remains SiLU; selecting \"gelu\" now requests PyTorch GELU with approximate=\"tanh\". Projection construction and output-dtype conversion are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_678f89cd89d94c01b8e058e52277a7cc",
+          "call_800507643ca842c185878503bc45dce0"
+        ]
+      },
+      {
+        "text": "The whole-parent-tree MLP search found no ordinary MLP construction sites or subclasses. Consequently, the demonstrated benefit is to the exposed module API, not an established existing model workflow.",
+        "basis": "source",
+        "evidence": [
+          "call_ebedf6a47d9f4a8b852063db570a1be3"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The preceding alignment entry records that activation_fn was newly accepted but unused. That entry was read; inspection of this patch shows its ignored-GELU observation is addressed.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_d2d95b0edb544e1493bfbb3457544567"
+        ]
+      },
+      {
+        "text": "Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d concerns sliced GatedMLP loading and tensor-size mismatch. Its connection to this task is only an inferred shared-file relationship: the traceback names mlp.py, but this patch changes ordinary MLP activation, not sliced loading.",
+        "basis": "inference",
+        "evidence": [
+          "call_6e7735e0ef15418c9a29e6c2da2ff1c3",
+          "call_678f89cd89d94c01b8e058e52277a7cc"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch operation, model or GPU kernel was executed. PyTorch's implementation of the selected activations was not available in the inspected repository evidence; numerical accuracy and performance are unestablished.",
+      "No useful source-grounded numerical computation was needed for this callable-dispatch change; a scalar formula substitution would not test the selected PyTorch implementation.",
+      "Literal repository searches do not establish compatibility for dynamic or external callers."
+    ],
+    "links": [
+      "62e8832603ffc3c8089417f384f14d57f3ef6a52"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Selectable activation for ordinary MLP",
+        "claims": [
+          {
+            "text": "MLP now computes down(activation(up(x))) using a constructor-selected callable: F.silu for \"silu\", or a lambda invoking F.gelu with the tanh approximation for \"gelu\". This is selection at construction time, not a per-forward option; changing activation_fn alone afterward would not rebuild activation_fn_call.",
+            "basis": "source",
+            "evidence": [
+              "call_678f89cd89d94c01b8e058e52277a7cc",
+              "call_800507643ca842c185878503bc45dce0"
+            ]
+          },
+          {
+            "text": "The design resembles the existing GatedMLP selector but does not reuse its fused multiplication operations: ordinary MLP has one intermediate tensor, whereas GatedMLP passes gate and up tensors to ext.silu_mul or ext.gelu_mul. No existing F.gelu call was found in the parent tree.",
+            "basis": "source",
+            "evidence": [
+              "call_800507643ca842c185878503bc45dce0",
+              "call_d88ce8dfaae7425487e8299693adb0cb"
+            ]
+          },
+          {
+            "text": "TransformerBlock and ParallelDecoderBlock call their supplied mlp.forward without supplying an activation argument, so this patch does not require a forward-call signature change. Those consumers do not choose the new activation.",
+            "basis": "source",
+            "evidence": [
+              "call_4e034e0018164798ac97a0e962c42fa3",
+              "call_678f89cd89d94c01b8e058e52277a7cc"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unsupported-activation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Unrecognized activation strings leave the forward callable unset rather than producing an explicit configuration error.",
+        "trigger": "An external caller constructs an otherwise valid ordinary MLP with activation_fn=\"relu\", then calls forward.",
+        "expected_behavior": "Reject the unsupported selection during construction or provide a defined activation.",
+        "actual_behavior": "Neither match arm assigns activation_fn_call; forward attempts to access it after the up projection. No in-tree ordinary MLP constructor caller was found, so reach is limited to the exposed API rather than a demonstrated model workflow.",
+        "locations": [
+          {
+            "commit": "95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "MLP.__init__ / MLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_678f89cd89d94c01b8e058e52277a7cc",
+          "call_800507643ca842c185878503bc45dce0",
+          "call_ebedf6a47d9f4a8b852063db570a1be3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the complete patch with the parent MLP implementation and searched the whole parent tree for MLP references; inspected transformer forward consumers.",
+            "evidence": [
+              "call_678f89cd89d94c01b8e058e52277a7cc",
+              "call_ebedf6a47d9f4a8b852063db570a1be3",
+              "call_4e034e0018164798ac97a0e962c42fa3"
+            ],
+            "limits": "No constructor or forward execution; external callers were not inspected."
+          }
+        ]
+      }
+    ],
+    "summary": "Makes ordinary MLP honor its activation selector, preserving SiLU by default and adding tanh-approximate GELU; unsupported strings remain unchecked."
+  },
+  "evidence": {
+    "call_678f89cd89d94c01b8e058e52277a7cc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225",
+        "offset": 188,
+        "max_bytes": 890
+      },
+      "result_sha256": "df0af380d1d42714d458d1bab032cc177c1ea2de304d0902400636c6f6a8e75d"
+    },
+    "call_800507643ca842c185878503bc45dce0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "08f7e1b1fcced3ba38e83d5ab1e426051eb02553",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "4b30900ce86c2653b8d761119d4950efddcea1463543f05916fa0de0f73ffdb9"
+    },
+    "call_ebedf6a47d9f4a8b852063db570a1be3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "08f7e1b1fcced3ba38e83d5ab1e426051eb02553",
+        "query": "MLP",
+        "limit": 200
+      },
+      "result_sha256": "f41597a2a695e182bed179e9906dfd2bb296225770e959835294534889727bb5"
+    },
+    "call_d2d95b0edb544e1493bfbb3457544567": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+        "max_bytes": 16384
+      },
+      "result_sha256": "01e84c59470ef1db63d77e28d5195dbabb76d005622948d863bd77b736167810"
+    },
+    "call_d88ce8dfaae7425487e8299693adb0cb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "08f7e1b1fcced3ba38e83d5ab1e426051eb02553",
+        "query": "F.gelu",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_a3eccd417de64616be351cc212088847": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "08f7e1b1fcced3ba38e83d5ab1e426051eb02553",
+        "query": "activation_fn_call",
+        "limit": 100
+      },
+      "result_sha256": "909f1ba8c249dbd896e9eede35225349fb6345ba613a03332a8cb4e283e3b038"
+    },
+    "call_4e034e0018164798ac97a0e962c42fa3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "08f7e1b1fcced3ba38e83d5ab1e426051eb02553",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "10d650f34158f55773f0614cb89c949738083a8633808d758fa1304de44f5e5a"
+    },
+    "call_6e7735e0ef15418c9a29e6c2da2ff1c3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6478838fdafa281b4f92e46d8f7bcd90d813757314698d35be654ac8cbe3cbbf"
+    }
+  }
+}

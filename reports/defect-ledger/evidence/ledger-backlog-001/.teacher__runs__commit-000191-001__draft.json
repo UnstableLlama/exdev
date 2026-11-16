@@ -1,0 +1,369 @@
+{
+  "schema_version": 5,
+  "sha": "460e201cc332ff93a4d65d7b1ca1f897ad372685",
+  "parent_shas": [
+    "c94905bf794f3b3bee00cd1f6645e624cc33cd12"
+  ],
+  "cutoff_date": "2025-05-25T15:03:19+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Adds a runnable dataset-to-completion example: translate Wikitext passages into \u201czoomer slang\u201d using queued, dynamically batched jobs.",
+        "basis": "source",
+        "evidence": [
+          "call_f9f94e719d9c44c190bcbe5019bb0149"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Integer job identifiers connect asynchronously completed responses to their original passages. Collecting full_completion only on EOS avoids assembling streamed text chunks.",
+        "basis": "source",
+        "evidence": [
+          "call_f9f94e719d9c44c190bcbe5019bb0149",
+          "call_6fb44d8c4a09444eab82c2357b7a3726"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change adds one example without modifying generator implementation. It prints inputs, completions and running throughput estimates; it neither scores translation quality nor saves translations.",
+        "basis": "source",
+        "evidence": [
+          "call_f9f94e719d9c44c190bcbe5019bb0149"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial usage-evaluation entry, which establishes the existing enqueue/iterate/identifier example pattern, and the long-context entry, which describes Transformers chat-template formatting and records an unsupported default_cache_size keyword at that historical point.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_688ffc51bb8b45cfa83291644db70eff",
+          "call_bdc0165242e04d3b9790ab076a90eba6"
+        ]
+      },
+      {
+        "text": "That historical keyword incompatibility is not carried into this example: the inspected parent model_init.add_args accepts default_cache_size and forwards it to the cache-size parser default.",
+        "basis": "source",
+        "evidence": [
+          "call_74c7ffb9f9d1495db685e2597467d648",
+          "call_f9f94e719d9c44c190bcbe5019bb0149"
+        ]
+      },
+      {
+        "text": "The fetched openings of \u201cSuperior 3INST parameters\u201d and \u201cError converting model\u201d concern decoder parameters and conversion-time file opening, respectively. Neither supplies evidence that this translation example addresses those topics.",
+        "basis": "inference",
+        "evidence": [
+          "call_d32984b78a3b47c496868d0036e56e39",
+          "call_91bd3e3c610f41489bfd62f96cf1e053",
+          "call_f9f94e719d9c44c190bcbe5019bb0149"
+        ]
+      }
+    ],
+    "limitations": [
+      "No dataset download, tokenizer execution, model inference, CUDA execution or throughput benchmark was performed.",
+      "Chat-template availability, tokenizer compatibility and model compliance with the tags and /no_think instruction remain unverified.",
+      "Filesystem cache behavior was inspected but not executed. Scalar checks model only Python counting and empty-input arithmetic."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "0488385eb0d4ed8066798435469806a8572aeac2"
+    ],
+    "chapters": [
+      {
+        "id": "batched-translation",
+        "title": "Dataset-backed batched translation",
+        "claims": [
+          {
+            "text": "get_dataset strips the selected text field and retains passages of at least 125 characters\u2014not tokens. Defaults select wikitext/wikitext-2-raw-v1, test split, text field. The existing disk-cache decorator keys results by serialized arguments and stores them beneath the invoked script's directory; this avoids repeating dataset preparation on cache hits.",
+            "basis": "source",
+            "evidence": [
+              "call_f9f94e719d9c44c190bcbe5019bb0149",
+              "call_0c9aaed7a993469b81ea155b48b87df6"
+            ]
+          },
+          {
+            "text": "format_request creates one user message with #BEGIN#/#END# delimiters and a /no_think suffix, applies the model directory's HF chat template, and converts IDs to a long tensor with a leading batch dimension. Jobs use model-configured EOS IDs, an integer passage index and a default 1024-token reply limit. The tags are requested output formatting, not parser-enforced boundaries or stop strings.",
+            "basis": "source",
+            "evidence": [
+              "call_f9f94e719d9c44c190bcbe5019bb0149"
+            ]
+          },
+          {
+            "text": "The parser requests a 65536-token shared cache, not a batch of 65536 requests. Generator defaults cap concurrent sequences at 256 and prefill chunks at 2048 tokens, with concurrency additionally constrained by available cache. Job preparation asserts that each job's required pages fit; the example adds no prompt truncation or recovery from that assertion.",
+            "basis": "source",
+            "evidence": [
+              "call_f9f94e719d9c44c190bcbe5019bb0149",
+              "call_49f508d8cbef4fbdbd57c5b76bc1aa7f",
+              "call_74c7ffb9f9d1495db685e2597467d648"
+            ]
+          },
+          {
+            "text": "The new call pattern matches existing examples' queue-draining loops. longctx uses the same chat-template-to-tensor preparation but explicitly selects greedy sampling; this example leaves sampler selection to Job's default. Existing consumers variously collect text chunks, inspect EOS, display result packets or discard them. dynamic_gen's throughput path checks streaming stage and token_ids length, unlike this example's identifier-count estimate.",
+            "basis": "source",
+            "evidence": [
+              "call_6f6090a98dfa4984b8f6fd9c93ea0bc3",
+              "call_74c7ffb9f9d1495db685e2597467d648",
+              "call_f9f94e719d9c44c190bcbe5019bb0149"
+            ]
+          },
+          {
+            "text": "All jobs and completion slots are created before timing begins. Reported completions/minute therefore excludes dataset loading, model loading and job creation, but elapsed time includes iteration and console output between completions.",
+            "basis": "source",
+            "evidence": [
+              "call_f9f94e719d9c44c190bcbe5019bb0149"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "prefill-counted-as-output",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The output-token counter counts distinct result identifiers rather than generated tokens.",
+        "trigger": "A job emits a prefill result while its prompt still requires further chunks, before generating a token.",
+        "expected_behavior": "Prefill-only work contributes zero output tokens.",
+        "actual_behavior": "main increments num_tokens by one for that identifier and includes it in the displayed output tokens/second. Generator skips generation for unfinished prefill jobs, but their prefill results still carry identifiers. Reach is the new example's statistics, not generator output generation.",
+        "locations": [
+          {
+            "commit": "460e201cc332ff93a4d65d7b1ca1f897ad372685",
+            "path": "examples/batched_translation.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_f9f94e719d9c44c190bcbe5019bb0149",
+          "call_6fb44d8c4a09444eab82c2357b7a3726",
+          "call_e125afafc89346a9a210e2c8498e06a2",
+          "call_faaabfb1d68a4f6ca7190fac35db00b7"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Applied the example's distinct-identifier expression to one prefill-only result; it counted one despite zero output tokens.",
+            "evidence": [
+              "call_e125afafc89346a9a210e2c8498e06a2"
+            ],
+            "limits": "Synthetic result dictionary, not repository generator execution."
+          }
+        ]
+      },
+      {
+        "id": "empty-filtered-dataset",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Dataset summary arithmetic assumes at least one retained passage.",
+        "trigger": "The selected dataset is empty or every stripped text field is shorter than 125 characters.",
+        "expected_behavior": "Report that no passages qualify and exit cleanly.",
+        "actual_behavior": "main divides by len(in_data), raising ZeroDivisionError before model loading. The task's direct script entry calls main; whole-parent search found no references to batched_translation.",
+        "locations": [
+          {
+            "commit": "460e201cc332ff93a4d65d7b1ca1f897ad372685",
+            "path": "examples/batched_translation.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_f9f94e719d9c44c190bcbe5019bb0149",
+          "call_faaabfb1d68a4f6ca7190fac35db00b7"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the average-length expression on an empty list and observed ZeroDivisionError.",
+            "evidence": [
+              "call_e125afafc89346a9a210e2c8498e06a2"
+            ],
+            "limits": "Arithmetic reproduction only; no dataset loader or full script execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a cached Wikitext-to-slang batched generation example with indexed completions and console statistics. Inspection identifies empty-dataset failure and prefill-inflated token accounting; inference performance remains unmeasured."
+  },
+  "evidence": {
+    "call_f9f94e719d9c44c190bcbe5019bb0149": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "460e201cc332ff93a4d65d7b1ca1f897ad372685",
+        "offset": 165,
+        "max_bytes": 5825
+      },
+      "result_sha256": "ff65df28de2b7089529d5fdb91c25a0381e1cc49bef7505d8512d66380105cf5"
+    },
+    "call_bc71b97a5f514899abdc0496ba19925c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "query": "generator.iterate("
+      },
+      "result_sha256": "e980817cd04b9cb0719e19f38730371df59632d6510ac3e13495b98484db803c"
+    },
+    "call_833f2a15333447f787405b45175fa2c8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "path": "examples/generator.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "9b2c77fdad1c8db124d50d10904a1e5e9bd4fb6e2f92d4f78db0d7a787e48274"
+    },
+    "call_49f508d8cbef4fbdbd57c5b76bc1aa7f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "path": "exllamav3/generator/generator.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "33cd8db906169fb1cfb2ae6608ee6ac909fd36b476c424a09fe62569458111f2"
+    },
+    "call_6fb44d8c4a09444eab82c2357b7a3726": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 6000,
+        "max_bytes": 8500
+      },
+      "result_sha256": "eb78c43798eb264e8b028c9fb7ae8d4b2cd5da1dfa851df954305026b0b48ff3"
+    },
+    "call_b5825a168b2b4e95b6b0be8ebe34ec11": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "examples/generator.py",
+        "limit": 5
+      },
+      "result_sha256": "b8efdd81f939d7c8f1a4374ccd5435ba17806aa26f9de1626eb09a281b8ad806",
+      "catalog_only": true
+    },
+    "call_688ffc51bb8b45cfa83291644db70eff": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_63ffff61cbf64bfc96641586833597f9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "query": "def prefill",
+        "path": "exllamav3/generator/job.py"
+      },
+      "result_sha256": "040a7de47a92ecd911dfb4059c9b66e5fc1ff7f9d4a9de54f29878929c3e738d"
+    },
+    "call_0c9aaed7a993469b81ea155b48b87df6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_a246f1d459d445abb8269df264a350cb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "query": "get_dataset("
+      },
+      "result_sha256": "9bbc5342d690576dfa95a531e280f3c038cd447604f9fd95424deab0d7a2da18"
+    },
+    "call_d6baadb719cf4dc3b3225ac5ea8257f7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "query": "disk_lru_cache("
+      },
+      "result_sha256": "7aea4286749a72590d557ba24bc43491ad62f4150bfa7f168b0d671e6f094fd4"
+    },
+    "call_6f6090a98dfa4984b8f6fd9c93ea0bc3": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nterms=['generator.iterate(', 'disk_lru_cache(', 'apply_chat_template(', 'model_init.init(']\nfor p in Path('.').rglob('*.py'):\n s=p.read_text(); lines=s.splitlines()\n for i,l in enumerate(lines):\n  if any(t in l for t in terms) and not str(p).startswith('exllamav3/conversion/standard'):\n   print('\\n',p,i+1); print('\\n'.join(lines[max(0,i-8):i+14]))"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "ec917f03002a4ac82da1eeed50e0593ba4ce3b6e0704e46cf825066934c7c701"
+    },
+    "call_74c7ffb9f9d1495db685e2597467d648": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nprint(Path('exllamav3/model_init.py').read_text())\ns=Path('exllamav3/generator/job.py').read_text().splitlines()\nprint('\\n'.join(s[756:860]))\nfor i,l in enumerate(s):\n if 'max_total_tokens' in l or 'sampler =' in l or 'full_completion\"' in l: print(i+1,'\\n'.join(s[max(0,i-3):i+5]))"
+        ]
+      },
+      "result_sha256": "06e717f233878eaa9a48e7d2537bdef3df018b0c405b082a9d6356f17daac636"
+    },
+    "call_5440299b60ce46288b2a0d778196486f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "eval/longctx.py",
+        "limit": 3
+      },
+      "result_sha256": "51d9dbb725bc00acd0e7d115b2ee3f13a9119944143a10344025193113440ffc",
+      "catalog_only": true
+    },
+    "call_bdc0165242e04d3b9790ab076a90eba6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "0488385eb0d4ed8066798435469806a8572aeac2",
+        "max_bytes": 16384
+      },
+      "result_sha256": "46937579c145703be63162e00b71ce9b3d38cf22f7abacb206ea783d0a557ec1"
+    },
+    "call_faaabfb1d68a4f6ca7190fac35db00b7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "query": "batched_translation"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_e125afafc89346a9a210e2c8498e06a2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\ns=Path('exllamav3/generator/job.py').read_text().splitlines(); print('\\n'.join(s[860:902]))\nresults=[{'identifier':0,'stage':'prefill','eos':False}]\nprint('scalar counter for prefill-only result:',len(set(r['identifier'] for r in results)),'output tokens:',0)\ntry:\n data=[]; print(sum(len(d) for d in data)/len(data))\nexcept ZeroDivisionError as e: print('empty dataset scalar check:',type(e).__name__)"
+        ]
+      },
+      "result_sha256": "f4d3de3d38759618f02eca4e525fc6863cb18007b949febc19139fcdfac337e1"
+    },
+    "call_d32984b78a3b47c496868d0036e56e39": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "20f776724fae9d4633f546a159526ce1f5b885313b45c791aa9215ec46cb8501"
+    },
+    "call_91bd3e3c610f41489bfd62f96cf1e053": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "90c2091ad93a7206d1a5336ff1664e428822ab12aa8b16f846044f50d0b632a3"
+    }
+  }
+}

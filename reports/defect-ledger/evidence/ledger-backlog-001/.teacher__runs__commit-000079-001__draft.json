@@ -1,0 +1,284 @@
+{
+  "schema_version": 5,
+  "sha": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+  "parent_shas": [
+    "a61801d2785be4721ee948c60c26a41fecd2f261"
+  ],
+  "cutoff_date": "2025-04-23T21:22:45+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The author reports nested static_for_pack failures with VC++ older than 17.13. The change replaces template-lambda launch selection with explicit kernel-pointer tables; the compiler-version boundary is an author claim, not independently verified.",
+        "basis": "source",
+        "evidence": [
+          "call_80f2ac7273b24ab28932ba84369a0d0e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Explicit tables retain compile-time kernel specializations while moving runtime selection to array indexing. This avoids the nested generic-lambda dispatch implicated by the author, at the cost of manually enumerating supported variants.",
+        "basis": "inference",
+        "evidence": [
+          "call_80f2ac7273b24ab28932ba84369a0d0e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Paged cache wrappers now explicitly reject bitrates outside 2\u20138 before indexing. Packing, unpacking, sign packing and reconstruction also gain cudaPeekAtLastError checks.",
+        "basis": "source",
+        "evidence": [
+          "call_80f2ac7273b24ab28932ba84369a0d0e"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "A whole-parent-tree literal search found no VC++ occurrences.",
+        "basis": "source",
+        "evidence": [
+          "call_8b3a90b1353843a283e7b2abdd403fd6"
+        ]
+      },
+      {
+        "text": "The inspected discussions report distinct problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d describes a Linux/Conda toolchain mismatch; #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d discusses regularization; #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d discusses chat mode selection. None supplies verification of this VC++ workaround.",
+        "basis": "source",
+        "evidence": [
+          "call_8584a714aec64179aa439f18d22260dc",
+          "call_223cc0ab3ca446559a490bc87d84b162",
+          "call_5b748fc8d26c41569c39d1a7439b8ca1",
+          "call_efbfa10bcb4d4a008652de82632b5c7a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, GPU execution or performance measurement was performed; compatibility with the stated VC++ versions remains unestablished.",
+      "The scalar check validates transcribed selector arithmetic only, not C++ function-pointer launch support or numerical kernel correctness."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "kernel-dispatch",
+        "title": "Explicit specialization tables for CUDA launches",
+        "claims": [
+          {
+            "text": "Weight packing, unpacking, tile quantization and reconstruction use eight-entry tables indexed by K\u22121, covering 1\u20138 bits per weight. Contiguous cache operations use seven-entry tables indexed by bits\u22122; paged operations use 7\u00d77 tables with key bitrate as the first dimension and value bitrate as the second.",
+            "basis": "source",
+            "evidence": [
+              "call_80f2ac7273b24ab28932ba84369a0d0e"
+            ]
+          },
+          {
+            "text": "The selected kernels retain their existing algorithms and launch arguments: cache kernels encode/decode 32-value groups with independent key/value specializations; weight packing operates on 256-value tiles; quantize_tiles retains its scratch-buffer batching; reconstruction retains 256-thread blocks handling eight packed tiles. This is dispatch restructuring, not a new compression format.",
+            "basis": "source",
+            "evidence": [
+              "call_80f2ac7273b24ab28932ba84369a0d0e",
+              "call_8f4985222c514bbe901d62941550190e",
+              "call_ba094f15d85d4313acf8187c1551f811",
+              "call_18ab0bd66e0547f2b3846e9ec97dbbd6",
+              "call_5beef9cdc6984a659d295fa276354890"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription verified that all eight weight selectors and all 49 key/value combinations recover the original specialization parameters.",
+            "basis": "execution",
+            "evidence": [
+              "call_57c360e09b1f4e5d8423532862232807"
+            ]
+          },
+          {
+            "text": "static_for_pack remains defined. util.h adds a commented table example and the compiler warning rather than removing the helper.",
+            "basis": "source",
+            "evidence": [
+              "call_80f2ac7273b24ab28932ba84369a0d0e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unchecked-pack-bitrate",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Direct table indexing introduces an unchecked out-of-range access in pack_trellis and unpack_trellis for unsupported K.",
+        "trigger": "Call either native wrapper with K=9 and tensors satisfying its shape checks, including packed final dimension 144 and unpacked final dimension 256.",
+        "expected_behavior": "Reject unsupported bitrate without accessing outside the specialization table.",
+        "actual_behavior": "The new expression indexes element 8 of an eight-entry table. Existing shape checks do not reject this construction; the previous dispatch simply selected no kernel.",
+        "locations": [
+          {
+            "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+            "path": "exllamav3/exllamav3_ext/quant/pack.cu",
+            "symbol": "pack_trellis"
+          },
+          {
+            "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+            "path": "exllamav3/exllamav3_ext/quant/pack.cu",
+            "symbol": "unpack_trellis"
+          }
+        ],
+        "source_evidence": [
+          "call_80f2ac7273b24ab28932ba84369a0d0e",
+          "call_ba094f15d85d4313acf8187c1551f811",
+          "call_5b113b6891704aa9992e2637d0da1a61",
+          "call_e9f74f420ce64cd999592cf80cd58a65"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search finds both native bindings and a Python pack_trellis helper that forwards quant_args['K'] without a local range check. The unpack call in that helper is commented out. Reach is established for direct extension callers and this packing helper, not for every conversion workflow.",
+            "evidence": [
+              "call_5b113b6891704aa9992e2637d0da1a61",
+              "call_e9f74f420ce64cd999592cf80cd58a65",
+              "call_ba094f15d85d4313acf8187c1551f811",
+              "call_80f2ac7273b24ab28932ba84369a0d0e"
+            ],
+            "limits": "No claim that normal conversion settings produce K=9."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed packed dimension 144 and table index 8 for K=9.",
+            "evidence": [
+              "call_57c360e09b1f4e5d8423532862232807"
+            ],
+            "limits": "Arithmetic only; no native out-of-bounds access or GPU launch was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Replaces template-lambda CUDA dispatch with explicit specialization tables to address reported older-VC++ failures, adds launch-error checks, and leaves unsupported weight bitrates vulnerable to unchecked indexing."
+  },
+  "evidence": {
+    "call_80f2ac7273b24ab28932ba84369a0d0e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+        "max_bytes": 17000,
+        "offset": 0
+      },
+      "result_sha256": "a32593df4b901e67b1ec57c15dcc1c9f32dfb05b6ec38f782be65f85d6020f96"
+    },
+    "call_ba094f15d85d4313acf8187c1551f811": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "path": "exllamav3/exllamav3_ext/quant/pack.cu",
+        "max_bytes": 16000
+      },
+      "result_sha256": "5fe666ae8b34170bed0fbd30258ea06334b04292d0b630d7ebecb4fb8d2fdeed"
+    },
+    "call_18ab0bd66e0547f2b3846e9ec97dbbd6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "path": "exllamav3/exllamav3_ext/quant/quantize.cu",
+        "max_bytes": 20000
+      },
+      "result_sha256": "e19cd4c2fb240223e2699edf14f986a331e6de9585014cea6ef935cdc6cdb2f8"
+    },
+    "call_5beef9cdc6984a659d295fa276354890": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "path": "exllamav3/exllamav3_ext/quant/reconstruct.cu",
+        "max_bytes": 10000
+      },
+      "result_sha256": "967db828688fc1b975429a487060316a521d6cdc3945f2fa13027f4f953ce1df"
+    },
+    "call_8f4985222c514bbe901d62941550190e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "path": "exllamav3/exllamav3_ext/cache/q_cache_kernels.cuh",
+        "max_bytes": 18000
+      },
+      "result_sha256": "0feea1489c4899706f87e53b90385f5020f0d88a2dbab0a039182da37da3c985"
+    },
+    "call_8b3a90b1353843a283e7b2abdd403fd6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "query": "VC++",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8584a714aec64179aa439f18d22260dc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "5bcf8430b9a2e9baba1b17846e27d3e3755223adc4eaf36eaf8058ea0cc11f0f"
+    },
+    "call_223cc0ab3ca446559a490bc87d84b162": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c1dea730568cbcbad7e5ff42f6ddca52a83c4a4a9868d8123ef2837e5ebdc54a"
+    },
+    "call_5b748fc8d26c41569c39d1a7439b8ca1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0d21512a64461bfecd0a94992aedb3d670563d1916770fc78f79b8e87183e8e5"
+    },
+    "call_efbfa10bcb4d4a008652de82632b5c7a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "34b1283043eca146af971b6f0de09478ae566d19794e3981d7525f638dce5caa"
+    },
+    "call_5b113b6891704aa9992e2637d0da1a61": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "query": "pack_trellis",
+        "limit": 100
+      },
+      "result_sha256": "b789d422d269d0cd59f10ea2a172d0cac7c151dfa7d512f1ce7e3785ebde294d"
+    },
+    "call_dd1acbe6768c4e088fdc22fc25723711": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 17000,
+        "max_bytes": 6000
+      },
+      "result_sha256": "123906f7f0f1a691df755e0a2b691ef5c716b018887193412103616d587ca58c"
+    },
+    "call_e9f74f420ce64cd999592cf80cd58a65": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a61801d2785be4721ee948c60c26a41fecd2f261",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 16600,
+        "max_bytes": 700
+      },
+      "result_sha256": "174230b2e24c578b78273a99191f55c03b8d60a9ac6d666d48a0a52e937b415f"
+    },
+    "call_57c360e09b1f4e5d8423532862232807": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "w=[1,2,3,4,5,6,7,8]; c=[2,3,4,5,6,7,8]; pairs=[[(k,v) for v in c] for k in c]; assert all(w[k-1]==k for k in w); assert all(pairs[k-2][v-2]==(k,v) for k in c for v in c); print('8 weight selectors and 49 cache pairs match original template parameters'); print('K=9: packed last dimension=',256*9//16,'; index=',9-1,'; table length=',len(w))"
+        ]
+      },
+      "result_sha256": "32e26b16875770aef4fb722d548ba6d2f17688005db483bc1cb044950e322cfc"
+    }
+  }
+}

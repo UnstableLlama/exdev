@@ -1,0 +1,350 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The CLI parses top-k as a float, but the selected sampler uses it directly as a slice boundary.",
+  "trigger": "Run chat with an explicit --top_k value at least 1, such as --top_k 40.",
+  "expected_behavior": "Keep the requested integer number of leading candidates.",
+  "actual_behavior": "The parser produces 40.0, which ComboSampler passes unchanged to SS_TopK.run's slice. This is an invalid slice index. The default zero bypasses that step. Reach is established for the newly added chat call; parent-tree searches found only the ComboSampler definition/export and separate SS_TopK uses in presets and tests, not a universal failure of other samplers.",
+  "verification": [
+    {
+      "method": "scalar_transcription",
+      "description": "Parsed 40 with the same argparse float conversion and attempted a list slice, obtaining TypeError.",
+      "evidence": [
+        "call_c68a5af446fd4171bbd0eedd7d930807"
+      ],
+      "limits": "Standard-library reproduction of the type mismatch, not execution of PyTorch slicing or chat."
+    }
+  ],
+  "defect_id": "exllamav3-chat-top-k-float",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "fc543509c67605f64ab75bea590c5b91bad0e875",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "fc543509c67605f64ab75bea590c5b91bad0e875",
+      "run": ".teacher/runs/commit-000092-001",
+      "local_id": "chat-top-k-float",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "chat-top-k-float",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The CLI parses top-k as a float, but the selected sampler uses it directly as a slice boundary.",
+        "trigger": "Run chat with an explicit --top_k value at least 1, such as --top_k 40.",
+        "expected_behavior": "Keep the requested integer number of leading candidates.",
+        "actual_behavior": "The parser produces 40.0, which ComboSampler passes unchanged to SS_TopK.run's slice. This is an invalid slice index. The default zero bypasses that step. Reach is established for the newly added chat call; parent-tree searches found only the ComboSampler definition/export and separate SS_TopK uses in presets and tests, not a universal failure of other samplers.",
+        "locations": [
+          {
+            "commit": "fc543509c67605f64ab75bea590c5b91bad0e875",
+            "path": "examples/chat.py",
+            "symbol": "--top_k argument declaration"
+          }
+        ],
+        "source_evidence": [
+          "call_53549afdddd64c71bfec5385221b34e6",
+          "call_71d1cb55e17e4786b8d69b329a3e9d13",
+          "call_8321d55fffcc4bad962d194a9f3cf93c",
+          "call_79f0a2119a5d4607aafb497c4909d76e",
+          "call_bd54de763e51442bbfc116c5068ac067"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Parsed 40 with the same argparse float conversion and attempted a list slice, obtaining TypeError.",
+            "evidence": [
+              "call_c68a5af446fd4171bbd0eedd7d930807"
+            ],
+            "limits": "Standard-library reproduction of the type mismatch, not execution of PyTorch slicing or chat."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "3c9ede55404c8ecce54494657f23f7056ea36a1a",
+      "run": ".teacher/runs/commit-000124-001",
+      "local_id": "humaneval-top-k-float",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "humaneval-top-k-float",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new top-k CLI option parses floats, but the selected sampling step uses its value directly as a slice boundary.",
+        "trigger": "Run HumanEval with --top_k 5 and nonzero temperature, reaching sampling.",
+        "expected_behavior": "Retain the five highest-ranked token candidates.",
+        "actual_behavior": "The parser produces 5.0, which passes the enabled-filter check and reaches SS_TopK.run without integer conversion; its tensor slice is expected to reject that boundary. The default 0.0 is disabled, and temperature zero bypasses top-k.",
+        "locations": [
+          {
+            "commit": "3c9ede55404c8ecce54494657f23f7056ea36a1a",
+            "path": "eval/humaneval.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_TopK.run"
+          }
+        ],
+        "source_evidence": [
+          "call_f664c705b2dd4fd98039ee1d6f05ceec",
+          "call_78febdf5f7374ade9e5dc5fedfec48d6",
+          "call_6bb03f55f29e4f8a879e92acf7ee495e",
+          "call_06f099f6aed74000ac89e3dbc18c17b4",
+          "call_aaa4136c19994d2f8fc18355ae738d89"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the script's __main__ invocation through main, ComboSampler and SS_TopK. Whole-tree SS_TopK construction search found TopKSampler, ComboSampler and an integer-valued test construction. The identified reach is the new HumanEval CLI path, not every sampler user.",
+            "evidence": [
+              "call_06f099f6aed74000ac89e3dbc18c17b4",
+              "call_78febdf5f7374ade9e5dc5fedfec48d6",
+              "call_aaa4136c19994d2f8fc18355ae738d89"
+            ],
+            "limits": "No generation or tensor-indexing execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library reproduction parsed 5 as 5.0 and observed TypeError when using it as a list slice boundary; the default parsed as disabled 0.0.",
+            "evidence": [
+              "call_a08e7a54ea57449badf382ec02976e20"
+            ],
+            "limits": "Models the argument-type mismatch, not repository or GPU execution."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "57a37f2658fa2b3deac5e3404d2df7120223a69a",
+      "run": ".teacher/runs/commit-000125-001",
+      "local_id": "humaneval-top-k-float",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "humaneval-top-k-float",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The integrated CLI retains the second parent's float-valued top-k mismatch.",
+        "trigger": "Run HumanEval with --top_k 5 and nonzero temperature, reaching sampling.",
+        "expected_behavior": "Keep the five highest-ranked candidates.",
+        "actual_behavior": "The parser produces 5.0, which passes the enabled-filter check and reaches SS_TopK.run unchanged as a tensor slice boundary, expected to raise TypeError. Default 0.0 disables this step; temperature zero bypasses it.",
+        "locations": [
+          {
+            "commit": "57a37f2658fa2b3deac5e3404d2df7120223a69a",
+            "path": "eval/humaneval.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_TopK.run"
+          }
+        ],
+        "source_evidence": [
+          "call_1bc1d290f054475e8af3840cb83c9ed8",
+          "call_199b35ebd0734b958d6af17d185c1f68",
+          "call_1d05f96919a94f63858e80480fb91e96"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the script entry through main and ComboSampler. Whole-parent-tree SS_TopK construction search found TopKSampler, ComboSampler and an integer-valued test construction. The affected reach is the new HumanEval CLI path, not all sampler users.",
+            "evidence": [
+              "call_6a9b49d7b06547a98107727f009e2245",
+              "call_2e9df6be499042938d7d6b1454db7720",
+              "call_52161b083daf40269a29edfaa34075e9",
+              "call_1d05f96919a94f63858e80480fb91e96"
+            ],
+            "limits": "No tensor-indexing execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library reproduction parsed 5 as 5.0 and observed TypeError when slicing a list; the default remained disabled.",
+            "evidence": [
+              "call_7f42520f00f848ea8157eeab28718969"
+            ],
+            "limits": "List slicing models the type mismatch but does not execute PyTorch or GPU sampling."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "beb7bcd96d0d54ee2511a84f63632d0fe3590050",
+      "origin": "fix_derived",
+      "status": "source_supported",
+      "scope": "HumanEval caller",
+      "description": "HumanEval parses top_k as int. This fixes the second site only; not the separate Python int.is_integer compatibility identity.",
+      "review": "reviews/verdicts/commit-000147-001.md"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a027848ddc37899274b540ed5ba009aa742d9d94",
+      "origin": "fix_derived",
+      "status": "source_supported",
+      "scope": "chat caller and sampler conversion",
+      "description": "Chat parses int; SS_TopK validates integrality then casts int, removing float indexing for integer-valued inputs. HumanEval parser corrected separately at 147. Python 3.10/3.11 int.is_integer regression is a different identity.",
+      "review": "reviews/verdicts/commit-000136-001.md"
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000092-001__draft.json",
+      "sha256": "5f677a03170c513b7fe96f6ef3553b828c1a34bffe6c420dfa329571c78c85d4"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000092-001.md",
+      "sha256": "e3056f06f00498bbbdc9ad0aaea46c395a78ea584d5ad7fee8a7e39fff86e66a"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000124-001__draft.json",
+      "sha256": "c7c268f07008f474d92f91fcb2799f3efd590a6930ecc02a0e2de8c111fd1f3c"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000124-001.md",
+      "sha256": "7bf2d1f2a7cccb91e14931c62e2f53416baf1ce9cf68c088d67d71b0fe79afb5"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000125-001__draft.json",
+      "sha256": "36994b75ff6fc07e2054e03bd349c3b4c70da776c1af877996988a8132e90b4f"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000125-001.md",
+      "sha256": "05abb6b7e86cb1d1e9e0a544b5706b179192327376865cfb0e47be826ff229b9"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000147-001__draft.json",
+      "sha256": "7b48466af3fc6a174919cca93289b06bf59acf6cef4b31eb9c41c01edd4cec17"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000147-001.md",
+      "sha256": "150a43b07c1b62c73606ee297a7f22b02969cf15aa2b22a8a152e8efc0dd5c5b"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000136-001.md",
+      "sha256": "6eeba01d95f73fa417401f4362e63d7b52407e14fdb4f6df14e00171ff6215e3"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000136-001__draft.json",
+      "sha256": "923482cb8be1251d23281c9843e536508b98d9a64c3d7a9a4a6cf633eb31ab72"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000092-001/draft.json",
+      "source_id": ".teacher/runs/commit-000092-001/draft.json",
+      "content_sha256": "5f677a03170c513b7fe96f6ef3553b828c1a34bffe6c420dfa329571c78c85d4",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000092-001.md",
+      "source_id": "reviews/verdicts/commit-000092-001.md",
+      "content_sha256": "e3056f06f00498bbbdc9ad0aaea46c395a78ea584d5ad7fee8a7e39fff86e66a",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000124-001/draft.json",
+      "source_id": ".teacher/runs/commit-000124-001/draft.json",
+      "content_sha256": "c7c268f07008f474d92f91fcb2799f3efd590a6930ecc02a0e2de8c111fd1f3c",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000124-001.md",
+      "source_id": "reviews/verdicts/commit-000124-001.md",
+      "content_sha256": "7bf2d1f2a7cccb91e14931c62e2f53416baf1ce9cf68c088d67d71b0fe79afb5",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000125-001/draft.json",
+      "source_id": ".teacher/runs/commit-000125-001/draft.json",
+      "content_sha256": "36994b75ff6fc07e2054e03bd349c3b4c70da776c1af877996988a8132e90b4f",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000125-001.md",
+      "source_id": "reviews/verdicts/commit-000125-001.md",
+      "content_sha256": "05abb6b7e86cb1d1e9e0a544b5706b179192327376865cfb0e47be826ff229b9",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "beb7bcd96d0d54ee2511a84f63632d0fe3590050",
+      "available_at": "2025-05-11T17:42:55+09:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000147-001/draft.json",
+      "source_id": ".teacher/runs/commit-000147-001/draft.json",
+      "content_sha256": "7b48466af3fc6a174919cca93289b06bf59acf6cef4b31eb9c41c01edd4cec17",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000147-001.md",
+      "source_id": "reviews/verdicts/commit-000147-001.md",
+      "content_sha256": "150a43b07c1b62c73606ee297a7f22b02969cf15aa2b22a8a152e8efc0dd5c5b",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a027848ddc37899274b540ed5ba009aa742d9d94",
+      "available_at": "2025-05-11T11:15:56+02:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000136-001.md",
+      "source_id": "reviews/verdicts/commit-000136-001.md",
+      "content_sha256": "6eeba01d95f73fa417401f4362e63d7b52407e14fdb4f6df14e00171ff6215e3",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000136-001/draft.json",
+      "source_id": ".teacher/runs/commit-000136-001/draft.json",
+      "content_sha256": "923482cb8be1251d23281c9843e536508b98d9a64c3d7a9a4a6cf633eb31ab72",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "fc543509c67605f64ab75bea590c5b91bad0e875",
+      "available_at": "2025-04-27T01:10:07+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "3c9ede55404c8ecce54494657f23f7056ea36a1a",
+      "available_at": "2025-05-05T12:10:03+09:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "57a37f2658fa2b3deac5e3404d2df7120223a69a",
+      "available_at": "2025-05-06T04:41:54+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "fc543509c67605f64ab75bea590c5b91bad0e875",
+      "3c9ede55404c8ecce54494657f23f7056ea36a1a",
+      "57a37f2658fa2b3deac5e3404d2df7120223a69a"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "One identity for chat92 and HumanEval124/125; separate from Python3.12 int.is_integer compatibility record."
+  ]
+}

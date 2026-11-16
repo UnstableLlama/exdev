@@ -1,0 +1,534 @@
+{
+  "schema_version": 5,
+  "sha": "45fa5abff9001ff373a612303e48ec01d34efe42",
+  "parent_shas": [
+    "d4cdab818dfaa29854a5d218366e4c603036783a"
+  ],
+  "cutoff_date": "2025-06-03T03:09:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "Adds Mistral3ForConditionalGeneration registration and separate text and vision components, rather than treating the checkpoint as a language-only Mistral model.",
+        "basis": "source",
+        "evidence": [
+          "call_a53efb8baf8746d5ad0e2fdba20ab2da",
+          "call_00cb2dc6ce174608b1d34452e6fde068"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The vision merger needs spatial dimensions after convolution has flattened the image. The new default_load_params hook supplies those dimensions during autosplit probing; it is a prerequisite for loading this assembly, not an independent cleanup.",
+        "basis": "source",
+        "evidence": [
+          "call_00cb2dc6ce174608b1d34452e6fde068",
+          "call_c1c777559b8548018fb2e466fa50a402"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Mistral3Config requires vision configuration and preprocessor_config.json even when only the text component is requested. It asserts PixtralImageProcessorFast and matching model/preprocessor patch sizes.",
+        "basis": "source",
+        "evidence": [
+          "call_00cb2dc6ce174608b1d34452e6fde068",
+          "call_5ac37882aa864606863f3b087f512fa5"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the Gemma3 vision introduction, image-sizing helper introduction, and independent MLP-output-width entries. They establish the preceding multimodal interface, sizing primitive, and projector-width capability reused here.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ba09173379ed4e918266c1ee9e66ab94",
+          "call_c9b01c8b03614e22881a674ad74541ed",
+          "call_2659acaaf77744e0aeef7a573a08bdf3"
+        ]
+      },
+      {
+        "text": "The earlier MLP entry's unsupported-activation concern remains in the unchanged implementation, but this new projector explicitly selects supported GELU. The earlier sizing overflow remains reachable through the new preprocessing caller.",
+        "basis": "source",
+        "evidence": [
+          "call_574a5a8dac524774baeb7afc97ead013",
+          "call_81514a70349245709df4ca0760d83bb2",
+          "call_00cb2dc6ce174608b1d34452e6fde068"
+        ]
+      },
+      {
+        "text": "PR #25, \u201cLanguage layers for Mistral Small 3.1 and InternVL3,\u201d was opened by gakada. Turboderp discussed delaying language-only support to preserve future component-model compatibility. Its relationship to this change is inferred from the matching Mistral3 architecture and component design, not an explicit commit reference.",
+        "basis": "inference",
+        "evidence": [
+          "call_5d273a550d094a788d8a7d733559c639",
+          "call_00cb2dc6ce174608b1d34452e6fde068"
+        ]
+      },
+      {
+        "text": "Issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d and #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d report installation/import failures. Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, discusses context-dependent scaling. Their relevance is inferred only from shared model.py or rope.py paths; none establishes a defect fixed by this adapter.",
+        "basis": "inference",
+        "evidence": [
+          "call_549cba3b3a004fc8ab8db8a5128604f3",
+          "call_65ef63f02bf84d0fb77919e68c37c9a3",
+          "call_ae476381e0de497abfd1218306c3a690"
+        ]
+      }
+    ],
+    "limitations": [
+      "No checkpoint loading, image-library operation, tensor operation, or GPU inference was executed. Scalar checks model arithmetic only.",
+      "The requested pinned preprocessor_config.json was unavailable; actual preprocessing values and tokenizer special-token agreement remain unverified.",
+      "The hard-coded projector intermediate width 5120 matches text width in both inspected configs, but neither config establishes the projector's weight dimensions. Tensor headers and numerical parity were not checked.",
+      "Whole-tree compatibility inspection covered the new loading hook, sizing helper and image-embedding entry point, but not every inherited module caller or configuration-key variant."
+    ],
+    "links": [
+      "532d78658414d8f9aabce52cb64b982b3ec53388",
+      "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+      "d4cdab818dfaa29854a5d218366e4c603036783a"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Mistral3 text and Pixtral image components",
+        "claims": [
+          {
+            "text": "The text component uses language_model-prefixed embeddings, RMS-normalized attention and SiLU gated-MLP blocks, final RMSNorm and an LM head. Nested text_config supplies dimensions and RoPE settings; explicit head_dim is respected rather than assuming hidden_size divided by head count.",
+            "basis": "source",
+            "evidence": [
+              "call_00cb2dc6ce174608b1d34452e6fde068",
+              "call_a1bbfea6844d4be2b4857371c4ebbd97"
+            ]
+          },
+          {
+            "text": "mistralai/Mistral-Small-3.1-24B-Base-2503 specifies text width 5120, head dimension 128, 32 query heads, eight KV heads and 40 layers; its vision tower has width 1024, head dimension 64, 16 heads, 24 layers, patch size 14 and merge size two. The inspected Instruct-2503 configuration independently has identical values. Both agree with SiLU text/vision blocks, GELU projector selection, three channels and final-layer features; omitted vision KV-head count defaults to 16.",
+            "basis": "source",
+            "evidence": [
+              "call_c757633b68334e428c31d8899fcfae0e",
+              "call_1e5e08f07c1645099a6b787315156d40",
+              "call_00cb2dc6ce174608b1d34452e6fde068"
+            ]
+          },
+          {
+            "text": "Preprocessing composites transparency onto white, aligns resized dimensions to patch_size times spatial_merge_size, rescales float32 pixels and normalizes channels before producing a half-precision BCHW tensor. Alignment prepares complete merger neighborhoods; the sizing helper requires the maximum edge to be divisible by that combined patch size.",
+            "basis": "source",
+            "evidence": [
+              "call_00cb2dc6ce174608b1d34452e6fde068",
+              "call_81514a70349245709df4ca0760d83bb2"
+            ]
+          },
+          {
+            "text": "The vision tower uses patch convolution, RMSNorm and attention/SiLU gated-MLP blocks. get_image_embeddings selects noncausal attention without a cache. The default selected implementation is decode_flash_attn_nc, which forwards causal=False to FlashAttention; the inherited SDPA alternative rejects sliding windows and softcaps, neither configured by this tower.",
+            "basis": "source",
+            "evidence": [
+              "call_00cb2dc6ce174608b1d34452e6fde068",
+              "call_23c766e977214793b12bda00d0461246"
+            ]
+          },
+          {
+            "text": "Vision rotary angles split alternating frequency components between height and width, concatenate their spatial tables, and flatten the grid. Position IDs use row times maximum-grid-width plus column, selecting image-specific coordinates from that table. Attention passes the table to RoPE.apply instead of its ordinary frequency vector. This is source-level data-flow correspondence, not verified parity with Transformers.",
+            "basis": "source",
+            "evidence": [
+              "call_00cb2dc6ce174608b1d34452e6fde068",
+              "call_23c766e977214793b12bda00d0461246",
+              "call_14cf5916d5e24fef9d4236df49c5c30e"
+            ]
+          },
+          {
+            "text": "After projector RMSNorm, Mistral3PatchMerger requires batch size one and reshapes tokens using features_size. Nonoverlapping unfold neighborhoods concatenate merge\u00b2 patches per channel, then a learned Linear reduces that width to the vision width. An ordinary MLP maps vision width through fixed intermediate width 5120 to text width, using the existing tanh-approximate GELU implementation.",
+            "basis": "source",
+            "evidence": [
+              "call_00cb2dc6ce174608b1d34452e6fde068",
+              "call_574a5a8dac524774baeb7afc97ead013"
+            ]
+          },
+          {
+            "text": "The resulting vectors move to CPU. Each merged row contributes image placeholders followed by [IMG_BREAK], with [IMG_END] after the last row. MMEmbedding replaces placeholders with allocated synthetic IDs and retains vectors, alias and metadata. The existing multimodal example uses this interface but remains configured for Gemma3, not Mistral3.",
+            "basis": "source",
+            "evidence": [
+              "call_00cb2dc6ce174608b1d34452e6fde068",
+              "call_263c022a395546ab95f5e9dad0a3db05",
+              "call_ce5552b985394f79962389b6c72a47f0"
+            ]
+          },
+          {
+            "text": "For an assumed preprocessing edge of 1540, patch size 14 and merge size two, scalar arithmetic gives a 110\u00d7110 patch grid, a 12100\u00d732 rotary table, 3025 merged vectors, and 3081 serialized tokens including row breaks and the end token. Merger input width is 4096. A rectangular-grid check also verified the flattened-index inverse.",
+            "basis": "execution",
+            "evidence": [
+              "call_5f745d75c2c145bb9f4a7b041252f90b"
+            ]
+          },
+          {
+            "text": "Autosplit now creates one parameter dictionary from default_load_params and shares it across device preparation and module forwards. The base hook returns an empty dictionary; Mistral3 vision supplies square feature dimensions matching its image-shaped probe. The probe does not supply the actual image's rotary table or causal=False, so it remains a loading probe rather than equivalent image inference. Single-device loading does not perform this probe.",
+            "basis": "source",
+            "evidence": [
+              "call_c1c777559b8548018fb2e466fa50a402",
+              "call_00cb2dc6ce174608b1d34452e6fde068",
+              "call_5ac37882aa864606863f3b087f512fa5",
+              "call_d50be758b6984a4b8334adc5b55cfc44"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-resize-overflow",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new preprocessing path inherits floating-point ceiling overflow from the unchanged image-sizing helper.",
+        "trigger": "Call Mistral3VisionModel.get_image_embeddings with a 1541\u00d71000 image and preprocessing longest_edge=1540, patch_size=14, spatial_merge_size=2.",
+        "expected_behavior": "Resize to a grid-aligned image whose dimensions do not exceed 1540.",
+        "actual_behavior": "The scalar transcription yields 1568\u00d71008: division rounds the limiting dimension slightly above 1540, ceiling preserves 1541, and alignment raises it to 1568. Neither the helper nor the new caller clamps the result. The parent had no caller of this sizing helper; the task adds a direct preprocessing call reached by get_image_embeddings. The existing example invokes the same interface on Gemma3, so it is not itself evidence of a Mistral3 execution.",
+        "locations": [
+          {
+            "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+            "path": "exllamav3/util/vision.py",
+            "symbol": "size_to_longest_edge_and_patch_size"
+          },
+          {
+            "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+            "path": "exllamav3/models/mistral3.py",
+            "symbol": "Mistral3VisionModel.preprocess"
+          }
+        ],
+        "source_evidence": [
+          "call_81514a70349245709df4ca0760d83bb2",
+          "call_00cb2dc6ce174608b1d34452e6fde068",
+          "call_8857efb6fa79405987eb3bd93934e709",
+          "call_be44b0637a904356893dc98f3eab6468",
+          "call_ce5552b985394f79962389b6c72a47f0"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed ratio, ceiling and alignment using Python floats and math.ceil; the first tested overflowing width was 1541.",
+            "evidence": [
+              "call_5f745d75c2c145bb9f4a7b041252f90b"
+            ],
+            "limits": "Did not execute NumPy, Pillow, the repository helper or rotary kernels. The preprocessing edge is an explicit test assumption, not a verified checkpoint preprocessing value."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds Mistral3 text and Pixtral vision assembly, spatial merging, image-token serialization and autosplit spatial parameters; the new preprocessing caller inherits a sizing-overflow risk."
+  },
+  "evidence": {
+    "call_a53efb8baf8746d5ad0e2fdba20ab2da": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+        "offset": 174,
+        "max_bytes": 24000
+      },
+      "result_sha256": "3d58a0816b7ea8b2dbc022b4fc7d78253ba612aa2433c219d6916866cef59c27"
+    },
+    "call_00cb2dc6ce174608b1d34452e6fde068": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+        "offset": 836,
+        "max_bytes": 22000
+      },
+      "result_sha256": "80692bf1fa5fb3eedd441dbe414fc8bb3c8fb062de49b55e23ce3e3a8bbbbfba"
+    },
+    "call_c1c777559b8548018fb2e466fa50a402": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+        "offset": 20382,
+        "max_bytes": 2000
+      },
+      "result_sha256": "ea15d37b7759157dc09802fcc618f4d09b95696e6b0e418a4b6692008cb12560"
+    },
+    "call_a5cc0d2bd0db4a8ca11bf7d77aa0dab1": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 24000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9",
+      "catalog_only": true
+    },
+    "call_9c42acc7b0184421ae287772e60af5d3": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "5293b981ed3e5c7581463326b20686b32bcf070aa8096487b77369280ca21fbd",
+      "catalog_only": true
+    },
+    "call_afeb4abdeff14b9693011d5f18fe0126": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "f849e6a8255ef797c3fe52c85042cd40c9c5eba28a6ad14064d7d98d748d0e7f",
+      "catalog_only": true
+    },
+    "call_c757633b68334e428c31d8899fcfae0e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-Small-3.1-24B-Base-2503",
+        "revision": "db7c968753c07380364d963090b5cf8cc131a0c3",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "4842658f6fa19e4f7c8c01b30f898867651847e569b947c9ee1e5db44a53497a"
+    },
+    "call_1e5e08f07c1645099a6b787315156d40": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "revision": "73ce7c62b904fa83d7cb018e44c3bc06feed4d81",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "34c5a73ea9787542b315e6b337a1e7412c512114c25cabc6e031845998f397cc"
+    },
+    "call_b5314c535d7a445a96ab1539d9e3fb56": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_81514a70349245709df4ca0760d83bb2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/util/vision.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "4173954a5967d2cac534ad8a8d514ac6a843f2273808231c889dd07f511bbec4"
+    },
+    "call_c9b01c8b03614e22881a674ad74541ed": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a68854dc5f9415e93f756d3c703495aebc24ba399b9183365e1a7ad135605bfb"
+    },
+    "call_ba09173379ed4e918266c1ee9e66ab94": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+        "max_bytes": 16000
+      },
+      "result_sha256": "32b6d4b6a6de6f85f34d97e0c8fed6b53cb641890a0ce0b93b0c82a1d85f9f1e"
+    },
+    "call_8857efb6fa79405987eb3bd93934e709": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "query": "size_to_longest_edge_and_patch_size",
+        "limit": 100
+      },
+      "result_sha256": "9fe868d2b85248a4365f2caddfc5725f6d3b44801c38ece12e6b1ab2f32137d3"
+    },
+    "call_5ac37882aa864606863f3b087f512fa5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "8f3f3a41f910c0444d12e059c61d58c8559286e7fed06d8e215128796bb5a590"
+    },
+    "call_5929f0f265c7471485bcdd4aacf25596": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/models/gemma3.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "0c99cb6a0053bc58287b884d651bc9284bfb01abbe76ed5f51b7ce151bcff3a9"
+    },
+    "call_9b14def2abee4292bdc276e62809730b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_65ef63f02bf84d0fb77919e68c37c9a3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "af4f7914fca9be982b00ae133fc0ea6437b24862f68864ff3330cd523aff50d7"
+    },
+    "call_549cba3b3a004fc8ab8db8a5128604f3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "4b1b4472121380193f7afbd415a4c6a9c860dfb49586191715c23d5db54d9140"
+    },
+    "call_5d273a550d094a788d8a7d733559c639": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9847ccbe9c92b79b770f892ff6aa4387218914d39e691b05e56055716c1ba605"
+    },
+    "call_f0b177e4302c4cd497df7b2ca09ae9fe": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "query": "Mistral",
+        "limit": 100
+      },
+      "result_sha256": "fe15d169776d981db6474dd6e94d55c9102992fd64c7f2b99e2ee0f3707838f0"
+    },
+    "call_23c766e977214793b12bda00d0461246": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "f039e692513034cd605e4a6e6075b9d20cc3909bf5e07798ed3429b15ffbc6b1"
+    },
+    "call_263c022a395546ab95f5e9dad0a3db05": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/tokenizer/mm_embedding.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "6dcb5f9c3fc00e92e292051b23f3d324751bdcca855c5a28708a733488d83200"
+    },
+    "call_2659acaaf77744e0aeef7a573a08bdf3": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "max_bytes": 8000
+      },
+      "result_sha256": "2cdac2ccc1499714b45bf89f49ca9699f5aae56cfde8364cc1cfb27fcad56867"
+    },
+    "call_d50be758b6984a4b8334adc5b55cfc44": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "query": "default_load_",
+        "limit": 100
+      },
+      "result_sha256": "37e97993f76090140d5669b616f572d4ce85392aafb8eff211bc3fafcad4ddbf"
+    },
+    "call_be44b0637a904356893dc98f3eab6468": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "query": "get_image_embeddings(",
+        "limit": 100
+      },
+      "result_sha256": "7d10937dbbcaf4fc5b3199a8cdb8ee8dd5fd5ef7d1cec22143b14b624f8ee4de"
+    },
+    "call_ce5552b985394f79962389b6c72a47f0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "examples/multimodal.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "05912dc0ed949ab58bac3f070e0dd79349efd2395faf9e3126c9cb13126d5af4"
+    },
+    "call_b94c0bed9cae493890663f06e6d2a0af": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "revision": "73ce7c62b904fa83d7cb018e44c3bc06feed4d81",
+        "path": "preprocessor_config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_df1afa4e2ba84c08afdd740401c9af6a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "query": "spatial_merge",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_9134fea531e2442fa3560acca82fa729": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "query": "features_size",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_2773216837d34516bea698009b7e6836": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "query": "longest_edge",
+        "limit": 100
+      },
+      "result_sha256": "9fe868d2b85248a4365f2caddfc5725f6d3b44801c38ece12e6b1ab2f32137d3"
+    },
+    "call_574a5a8dac524774baeb7afc97ead013": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 17000
+      },
+      "result_sha256": "2a43d94df209576cbc7e93ff9ba543337b993f297f25726bf663d86be73aed95"
+    },
+    "call_5f745d75c2c145bb9f4a7b041252f90b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor d in range(1541,10000):\n r=d/1540\n n=math.ceil(d/r)\n if n>1540:\n  print('overflow input',(d,1000),'scaled',(n,math.ceil(1000/r)),'aligned',tuple((math.ceil(x/r)+27)//28*28 for x in (d,1000)));break\nL=1540//14; m=2; h=w=L\nprint('grid',L,'table_shape',(L*L,64//2),'merged_tokens',(h//m)*(w//m),'sequence_tokens',(w//m+1)*(h//m)+1,'merger_width',1024*m*m)\nids=[i*L+j for i in range(4) for j in range(6)]\nassert all(divmod(k,L)==(i,j) for k,(i,j) in zip(ids,((i,j) for i in range(4) for j in range(6))))\nprint('rectangular grid indices invert correctly')"
+        ]
+      },
+      "result_sha256": "adcd0f361de43d38335a4e4d758aa4c635e4cfb4771055e30d90c71bfb65af1b"
+    },
+    "call_14cf5916d5e24fef9d4236df49c5c30e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "a0dbce62e6ec5b84881574fb2f47ff906ddb36b0dcd75a650b827cbc91c5aa1a"
+    },
+    "call_ae476381e0de497abfd1218306c3a690": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fba4687e139a3460e8165916c0cfefc498d6494039853666d13e2be544c8c279"
+    },
+    "call_a1bbfea6844d4be2b4857371c4ebbd97": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d4cdab818dfaa29854a5d218366e4c603036783a",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "31dadc6d2dfa9f82c9444116a18c76b558264751a966842c6a76977f1360167f"
+    }
+  }
+}

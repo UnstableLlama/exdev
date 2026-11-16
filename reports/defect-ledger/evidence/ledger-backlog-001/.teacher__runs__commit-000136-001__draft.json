@@ -1,0 +1,216 @@
+{
+  "schema_version": 5,
+  "sha": "a027848ddc37899274b540ed5ba009aa742d9d94",
+  "parent_shas": [
+    "edafdd1f3d9a966a982f54334838f4f94ee51473"
+  ],
+  "cutoff_date": "2025-05-11T11:15:56+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Chat parsed explicit top-K values as floats, then passed them through ComboSampler to SS_TopK, which used the value directly as a slice boundary.",
+        "basis": "source",
+        "evidence": [
+          "call_218737aea6ba4f578930ad443fe65ab9",
+          "call_f05b1bc339fd4fdc994ef8b64fd9b7fd",
+          "call_98d31c2482674eeb9b532eb3fb6c87e8"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change repairs both the chat input boundary and the shared sampling step: chat parses integers, while SS_TopK asserts integrality and converts accepted values to int.",
+        "basis": "source",
+        "evidence": [
+          "call_13b38fff3bdd4f178f4115333780d67c",
+          "call_d62056f4e0b6435b922431e5693fca1b"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "ComboSampler additionally selects greedy sampling when top_k equals 1, matching the existing TopKSampler shortcut.",
+        "basis": "source",
+        "evidence": [
+          "call_a1b3555af48d4347a2271a316dab168d",
+          "call_f05b1bc339fd4fdc994ef8b64fd9b7fd"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "PR #35, \u201chumaneval.py: fix top_k type, remove rep_p, add qwen3,\u201d was opened by gakada and explicitly reports the float-index problem. Its relationship to this turboderp-authored change is inferred from the matching top_k indexing mechanism, not an explicit upstream link; its repetition-penalty report is separate.",
+        "basis": "inference",
+        "evidence": [
+          "call_d89d58d56e364920a22159de57d16d89",
+          "call_d62056f4e0b6435b922431e5693fca1b"
+        ]
+      },
+      {
+        "text": "PR #22, \u201cOpenAI compatible API example,\u201d concerns an API example and integration problems. Its discussion includes chat.py usage and a ComboSampler call; those overlaps do not establish that this commit addresses its reported problems.",
+        "basis": "inference",
+        "evidence": [
+          "call_94f2d9e4093244a0942e4ece9966a034",
+          "call_120abd8b40144bab9b6fc48b5cab0f23"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository sampling or GPU tests were executed. The scalar check used Python 3.14.4; availability of int.is_integer on historical supported Python versions is unestablished by the inspected evidence.",
+      "The assertion-based integrality guard was checked with assertions enabled; optimized-Python behavior and end-to-end generation were not tested."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Normalize top-K counts and shortcut greedy sampling",
+        "claims": [
+          {
+            "text": "SS_TopK prepares sorted scores, then masks entries from index K onward with zero probabilities or negative-infinite logits. Its unchanged alternative replaces K < 1 with a no-op, so zero continues to mean disabled rather than an empty candidate set.",
+            "basis": "source",
+            "evidence": [
+              "call_98d31c2482674eeb9b532eb3fb6c87e8"
+            ]
+          },
+          {
+            "text": "The constructor now checks top_k.is_integer() before storing int(top_k). This accepts integral floating-point counts without silently rounding fractional values when assertions are enabled. Centralizing conversion also covers callers other than the chat parser; the parent HumanEval parser still declares top_k as float and is not changed here.",
+            "basis": "source",
+            "evidence": [
+              "call_d62056f4e0b6435b922431e5693fca1b",
+              "call_1f94562b3102457cbcd16ddf7e3e29cd"
+            ]
+          },
+          {
+            "text": "For top_k == 1, ComboSampler retains repetition, presence and frequency penalty steps but bypasses temperature, min-P, top-K, top-P and categorical sampling. SS_Argmax selects the maximum input or penalty-adjusted logit and marks sampling complete. The penalty steps produce unsorted logits, so this new route does not require the callee's sorted-state branches.",
+            "basis": "source",
+            "evidence": [
+              "call_a1b3555af48d4347a2271a316dab168d",
+              "call_f05b1bc339fd4fdc994ef8b64fd9b7fd",
+              "call_98d31c2482674eeb9b532eb3fb6c87e8"
+            ]
+          },
+          {
+            "text": "The shortcut plausibly avoids unnecessary filtering and random sampling for a single retained candidate; no performance improvement or tie-behavior equivalence was measured.",
+            "basis": "inference",
+            "evidence": [
+              "call_a1b3555af48d4347a2271a316dab168d",
+              "call_98d31c2482674eeb9b532eb3fb6c87e8"
+            ]
+          },
+          {
+            "text": "A standard-library transcription on Python 3.14.4 accepted 0, 2, 0.0 and 2.0, rejected 2.5 with AssertionError, and reproduced TypeError for a list slice using 2.0. A minimal argparse check parsed the new integer option successfully. These checks exercise Python scalar behavior, not repository tensors or generation.",
+            "basis": "execution",
+            "evidence": [
+              "call_9484a29d10f34e808f449539d5948950"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Normalizes top-K counts at the chat parser and shared sampling step, and routes ComboSampler\u2019s K=1 case directly to greedy selection."
+  },
+  "evidence": {
+    "call_13b38fff3bdd4f178f4115333780d67c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a027848ddc37899274b540ed5ba009aa742d9d94",
+        "offset": 154,
+        "max_bytes": 4000
+      },
+      "result_sha256": "741e0218ad2561538c9b778e718b03dee4d840f013c51a3806ee908f1da980d0"
+    },
+    "call_d62056f4e0b6435b922431e5693fca1b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a027848ddc37899274b540ed5ba009aa742d9d94",
+        "offset": 1261,
+        "max_bytes": 2000
+      },
+      "result_sha256": "0c05e0c9c29dc939029585928bc0ec42c696dfc5c49f6d6438da2d25ce77e12e"
+    },
+    "call_a1b3555af48d4347a2271a316dab168d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a027848ddc37899274b540ed5ba009aa742d9d94",
+        "offset": 1876,
+        "max_bytes": 2000
+      },
+      "result_sha256": "bdd12e43a3ad51c451f64cc63a05cd4fe74029f6a640b467dc97f44ac03801e8"
+    },
+    "call_f05b1bc339fd4fdc994ef8b64fd9b7fd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2eb75c4b807e8574995c5ef23210269293bfeda350572308991a61ff44ba3a46"
+    },
+    "call_98d31c2482674eeb9b532eb3fb6c87e8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 23000
+      },
+      "result_sha256": "7b20623b795d2482f2987156e2cc2e7a8be1d1725b32a4836243d8f0d671e698"
+    },
+    "call_1f94562b3102457cbcd16ddf7e3e29cd": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "query": "top_k",
+        "limit": 100
+      },
+      "result_sha256": "92f666e084d4ff9e0d4c07c4f9057ae20e7de21261eb7c16c529f81ad734df41"
+    },
+    "call_d89d58d56e364920a22159de57d16d89": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35",
+        "max_bytes": 14000
+      },
+      "result_sha256": "094260b33179708c17c9565c6981de3d9f419a4caf656f424feff96793b8b991"
+    },
+    "call_94f2d9e4093244a0942e4ece9966a034": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "max_bytes": 12000
+      },
+      "result_sha256": "e1626ea95b1734ed679733f98e989bd783030a56ebb5030b22bb13261be8f23a"
+    },
+    "call_9484a29d10f34e808f449539d5948950": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import sys,argparse\nprint(sys.version)\nfor x in [0,2,0.0,2.0,2.5]:\n try:\n  assert x.is_integer(), 'top_k value must be integer'\n  k=int(x)\n  print(repr(x),'accepted',k)\n except Exception as e: print(repr(x),type(e).__name__,str(e))\ntry: print([1,2,3][2.0:])\nexcept Exception as e: print('old float slice',type(e).__name__)\np=argparse.ArgumentParser();p.add_argument('--top_k',type=int,default=0)\nprint('new CLI',p.parse_args(['--top_k','2']))"
+        ]
+      },
+      "result_sha256": "213bd157b6493ca8f6f3849df956ade517ddd53f533e6c994df6901eed40ecf9"
+    },
+    "call_218737aea6ba4f578930ad443fe65ab9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "path": "examples/chat.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "6ed791e8632edd404d61e6ab9a3df8ce32d6d12aad9ad174be12401435b7fc10"
+    },
+    "call_120abd8b40144bab9b6fc48b5cab0f23": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 12000,
+        "max_bytes": 30000
+      },
+      "result_sha256": "85633f7a5e30b5739774a3dbd68535e1e225ff7b26cf16b10540055bb1e9dbde"
+    }
+  }
+}

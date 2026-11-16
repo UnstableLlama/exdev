@@ -1,0 +1,252 @@
+{
+  "schema_version": 5,
+  "sha": "7deeb0fff8c860f98021d3c7844d16e7ad9899c9",
+  "parent_shas": [
+    "1db3dce033981fe2d1825165a9389b3fdcd21b67"
+  ],
+  "cutoff_date": "2025-04-30T00:12:10+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "ComboSampler previously sent zero temperature through ordinary scaling and categorical sampling. SS_Temperature divides logits by temperature or computes its reciprocal for probabilities; neither implements an explicit greedy policy.",
+        "basis": "source",
+        "evidence": [
+          "call_bf553db384274c70800795ca0c934b60",
+          "call_86e06ecd30da471f9265b3694792ee66"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch branches after constructing the history-penalty stages: exactly zero temperature appends SS_Argmax; all other temperatures retain the existing filter-and-sample sequence.",
+        "basis": "source",
+        "evidence": [
+          "call_e8210cba786e44aa91e2c0a990a08800"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Zero-temperature selection remains penalty-aware but ignores min_p, top_k, top_p and temp_last. The chat example passes its temperature argument directly to ComboSampler.",
+        "basis": "source",
+        "evidence": [
+          "call_e8210cba786e44aa91e2c0a990a08800",
+          "call_c2650ae1a3014816943c689260f9968b"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier ComboSampler entry records the incompatible min_p=0 default. This change bypasses that construction only at zero temperature.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_56fe8a0f30524538b97f044092a25a0a"
+        ]
+      },
+      {
+        "text": "PR #22, \u201cOpenAI compatible API example,\u201d proposes an API endpoint and contains discussion code constructing ComboSampler. Its relevance is inferred from that shared constructor, not evidence that it motivated this fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_742db8c760404945b0779d7f3f5b0904",
+          "call_5b2679dfcec7495eb630f5fd131f63b0",
+          "call_e8210cba786e44aa91e2c0a990a08800"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository sampler, PyTorch operation or CUDA kernel was executed. The scalar check verifies branch predicates and Python reciprocal behavior, not generated tokens or tensor division-by-zero behavior.",
+      "Whole-tree literal search establishes the chat constructor and package export; dynamic or external callers are not exhaustively covered."
+    ],
+    "links": [
+      "c7da6b7bb7e45ad06f168594ffb374501ba818cb"
+    ],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Penalty-aware greedy sampling at zero temperature",
+        "claims": [
+          {
+            "text": "The zero-temperature path contains repetition penalties, presence/frequency penalties and argmax. Neutral penalties become no-ops; active penalties produce unsorted LOGITS. SS_Argmax handles both INIT and LOGITS by selecting along the vocabulary dimension and setting DONE, so this path does not require sorting, normalization or Gumbel noise.",
+            "basis": "source",
+            "evidence": [
+              "call_e8210cba786e44aa91e2c0a990a08800",
+              "call_86e06ecd30da471f9265b3694792ee66"
+            ]
+          },
+          {
+            "text": "CustomSampler.forward still applies vocabulary and allowed/blocked-token masks before the steps and reshapes the selected token to the input's non-vocabulary dimensions. Greedy therefore means the maximum of the eligible, penalty-adjusted logits, not necessarily the original model maximum.",
+            "basis": "source",
+            "evidence": [
+              "call_86e06ecd30da471f9265b3694792ee66"
+            ]
+          },
+          {
+            "text": "Zero is an exact dispatch sentinel, not an epsilon threshold. A scalar transcription selected argmax for both signed zeros, but retained filtering for 1e-9, 0.8 and 1.0. It also demonstrated that the existing probability-scaling expression 1.0/0.0 raises ZeroDivisionError.",
+            "basis": "execution",
+            "evidence": [
+              "call_55d8fb4697a540b193e85b1126d015d6"
+            ]
+          },
+          {
+            "text": "For nonzero temperature the order remains penalties, optional early temperature, min-p, top-k, top-p, optional late temperature and categorical sampling. Temperature 1.0 becomes a no-op. Existing CategoricalSampler and TopKSampler already use explicit zero-temperature argmax branches; reusing that policy avoids approximating greedy selection with a very small positive temperature.",
+            "basis": "source",
+            "evidence": [
+              "call_bf553db384274c70800795ca0c934b60",
+              "call_e8210cba786e44aa91e2c0a990a08800",
+              "call_86e06ecd30da471f9265b3694792ee66"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "nonzero-default-min-p",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited default min-p construction failure persists for nonzero temperature; the new branch removes it only for zero temperature.",
+        "trigger": "Construct ComboSampler() or otherwise use nonzero temperature with min_p=0 while assertions are enabled.",
+        "expected_behavior": "Neutral min-p settings permit construction without filtering.",
+        "actual_behavior": "The nonzero branch constructs SS_MinP(0.0), whose constructor asserts 0.0 < min_p <= 1.0. The whole-parent-tree search found one direct construction site in examples/chat.py: it explicitly supplies min_p, defaults to 0.08, and exposes a zero value through its CLI. Default chat settings therefore avoid this trigger.",
+        "locations": [
+          {
+            "commit": "7deeb0fff8c860f98021d3c7844d16e7ad9899c9",
+            "path": "exllamav3/generator/sampler/presets.py",
+            "symbol": "ComboSampler.__init__"
+          },
+          {
+            "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_MinP.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_e8210cba786e44aa91e2c0a990a08800",
+          "call_bf553db384274c70800795ca0c934b60",
+          "call_86e06ecd30da471f9265b3694792ee66",
+          "call_e100c8eebb5d454c9dfc0e9e0faec6c3",
+          "call_c2650ae1a3014816943c689260f9968b",
+          "call_c27efd58b423492c9db5dc85250f292f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the retained nonzero branch and default against the step assertion and inspected the direct chat caller.",
+            "evidence": [
+              "call_e8210cba786e44aa91e2c0a990a08800",
+              "call_86e06ecd30da471f9265b3694792ee66",
+              "call_c27efd58b423492c9db5dc85250f292f"
+            ],
+            "limits": "No repository constructor was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the branch and min-p assertion predicates for signed zero and representative nonzero temperatures.",
+            "evidence": [
+              "call_55d8fb4697a540b193e85b1126d015d6"
+            ],
+            "limits": "Standard-library scalar model only."
+          }
+        ]
+      }
+    ],
+    "summary": "Makes ComboSampler use penalty-aware argmax at exactly zero temperature, bypassing filters and stochastic sampling while retaining the nonzero path."
+  },
+  "evidence": {
+    "call_e8210cba786e44aa91e2c0a990a08800": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7deeb0fff8c860f98021d3c7844d16e7ad9899c9",
+        "offset": 191,
+        "max_bytes": 1241
+      },
+      "result_sha256": "bb77a0249a28e10362a25cea3c71467770d8d1ebe268b3299a6b8a6c5e348af6"
+    },
+    "call_bf553db384274c70800795ca0c934b60": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "dc1337afd7e6f9beb3549540ad5633e5d21279f2e08f108761a74fc75dc86510"
+    },
+    "call_86e06ecd30da471f9265b3694792ee66": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "b8064795f9461cc2bce9081d1bc1f72c1bd8105a0fad1737a7de1b17dad3f012"
+    },
+    "call_56fe8a0f30524538b97f044092a25a0a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c7da6b7bb7e45ad06f168594ffb374501ba818cb",
+        "max_bytes": 16384
+      },
+      "result_sha256": "529db3087c1aedf057142d4f502481975c94d2edb2a2016cad9995e04d24fc6b"
+    },
+    "call_e100c8eebb5d454c9dfc0e9e0faec6c3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "query": "ComboSampler",
+        "limit": 100
+      },
+      "result_sha256": "9c897ca57dbcbaebd25ddf7ca101e6695d94ed5d55eea55dcb3576e0c3d5818f"
+    },
+    "call_c2650ae1a3014816943c689260f9968b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "path": "examples/chat.py",
+        "max_bytes": 5500
+      },
+      "result_sha256": "5a148219696f2c93762638a6a7b1e48f0e0cdeee02f0d1a30ef68f7e0860453e"
+    },
+    "call_c27efd58b423492c9db5dc85250f292f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "path": "examples/chat.py",
+        "offset": 5500,
+        "max_bytes": 4000
+      },
+      "result_sha256": "5641c357f2368fafebe5de412936c1624191a8bccecd6a1a0ed5cc8782c15a8f"
+    },
+    "call_742db8c760404945b0779d7f3f5b0904": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e3f572637217dc3375d961056b34f05537de7fa8d535e66432f456b4d131da7b"
+    },
+    "call_5b2679dfcec7495eb630f5fd131f63b0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 16000,
+        "max_bytes": 26000
+      },
+      "result_sha256": "aa08efac75fcc125e852d8e5b958a8a9c49479845f793caa8a114b13ff350692"
+    },
+    "call_55d8fb4697a540b193e85b1126d015d6": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nrows=[]\nfor t in [0.0,-0.0,1e-9,0.8,1.0]:\n for m in [0.0,0.08]:\n  rows.append(dict(temperature=t,min_p=m,new_branch='argmax' if t==0.0 else 'filters+sample',parent_minp_assert=0<m<=1,new_minp_assert=True if t==0.0 else 0<m<=1))\nprint(json.dumps(rows))\ntry: 1.0/0.0\nexcept Exception as e: print('late probability temperature reciprocal:',type(e).__name__)\n"
+        ]
+      },
+      "result_sha256": "316ade65ee146aadafe65df3da15827114c83079cf2dcb8879b4ad54d107267b"
+    }
+  }
+}

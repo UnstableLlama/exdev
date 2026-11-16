@@ -1,0 +1,367 @@
+{
+  "schema_version": 5,
+  "sha": "6aa1449169a7076d61223fcf74b4e6ceb849327d",
+  "parent_shas": [
+    "56e9d038dee07aa1657b8febb7f6a259f7eda11c"
+  ],
+  "cutoff_date": "2025-06-01T15:27:48+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "MiMoForCausalLM was absent from architecture dispatch; the change adds a Llama-derived implementation explicitly excluding MTP layers.",
+        "basis": "source",
+        "evidence": [
+          "call_09335d5eea16423b80edb6760e07e6df",
+          "call_479dc166d40c4b25a10b306b834c5d09",
+          "call_9fff3f3caefd4fc98c6e0f96de46e5ce"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Registration and the derived-model mapping work together: Config.from_directory selects MiMoConfig, which supplies {'text': MiMoModel}; Model.from_config then constructs that subclass rather than the default LlamaModel.",
+        "basis": "source",
+        "evidence": [
+          "call_815b6891af054b6e85c26dbae8b88d22",
+          "call_7efa4087e3ad4748940d32c2273a43d2",
+          "call_9fff3f3caefd4fc98c6e0f96de46e5ce"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "MiMo gains the existing Llama configuration and decoder construction without a new execution implementation. This establishes dispatch support, not measured checkpoint equivalence or MTP support.",
+        "basis": "source",
+        "evidence": [
+          "call_9fff3f3caefd4fc98c6e0f96de46e5ce",
+          "call_41b01627d27b4225b77079349473e536"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial models ancestor entry was read. It documents shared Llama construction, checkpoint naming and missing sliding-window propagation in related wrappers.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_b129e7c865634ddaa557f231146f11f8"
+        ]
+      },
+      {
+        "text": "PR #4, 'chore: update config.py', concerns a spelling correction. Issue #7, 'quantizing model: undefined symbol: __cxa_call_terminate', reports an extension/toolchain problem. Issue #33, 'Error converting model', reports file-opening failures and later GLM4 sampling trouble. Their overlap with inspected configuration or compilation files is contextual; no causal connection to the MiMo change is established.",
+        "basis": "inference",
+        "evidence": [
+          "call_325936f1dea74e83bc0f92cd774bb955",
+          "call_1e79e0e179ca4d148ead06eb7129ff7e",
+          "call_712b07f896244c8dab50d2b2991c12e0",
+          "call_674d068510974a4faf7f9896250cdef8"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, conversion, generation or GPU tests were executed. The Python check used transcribed integer metadata only.",
+      "Checkpoint tensor headers and reference modeling implementations were not inspected; configuration agreement alone does not establish weight-name coverage, bias handling or numerical equivalence.",
+      "MTP is intentionally excluded. Compatibility beyond the five inspected configurations remains unestablished."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "MiMo dispatch through the Llama decoder",
+        "claims": [
+          {
+            "text": "MiMo follows the existing Mistral and Qwen2 wrapper pattern: an architecture-specific config supplies its text model class, and the model delegates construction to LlamaModel. Those existing wrappers apply no additional constructor guards that the new wrapper omits.",
+            "basis": "source",
+            "evidence": [
+              "call_17da75d1c0854ac9b9d1dfdf426526d2",
+              "call_6ca4223f99d440a992698a61d932b330",
+              "call_07d706bbcf314f5facda339c7ecdafbe",
+              "call_9fff3f3caefd4fc98c6e0f96de46e5ce"
+            ]
+          },
+          {
+            "text": "Inherited construction creates model.embed_tokens, num_hidden_layers transformer blocks, model.norm and lm_head. Blocks use input/post-attention RMSNorm, separate q_proj/k_proj/v_proj/o_proj attention projections and gate_proj/up_proj/down_proj MLP projections. The config accepts SiLU, defaults missing KV-head count to query-head count, and derives missing head width from hidden_size divided by query-head count.",
+            "basis": "source",
+            "evidence": [
+              "call_41b01627d27b4225b77079349473e536"
+            ]
+          },
+          {
+            "text": "All five inspected XiaomiMiMo configs match the new architecture identifier and inherited core dimensions: MiMo-7B-Base, MiMo-7B-RL, MiMo-7B-RL-0530, MiMo-7B-RL-Zero and MiMo-7B-SFT each specify 36 layers, hidden width 4096, intermediate width 11008, 32 query heads, eight KV heads and explicit head width 128. Each supplies SiLU, RMS epsilon 1e-5 and untied embeddings, so the corresponding inherited defaults are not needed.",
+            "basis": "source",
+            "evidence": [
+              "call_5b720285f489452d9735101546d9b7f4",
+              "call_532adc31c1174ace89314a55bbfd3e8e",
+              "call_db0668b929d04004b62b2d815d328073",
+              "call_a3e97aa525d34a14adb3424f55792c30",
+              "call_6aa32bb89b664c7d96b6339b120652f6",
+              "call_41b01627d27b4225b77079349473e536"
+            ]
+          },
+          {
+            "text": "The inherited RoPE reader consumes theta 640000 for each model. Base, RL, RL-Zero and SFT declare 32768 maximum positions; RL-0530 declares 65536 and null rope_scaling. All five disable sliding-window attention. The unchanged Llama constructor still does not propagate sliding-window settings, but these configurations do not request that behavior.",
+            "basis": "source",
+            "evidence": [
+              "call_815b6891af054b6e85c26dbae8b88d22",
+              "call_41b01627d27b4225b77079349473e536",
+              "call_5b720285f489452d9735101546d9b7f4",
+              "call_532adc31c1174ace89314a55bbfd3e8e",
+              "call_db0668b929d04004b62b2d815d328073",
+              "call_a3e97aa525d34a14adb3424f55792c30",
+              "call_6aa32bb89b664c7d96b6339b120652f6"
+            ]
+          },
+          {
+            "text": "Each inspected configuration declares one next-token-prediction layer, but MiMo adds no constructor logic for it: the inherited loop builds only decoder indices 0 through 35. This is the concrete boundary of the change's 'no MTP yet' scope.",
+            "basis": "source",
+            "evidence": [
+              "call_9fff3f3caefd4fc98c6e0f96de46e5ce",
+              "call_41b01627d27b4225b77079349473e536",
+              "call_5b720285f489452d9735101546d9b7f4",
+              "call_532adc31c1174ace89314a55bbfd3e8e",
+              "call_db0668b929d04004b62b2d815d328073",
+              "call_a3e97aa525d34a14adb3424f55792c30",
+              "call_6aa32bb89b664c7d96b6339b120652f6"
+            ]
+          },
+          {
+            "text": "A standard-library arithmetic check gives query width 4096, KV width 1024, four query heads per KV head and 39 top-level modules. It checks the transcribed dimensions and construction count, not repository execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_ccabf65822944a69a0a76be70d82f7bd"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Registers MiMoForCausalLM through thin Llama-derived classes, enabling ordinary decoder construction while deliberately leaving MTP unsupported."
+  },
+  "evidence": {
+    "call_479dc166d40c4b25a10b306b834c5d09": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6aa1449169a7076d61223fcf74b4e6ceb849327d",
+        "offset": 172,
+        "max_bytes": 1471
+      },
+      "result_sha256": "ca797930a403531f6ede8ce034a8a36bbe67f2f97b0dced0bf1fac287a50a368"
+    },
+    "call_9fff3f3caefd4fc98c6e0f96de46e5ce": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6aa1449169a7076d61223fcf74b4e6ceb849327d",
+        "offset": 796,
+        "max_bytes": 847
+      },
+      "result_sha256": "40a48262f4d86297738ca73f975c03e1476d9468d1c4ac4a6a1c873c1bbe88f9"
+    },
+    "call_41b01627d27b4225b77079349473e536": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "path": "exllamav3/models/llama.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "089c14bc830bae652e2dd7737aa461ca7015cfe9d5d494a18ffba58e819c67ca"
+    },
+    "call_1e1ddf20a7964ce8aefb0284c395e413": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "5293b981ed3e5c7581463326b20686b32bcf070aa8096487b77369280ca21fbd",
+      "catalog_only": true
+    },
+    "call_4dcf3e91215345fdab0f5b3de8a8c086": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "f0533835bb1667154b099fbf6e794b7b0b1f33b225a13c543ecefc2be2b85c54",
+      "catalog_only": true
+    },
+    "call_5b720285f489452d9735101546d9b7f4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-Base",
+        "revision": "95b45ad994ca84c52a941a3edc644b9574d0e401",
+        "path": "config.json"
+      },
+      "result_sha256": "795807d536dedef1afd1d877552b5c33d66ae549c34da840640f1626ed2e2aa5"
+    },
+    "call_532adc31c1174ace89314a55bbfd3e8e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-RL",
+        "revision": "8aa36ea74c8d6956faf4a67dc4daec35f52431fc",
+        "path": "config.json"
+      },
+      "result_sha256": "32df5107624a858cc61fd705b20d2629cd443876581f721eb0511405ec30ef6b"
+    },
+    "call_db0668b929d04004b62b2d815d328073": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-RL-0530",
+        "revision": "2ab7cb1423ca7d880a07e1f0ef3d57f7a1649984",
+        "path": "config.json"
+      },
+      "result_sha256": "03c69684be3a3920f8ff51995cdacd7924ada2eaed32222eeffc9b3e7be89057"
+    },
+    "call_a3e97aa525d34a14adb3424f55792c30": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-RL-Zero",
+        "revision": "ba7bc55278fbfcfb3d51fe496420b6132514929c",
+        "path": "config.json"
+      },
+      "result_sha256": "312c8ba07a5f712a6763eb795ac11b3634d3acad6054b9c12ad8f96a42252414"
+    },
+    "call_6aa32bb89b664c7d96b6339b120652f6": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-SFT",
+        "revision": "31bf3666982e8389681e9808356d40d786ec3648",
+        "path": "config.json"
+      },
+      "result_sha256": "bfe29434380592db7ddd8db34dea256a80c814a968cf57a4be338947496e5df9"
+    },
+    "call_75ee655d9e714fb99ca704bb9c446d33": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "query": "MiMo",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_09335d5eea16423b80edb6760e07e6df": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "path": "exllamav3/models/architectures.py"
+      },
+      "result_sha256": "c83f6652a809375db16304c7b23fa40cab508f4f9611c43b9c17d70681777d11"
+    },
+    "call_07d706bbcf314f5facda339c7ecdafbe": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "query": "derived_model",
+        "limit": 100
+      },
+      "result_sha256": "f3424bc3da686fe1c47ab403ea708874edf995e67f3d3395c17e594b8a7b7681"
+    },
+    "call_17da75d1c0854ac9b9d1dfdf426526d2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "path": "exllamav3/models/mistral.py"
+      },
+      "result_sha256": "b7d40bed5cb94aa2d601f1682105e1a601f935368468ca3be411a078dd6501cc"
+    },
+    "call_6ca4223f99d440a992698a61d932b330": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "path": "exllamav3/models/qwen2.py"
+      },
+      "result_sha256": "698510e5050f3ca00c3710b57bce16bc1759641c1f00d8ace2696b983042ac27"
+    },
+    "call_b129e7c865634ddaa557f231146f11f8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_815b6891af054b6e85c26dbae8b88d22": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "31dadc6d2dfa9f82c9444116a18c76b558264751a966842c6a76977f1360167f"
+    },
+    "call_ca1715f5955542c2acc5bdf3b319bc17": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "query": "model_classes",
+        "limit": 100
+      },
+      "result_sha256": "7f5b61fea98307b4b54fa60cd0781ebe957fd1fe9982117b0ae9b30bbaf9bc3b"
+    },
+    "call_7efa4087e3ad4748940d32c2273a43d2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 3200
+      },
+      "result_sha256": "cb117a550915388251dddc5886ccd195780beff1c4b4fcc174eff0be61dbe86c"
+    },
+    "call_f1bd6b2dae6644d98bd3472eb7e6c416": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "56e9d038dee07aa1657b8febb7f6a259f7eda11c",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 4200
+      },
+      "result_sha256": "60ffac4460e7d546946400ef524c320e42773eb8da0abcc6bbf77c549fe980a0"
+    },
+    "call_325936f1dea74e83bc0f92cd774bb955": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 12000
+      },
+      "result_sha256": "29eb1dff027fc7dbc70016d4bc3046aad40c5b432d27ef1b091c15d13e28ff5b"
+    },
+    "call_1e79e0e179ca4d148ead06eb7129ff7e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 14000
+      },
+      "result_sha256": "51a242c361718b7f9ce61065bdd3cf69742b10a3bb05fc97422434683f4abee4"
+    },
+    "call_712b07f896244c8dab50d2b2991c12e0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 12000
+      },
+      "result_sha256": "4a0b39ed628b2b2723ac1bfb72b40630b966e64d84c1cf02b6e1b752d3919045"
+    },
+    "call_674d068510974a4faf7f9896250cdef8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 12000,
+        "max_bytes": 35000
+      },
+      "result_sha256": "898afc23091e4fa263dae054f2147bf05196178a7e8c3e77ea0b114d3e6a1ffc"
+    },
+    "call_ccabf65822944a69a0a76be70d82f7bd": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "h,q,k,d,i,n=4096,32,8,128,11008,36\nassert h//q==d and q%k==0\nprint({'head_dim':h//q,'q_width':q*d,'kv_width':k*d,'queries_per_kv':q//k,'decoder_indices':(0,n-1),'top_level_modules':1+n+2})"
+        ]
+      },
+      "result_sha256": "dd8ab234176dd43b3dc395e2ef9091c009864b3852a9b81404743922582c48a3"
+    }
+  }
+}

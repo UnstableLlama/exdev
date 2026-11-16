@@ -1,0 +1,242 @@
+{
+  "schema_version": 5,
+  "sha": "49ac13c04f4c622582e2d519f2d135a53c1c4eaf",
+  "parent_shas": [
+    "8ff65b874202176c1449e6a51998094ef60f94f0"
+  ],
+  "cutoff_date": "2025-05-31T16:57:09+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Inner-weight reconstruction zero-initialized a full FP16 matrix immediately before a kernel overwrote it.",
+        "basis": "source",
+        "evidence": [
+          "call_b933a75f6c7047b9a1dd28f156b96eda",
+          "call_9e33d352c5654444895d57910d627e3f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Using torch.empty avoids redundant initialization when reconstruction covers the whole output. This is a performance interpretation, not a measured speedup.",
+        "basis": "inference",
+        "evidence": [
+          "call_b933a75f6c7047b9a1dd28f156b96eda",
+          "call_9e33d352c5654444895d57910d627e3f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Shape, FP16 dtype, device placement, reconstruction arguments and return value remain unchanged. Direct callers are forward's reconstruction branch and get_weight_tensor; direct quantized GEMM does not use this allocation.",
+        "basis": "source",
+        "evidence": [
+          "call_b256bacec3d84919b4ad665993c909b8",
+          "call_fd92a1dd8abf4e23af57083162458b94",
+          "call_b933a75f6c7047b9a1dd28f156b96eda"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root quantized-inference entry describes the two execution paths and records missing reconstruction-width validation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_a0c88aa80a194505bc317560b31895c1"
+        ]
+      },
+      {
+        "text": "Issue #11, \u201cAssertionError: bias is wrong datatype,\u201d concerns a constructor assertion, not reconstruction allocation. Its connection here is only inferred from the shared exl3.py path; it does not establish motivation for this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_a5b33537cb2b4697a3bd5961063ee973",
+          "call_b933a75f6c7047b9a1dd28f156b96eda"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA execution, numerical comparison or performance benchmark was performed. The scalar check models output addressing only, not decoding, synchronization or allocator behavior.",
+      "The malformed-width observation establishes a callable constructor/helper path, not that normal model loading produces such dimensions."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Reconstruct without zero-filling",
+        "claims": [
+          {
+            "text": "get_inner_weight_tensor now allocates uninitialized storage and passes it to ext.reconstruct. forward uses that helper when params['reconstruct'] is true, defaulting to more than 32 flattened input rows; get_weight_tensor additionally applies Hadamards and channel factors.",
+            "basis": "source",
+            "evidence": [
+              "call_b933a75f6c7047b9a1dd28f156b96eda",
+              "call_b256bacec3d84919b4ad665993c909b8"
+            ]
+          },
+          {
+            "text": "Each reconstruction block uses 256 threads to write a 16\u00d7128 region: each thread stores eight half values through int4. Stores replace destination values rather than accumulating into them. Complete coverage requires packed column count divisible by eight, corresponding to output width divisible by 128.",
+            "basis": "source",
+            "evidence": [
+              "call_9e33d352c5654444895d57910d627e3f"
+            ]
+          },
+          {
+            "text": "A standard-library transcription of global store addresses found exactly one write per output element for two packed rows and 8 or 16 packed columns. With 9 packed columns it covered 4096 of 4608 elements, leaving 512 unwritten.",
+            "basis": "execution",
+            "evidence": [
+              "call_b4f660785ba547f0bc7bbb7eb05f44c7"
+            ]
+          },
+          {
+            "text": "The inherited width-validation gap persists: the launcher still truncates cols/8, while deriving its output stride from that truncated grid. Zero initialization previously supplied zeros to unwritten storage, though it did not repair the incorrect layout; empty allocation removes that fallback.",
+            "basis": "source",
+            "evidence": [
+              "call_9e33d352c5654444895d57910d627e3f",
+              "call_b933a75f6c7047b9a1dd28f156b96eda"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "incomplete-reconstruction-width",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "A previously unguarded partial-width reconstruction can now return unwritten allocation contents.",
+        "trigger": "Construct LinearEXL3 with compatible scales, in_features=32, out_features=144 and an int16 trellis of shape (2,9,16), then call get_inner_weight_tensor with valid device storage.",
+        "expected_behavior": "Reject unsupported dimensions or reconstruct every element using the actual output stride.",
+        "actual_behavior": "The inspected constructor and native shape checks permit these dimensions. The kernel launches one column block, uses a 128-element row stride and writes only 4096 of 4608 allocated elements; the remaining storage is no longer initialized to zero.",
+        "locations": [
+          {
+            "commit": "49ac13c04f4c622582e2d519f2d135a53c1c4eaf",
+            "path": "exllamav3/modules/quant/exl3.py",
+            "symbol": "LinearEXL3.get_inner_weight_tensor"
+          },
+          {
+            "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+            "path": "exllamav3/exllamav3_ext/quant/reconstruct.cu",
+            "symbol": "reconstruct"
+          }
+        ],
+        "source_evidence": [
+          "call_b256bacec3d84919b4ad665993c909b8",
+          "call_9e33d352c5654444895d57910d627e3f",
+          "call_b933a75f6c7047b9a1dd28f156b96eda",
+          "call_fd92a1dd8abf4e23af57083162458b94"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected constructor, helper, both direct callers and native launch checks. No width-divisibility check protects a direct helper call.",
+            "evidence": [
+              "call_b256bacec3d84919b4ad665993c909b8",
+              "call_9e33d352c5654444895d57910d627e3f",
+              "call_fd92a1dd8abf4e23af57083162458b94"
+            ],
+            "limits": "Normal model-loading reach was not established."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated kernel output addresses for complete and incomplete column groups.",
+            "evidence": [
+              "call_b4f660785ba547f0bc7bbb7eb05f44c7"
+            ],
+            "limits": "CPU integer indexing model only; no repository kernel ran."
+          }
+        ]
+      }
+    ],
+    "summary": "Replaces zero-filled reconstruction storage with torch.empty, avoiding redundant initialization for supported shapes while exposing unwritten contents for an inherited unsupported-width case."
+  },
+  "evidence": {
+    "call_b933a75f6c7047b9a1dd28f156b96eda": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "49ac13c04f4c622582e2d519f2d135a53c1c4eaf",
+        "offset": 161,
+        "max_bytes": 662
+      },
+      "result_sha256": "82785ac8a5b2f172810ea0138d6cba3c008a2afe1eea1936b0413c21b5363a99"
+    },
+    "call_b256bacec3d84919b4ad665993c909b8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c1cb7d784cef63530f91016845b5ff7eeba0f8ac391b4c68123944be15511945"
+    },
+    "call_7ba620ef1bf64121af0cc287b1b7c6f3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+        "query": "reconstruct",
+        "limit": 100
+      },
+      "result_sha256": "3d86ff5fa7a2a9028b5aaa72c4b9060e4e95db7c76ef7abffc33eae8d7460f09"
+    },
+    "call_9e33d352c5654444895d57910d627e3f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+        "path": "exllamav3/exllamav3_ext/quant/reconstruct.cu",
+        "max_bytes": 16000
+      },
+      "result_sha256": "4430946a9336d710de0332a5f5b972dcbd87d1d3763c921305cf2cff45c0077b"
+    },
+    "call_77cb1723bedb48b4939e6f2af6108782": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "4c0ba84234db3b6e95a53709cf8751150e9e0476e70acdd234789f5aa88d01f0",
+      "catalog_only": true
+    },
+    "call_a0c88aa80a194505bc317560b31895c1": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantized-inference",
+        "max_bytes": 16384
+      },
+      "result_sha256": "02b6734d29272cca0d4ea8a56ffcd9ba2d18a4cc524cb44db9d12c4d8741226c"
+    },
+    "call_fd92a1dd8abf4e23af57083162458b94": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+        "query": "get_inner_weight_tensor",
+        "limit": 100
+      },
+      "result_sha256": "8b642b15006bd449ed0cd3f8199aacdfb09c27078dc65a8d9601dda60f969f52"
+    },
+    "call_a5b33537cb2b4697a3bd5961063ee973": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0905bfe32a970bec03819d65c05816e1e5976acfd71ad1987d74e599aa7afeba"
+    },
+    "call_b4f660785ba547f0bc7bbb7eb05f44c7": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from collections import Counter\nfor cols in (8,16,9):\n rows=2\n hits=Counter(((k*16+t//16)*2*(cols//8*8)+b*16+t%16)*8+j for k in range(rows) for b in range(cols//8) for t in range(256) for j in range(8))\n expected=rows*16*cols*16\n print(cols, 'written',len(hits),'expected',expected,'unique',max(hits.values())==1,'missing',expected-len(hits))"
+        ]
+      },
+      "result_sha256": "716a0dc8bdd7827cef0608ab0f055f2ff13c37527fea9349c81ac60f05ccac99"
+    }
+  }
+}

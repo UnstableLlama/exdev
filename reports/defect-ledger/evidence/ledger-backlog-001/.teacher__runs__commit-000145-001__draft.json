@@ -1,0 +1,295 @@
+{
+  "schema_version": 5,
+  "sha": "809b0dab40c5f576bd84e38b0712cc5c3011f21e",
+  "parent_shas": [
+    "ae04741f22324cc746ab78c27365e53e3f9f1cf4"
+  ],
+  "cutoff_date": "2025-05-11T17:37:47+09:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Oversized jobs could fail while formatting their rejection message: Job.prepare_for_queue referenced generator.max_total_tokens, but Generator did not initialize it.",
+        "basis": "source",
+        "evidence": [
+          "call_42b655755b8d4256b947154afb276ab6",
+          "call_8a39a76bb7d84a88bcb11f33d706e4aa",
+          "call_4a4a6a4209b84d7bb0aed6b031e4e221"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Initializing max_total_tokens immediately after PageTable construction supplies the existing diagnostic with capacity derived from the actual page count; it does not change the admission predicate.",
+        "basis": "source",
+        "evidence": [
+          "call_a35f3d62e78c4642846b8e9825a75272",
+          "call_42b655755b8d4256b947154afb276ab6"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The bounded scalar reproduction changed the oversized-request failure from AttributeError to the intended AssertionError after supplying the new attribute.",
+        "basis": "execution",
+        "evidence": [
+          "call_9fdaf3443cae4b5aab3f2f633e8ab3be"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d concerns conversion and tokenizer truncation. Its discussion does not establish a connection to this generator change.",
+        "basis": "source",
+        "evidence": [
+          "call_c1b7c0c7379c460598cf412a370bbde3"
+        ]
+      }
+    ],
+    "limitations": [
+      "The scalar reproduction did not instantiate Generator or execute repository generation, NumPy conversion, or GPU code.",
+      "No static type checker was run."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Restore cache-capacity diagnostics and adjust annotations",
+        "claims": [
+          {
+            "text": "Generator.enqueue calls Job.prepare_for_queue before appending the job. When its page-capacity assertion fails, the message reads max_total_tokens. The new initialization repairs that diagnostic path without allocating additional cache or changing scheduling.",
+            "basis": "source",
+            "evidence": [
+              "call_4a4a6a4209b84d7bb0aed6b031e4e221",
+              "call_42b655755b8d4256b947154afb276ab6",
+              "call_a35f3d62e78c4642846b8e9825a75272"
+            ]
+          },
+          {
+            "text": "PAGE_SIZE is 256 tokens, and PageTable computes max_pages by integer-dividing cache.max_num_tokens by PAGE_SIZE. Thus the new attribute represents whole-page token capacity, not currently free space or a per-job output budget.",
+            "basis": "source",
+            "evidence": [
+              "call_0886e02a1d464110b0e0281451a76f01",
+              "call_c162102c4581470183ab4474514aed3f",
+              "call_a35f3d62e78c4642846b8e9825a75272"
+            ]
+          },
+          {
+            "text": "Scalar arithmetic confirmed capacities of 256 and 256 for hypothetical cache sizes of 256 and 257 tokens respectively, illustrating the whole-page rounding.",
+            "basis": "execution",
+            "evidence": [
+              "call_9fdaf3443cae4b5aab3f2f633e8ab3be"
+            ]
+          },
+          {
+            "text": "The seed annotation changes from int or None to int | None while retaining the None default. The UTF-32 helper annotation changes to tuple[np.ndarray, np.ndarray] | None. These edits change annotations, not runtime assertions or helper return statements.",
+            "basis": "source",
+            "evidence": [
+              "call_a35f3d62e78c4642846b8e9825a75272",
+              "call_adc164e336ad47c8b77603995bfcfa15"
+            ]
+          },
+          {
+            "text": "For nonempty input, _strings_to_utf32 concatenates UTF-32 little-endian bytes and builds cumulative byte offsets, exposing both as uint8 NumPy arrays. Job construction unpacks these buffers for stop strings and nonempty banned strings; the new annotation describes that nonempty result more accurately.",
+            "basis": "source",
+            "evidence": [
+              "call_908683cc5c224485b57b095a58a45ab1",
+              "call_91851ebb5e2d4a51895013fb160c6ba6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "empty-utf32-return-annotation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The revised return annotation still excludes the helper's empty-input result.",
+        "trigger": "Calling _strings_to_utf32([]), including Job construction with a non-None stop_conditions collection containing no strings.",
+        "expected_behavior": "The annotation should include the actual empty-input pair, or the implementation should return a value matching its declared type.",
+        "actual_behavior": "The unchanged branch returns (bytearray(), None), not a pair of ndarrays or standalone None. Existing callers unpack the pair, so this is an annotation mismatch rather than an established runtime regression.",
+        "locations": [
+          {
+            "commit": "809b0dab40c5f576bd84e38b0712cc5c3011f21e",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "_strings_to_utf32"
+          }
+        ],
+        "source_evidence": [
+          "call_adc164e336ad47c8b77603995bfcfa15",
+          "call_908683cc5c224485b57b095a58a45ab1",
+          "call_6956ace6837e4e5f8ee396e339965cb8",
+          "call_91851ebb5e2d4a51895013fb160c6ba6"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search found two direct calls, both in Job.__init__. The stop-condition path can pass an empty string list; the banned-string path is guarded by truthiness. The task changes only the helper annotation.",
+            "evidence": [
+              "call_6956ace6837e4e5f8ee396e339965cb8",
+              "call_91851ebb5e2d4a51895013fb160c6ba6",
+              "call_adc164e336ad47c8b77603995bfcfa15"
+            ],
+            "limits": "No static-checker diagnostic or repository execution was obtained; external callers were not inspected."
+          }
+        ]
+      }
+    ],
+    "summary": "Initializes whole-page cache capacity for oversized-job diagnostics and revises two annotations; the UTF-32 helper's empty-result annotation remains inaccurate."
+  },
+  "evidence": {
+    "call_a35f3d62e78c4642846b8e9825a75272": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "809b0dab40c5f576bd84e38b0712cc5c3011f21e",
+        "offset": 207,
+        "max_bytes": 875
+      },
+      "result_sha256": "f6b152a6c3b49ce9ba55da764170c8a05432b8725a8db7bc30f0a0740519ac86"
+    },
+    "call_adc164e336ad47c8b77603995bfcfa15": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "809b0dab40c5f576bd84e38b0712cc5c3011f21e",
+        "offset": 1082,
+        "max_bytes": 629
+      },
+      "result_sha256": "2fe4ed9976c78c0732233921f525beed66fd9320a392f86a6af12e80630856e5"
+    },
+    "call_c162102c4581470183ab4474514aed3f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/pagetable.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8d6a290f06fc737b879e552ac0fc6033004da73be0433b911c43ca980684037f"
+    },
+    "call_8a39a76bb7d84a88bcb11f33d706e4aa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "query": "max_total_tokens",
+        "limit": 100
+      },
+      "result_sha256": "e21460e69a1e735bdee3762e740fbf8b84c4145bae7b33948456c43009dab592"
+    },
+    "call_908683cc5c224485b57b095a58a45ab1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/job.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "3483171bc67664558922d7de36a2d7eab9502d94fed17683203172039d02e010"
+    },
+    "call_6956ace6837e4e5f8ee396e339965cb8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "query": "_strings_to_utf32",
+        "limit": 100
+      },
+      "result_sha256": "94ae34fc365743b7b44970a80250f1734a7f4f152ffc7328fc42e041df53bdf8"
+    },
+    "call_4c8c270f7db9428f8f720b8b3798b37e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/job.py",
+        "offset": 8200,
+        "max_bytes": 3200
+      },
+      "result_sha256": "bcb0d6101ca4e331a399652edbf750631422bc25575bd1708133b7edc2dd3a43"
+    },
+    "call_91851ebb5e2d4a51895013fb160c6ba6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/job.py",
+        "offset": 7100,
+        "max_bytes": 1500
+      },
+      "result_sha256": "3178197d304d8f76709275cb248187265eb66c55ac42e241e22871f23416d5a5"
+    },
+    "call_42b655755b8d4256b947154afb276ab6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/job.py",
+        "offset": 27700,
+        "max_bytes": 4400
+      },
+      "result_sha256": "19115e1178ed85454cdb69212c23c76802ff45bb3c0460f1147581a234479748"
+    },
+    "call_41cfb78505194964bb1507ec9a906e61": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "query": ".prepare(",
+        "path": "exllamav3/generator",
+        "limit": 50
+      },
+      "result_sha256": "ba91fb9e63211a33714d524d4a74093222a388d175424b5dcfd421ce49befdfa"
+    },
+    "call_b70b809123204aa2a42d41a523aeda37": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/job.py",
+        "offset": 26400,
+        "max_bytes": 1400
+      },
+      "result_sha256": "f767abdc466c4aa848af78c50279af161886c7c5e3212f5e0dba0f9b80c560a4"
+    },
+    "call_451a8dc3196d41b2873197c70b58a583": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "query": "prepare_for_queue",
+        "limit": 100
+      },
+      "result_sha256": "b4fd89b13693549a62c47bd01f881676dd54065ddbd123c630d4db6d7e9dee6d"
+    },
+    "call_4a4a6a4209b84d7bb0aed6b031e4e221": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/generator/generator.py",
+        "max_bytes": 7600
+      },
+      "result_sha256": "8892278170a44685dbfce4f1ec48833703d7d6acef598930bd82bf7daef4074b"
+    },
+    "call_0886e02a1d464110b0e0281451a76f01": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "path": "exllamav3/constants.py",
+        "max_bytes": 2000
+      },
+      "result_sha256": "7b376c24e34a6440f12b022b961bd214df5bea91676f30514cae3e39d700a184"
+    },
+    "call_c1b7c0c7379c460598cf412a370bbde3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1aec3c911b788fdce166345abecc103f569f8c06e9aa1ac492f27caf08769948"
+    },
+    "call_9fdaf3443cae4b5aab3f2f633e8ab3be": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from types import SimpleNamespace\nP=256\nfor n in (255,256,257,4096):\n print(n, P*(n//P))\ndef check(g):\n total_pages,max_pages=2,1\n assert total_pages<=max_pages, f'Job requires {total_pages} pages (only {max_pages} available) and cannot '+f'be enqueued. Total cache allocated is {max_pages} * {P} = '+f'{g.max_total_tokens} tokens'\nfor g in (SimpleNamespace(),SimpleNamespace(max_total_tokens=256)):\n try: check(g)\n except Exception as e: print(type(e).__name__, str(e))\nprint('empty helper branch:',type(bytearray()).__name__, None)\n"
+        ]
+      },
+      "result_sha256": "50b6f753f469f586d443502ff71ce3677c5976b6876715e0ccd14d16acb90ca1"
+    }
+  }
+}

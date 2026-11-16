@@ -1,0 +1,607 @@
+{
+  "schema_version": 5,
+  "sha": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+  "parent_shas": [
+    "1284d43c76349160992d42a241c81071fcc7b919"
+  ],
+  "cutoff_date": "2025-05-25T13:33:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Mixtral and Qwen3 MoE left attention output dtype unspecified, allowing their output projections to produce half precision before addition to the float residual stream.",
+        "basis": "source",
+        "evidence": [
+          "call_5f7a3fcce4674726b719bf6d57ff098a",
+          "call_0aab7467cd8443a094e93a11259fc3d8",
+          "call_6e068bc90e574eb4b7babe46f7cf11d2",
+          "call_73e50fd567074ba6ab07dc5e4a842e6c",
+          "call_7f978a12f8144486937c55cd55bd3e27",
+          "call_6610d781c2e740119a7691e2b91e6344"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Both builders now pass out_dtype=torch.float to Attention. This configures the output projection itself, rather than merely widening its already-rounded result.",
+        "basis": "source",
+        "evidence": [
+          "call_5c16deae6ae445e8a7386327c03db93f",
+          "call_02d033cbadc1421b872239568f839e66",
+          "call_41d70a88653d4ded9feb7a3951b9ad5f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change avoids a half-precision output boundary before residual addition, but also enlarges that temporary output and can change numerical results. A net speedup is not established.",
+        "basis": "inference",
+        "evidence": [
+          "call_73e50fd567074ba6ab07dc5e4a842e6c",
+          "call_7f978a12f8144486937c55cd55bd3e27",
+          "call_6610d781c2e740119a7691e2b91e6344",
+          "call_7f377b867d7f4ac18d275e825068d628"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The introducing Mixtral and Qwen3 MoE entries describe assembly from shared attention and sparse-expert modules. The Qwen3 entry also records a conditional all-expert fused-buffer mismatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_45ac30cbc09345ce8f06aa6ec3bc0a6a",
+          "call_bc5db840ae2641a8a7015046fcba68e8"
+        ]
+      },
+      {
+        "text": "The component-refactor entry records Qwen3MoeConfig supplying a bare class instead of a component dictionary. That old form is absent in the inspected parent: Qwen3MoeConfig already supplies {\"text\": Qwen3MoeModel}, which this diff leaves unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_e1246af5b2384cd9ac9d848ca8324230",
+          "call_0aab7467cd8443a094e93a11259fc3d8",
+          "call_02d033cbadc1421b872239568f839e66"
+        ]
+      },
+      {
+        "text": "PR #35, \u201chumaneval.py: fix top_k type, remove rep_p, add qwen3,\u201d concerns evaluation and sampling; issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, concerns scaling policy. Their association here is inference from shared Qwen3 terminology, not evidence motivating this dtype change. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports a Cholesky failure; its inferred association is the inspected linear.py conversion call appearing in its traceback, not a demonstrated connection to attention output precision.",
+        "basis": "inference",
+        "evidence": [
+          "call_e4314a9df31345aa86110b76ef737f7a",
+          "call_2d4ffb03efe84f10b5cec7dc5411d1a1",
+          "call_b72be36de9f543b48841b45b2441801c",
+          "call_dd3452e6a17e4075b2b6da089f2eb331"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, generation, CUDA execution or performance benchmark was run. The scalar rounding example is not execution of repository kernels.",
+      "Configuration inspection does not establish checkpoint tensor compatibility, including GPTQ loading, or end-to-end numerical accuracy."
+    ],
+    "links": [
+      "9665ba99989955593d2fb148323c9a96c77d1bea",
+      "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+      "830b6a018070a327d6d261628dff496f1303cf93"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Keep attention output in float through residual addition",
+        "claims": [
+          {
+            "text": "The two edits apply the same existing option independently to every constructed attention layer. Attention stores out_dtype and passes it to o_proj only; Q/K/V projections retain their existing precision. All three attention backends converge on project_o, and Attention.forward applies the requested output dtype through to2.",
+            "basis": "source",
+            "evidence": [
+              "call_5c16deae6ae445e8a7386327c03db93f",
+              "call_02d033cbadc1421b872239568f839e66",
+              "call_41d70a88653d4ded9feb7a3951b9ad5f",
+              "call_64df0f146f1a4107815092ae78ea756d"
+            ]
+          },
+          {
+            "text": "Linear propagates the stored dtype when loading FP16 or EXL3 weights and when converting to EXL3. LinearFP16 allocates the requested output: with half input and float output it selects ext.hgemm instead of torch.matmul. The native function requires two-dimensional half inputs and compatible shapes, and uses cublasGemmEx with float output and CUBLAS_COMPUTE_32F.",
+            "basis": "source",
+            "evidence": [
+              "call_dd3452e6a17e4075b2b6da089f2eb331",
+              "call_7f978a12f8144486937c55cd55bd3e27",
+              "call_d7e486cee6bf4f75b18bade4a6a53f43"
+            ]
+          },
+          {
+            "text": "LinearEXL3 likewise allocates y using the stored output dtype. Both its reconstruction route and direct EXL3 route receive that buffer. The native EXL3 entry accepts float or half output while retaining half input; the patch does not change its token-count dispatch or weight representation.",
+            "basis": "source",
+            "evidence": [
+              "call_6610d781c2e740119a7691e2b91e6344",
+              "call_ab061c985de64359a1eb8843744137c8"
+            ]
+          },
+          {
+            "text": "The inspected direct attention callers are TransformerBlock.forward and ParallelDecoderBlock.forward; neither overrides output dtype. These two models use TransformerBlock, whose embedding-origin residual is float and whose attention result is added in place. The subsequent MLP normalization still explicitly produces half precision. Mixtral's half MoE output and Qwen3 MoE's float MoE output are unchanged, as is the half final normalization.",
+            "basis": "source",
+            "evidence": [
+              "call_5bdd464bafe1499985ce608e231a40f9",
+              "call_73e50fd567074ba6ab07dc5e4a842e6c",
+              "call_6e068bc90e574eb4b7babe46f7cf11d2",
+              "call_5f7a3fcce4674726b719bf6d57ff098a",
+              "call_0aab7467cd8443a094e93a11259fc3d8"
+            ]
+          },
+          {
+            "text": "A standard-library scalar illustration rounded a float projection value of 1.000100016593933 through half before adding a residual of 1: the result was 2.0, versus 2.0001001358032227 without the half boundary. Packed half and float sizes were two and four bytes. This demonstrates possible rounding and storage differences, not actual model outputs or GPU speed.",
+            "basis": "execution",
+            "evidence": [
+              "call_7f377b867d7f4ac18d275e825068d628"
+            ]
+          },
+          {
+            "text": "All four inspected Mixtral configurations\u2014mistralai/Mixtral-8x7B-v0.1, Mixtral-8x7B-Instruct-v0.1, Mixtral-8x22B-v0.1 and Mixtral-8x22B-Instruct-v0.1\u2014declare MixtralForCausalLM. Each therefore matches the changed builder's architecture, and its unconditional float attention-output setting does not depend on their differing dimensions or declared bfloat16 checkpoint dtype.",
+            "basis": "source",
+            "evidence": [
+              "call_2232982c189b4c7cbb8bed6ee4953197",
+              "call_bdae274e2db64f5381cb37def205eb0d",
+              "call_4948132591654a62912b0f1b87189a83",
+              "call_0f9cf575aeeb47bc8ab91885f97d65ca",
+              "call_5f7a3fcce4674726b719bf6d57ff098a",
+              "call_5c16deae6ae445e8a7386327c03db93f"
+            ]
+          },
+          {
+            "text": "The seven inspected Qwen configurations\u2014Qwen/Qwen3-235B-A22B, its FP8 and GPTQ-Int4 variants, Qwen/Qwen3-30B-A3B, and its Base, FP8 and GPTQ-Int4 variants\u2014each declare Qwen3MoeForCausalLM and match the changed builder. The float output setting is unconditional for each; their bfloat16 or float16 metadata does not parameterize this constructor argument. No dimensions or checkpoint-key mappings change.",
+            "basis": "source",
+            "evidence": [
+              "call_871df245bdbb417990b9b691b7fc9004",
+              "call_215cff222cda413e8b7159925a95befa",
+              "call_b52211ffbf30457b9d7125e1bfddf8b6",
+              "call_13a119f63c9d41f9b4bbf258ee99ed3a",
+              "call_005a74f3f9744502ad0eac98b08bb17b",
+              "call_2254d06e46cc47a7b56209823fbc7977",
+              "call_e06f0b0141b4464ba972289149222e99",
+              "call_02d033cbadc1421b872239568f839e66"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-all-expert-buffer-mismatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously recorded conditional all-expert mismatch remains in the downstream sparse MLP; the attention dtype edit does not repair it.",
+        "trigger": "One flattened token, fully EXL3 experts, activate_all_experts=True, and num_experts different from num_experts_per_tok.",
+        "expected_behavior": "Evaluate all selected experts with appropriately sized buffers or use the non-fused route.",
+        "actual_behavior": "Native routing selects num_experts entries, but persistent fused buffers retain num_experts_per_tok entries. The first exl3_mgemm checks these dimensions for equality. The inspected direct MLP callers are the two decoder-block forward methods; the changed models use TransformerBlock. This conditional reach does not establish that ordinary generation or calibration triggers it.",
+        "locations": [
+          {
+            "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_1d6c07dd651a491681f4a3e4e1527019",
+          "call_2c941182fb7e42269c509b088255309e",
+          "call_ab061c985de64359a1eb8843744137c8",
+          "call_9845cdb0c2bc4c7280834c78a56f511a",
+          "call_73e50fd567074ba6ab07dc5e4a842e6c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared native routing cardinality, persistent buffer allocation, fused-path selection, native shape validation and decoder callers against the two-line behavioral change.",
+            "evidence": [
+              "call_1d6c07dd651a491681f4a3e4e1527019",
+              "call_2c941182fb7e42269c509b088255309e",
+              "call_ab061c985de64359a1eb8843744137c8",
+              "call_5c16deae6ae445e8a7386327c03db93f",
+              "call_02d033cbadc1421b872239568f839e66"
+            ],
+            "limits": "No tensor or CUDA execution; this is an inherited conditional observation."
+          }
+        ]
+      }
+    ],
+    "summary": "Requests float attention outputs in Mixtral and Qwen3 MoE, avoiding half rounding before residual addition. Performance and model-level numerical effects remain unmeasured."
+  },
+  "evidence": {
+    "call_5c16deae6ae445e8a7386327c03db93f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "offset": 187,
+        "max_bytes": 1207
+      },
+      "result_sha256": "a6740b8a308e4762a2a3756090d90c609aa2aeceb040716aaab171ac74734166"
+    },
+    "call_02d033cbadc1421b872239568f839e66": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "offset": 807,
+        "max_bytes": 587
+      },
+      "result_sha256": "65cf34100dbca68a75dbac508064f2f66ff5cf59e009289b7aadacc1317eccb9"
+    },
+    "call_41d70a88653d4ded9feb7a3951b9ad5f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "0211335ee748326029615afa03c948257174e6fe7c7d839cdd9b8544564e905a"
+    },
+    "call_2ce125acbb964d8f9f44885ce339988e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": "out_dtype",
+        "limit": 300
+      },
+      "result_sha256": "41644b24c6ed0e7d028aff63c410bfb82593ee74cc3be89dc6ea5266bea25b95"
+    },
+    "call_73e50fd567074ba6ab07dc5e4a842e6c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_5f7a3fcce4674726b719bf6d57ff098a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/models/mixtral.py"
+      },
+      "result_sha256": "ab4fda195b9060d39fca833a37056ff810c3783f5f46ce57260e6d41d80e850c"
+    },
+    "call_0aab7467cd8443a094e93a11259fc3d8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/models/qwen3_moe.py"
+      },
+      "result_sha256": "9f255006efc7050fce4aed55189c436423029de72fa029c4f4223e1a9f9788bf"
+    },
+    "call_bc5db840ae2641a8a7015046fcba68e8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7b962bd4cfc79326fe848f6153b3881f7e987fd49a4ff520f257a0f83aece8cd"
+    },
+    "call_9b31f9a311184970896f6d23fe0db5c2": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "fb05df3f0a9aec117ddaf5d51199a74f31b9e9b3f32293ef297bcf69bf57e4bc",
+      "catalog_only": true
+    },
+    "call_7f978a12f8144486937c55cd55bd3e27": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/modules/quant/fp16.py"
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_6610d781c2e740119a7691e2b91e6344": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "a436895394060b9efb7dadee493ffd2f5274633e4b50341f6ec9ce6fd3dc0720"
+    },
+    "call_dd3452e6a17e4075b2b6da089f2eb331": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "d27c57770abd83133876d010e5c78e72d77554d407946f1cd19808fb49c5949b"
+    },
+    "call_c1e3bf7ce583464e97d343f6f5306211": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/util/tensor.py",
+        "max_bytes": 2600
+      },
+      "result_sha256": "0a096b8ca4d4c8617ab2d926cadc5f80b7ca02c5d6303b6c89096ee1ed7db6fd"
+    },
+    "call_be5bfbe5cc604e91852c955c9f2a3219": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": "def to2"
+      },
+      "result_sha256": "bf4c1f0287566453fb3a8e564eced904bdc1e56392f86bc366fa32927170b860"
+    },
+    "call_64df0f146f1a4107815092ae78ea756d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/util/tensor.py",
+        "offset": 4300,
+        "max_bytes": 3500
+      },
+      "result_sha256": "472daf9c80dc30bca27fabcd88f3dcb468d9a2ca43fb0c6c2fecb7bd4a7dc39d"
+    },
+    "call_e1246af5b2384cd9ac9d848ca8324230": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7e9206989c587b27d376f2997d021ce6e95b9c2ff1b79ccc7fc39e5da68dfac1"
+    },
+    "call_659a266df1fc43fa9f3aa69d8e07112a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "mixtral.py",
+        "limit": 10
+      },
+      "result_sha256": "d2353b697721ad97d4e85093c3aa2812c3e5fa49ac9da2bb1e53e33eed71a501",
+      "catalog_only": true
+    },
+    "call_45ac30cbc09345ce8f06aa6ec3bc0a6a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+        "max_bytes": 16384
+      },
+      "result_sha256": "08b860cfd84a5c4df6571520c2de26b23cee7681a90f1b9935175adaf8726ba0"
+    },
+    "call_03028f9cbc834c31824d03ca0acfe359": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "2123541d6e6c91579d185d51bc2b5a9ff8beb600e6c6eb456c14227c08f8538b",
+      "catalog_only": true
+    },
+    "call_871df245bdbb417990b9b691b7fc9004": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "config.json"
+      },
+      "result_sha256": "14c3a8aefdea5d01ba21e3f5d36cf8953f6aca90643662cab744c4df9f46f7ef"
+    },
+    "call_215cff222cda413e8b7159925a95befa": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-FP8",
+        "revision": "bae6646ab86923752d1ae45a4bd660794daeafab",
+        "path": "config.json"
+      },
+      "result_sha256": "5de52bd2969c2408a5832ba46c8e7ec77250dc515fdbb3d9cea285cd5553a318"
+    },
+    "call_b52211ffbf30457b9d7125e1bfddf8b6": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "revision": "db337e1a1eac79928ddea88d43615bbce753d8a7",
+        "path": "config.json"
+      },
+      "result_sha256": "74d4c122eb0b863b8206c6de800ee5eaa9a843404fc6229f319c76397e66cabe"
+    },
+    "call_13a119f63c9d41f9b4bbf258ee99ed3a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "config.json"
+      },
+      "result_sha256": "0ee7773b398aa369a5c0d039b06ed07150e9ca3432e0c16615aba559a4bb4952"
+    },
+    "call_005a74f3f9744502ad0eac98b08bb17b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-Base",
+        "revision": "89e5e822ba31507f5f79dc3422c7c5345c422737",
+        "path": "config.json"
+      },
+      "result_sha256": "48b64b85b7629034ac91f9069f65e5fc2b81a3486f9566041569088ac0cebe19"
+    },
+    "call_2254d06e46cc47a7b56209823fbc7977": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-FP8",
+        "revision": "4504c1329df104a4b299f0db05882e84da88830b",
+        "path": "config.json"
+      },
+      "result_sha256": "918563c851dc069ce4b65cbcbb377eccb469cf96a625ff29fd18a6dcdf8f3ce8"
+    },
+    "call_e06f0b0141b4464ba972289149222e99": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "revision": "5b78b1b5f244a39334307aed060c27aa8d21e068",
+        "path": "config.json"
+      },
+      "result_sha256": "d1a2f3a2370dc544ad00c0562fc92086aefa535d93f58ea54df1d548fa3b4737"
+    },
+    "call_2232982c189b4c7cbb8bed6ee4953197": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-v0.1",
+        "revision": "ffe1a706bacbd5abddc5ff99432ee38f7e0662fb",
+        "path": "config.json"
+      },
+      "result_sha256": "dfb83624d0e811b348e41a37ef22c19c05101ab7c5880521da1958c711e25200"
+    },
+    "call_bdae274e2db64f5381cb37def205eb0d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "revision": "41bd4c9e7e4fb318ca40e721131d4933966c2cc1",
+        "path": "config.json"
+      },
+      "result_sha256": "6bee30f0e088a3e80247bbbc007bc495650819293708a9b0de9f8a759589b285"
+    },
+    "call_4948132591654a62912b0f1b87189a83": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-v0.1",
+        "revision": "6232b04930322afaa3c8f6edc4fe45a8a0a137a0",
+        "path": "config.json"
+      },
+      "result_sha256": "d5cb3902d16ebc71c891dae6e20a29d8a2ad442fc76c0623285285fbcb3b8786"
+    },
+    "call_0f9cf575aeeb47bc8ab91885f97d65ca": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-Instruct-v0.1",
+        "revision": "a46959a1a02a9247294f5e141a4f3270059c6b32",
+        "path": "config.json"
+      },
+      "result_sha256": "fe6f381297f96eb03cfab98eed27f195a19621b644715982738ade4ea0ad2dfe"
+    },
+    "call_e4314a9df31345aa86110b76ef737f7a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35",
+        "max_bytes": 20000
+      },
+      "result_sha256": "1767dbf3a41f2f484e449f6ffa58197ae46a69e905dbe2bad83c614b0c339391"
+    },
+    "call_b72be36de9f543b48841b45b2441801c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "815a74f086a1e9f3e658d088b3e6f036c88950d5f5498557b2ec2c8443aa809b"
+    },
+    "call_5bdd464bafe1499985ce608e231a40f9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": ".attn.forward",
+        "limit": 100
+      },
+      "result_sha256": "5c81c2226aaef07028180bae4d6ab27a5ba59ac0d48d1844123e21b8fc87751f"
+    },
+    "call_9bff6f5cd62b431a9f867cbc39692476": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": "hgemm(",
+        "limit": 100
+      },
+      "result_sha256": "9a3556ea351aa97e7b96621a6e3a28edea80018bf661be31bc0cad4ee0da4e5a"
+    },
+    "call_f3ff99410b8a4b2780807d9a8889b411": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": "void hgemm",
+        "limit": 30
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_d7e486cee6bf4f75b18bade4a6a53f43": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu"
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_6e068bc90e574eb4b7babe46f7cf11d2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/modules/embedding.py"
+      },
+      "result_sha256": "da4f07b218ff7eebf6bc4b652b85f6c88c9b438c2b978e47f3dfad305fdddce9"
+    },
+    "call_1d6c07dd651a491681f4a3e4e1527019": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "3bf90b1568c5d3d6db238c7ef9805f7ca668d963081cc960c48216782ba68ef0"
+    },
+    "call_9845cdb0c2bc4c7280834c78a56f511a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": ".mlp.forward",
+        "limit": 100
+      },
+      "result_sha256": "88a58d03fdbb94dcd2d5fe29c0badc0e26f0e411a4e68317d259243df2328400"
+    },
+    "call_2c941182fb7e42269c509b088255309e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/exllamav3_ext/libtorch/blocksparse_mlp.cpp"
+      },
+      "result_sha256": "349576a32bdf686a1452916572c9d1ad0ce9ec71ded3824ec0d1d81bd7a79c69"
+    },
+    "call_ab061c985de64359a1eb8843744137c8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 24000
+      },
+      "result_sha256": "77c7379e18fede599c2785fca963f04e8c238a40e2681cf96751dcef2affcc04"
+    },
+    "call_7f377b867d7f4ac18d275e825068d628": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct\nf32=lambda x:struct.unpack('f',struct.pack('f',x))[0]\nf16=lambda x:struct.unpack('e',struct.pack('e',x))[0]\ny=f32(1.0001); r=f32(1.0)\nprint({'projection':y,'old_half_then_residual':f32(r+f16(y)),'float_then_residual':f32(r+y),'output_bytes_per_element':{'half':struct.calcsize('e'),'float':struct.calcsize('f')}})"
+        ]
+      },
+      "result_sha256": "39ea3cf44eb137832d2066600db322f12d569545f1d46266f9483457b4753550"
+    },
+    "call_4b64eeabba3c498a915a1d4590523e86": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": "Mixtral",
+        "limit": 100
+      },
+      "result_sha256": "1e86cda9fb2325d1605dfb3cdf683bb9f2f3c54c33d18f895fb2d2a9d165e979"
+    },
+    "call_bc5ec5985fa54572b1f51f9636327155": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "query": "Qwen3",
+        "limit": 100
+      },
+      "result_sha256": "21e333846825a21c77d2b531e5f2db5644c6c276b9b137ce2e4ae69dcbdaa1ba"
+    },
+    "call_2d4ffb03efe84f10b5cec7dc5411d1a1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 20000
+      },
+      "result_sha256": "24f790c45bdfe6134f0f8910907f10d5d5eba7a55202dacd45e4c406c5f73fbd"
+    }
+  }
+}

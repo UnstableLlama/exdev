@@ -1,0 +1,189 @@
+{
+  "schema_version": 5,
+  "sha": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+  "parent_shas": [
+    "62e8832603ffc3c8089417f384f14d57f3ef6a52"
+  ],
+  "cutoff_date": "2025-06-02T01:58:34+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "TransformerBlock's annotations allowed LayerNorm for mlp_norm but omitted it from attn_norm, attn_post_norm and mlp_post_norm.",
+        "basis": "source",
+        "evidence": [
+          "call_91e8d02a269e4157826017a8a4cb5966"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Adding LayerNorm to those three unions makes the declared normalization interfaces consistent without changing defaults, stored attributes or computation.",
+        "basis": "source",
+        "evidence": [
+          "call_91e8d02a269e4157826017a8a4cb5966",
+          "call_69ffcde03d464a3888cac4f48db0f1db"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This corrects the declared API rather than introducing a new normalization implementation or switching existing models to LayerNorm.",
+        "basis": "source",
+        "evidence": [
+          "call_91e8d02a269e4157826017a8a4cb5966",
+          "call_6515bed50c9242ccb1074cd4a35a78e2"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial modules entry describes the sequential attention and MLP residual branches and their normalization interfaces.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0eaf9b022cd94440b7efdc6f9f75c044"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d reports a conversion failure whose traceback passes through TransformerBlock.forward. Its discussion attributes the problem to tokenizer truncation. The shared file is an inferred contextual connection, not evidence that this annotation change fixes that failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_50930b8a49ee46489deb70078bf0a017",
+          "call_91e8d02a269e4157826017a8a4cb5966"
+        ]
+      }
+    ],
+    "limitations": [
+      "No type checker, model inference or GPU execution was run. Python tooling inspected source only; this annotation-only change offers no useful numerical computation to validate.",
+      "Whole-tree literal and Python-source searches cover explicit callers and readers, not external users or dynamically constructed references."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Consistent normalization type hints",
+        "claims": [
+          {
+            "text": "All four TransformerBlock normalization parameters now declare RMSNorm | LayerNorm | None. LayerNorm was already imported, and both normalization classes expose forward(x, params, out_dtype). The block stores and registers the supplied objects without selecting an implementation by type.",
+            "basis": "source",
+            "evidence": [
+              "call_91e8d02a269e4157826017a8a4cb5966",
+              "call_69ffcde03d464a3888cac4f48db0f1db",
+              "call_6515bed50c9242ccb1074cd4a35a78e2"
+            ]
+          },
+          {
+            "text": "The unchanged forward path requests half output from input normalization, calls attention or MLP, optionally post-normalizes its output, then adds it to the residual. Thus the widened annotations describe interchangeable call interfaces, not mathematically interchangeable normalization operations.",
+            "basis": "source",
+            "evidence": [
+              "call_69ffcde03d464a3888cac4f48db0f1db",
+              "call_6515bed50c9242ccb1074cd4a35a78e2"
+            ]
+          },
+          {
+            "text": "Explicit constructors remain compatible: Llama, Phi3, Mixtral, Qwen3 and Qwen3-MoE supply RMSNorm input norms and omit post-norms; Gemma2, Gemma3 and GLM4 supply RMSNorm for all four slots. DeciLM supplies RMSNorm with active branches and None with disabled branches. None requires migration or starts using LayerNorm.",
+            "basis": "source",
+            "evidence": [
+              "call_ea5a6b1c7b1a420ebaf83063998c1925",
+              "call_6515bed50c9242ccb1074cd4a35a78e2"
+            ]
+          },
+          {
+            "text": "The additional reader in science/kv_quant_exp.py calls attn_norm.forward with the same arguments supported by both classes. The search found no TransformerBlock subclass overriding the changed signature.",
+            "basis": "source",
+            "evidence": [
+              "call_ea5a6b1c7b1a420ebaf83063998c1925",
+              "call_9cb0b5d25f1149d589a8dcbe5e7cf13c",
+              "call_6515bed50c9242ccb1074cd4a35a78e2"
+            ]
+          },
+          {
+            "text": "Unlike the initial entry's unconditional-branch implementation, the inspected parent guards absent attention and MLP branches. Active branches still rely on their input norms to initialize the intermediate tensor; the inspected constructors satisfy that precondition. This commit changes neither those guards nor that requirement.",
+            "basis": "source",
+            "evidence": [
+              "call_69ffcde03d464a3888cac4f48db0f1db",
+              "call_6515bed50c9242ccb1074cd4a35a78e2",
+              "call_91e8d02a269e4157826017a8a4cb5966",
+              "call_0eaf9b022cd94440b7efdc6f9f75c044"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds LayerNorm to three TransformerBlock normalization annotations, aligning them with the existing interface without changing runtime computation."
+  },
+  "evidence": {
+    "call_91e8d02a269e4157826017a8a4cb5966": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c02ba9e2cf327335719bd34cb1e339afd98c5710",
+        "offset": 148,
+        "max_bytes": 940
+      },
+      "result_sha256": "bfb91a9b180809199b07dae4f3f21db3598e76267519ded655018fc2700078d0"
+    },
+    "call_69ffcde03d464a3888cac4f48db0f1db": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_ea5a6b1c7b1a420ebaf83063998c1925": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "62e8832603ffc3c8089417f384f14d57f3ef6a52",
+        "query": "TransformerBlock",
+        "limit": 100
+      },
+      "result_sha256": "d319b8bf406c4f352a0a05e3ce1ed15c8af91253bbc393c59387aec87fbbadaa"
+    },
+    "call_0eaf9b022cd94440b7efdc6f9f75c044": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_9cb0b5d25f1149d589a8dcbe5e7cf13c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import pathlib\nfor p in pathlib.Path('.').rglob('*.py'):\n s=p.read_text(); lines=s.splitlines()\n hits=[i for i,l in enumerate(lines) if any(k in l for k in ('TransformerBlock(','.attn_norm','.attn_post_norm','.mlp_post_norm'))]\n for i in hits:\n  print('\\nFILE',p,'LINE',i+1); print('\\n'.join(lines[max(0,i-3):i+35]))"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "6277e3f1e53cdd2ae74b1e32401c7d43b1482306d76755c95ea87ce72406b5c2"
+    },
+    "call_6515bed50c9242ccb1074cd4a35a78e2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nfor p in pathlib.Path('exllamav3/models').glob('*.py'):\n s=p.read_text();t=ast.parse(s)\n for n in ast.walk(t):\n  if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='TransformerBlock':\n   print(p);print('\\n'.join(k.arg+' = '+ast.get_source_segment(s,k.value) for k in n.keywords if 'norm' in k.arg))\np=pathlib.Path('exllamav3/models/decilm.py'); print('\\nDECILM preparation\\n'+'\\n'.join(p.read_text().splitlines()[65:138]))\nfor f in ['exllamav3/modules/layernorm.py','exllamav3/modules/rmsnorm.py']:\n print('\\n'+f+'\\n'+pathlib.Path(f).read_text())"
+        ]
+      },
+      "result_sha256": "50e0841e55accfa380fdaa34af6db62e4a1972dc9bd6db6b6b92f14a33bf1e57"
+    },
+    "call_50930b8a49ee46489deb70078bf0a017": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "0ddeb5cca26547dce790ba7b671e462e7633bf6e8b104e0aaa8232e66f6931b7"
+    }
+  }
+}

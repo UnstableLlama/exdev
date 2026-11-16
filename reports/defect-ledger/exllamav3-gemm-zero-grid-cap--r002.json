@@ -1,0 +1,332 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The selector can cap the cooperative grid at zero for small matrices; multi-GEMM later divides by that zero cap.",
+  "trigger": "Call exl3_mgemm with shape 2 forced, size_k=128 and size_n=128: the selector computes (128/32)*(128/128)/12 = 0.",
+  "expected_behavior": "Reject unsupported small workloads explicitly or retain a positive launch width.",
+  "actual_behavior": "The selector sets num_sms to zero and the new host expression evaluates total_sms / num_sms before launch. The prior zero-width launch problem is changed into an integer-division-by-zero path. Reach is the native interface exposed by the extension; no Python caller was found.",
+  "verification": [
+    {
+      "method": "scalar_transcription",
+      "description": "Evaluated the selector's bounded tile-count arithmetic and obtained zero.",
+      "evidence": [
+        "call_0adc900e5b3446168adcc5f1c4bf01a4"
+      ],
+      "limits": "Did not execute C++ division or launch CUDA; runtime failure manifestation is unmeasured."
+    }
+  ],
+  "defect_id": "exllamav3-gemm-zero-grid-cap",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "paths": [
+        "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu"
+      ],
+      "status": "source_supported",
+      "rationale": "135 reviewer traces tile-count / 12 cap to123: zero-block single-GEMM launch;133 copies it to multi-GEMM;135 divides by the cap."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "run": ".teacher/runs/commit-000135-001",
+      "finding_id": "zero-slice-division"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "run": ".teacher/runs/commit-000135-001",
+      "local_id": "zero-slice-division",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "zero-slice-division",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new concurrency calculation divides by a selector result that can be zero.",
+        "trigger": "Call exl3_mgemm with shape 2 forced, size_k=128 and size_n=128: the selector computes (128/32)*(128/128)/12 = 0.",
+        "expected_behavior": "Reject unsupported small workloads explicitly or retain a positive launch width.",
+        "actual_behavior": "The selector sets num_sms to zero and the new host expression evaluates total_sms / num_sms before launch. The prior zero-width launch problem is changed into an integer-division-by-zero path. Reach is the native interface exposed by the extension; no Python caller was found.",
+        "locations": [
+          {
+            "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_82d0b2ddc77c4d7180d7593d2dc4c124",
+          "call_fea1900736f0463c8a21e0e14df6e3aa",
+          "call_ae67634a17934a3eb277a259d59b3091",
+          "call_2e34b3a892fa4c1496cd89dd766d8aec",
+          "call_f146902dbea7449b85bb33cd418131b1"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the selector's bounded tile-count arithmetic and obtained zero.",
+            "evidence": [
+              "call_0adc900e5b3446168adcc5f1c4bf01a4"
+            ],
+            "limits": "Did not execute C++ division or launch CUDA; runtime failure manifestation is unmeasured."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "run": ".teacher/runs/commit-000153-002",
+      "local_id": "retained-zero-slice-division",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "retained-zero-slice-division",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The concurrency calculation retains a possible zero divisor.",
+        "trigger": "Multi-GEMM with shape two forced and k=n=128.",
+        "expected_behavior": "Reject an unsupported workload or retain positive launch width.",
+        "actual_behavior": "The selector computes (128/32)*(128/128)/12=0; the wrapper then evaluates total_sms/num_sms. Reach is the exported binding; the located BlockSparseMLP calls use automatic selection and do not establish this particular trigger.",
+        "locations": [
+          {
+            "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_ff908d40494f4d5494c01a420f2bf820",
+          "call_8731c2dcde3e402cbd00f539ac283fb5",
+          "call_41d7bdac40bf4632a912fc560421f23d",
+          "call_8d59430784734cba80ef5ca913655445",
+          "call_2a63fe8a936c48828f6511fa87d0dcb7"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the selector's small-workload slice count as zero.",
+            "evidence": [
+              "call_ed06e06a5e7242c1a152484c15d48939"
+            ],
+            "limits": "Did not execute C++ division or CUDA launch."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1284d43c76349160992d42a241c81071fcc7b919",
+      "run": ".teacher/runs/commit-000186-001",
+      "local_id": "zero-multi-grid",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "zero-multi-grid",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The tighter multi-GEMM cap expands the range that produces zero blocks and reaches integer division by zero.",
+        "trigger": "For example, automatic Ampere multi-GEMM with K=512, N=128 and bits=2 selects shape 2, giving 16 tiles and num_sms=0 under division by 24; the previous division by 12 gave one block.",
+        "expected_behavior": "A nonempty supported matrix should receive a positive block count or be rejected before concurrency arithmetic.",
+        "actual_behavior": "exl3_mgemm computes total_sms / num_sms without a zero guard. Direct Python callers occur in attention's fused K/V projection and the fused expert gate/up/down path; their inspected call sites do not enforce a minimum tile count. This does not establish that typical model dimensions trigger the condition.",
+        "locations": [
+          {
+            "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_exl3_mgemm_kernel"
+          },
+          {
+            "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_03ba85c9aa374d168a3d1adc9af07679",
+          "call_38080e6040f045e4b932629b85a71bef",
+          "call_da84d59aa1074698ba78355a1f4d8508",
+          "call_c8f9812dd9c74a1dbccdeca94c5cbf29",
+          "call_9924fc1c08554d6e95479b80c4346795"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "For 16 tiles and 80 available SMs, Python calculated old cap 1 and new multi cap 0.",
+            "evidence": [
+              "call_98aec4ae86c048d286bdc4893afae37c"
+            ],
+            "limits": "No repository or CUDA execution; downstream division was identified by inspection."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1284d43c76349160992d42a241c81071fcc7b919",
+      "origin": "fix_derived",
+      "status": "source_supported",
+      "scope": "single path only",
+      "description": "Single path clamped; multi path remains open, now for fewer than 24 tiles.",
+      "review": "reviews/verdicts/commit-000186-001.md"
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit135-draft.json",
+      "sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf"
+    },
+    {
+      "file": "evidence/commit135-transcript.json",
+      "sha256": "63a315817a10c5b6f14e554fa2108d3adf3d90e31d9b2f15654d6c752af50ab6"
+    },
+    {
+      "file": "evidence/commit135-verdict.md",
+      "sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000135-001__draft.json",
+      "sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000135-001.md",
+      "sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000153-002__draft.json",
+      "sha256": "b6284fd2bc6d18a2caddf2e7deff6f48918edc938e8bdaa11af00c42d6a39bad"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000153-002.md",
+      "sha256": "1ed558b6edb6c31262812a5466b9162561d82f24cc183ea72278ffc055814815"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000186-001__draft.json",
+      "sha256": "779775c8da0d0004090f8c378a42175d2f19252905dfb702033ca1a7a89af728"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000186-001.md",
+      "sha256": "b6a263268247b3f8708ebacfea2f474ec656d1f4ef9e688327f669ed238bbf49"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "available_at": "2025-05-05T00:54:26+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "available_at": "2025-05-11T02:04:57+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit135-draft.json",
+      "source_id": "evidence/commit135-draft.json",
+      "content_sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf",
+      "available_at": "2026-11-15T06:03:32.663875+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit135-transcript.json",
+      "source_id": "evidence/commit135-transcript.json",
+      "content_sha256": "63a315817a10c5b6f14e554fa2108d3adf3d90e31d9b2f15654d6c752af50ab6",
+      "available_at": "2026-11-15T06:03:32.663875+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit135-verdict.md",
+      "source_id": "evidence/commit135-verdict.md",
+      "content_sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557",
+      "available_at": "2026-11-15T06:03:32.663875+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+      "available_at": "2025-05-11T00:04:33+02:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000135-001/draft.json",
+      "source_id": ".teacher/runs/commit-000135-001/draft.json",
+      "content_sha256": "99efa89eebf4495cb5605aac16935b6ad5b492c76d64fc669885a2de98b80faf",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000135-001.md",
+      "source_id": "reviews/verdicts/commit-000135-001.md",
+      "content_sha256": "a6314835ff4e73ab581d715e6b7c205ca1f89d694612819750de32ea4e267557",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000153-002/draft.json",
+      "source_id": ".teacher/runs/commit-000153-002/draft.json",
+      "content_sha256": "b6284fd2bc6d18a2caddf2e7deff6f48918edc938e8bdaa11af00c42d6a39bad",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000153-002.md",
+      "source_id": "reviews/verdicts/commit-000153-002.md",
+      "content_sha256": "1ed558b6edb6c31262812a5466b9162561d82f24cc183ea72278ffc055814815",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000186-001/draft.json",
+      "source_id": ".teacher/runs/commit-000186-001/draft.json",
+      "content_sha256": "779775c8da0d0004090f8c378a42175d2f19252905dfb702033ca1a7a89af728",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000186-001.md",
+      "source_id": "reviews/verdicts/commit-000186-001.md",
+      "content_sha256": "b6a263268247b3f8708ebacfea2f474ec656d1f4ef9e688327f669ed238bbf49",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1284d43c76349160992d42a241c81071fcc7b919",
+      "available_at": "2025-05-25T13:33:39+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "available_at": "2025-05-12T12:38:08-04:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "5d470a29780927c1c8c874609597823f210ae3b9",
+      "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+      "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "1284d43c76349160992d42a241c81071fcc7b919"
+    ],
+    "limits": "Exact source-supported observations only; no continuous affected range or runtime effects asserted."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "stages": [
+    {
+      "sha": "5d470a29780927c1c8c874609597823f210ae3b9",
+      "consequence": "Zero-block single-GEMM launch."
+    },
+    {
+      "sha": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+      "consequence": "Same cap copied into multi-GEMM."
+    },
+    {
+      "sha": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "consequence": "Host total_sms / num_sms adds division by zero."
+    }
+  ],
+  "administrative_qualifications": [
+    "186 multi path fewer than 24 tiles remains affected; single path clamped. Earlier zero cap / later division are one identity."
+  ]
+}

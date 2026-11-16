@@ -1,0 +1,257 @@
+{
+  "schema_version": 5,
+  "sha": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+  "parent_shas": [
+    "448815bc1cf7b17e714a52fe6f70bcb53da48147"
+  ],
+  "cutoff_date": "2025-04-22T23:04:50+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "CacheLayer_quant was exported by exllamav3.cache but omitted from the top-level package. Cache's docstring also named obsolete per-bitrate classes instead of the implemented configurable class.",
+        "basis": "source",
+        "evidence": [
+          "call_79320b5a41764984800c60c794c663e3",
+          "call_288ef68a45dc46aea6b8ce8ef27db9eb",
+          "call_993474fd5bab4e20a5fdec30633ad865"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change aligns the public import surface and constructor documentation with existing functionality rather than introducing a new cache implementation.",
+        "basis": "inference",
+        "evidence": [
+          "call_288ef68a45dc46aea6b8ce8ef27db9eb",
+          "call_993474fd5bab4e20a5fdec30633ad865",
+          "call_9c68f67370a04327aecc9e996adda91d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The package now exposes CacheLayer_quant for top-level imports. Existing model_init code already imports it from .cache and supplies both bitrates, so that construction path needs no adjustment.",
+        "basis": "source",
+        "evidence": [
+          "call_288ef68a45dc46aea6b8ce8ef27db9eb",
+          "call_fe7d9c53ff5f4dbe81e84015ff36e78b"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "This is a missing re-export, not evidence that importing exllamav3 itself previously failed: its cache package initializer already imported the quantized class.",
+        "basis": "source",
+        "evidence": [
+          "call_79320b5a41764984800c60c794c663e3",
+          "call_39be7b1c2ed445aaa3410c027b6362ba"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import failure; its connection here is only an inferred file overlap because its traceback includes exllamav3/__init__.py. The diff does not address that native symbol. Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns weight conversion, not this cache export.",
+        "basis": "inference",
+        "evidence": [
+          "call_78b736596d5a41bb96c7da8716166006",
+          "call_720a350452654ff99e10b62f03f8e54c",
+          "call_288ef68a45dc46aea6b8ce8ef27db9eb",
+          "call_993474fd5bab4e20a5fdec30633ad865"
+        ]
+      }
+    ],
+    "limitations": [
+      "No package import, model loading or GPU cache operation was executed. This export-and-docstring change has no useful numerical computation to validate.",
+      "The documentation does not spell out that both quantized bitrates are required or their asserted 2\u20138 range; these constraints were established from the constructor, not runtime testing."
+    ],
+    "links": [
+      "cf848114852240a51fb6b9e77c686051c39302b2"
+    ],
+    "chapters": [
+      {
+        "id": "cache",
+        "title": "Expose and document the configurable quantized cache",
+        "claims": [
+          {
+            "text": "Cache.__init__ retains its optional layer_type and **kwargs interface. Omitting layer_type still selects CacheLayer_fp16; explicitly selecting CacheLayer_quant forwards k_bits and v_bits to every cache layer.",
+            "basis": "source",
+            "evidence": [
+              "call_0fca16cc883b444d9d38162638c7dab6",
+              "call_993474fd5bab4e20a5fdec30633ad865"
+            ]
+          },
+          {
+            "text": "The new parameter descriptions correctly distinguish key and value precision. CacheLayer_quant requires both arguments, asserts each is between 2 and 8, and uses them independently to size the compressed key and value tensors. The task changes neither these requirements nor the encoding path.",
+            "basis": "source",
+            "evidence": [
+              "call_9c68f67370a04327aecc9e996adda91d",
+              "call_993474fd5bab4e20a5fdec30633ad865"
+            ]
+          },
+          {
+            "text": "The earlier cache entry describes independent key/value precision and records a detachment diagnostic defect. Inspection of the current parent and task diff shows that diagnostic remains unchanged; this documentation cleanup does not repair it.",
+            "basis": "inference",
+            "evidence": [
+              "call_fdeff58255954ebb8e162ac3150d07b9",
+              "call_0fca16cc883b444d9d38162638c7dab6",
+              "call_993474fd5bab4e20a5fdec30633ad865"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-detach-diagnostic",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited mismatched-layer detachment diagnostic still calls an integer as a function.",
+        "trigger": "With assertions enabled, call Cache.detach_from_model using a model whose cache-layer count differs from the cache's count.",
+        "expected_behavior": "Raise AssertionError with a diagnostic describing the incompatible counts.",
+        "actual_behavior": "Formatting the assertion message evaluates model_num_layers(), producing TypeError instead. Matching counts bypass the expression.",
+        "locations": [
+          {
+            "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+            "path": "exllamav3/cache/cache.py",
+            "symbol": "Cache.detach_from_model"
+          }
+        ],
+        "source_evidence": [
+          "call_0fca16cc883b444d9d38162638c7dab6",
+          "call_993474fd5bab4e20a5fdec30633ad865"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The task leaves the diagnostic unchanged. Whole-parent-tree search found one direct caller in examples/loading.py, which passes the same model used to construct the cache and therefore does not demonstrate the mismatch trigger.",
+            "evidence": [
+              "call_9fe530dcaa2b4497a9d301f03320cd0a",
+              "call_f8f60787cddb41839b8c247db4885d5a",
+              "call_0fca16cc883b444d9d38162638c7dab6",
+              "call_993474fd5bab4e20a5fdec30633ad865"
+            ],
+            "limits": "Source inspection only; external callers and dynamic calls were not established."
+          }
+        ]
+      }
+    ],
+    "summary": "Exports CacheLayer_quant at package level and documents its independent key/value bitrates, without changing cache computation or defaults."
+  },
+  "evidence": {
+    "call_288ef68a45dc46aea6b8ce8ef27db9eb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "offset": 158,
+        "max_bytes": 1733
+      },
+      "result_sha256": "9c3c247060cab7cdcad3909ee861d196ecbc121d44926ccb9728267ef72adfb2"
+    },
+    "call_993474fd5bab4e20a5fdec30633ad865": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1f5a43fc72f3c45d6db757c7907d4793ec88f026",
+        "offset": 718,
+        "max_bytes": 1173
+      },
+      "result_sha256": "cddbb9d5e74ded78b2a679a88e9e0b449cc543d42d07d83aaaff67de5dc6b381"
+    },
+    "call_0fca16cc883b444d9d38162638c7dab6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "path": "exllamav3/cache/cache.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "7cb26da36b26bb2973948575cbac296353bcf2b5351652b1e05b9ecaf3a198ea"
+    },
+    "call_d543e63b15604dc28582509ff4679321": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "query": "CacheLayer_quant",
+        "limit": 100
+      },
+      "result_sha256": "68954a74cdb559ae5286b1457df85b220df20e037a94dda6a85e476c12fb02ff"
+    },
+    "call_9c68f67370a04327aecc9e996adda91d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "path": "exllamav3/cache/quant.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "728a5827e6ceb55199c0de36f7ecca1c2d24f6c6d68288d7aff90a7ba592afe6"
+    },
+    "call_fe7d9c53ff5f4dbe81e84015ff36e78b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "path": "exllamav3/model_init.py",
+        "max_bytes": 11000
+      },
+      "result_sha256": "fbcb13968e86c026fce0ccd96692fedb542b17c97e506d06aaaaea489098a961"
+    },
+    "call_39be7b1c2ed445aaa3410c027b6362ba": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "query": "from .cache import",
+        "limit": 100
+      },
+      "result_sha256": "47fe4e81cf4eaa2aa6d263047049eea82fb99a3caf5c05ca1c988a995cea39dd"
+    },
+    "call_79320b5a41764984800c60c794c663e3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "path": "exllamav3/cache/__init__.py"
+      },
+      "result_sha256": "363e3b8a4f07a74551733c2859a91d628d9df4ec85fed1b832887b74002a8e99"
+    },
+    "call_78b736596d5a41bb96c7da8716166006": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "92ad0bc1fe3805eefbe7e19579b2b66ee943ace7c7bd8e4e86130694f9fd85f3"
+    },
+    "call_720a350452654ff99e10b62f03f8e54c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "632bcb5fd7ec69d0f1aa5cc3704cd5ab837e23e4506a7b5a874234effd6bb11b"
+    },
+    "call_fdeff58255954ebb8e162ac3150d07b9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "cf848114852240a51fb6b9e77c686051c39302b2",
+        "max_bytes": 16384
+      },
+      "result_sha256": "768598bf11637da9399a226396569a9ed756d1b1f4a68a58c24b0f97cd5e88f1"
+    },
+    "call_9fe530dcaa2b4497a9d301f03320cd0a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "query": "detach_from_model",
+        "limit": 100
+      },
+      "result_sha256": "ed49e747a3f2f4ccd257ff2e8f6207684780ad4369dc158e205c6e3b8fcfdd35"
+    },
+    "call_f8f60787cddb41839b8c247db4885d5a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+        "path": "examples/loading.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "79bb990913974980a2fcef1079846ae5d1b102238a61aa241d1e73cf1a6930cd"
+    }
+  }
+}

@@ -1,0 +1,369 @@
+{
+  "schema_version": 5,
+  "sha": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+  "parent_shas": [
+    "25d9388bce25b89c48a4a078bc6fc8365c661692"
+  ],
+  "cutoff_date": "2025-04-17T11:44:56+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "GPTJ rotary style was already selectable, but its CUDA specialization contained only a TODO and wrote no rotated output.",
+        "basis": "source",
+        "evidence": [
+          "call_4fa0c19373f541aaa9fc1ec5ee6abbec",
+          "call_784b029bd92f4df2af378719cc7b9b95"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change implements adjacent-channel rotation within the existing kernel rather than adding another positional-frequency pipeline.",
+        "basis": "source",
+        "evidence": [
+          "call_7192cb6d99994abe81198d9f5cd607dd"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Native GPTJ calls now rotate Q and optional K; this does not register a GPT-J model architecture or complete the Torch reference implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_7192cb6d99994abe81198d9f5cd607dd",
+          "call_3cf749b4802a4f598c4e3d6676af849c",
+          "call_784b029bd92f4df2af378719cc7b9b95"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier modules entry identified the empty GPTJ branch and partial-rotation frequency-read concern. Inspection of this patch shows the former implemented and the latter carried over.",
+        "basis": "inference",
+        "evidence": [
+          "call_d9b57de42b0b4d2eb3a61d797b9f1e41",
+          "call_4fa0c19373f541aaa9fc1ec5ee6abbec",
+          "call_7192cb6d99994abe81198d9f5cd607dd"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d includes util/rope.py in its import traceback. Its connection here is only an inferred file overlap: the reporter describes an environment/compiler remedy, not GPTJ rotation. The reviewed reports of incoherent low-bitrate output (#15), invalid CUDA configuration (#16), and missing torch during requirements installation (#17) do not establish motivation for this patch.",
+        "basis": "inference",
+        "evidence": [
+          "call_39fed8ee10a64f1caf00bd750af26079",
+          "call_5f35cf1e899441a29055dae3799818e4",
+          "call_fb3ada9f39004aa386e6639003341bb2",
+          "call_a95c4863d1c246b7a0cf72cbe9b0b877",
+          "call_7192cb6d99994abe81198d9f5cd607dd"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, kernel execution, model inference or performance measurement was performed.",
+      "The scalar check uses Python double precision, not CUDA fast trigonometry, float intermediates or FP16 rounding; it cannot establish device-memory behavior."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Adjacent-pair GPTJ rotary execution",
+        "claims": [
+          {
+            "text": "For pair index t, GPTJ addresses channels 2t and 2t+1 and computes (u\u00b7cos\u2212v\u00b7sin, v\u00b7cos+u\u00b7sin), with float intermediates and round-to-nearest half outputs. NEOX instead pairs t with t+partial_head_dim/2. Both modes share position selection, inverse frequencies and attention-factor scaling.",
+            "basis": "source",
+            "evidence": [
+              "call_7192cb6d99994abe81198d9f5cd607dd",
+              "call_4fa0c19373f541aaa9fc1ec5ee6abbec"
+            ]
+          },
+          {
+            "text": "partial_head_dim is twice the inverse-frequency count. GPTJ rotates pairs below that count and copies remaining adjacent pairs using half2. The launch still uses head_dim/2 threads along x and at most 1024 threads per block, distributing Q and K heads along y with a strided loop. The NEOX copy rewrite preserves its original address arithmetic.",
+            "basis": "source",
+            "evidence": [
+              "call_7192cb6d99994abe81198d9f5cd607dd",
+              "call_4fa0c19373f541aaa9fc1ec5ee6abbec"
+            ]
+          },
+          {
+            "text": "Named dispatch constants preserve GPTJ=1 and NEOX=2 rather than changing selection semantics. RoPE.apply makes inputs contiguous, chooses allocated or in-place outputs and forwards the configured style to ext.rope. Inspected attention callers consume its returned Q/K before SDPA or FlashAttention.",
+            "basis": "source",
+            "evidence": [
+              "call_7192cb6d99994abe81198d9f5cd607dd",
+              "call_784b029bd92f4df2af378719cc7b9b95",
+              "call_70ede631d93e4913acd35cf6c15dfb2c"
+            ]
+          },
+          {
+            "text": "The new _rotate_half_gptj helper constructs interleaved (\u2212odd, even) channels, but no call site is added. apply_torch still uses split-half rotation; its TODO now explicitly mentions GPTJ and partial rotary factors. Existing test parametrization enables only NEOX.",
+            "basis": "source",
+            "evidence": [
+              "call_3cf749b4802a4f598c4e3d6676af849c",
+              "call_784b029bd92f4df2af378719cc7b9b95",
+              "call_526fc5d10f9c4f40a1c716adc713a282"
+            ]
+          },
+          {
+            "text": "A scalar transcription checked adjacent-pair destination coverage for head/rotary dimensions 8/8, 8/4, 128/128 and 128/64. Every channel was covered once. A four-channel rotation preserved squared norm within 3.6e\u221215 while differing from the unchanged split-half formula.",
+            "basis": "execution",
+            "evidence": [
+              "call_b23cd757206f48db9136f1fcc0cfceed"
+            ]
+          },
+          {
+            "text": "The accompanying Hadamard edit widens the device annotation to torch.device | str without changing its conversion, scaling or caching implementation.",
+            "basis": "source",
+            "evidence": [
+              "call_76045bea15f8409c812228b49e0d8ea3"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "partial-frequency-read",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited unconditional frequency read remains outside the partial-rotation guard.",
+        "trigger": "A partial rotary frequency array shorter than head_dim/2 reaches rope_kernel.",
+        "expected_behavior": "Threads copying unrotated channels should not read beyond the frequency array.",
+        "actual_behavior": "All x threads evaluate inv_freq[t] before the rotation/copy branch. For head_dim=128 and rotary_dim=64, 32 source-level frequency indices exceed the 32-element array. Actual GPU consequences are untested.",
+        "locations": [
+          {
+            "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_4fa0c19373f541aaa9fc1ec5ee6abbec",
+          "call_7192cb6d99994abe81198d9f5cd607dd",
+          "call_784b029bd92f4df2af378719cc7b9b95"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent-tree search locates ext.rope in RoPE.apply and three attention callers of self.rope.apply. Their reach is conditional on supplying partial frequencies; it is not evidence that every model uses them. The task diff leaves the shared read and launch unchanged.",
+            "evidence": [
+              "call_3966534e7632463eb4e1e01b6a23df8c",
+              "call_9867f6c103474b51b58b50314cc4be32",
+              "call_70ede631d93e4913acd35cf6c15dfb2c",
+              "call_7192cb6d99994abe81198d9f5cd607dd"
+            ],
+            "limits": "Source-level bounds concern, not a measured CUDA fault."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Counted launched frequency indices outside the partial array for two bounded examples.",
+            "evidence": [
+              "call_b23cd757206f48db9136f1fcc0cfceed"
+            ],
+            "limits": "Integer indexing model only."
+          }
+        ]
+      },
+      {
+        "id": "torch-gptj-reference",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The Torch alternative remains incompatible with general GPTJ adjacent-pair rotation.",
+        "trigger": "Calling RoPE.apply_torch with GPTJ style on a four-or-more-channel head at a nontrivial angle.",
+        "expected_behavior": "Use adjacent even/odd channel pairs, matching the newly implemented native GPTJ path.",
+        "actual_behavior": "compute_sincos repeats adjacent coefficients, but the application helpers still call split-half _rotate_half rather than the newly added _rotate_half_gptj.",
+        "locations": [
+          {
+            "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+            "path": "exllamav3/util/rope.py",
+            "symbol": "RoPE.apply_torch"
+          }
+        ],
+        "source_evidence": [
+          "call_784b029bd92f4df2af378719cc7b9b95",
+          "call_3cf749b4802a4f598c4e3d6676af849c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search finds the direct apply_torch caller in tests/test_rope.py, whose active styles include only NEOX. Inspected attention paths use native apply instead.",
+            "evidence": [
+              "call_ca4553eb93904e999312dc175beda93d",
+              "call_526fc5d10f9c4f40a1c716adc713a282",
+              "call_70ede631d93e4913acd35cf6c15dfb2c"
+            ],
+            "limits": "External callers are not covered by repository search."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Compared adjacent-pair and split-half formulas for [1,2,3,4] with angle 0.7; outputs differed.",
+            "evidence": [
+              "call_b23cd757206f48db9136f1fcc0cfceed"
+            ],
+            "limits": "Executed scalar formulas, not Torch or CUDA implementations."
+          }
+        ]
+      }
+    ],
+    "summary": "Implements native GPTJ adjacent-pair RoPE while retaining existing dispatch and position handling; the Torch alternative and partial-frequency bounds concern remain."
+  },
+  "evidence": {
+    "call_7192cb6d99994abe81198d9f5cd607dd": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "offset": 160,
+        "max_bytes": 6000
+      },
+      "result_sha256": "8aa234701efb848a3dd0719b2af1bb38c0af6fb800debc71cbaf478947a11021"
+    },
+    "call_76045bea15f8409c812228b49e0d8ea3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "offset": 3996,
+        "max_bytes": 1000
+      },
+      "result_sha256": "34c2b3ba0e09c0107141f4d65e75289024f915dd62665ad6bc4825446e04edd8"
+    },
+    "call_3cf749b4802a4f598c4e3d6676af849c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "offset": 4604,
+        "max_bytes": 1000
+      },
+      "result_sha256": "31a3d0843322f7eb713f654d8d1d943b6fae201de8d0b027b7a498340a02b587"
+    },
+    "call_4fa0c19373f541aaa9fc1ec5ee6abbec": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "e698852cd77661476d7ed08f921404cf228e4c4414f9a9a3a7830c340456e5c2"
+    },
+    "call_784b029bd92f4df2af378719cc7b9b95": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "036ca50b45a4539e81852911a877d85afdb7965d015f03907c6a62c6fc907031"
+    },
+    "call_3b158e328ffd468aa0b18479d91bf5f2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "query": "GPTJ",
+        "limit": 100
+      },
+      "result_sha256": "16ab494e65c1bab87fe4f2f11165f361236a1043cc8881d157daf2c82103e6c9"
+    },
+    "call_39fed8ee10a64f1caf00bd750af26079": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "420db7a36ff0dd0f8ff610f1e47024adeb86802a197765b29043baa9837586e3"
+    },
+    "call_5f35cf1e899441a29055dae3799818e4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "62ea327afb99ea238590426b579159b9190c0b46b590d5c021de68f6d5cb80d5"
+    },
+    "call_fb3ada9f39004aa386e6639003341bb2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9d1d5c2b87addc522470438ebd298d66352010b93e857364250f769f6177c07c"
+    },
+    "call_a95c4863d1c246b7a0cf72cbe9b0b877": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 12000
+      },
+      "result_sha256": "33fa9351909da0f72421e8b4ee140a5088661111a98961e0f7f2a53478fe1f8f"
+    },
+    "call_d9b57de42b0b4d2eb3a61d797b9f1e41": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_9867f6c103474b51b58b50314cc4be32": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "query": "rope.apply",
+        "limit": 100
+      },
+      "result_sha256": "f5320c94429a01bb148e7c48d56e772f62902b57ef38ef123fd11f318f75427f"
+    },
+    "call_ca4553eb93904e999312dc175beda93d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "query": "apply_torch(",
+        "limit": 100
+      },
+      "result_sha256": "d7b1a01e9b13eb031fe161b3696de9bb8a455eba5eade61aaae0808dfe3532e4"
+    },
+    "call_3966534e7632463eb4e1e01b6a23df8c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "query": "ext.rope(",
+        "limit": 100
+      },
+      "result_sha256": "8e90f50ec71bbb1bb14e5fe18691a2520532eb881401e5d0d7b223e66cee8f9a"
+    },
+    "call_526fc5d10f9c4f40a1c716adc713a282": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "path": "tests/test_rope.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "c3105d94eb9487fce4595fe3c607fa32134a9e6807ccb4737135342d32c299d7"
+    },
+    "call_70ede631d93e4913acd35cf6c15dfb2c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 9500,
+        "max_bytes": 8000
+      },
+      "result_sha256": "af32bcb6f4e0d3ca44f1085d46db468cd831c5f771d874c6642489bd01f6238f"
+    },
+    "call_b23cd757206f48db9136f1fcc0cfceed": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,json\nchecks=[]\nfor h,d in [(8,8),(8,4),(128,128),(128,64)]:\n writes=[j for t in range(h//2) for j in (2*t,2*t+1)]\n assert sorted(writes)==list(range(h))\n checks.append({'head_dim':h,'rotary_dim':d,'copy_channels':h-d,'frequency_indices_outside_length':sum(t>=d//2 for t in range(h//2))})\nx=[1.,2.,3.,4.]; c=math.cos(.7); s=math.sin(.7)\na=[v for i in range(0,4,2) for v in (x[i]*c-x[i+1]*s,x[i+1]*c+x[i]*s)]\nb=[x[i]*c+([-3.,-4.,1.,2.][i])*s for i in range(4)]\nprint(json.dumps({'index_checks':checks,'gptj':a,'unchanged_torch_split_half':b,'norm_error':abs(sum(v*v for v in a)-sum(v*v for v in x))}))"
+        ]
+      },
+      "result_sha256": "b9292f78b9bc8e2a542d21b2c23841780d2bad87a35fec35ade50ca9634cf215"
+    }
+  }
+}

@@ -1,0 +1,268 @@
+{
+  "schema_version": 5,
+  "sha": "cf220845799b12c9475232e2cb309db360f083d3",
+  "parent_shas": [
+    "33466d785591bdd69dd43821e22730a55f0067f9"
+  ],
+  "cutoff_date": "2025-05-25T20:02:59+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "With the default return_probs=False and return_top_tokens=0, Job.receive_logits skipped every assignment to its optional outputs, then referenced them at return.",
+        "basis": "source",
+        "evidence": [
+          "call_7d301b17f49143c393e63591e5bfaba7"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Initialize all three optional outputs to None before testing the reporting options. Enabled branches overwrite only the requested outputs; removing their else assignments is safe because the new initialization supplies those defaults.",
+        "basis": "source",
+        "evidence": [
+          "call_0fbb377cc1f644499369da030837007c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Removes the disabled-options unbound-local failure without changing the four-value return order or enabled probability calculations.",
+        "basis": "source",
+        "evidence": [
+          "call_0fbb377cc1f644499369da030837007c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The immediate parent's entry was read in full. It records both the disabled-options failure and a separate mismatch between reported probabilities and the final sampling distribution.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_4a4330f56cad47ceb64b4d66ec4faa63"
+        ]
+      },
+      {
+        "text": "Issue #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d reports constructor validation failure and discusses using chatml instead of llama3 mode. Its connection here is only an inferred shared-file relationship: its traceback names job.py, whereas this patch changes receive_logits, not constructor validation.",
+        "basis": "inference",
+        "evidence": [
+          "call_7056bcc6f017462e97d03e6f991b9768",
+          "call_5faeaf4eb88b4c83a2f66d78b8ba325e",
+          "call_0fbb377cc1f644499369da030837007c"
+        ]
+      }
+    ],
+    "limitations": [
+      "The executed check transcribed Python assignment branches with string stand-ins; it did not execute Job, PyTorch operations, sampling or GPU generation.",
+      "End-to-end generation success and performance were not measured."
+    ],
+    "links": [
+      "33466d785591bdd69dd43821e22730a55f0067f9"
+    ],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Initialize optional sampling outputs on every return path",
+        "claims": [
+          {
+            "text": "Sampling still happens first. Probability softmax runs only when return_probs is enabled or return_top_tokens is positive; zero disables top-token reporting. The patch adds no tensor computation to the disabled path.",
+            "basis": "source",
+            "evidence": [
+              "call_7d301b17f49143c393e63591e5bfaba7",
+              "call_0fbb377cc1f644499369da030837007c"
+            ]
+          },
+          {
+            "text": "A whole-parent search found one active direct caller, Generator.iterate_gen, and one commented threading alternative. The active caller unpacks all four values and forwards them to receive_sample, whose probability-buffer appends are guarded by the same reporting options. None therefore fits the existing disabled-output consumer contract.",
+            "basis": "source",
+            "evidence": [
+              "call_de0814043b06449fad52d3d3089aaf8d",
+              "call_e33d2277b2bc4d348f0f025165796464",
+              "call_c0dfd402c3f149ba9eb9694d70c96783",
+              "call_7d301b17f49143c393e63591e5bfaba7"
+            ]
+          },
+          {
+            "text": "A scalar branch transcription tested all four enabled/disabled combinations before and after the edit. Only the old both-disabled case raised UnboundLocalError; the new case returned the token plus three None values. The other three combinations retained identical stand-in outputs.",
+            "basis": "execution",
+            "evidence": [
+              "call_6e0150aba872430497eb0fa25d6be52f"
+            ]
+          },
+          {
+            "text": "Source comparison removes the parent's recorded initialization defect but carries over its probability-reporting mismatch: the patch leaves the post-sampling softmax of logits unchanged rather than obtaining the sampler's transformed distribution.",
+            "basis": "source",
+            "evidence": [
+              "call_0fbb377cc1f644499369da030837007c",
+              "call_7d301b17f49143c393e63591e5bfaba7",
+              "call_eb7edfe47e1648738e7411310ab82764"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-probability-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Optional diagnostics still need not represent the documented final sampling probabilities.",
+        "trigger": "Enable probability or top-token reporting with CustomSampler while supplying allowed_tokens or blocked_tokens that exclude a token with finite input logits.",
+        "expected_behavior": "Final sampling probabilities reflect the constraints, excluding forbidden candidates.",
+        "actual_behavior": "CustomSampler clones logits before applying these constraints. Job.receive_logits subsequently normalizes its original logits, so excluded tokens retain reported probability and can appear in top-token output. The sole active direct caller forwards those diagnostics unchanged into receive_sample's streaming buffers.",
+        "locations": [
+          {
+            "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_logits"
+          }
+        ],
+        "source_evidence": [
+          "call_7d301b17f49143c393e63591e5bfaba7",
+          "call_eb7edfe47e1648738e7411310ab82764",
+          "call_0fbb377cc1f644499369da030837007c",
+          "call_de0814043b06449fad52d3d3089aaf8d",
+          "call_e33d2277b2bc4d348f0f025165796464"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the final-probability documentation, cloned constraint masks, unchanged diagnostic calculation and direct caller's forwarding.",
+            "evidence": [
+              "call_7d301b17f49143c393e63591e5bfaba7",
+              "call_eb7edfe47e1648738e7411310ab82764",
+              "call_0fbb377cc1f644499369da030837007c",
+              "call_e33d2277b2bc4d348f0f025165796464"
+            ],
+            "limits": "No tensor execution; this observation concerns the inspected CustomSampler path, not every external sampler."
+          }
+        ]
+      }
+    ],
+    "summary": "Fixes uninitialized optional outputs when probability reporting is disabled; enabled diagnostics and their inherited distribution mismatch remain unchanged."
+  },
+  "evidence": {
+    "call_0fbb377cc1f644499369da030837007c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "offset": 175,
+        "max_bytes": 1137
+      },
+      "result_sha256": "ae7f8e3109e039abebc8816194c26660197a3b0d2baefbcfd71b397100a201c8"
+    },
+    "call_4a4330f56cad47ceb64b4d66ec4faa63": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "75f1c904e5bb94fd29506a0cf547636b5345982e9d7c0289d79251846bc1104a"
+    },
+    "call_7d301b17f49143c393e63591e5bfaba7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "path": "exllamav3/generator/job.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "517b9e95289854ecb9f8ca043544ec44769823f944ff7fa07166dd6ebfb9663e"
+    },
+    "call_de0814043b06449fad52d3d3089aaf8d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "query": "receive_logits",
+        "limit": 100
+      },
+      "result_sha256": "59b1bf4d2542f19f6522b083de48dd9455e30848ed743e1f5c88e686c81be08a"
+    },
+    "call_0eb409faffff4e9f8ec3838485db39b5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "path": "exllamav3/generator/sampler.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_0ffc51cd72ad4206896fff37619d9963": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "path": "exllamav3/generator/sampler"
+      },
+      "result_sha256": "e10b36d7654411e7ea2b5566d6bb070fd276ca01786c3dea71011e3a6cceacba"
+    },
+    "call_eb7edfe47e1648738e7411310ab82764": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "65117b7897cc1af41a62e7acad329aa7649ff102a47f068a8daa92c5d29cab80"
+    },
+    "call_177fd06fd57f40f9b95d61f169e3bf3b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "offset": 18000,
+        "max_bytes": 2000
+      },
+      "result_sha256": "34e0d9f1e7df86b71dba4503bd719bd047d04778c0bfbe6c2da392ad06c72e5d"
+    },
+    "call_c0dfd402c3f149ba9eb9694d70c96783": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 16500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "92ddbfea74492e8318ef4a9815598c5096735d46dc4b3612843825d172d1f8e5"
+    },
+    "call_e33d2277b2bc4d348f0f025165796464": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "33466d785591bdd69dd43821e22730a55f0067f9",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 15000,
+        "max_bytes": 1800
+      },
+      "result_sha256": "b9b8431b6787a2684375928f96f96f26f1b919f6ed2f930f5c729bc7c71a5870"
+    },
+    "call_7056bcc6f017462e97d03e6f991b9768": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "249f4a5ff3ad42fa7dc1d9630de20be6e155c10b36143781c33501f433ce19da"
+    },
+    "call_5faeaf4eb88b4c83a2f66d78b8ba325e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "037088249ef540c12ac319d56d6f4232de5c12025bb7edffb7b74b4fac2f2bd9"
+    },
+    "call_6e0150aba872430497eb0fa25d6be52f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def check(p,k,new):\n if new: prob,kt,kp=None,None,None\n if p or k>0:\n  if p: prob='prob'\n  elif not new: prob=None\n  if k>0: kt,kp='tokens','probs'\n  elif not new: kt,kp=None,None\n return 'token',kt,kp,prob\nfor p in (False,True):\n for k in (0,1):\n  for new in (False,True):\n   try: print(p,k,new,check(p,k,new))\n   except UnboundLocalError: print(p,k,new,'UnboundLocalError')"
+        ]
+      },
+      "result_sha256": "63dcef3d265933d5d3223fff04f5b555b8dc1cd5b2b6a8225e2fba7684ed1e96"
+    }
+  }
+}

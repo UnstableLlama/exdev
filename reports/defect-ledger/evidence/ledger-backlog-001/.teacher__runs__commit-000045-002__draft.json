@@ -1,0 +1,263 @@
+{
+  "schema_version": 5,
+  "sha": "3d51a39d1338d7538853ac03ec641b435b2c66ab",
+  "parent_shas": [
+    "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c"
+  ],
+  "cutoff_date": "2025-04-12T16:21:53+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The converter computed bits per weight unconditionally, dividing by zero for a weightless module if its preceding serialization completed.",
+        "basis": "source",
+        "evidence": [
+          "call_dba262fba8b0439ba9c1f07e9636523f",
+          "call_c232479de483409cac713da1c4f1a971"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch represents an undefined bitrate as None rather than inventing a denominator, and prints no_weights instead of formatting that value numerically.",
+        "basis": "source",
+        "evidence": [
+          "call_4b05a82b036f447287714ed9245282eb"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Zero-weight modules can pass the bitrate-reporting step; serialization, state advancement and checkpoint handling remain in the conversion loop.",
+        "basis": "source",
+        "evidence": [
+          "call_4b05a82b036f447287714ed9245282eb",
+          "call_dba262fba8b0439ba9c1f07e9636523f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Issue 7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure, not zero-weight bitrate calculation. It supplies no evidence that this patch fixes that reported failure.",
+        "basis": "source",
+        "evidence": [
+          "call_f31802e20e36446982f82fffb06825f0",
+          "call_4b05a82b036f447287714ed9245282eb"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model conversion, GPU execution or safetensors serialization was run. Successful writing and reading of an empty tensor dictionary remain unestablished.",
+      "The Python check transcribed scalar arithmetic and formatting; it did not execute the converter.",
+      "Only the Ultra CPT configuration was freshly inspected for an example; statements about the other reference models are explicitly attributed to ancestor prose."
+    ],
+    "links": [
+      "75c7366bb2e2a7671e38d079f9e5f54945b78006"
+    ],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Handle weightless blocks without bitrate division",
+        "claims": [
+          {
+            "text": "Whole-parent searches found no literal no-op occurrence but located no_op handling in DeciLMModel.__init__. When both attention.no_op and ffn.no_op are true, both branches and their norms become None, while a TransformerBlock is still appended under the original layer index.",
+            "basis": "source",
+            "evidence": [
+              "call_0b86b2248a984d5c83cb26620f59b60f",
+              "call_ce8ca81432cf4e9fac766969859805fc",
+              "call_b0c484e4cd674497bcf6763f90e23c51"
+            ]
+          },
+          {
+            "text": "register_submodule ignores None. Consequently this block has no children, weights_numel() returns sum([]), get_qmaps() is empty, and iteration yields only the block, whose get_tensors() returns {}. Its forward method skips both branches and returns the input through dtype conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_c232479de483409cac713da1c4f1a971",
+              "call_2040b8e93537417ca78f3029a3b7a487"
+            ]
+          },
+          {
+            "text": "The DeciLM ancestor entry identified this construction and its converter division hazard. It reported fully disabled blocks beginning at index 9 in both nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1 and nvidia/Llama-3_1-Nemotron-Ultra-253B-v1, but none in nvidia/Llama-3_1-Nemotron-51B-Instruct or nvidia/Llama-3_3-Nemotron-Super-49B-v1.",
+            "basis": "ancestor",
+            "evidence": [
+              "call_539a5b3900f841789f95dc6675c72bf9"
+            ]
+          },
+          {
+            "text": "Fresh inspection of the pinned Ultra CPT config confirms that block 9 disables both branches. It therefore supplies a concrete configuration example for the weightless construction, not proof of successful end-to-end conversion.",
+            "basis": "source",
+            "evidence": [
+              "call_3545cde8f2664f0392a1eabca4f85a86",
+              "call_b0c484e4cd674497bcf6763f90e23c51"
+            ]
+          },
+          {
+            "text": "main skips calibration capture and quantization allocation for this block because there are no qmaps or Linear targets. It still passes an empty tensor dictionary to save_file at work_dir/qtensors/model.layers.<index>.safetensors; prepare_env creates the qtensors directory. The patch does not change that save operation.",
+            "basis": "source",
+            "evidence": [
+              "call_dba262fba8b0439ba9c1f07e9636523f",
+              "call_c232479de483409cac713da1c4f1a971",
+              "call_4b05a82b036f447287714ed9245282eb"
+            ]
+          },
+          {
+            "text": "dsize counts tensor payload bytes, not file overhead; multiplication by 8 converts those bytes to bits. The new conditional removes the inherited zero-denominator calculation while preserving the ratio for nonzero weight counts. It does not remove the block from processing.",
+            "basis": "source",
+            "evidence": [
+              "call_9e97fba90c744e169d1d394290fd2265",
+              "call_4b05a82b036f447287714ed9245282eb"
+            ]
+          },
+          {
+            "text": "After state advancement, feedback retains the Quantized label and padded module key, prints no_weights instead of bpw, then rfn: 0.000000 and elapsed seconds. For this block, error stays zero because error accumulation requires Linear targets; this is not a measured reconstruction comparison.",
+            "basis": "source",
+            "evidence": [
+              "call_dba262fba8b0439ba9c1f07e9636523f",
+              "call_4b05a82b036f447287714ed9245282eb"
+            ]
+          },
+          {
+            "text": "A scalar transcription reproduced ZeroDivisionError for the old empty-block expression and None plus no_weights for the patched expression. A nonzero-denominator example retained its numeric bitrate.",
+            "basis": "execution",
+            "evidence": [
+              "call_1cfbd890b0204933aa197ae4a0d9e78b"
+            ]
+          },
+          {
+            "text": "The unchanged compiler reads work_dir/qtensors and skips modules whose tensor-size list is empty when allocating output shards. Thus the source path does not manufacture weight tensors for identity blocks.",
+            "basis": "source",
+            "evidence": [
+              "call_9e97fba90c744e169d1d394290fd2265"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Guard zero-weight bitrate calculation and print no_weights for retained identity blocks, addressing the DeciLM empty-block conversion hazard without changing serialization."
+  },
+  "evidence": {
+    "call_4b05a82b036f447287714ed9245282eb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3d51a39d1338d7538853ac03ec641b435b2c66ab",
+        "offset": 183,
+        "max_bytes": 1151
+      },
+      "result_sha256": "8d4c6f1399e36ecb63fc647075685c84695266e92e3238564ddc4fe91e6c6c57"
+    },
+    "call_ce8ca81432cf4e9fac766969859805fc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "query": "no_op",
+        "limit": 100
+      },
+      "result_sha256": "f104b08136cbea9c74a8b7d64da6c8281d8cb31b3c104e00292fb6c8227a9d4b"
+    },
+    "call_0b86b2248a984d5c83cb26620f59b60f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "query": "no-op",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_b0c484e4cd674497bcf6763f90e23c51": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "path": "exllamav3/models/decilm.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "3facd92ca72ec2b31ebb98bba41bab682519742fffc4c8f2a808e16aae1dd24b"
+    },
+    "call_dba262fba8b0439ba9c1f07e9636523f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "21c9ac6c474545596ba3b6ea66e958b35cf18806d90c862bfac71550fbbe44cd"
+    },
+    "call_2040b8e93537417ca78f3029a3b7a487": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "50384b5303f4fc1a56d580d948197e7e81cedc753634dd689952b6d3bb74cd56"
+    },
+    "call_c232479de483409cac713da1c4f1a971": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "7315e2f2823e85046bb8bac6d2dd4d4a5ee95bbf73604c43362947a3d101f243"
+    },
+    "call_539a5b3900f841789f95dc6675c72bf9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "75c7366bb2e2a7671e38d079f9e5f54945b78006",
+        "max_bytes": 16384
+      },
+      "result_sha256": "c4ab5f4f8cea19f65991108bde6f2e1f33b2a832afec7770f20624e74fa92e94"
+    },
+    "call_3545cde8f2664f0392a1eabca4f85a86": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "max_bytes": 65536
+      },
+      "result_sha256": "bcce0059f20e85fcb89b79a23cd1530ad96fc4cfa9ae2ce509705fac09bbdbf9"
+    },
+    "call_adc2f72c17c44985a205786aa7b37a49": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "nvidia/Llama-3_1-Nemotron-Ultra-253B-CPT-v1",
+        "revision": "49dcb9457c714458d12c7c358889a3e8fc4f4904",
+        "path": "config.json",
+        "offset": 65536,
+        "max_bytes": 12000
+      },
+      "result_sha256": "5fbc4192ae1543f0fc6468915c5d66d4e4fe27e8ea0dc025fa575318cb0a0c06"
+    },
+    "call_f31802e20e36446982f82fffb06825f0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "bc987a1368ea41d3cef2cbccebc965ba9dee494d490737e9a4e65dabccdc235d"
+    },
+    "call_9e97fba90c744e169d1d394290fd2265": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3a7b4895e45b1eb2f291f8b09b0a5dac569e984c",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "deb4433fb561ff144693e464e53400c731e47939e2ab4dc62520f7122f4df728"
+    },
+    "call_1cfbd890b0204933aa197ae4a0d9e78b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "n=sum([]); bits=0*8\ntry: print(bits/n)\nexcept ZeroDivisionError: print('parent: ZeroDivisionError')\nbpw=bits/n if n else None\nerror=0/5\nprint('patched:',repr(bpw))\nprint(f' -- Quantized: {\"model.layers.9\":47}'+(f'   bpw: {bpw:5.2f}' if bpw else '   no_weights')+f'        rfn: {error:.6f}'+f'  [{1.25:.2f} s]')\nassert bpw is None\nassert (80/10 if 10 else None)==8.0"
+        ]
+      },
+      "result_sha256": "e78f27ab1f843a4668d58e6fbd6e97b4c4df5b520ff4a1c40e66eb79d6f4f8ae"
+    }
+  }
+}

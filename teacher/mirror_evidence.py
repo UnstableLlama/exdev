@@ -16,7 +16,7 @@ HISTORICAL = 'mirror_historical_unverified_identity'
 HISTORICAL_NOTICE = 'Pre-cutoff mirror copy; identity with the official file at that date could not be checked because the official history is gated.'
 NOTICE = 'Bytes retrieved from a hash-verified ModelScope mirror. Revision identifies the verified file set, not an official Git commit.'
 ROLES = {'config.json', 'tokenizer_config.json', 'tokenizer.json',
-         'special_tokens_map.json', 'added_tokens.json', 'generation_config.json'}
+         'special_tokens_map.json', 'added_tokens.json', 'generation_config.json','preprocessor_config.json','processor_config.json'}
 
 
 def digest(data):

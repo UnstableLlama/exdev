@@ -1,0 +1,226 @@
+{
+  "schema_version": 5,
+  "sha": "f8b9ab72ae9fd4fb00d4aab34302f9eb5edd81f5",
+  "parent_shas": [
+    "203db0c3bfeb1273fbe15f2e9622e9aec391d53e"
+  ],
+  "cutoff_date": "2025-04-17T21:58:45+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "A loaded tokenizer could retain a serialized truncation policy. Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d reports conversion failure; turboderp attributed it to a tokenizer.json limit of 4096 tokens, insufficient for calibration.",
+        "basis": "source",
+        "evidence": [
+          "call_b0d2b9e22f97419aa500177d2672662a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The constructor now calls self.tokenizer.no_truncation() after loading the backend and auxiliary JSON files, before any vocabulary-probing encodes. This applies the policy once to the shared backend rather than modifying individual encoding calls.",
+        "basis": "source",
+        "evidence": [
+          "call_cef9aa18f1124bff9e5389a0470ede9f",
+          "call_ba076f29ebee4910a6e6fc364ae46560"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The override covers backend encoding used by ordinary and special-token paths, initialization probes, and num_tokens. Wrapper-level BOS/EOS insertion, batch padding and explicit calibration slicing remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_cef9aa18f1124bff9e5389a0470ede9f",
+          "call_ba076f29ebee4910a6e6fc364ae46560",
+          "call_1fc36ecd4fd24cd59ab485b11e2b93d8"
+        ]
+      },
+      {
+        "text": "Disabling backend truncation preserves input for downstream length management, but can increase tokenization output size and memory use when a serialized limit previously applied. It does not expand model context capacity.",
+        "basis": "inference",
+        "evidence": [
+          "call_cef9aa18f1124bff9e5389a0470ede9f",
+          "call_ba076f29ebee4910a6e6fc364ae46560"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The connection to issue #16 is inferred from its explicit tokenizer-truncation diagnosis and final comment about overriding the feature at load time, matching this constructor change. DekoMoon reported the failure; turboderp supplied the diagnosis. The discussion is not a locally reproduced conversion result.",
+        "basis": "inference",
+        "evidence": [
+          "call_b0d2b9e22f97419aa500177d2672662a",
+          "call_cef9aa18f1124bff9e5389a0470ede9f"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns native-extension loading. Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns low-bitrate quantization and regularization. Neither discussion identifies tokenizer truncation as its cause.",
+        "basis": "source",
+        "evidence": [
+          "call_3197f4e871b74b55bc7ce1d09f39e0df",
+          "call_0556697311394d05a6e4a3790ca69e77"
+        ]
+      },
+      {
+        "text": "The earlier tokenizer entry describes absence-safe BOS/EOS lookup. Those guards remain in the inspected parent and are not changed here.",
+        "basis": "source",
+        "evidence": [
+          "call_ba076f29ebee4910a6e6fc364ae46560",
+          "call_cef9aa18f1124bff9e5389a0470ede9f"
+        ]
+      }
+    ],
+    "limitations": [
+      "No real tokenizers backend, complete tokenizer initialization, conversion or GPU workload was executed. Backend implementation and version-specific API behavior were not independently inspected.",
+      "The scalar check models calibration slice lengths only; it neither reproduces the reported CUDA error nor proves conversion succeeds after the change."
+    ],
+    "links": [
+      "df30645b725b113599d60496a8f94d6f649119ea"
+    ],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Disable inherited tokenizer truncation at load time",
+        "claims": [
+          {
+            "text": "Tokenizer loads tokenizer.json through HFTokenizer.from_file and reuses that object throughout encoding. The new unconditional no_truncation call overrides backend truncation in memory; it does not rewrite tokenizer files or expose a per-call opt-in.",
+            "basis": "source",
+            "evidence": [
+              "call_ba076f29ebee4910a6e6fc364ae46560",
+              "call_cef9aa18f1124bff9e5389a0470ede9f"
+            ]
+          },
+          {
+            "text": "Calibration's split_raw encodes an entire text before slicing successive column-width rows. get_default_calibration uses this path for code and technical text, with weights 15 and 10 out of a total 128. A backend cap therefore acts before calibration chooses its rows.",
+            "basis": "source",
+            "evidence": [
+              "call_1fc36ecd4fd24cd59ab485b11e2b93d8"
+            ]
+          },
+          {
+            "text": "A standard-library slice model using the report's 100 rows, 2048 columns and 4096-token cap produced 11 requested code rows and 7 technical rows. Each had only two full slices, with remaining slices empty; full allocations would require 22528 and 14336 tokens respectively.",
+            "basis": "execution",
+            "evidence": [
+              "call_d71bed89ff9c417d9a66fc112cddbf8c"
+            ]
+          },
+          {
+            "text": "This supports the reported calibration-shortage mechanism without establishing the CUDA failure chain. Compared with the discussion's alternatives\u2014editing truncation to null or replacing tokenizer.json\u2014the constructor override centralizes the policy and leaves model assets untouched.",
+            "basis": "inference",
+            "evidence": [
+              "call_b0d2b9e22f97419aa500177d2672662a",
+              "call_cef9aa18f1124bff9e5389a0470ede9f",
+              "call_1fc36ecd4fd24cd59ab485b11e2b93d8",
+              "call_d71bed89ff9c417d9a66fc112cddbf8c"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Disable backend tokenizer truncation during construction so serialized limits do not silently shorten inputs before calibration or other encoding consumers."
+  },
+  "evidence": {
+    "call_cef9aa18f1124bff9e5389a0470ede9f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f8b9ab72ae9fd4fb00d4aab34302f9eb5edd81f5",
+        "offset": 163,
+        "max_bytes": 679
+      },
+      "result_sha256": "d6a860231a5a0a74b5f4bc4aa41521aa835bb7818fe1df0209e5f492c651172d"
+    },
+    "call_ba076f29ebee4910a6e6fc364ae46560": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "203db0c3bfeb1273fbe15f2e9622e9aec391d53e",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "939e4a2de38fdaf8269265da4fc38a7801b61a3999a3bc11f72718b441910429"
+    },
+    "call_b0d2b9e22f97419aa500177d2672662a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 24000
+      },
+      "result_sha256": "b905a5cbcd02a630b13a747b22a2f857da8f9f9556861983fb9b62bd8e89647f"
+    },
+    "call_3197f4e871b74b55bc7ce1d09f39e0df": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b06def3218d6cd84b7e8d2a7f8fd51016e2ffe33a2179ee29a3d5b02ffe6e842"
+    },
+    "call_0556697311394d05a6e4a3790ca69e77": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2593f8ed9d899f1ab80a703b6c987a8332e45c870ed2fefeb6567d7598e2bbfd"
+    },
+    "call_1dc13b192c4845c28c3beb9bbf5fec26": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "df30645b725b113599d60496a8f94d6f649119ea",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b7bb227e8c7e5b7325e86a77f716cdeea49d9dc7b754c5322c0d3ce68e8f5732"
+    },
+    "call_886e8781495640fca02f151c9b1cd297": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "203db0c3bfeb1273fbe15f2e9622e9aec391d53e",
+        "query": "truncat",
+        "limit": 100
+      },
+      "result_sha256": "772aae87db2bedbb9aefb48ff55f582bb010519bea6c80fdca0bbfb9d9628540"
+    },
+    "call_38d8ac81203d4bd5b674b02062c11fe1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "203db0c3bfeb1273fbe15f2e9622e9aec391d53e",
+        "path": "exllamav3/conversion/calibration.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_99aa1c60cedd46219792b67c28297183": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "203db0c3bfeb1273fbe15f2e9622e9aec391d53e",
+        "query": "tokenizer.encode",
+        "path": "exllamav3/conversion",
+        "limit": 40
+      },
+      "result_sha256": "2a58002749f38c813c7ac1fb4ff38d78ef92be0b5afb96963aed8f080cfd5a1a"
+    },
+    "call_1fc36ecd4fd24cd59ab485b11e2b93d8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "203db0c3bfeb1273fbe15f2e9622e9aec391d53e",
+        "path": "exllamav3/conversion/calibration_data.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "5341791aa39136448022167d0a38d906bdc5be88757d79753be7f9df9213466c"
+    },
+    "call_d71bed89ff9c417d9a66fc112cddbf8c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "weights=[10,15,15,10,48,10,20]; rows=100; cols=2048\nfor w in (15,10):\n n=max(1,int(w/sum(weights)*rows)); lens=[len(range(4096)[i*cols:(i+1)*cols]) for i in range(n)]\n print({'weight':w,'target_rows':n,'lengths_with_4096_tokens':lens,'tokens_for_full_rows':n*cols})"
+        ]
+      },
+      "result_sha256": "04737e95f440c07bf86a844028820f366160efb5cf2a972eb0757e753f885539"
+    }
+  }
+}

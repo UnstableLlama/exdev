@@ -186,7 +186,7 @@ def load_bundle(repo,sha,path):
                 if name!='__metadata__' and (not isinstance(value,dict) or set(value)!={'dtype','shape','data_offsets'}):raise ValueError('Only tensor header metadata allowed')
         if not any(r['status'] in ('complete','complete_with_absences','mirror_historical_unverified_identity') and r['repo']==item.get('repo_id') and r['revision']==item.get('revision') for r in reports):raise ValueError('Unselected reference object')
         if item.get('kind')=='hf_file':
-            if Path(item['path']).name not in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json'):raise ValueError('Non-reference file or weight payload forbidden')
+            if Path(item['path']).name not in ('config.json','tokenizer_config.json','tokenizer.json','special_tokens_map.json','added_tokens.json','generation_config.json','preprocessor_config.json','processor_config.json'):raise ValueError('Non-reference file or weight payload forbidden')
         elif item.get('kind')!='safetensors_header' or item.get('artifact_role')!='tensor_header':raise ValueError('Weight payload forbidden')
     from .mirror_evidence import SCHEME, validate_selection
     for report in reports:

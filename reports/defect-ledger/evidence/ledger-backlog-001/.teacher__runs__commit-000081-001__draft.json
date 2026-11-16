@@ -1,0 +1,275 @@
+{
+  "schema_version": 5,
+  "sha": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+  "parent_shas": [
+    "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f"
+  ],
+  "cutoff_date": "2025-04-25T00:47:37+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "docs",
+    "problem": [
+      {
+        "text": "Sampling-step classes lacked short descriptions of their roles.",
+        "basis": "source",
+        "evidence": [
+          "call_f2c6a3b52b0747b3a78d6c26fa273212"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change adds nine class docstrings and a TODO about removing redundant steps and fusing operations; it does not implement those optimizations.",
+        "basis": "source",
+        "evidence": [
+          "call_f2c6a3b52b0747b3a78d6c26fa273212"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Sampling computations, defaults and interfaces remain unchanged. The new top-p description does not match the existing cutoff implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_f2c6a3b52b0747b3a78d6c26fa273212",
+          "call_9542b9bdcbd84be9882f37889c84dfc5"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent annotation identified a sorted-argmax assignment problem.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_68222b7dc1544971bb620caf007579d4"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d discusses extension loading. Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d discusses quantization and regularization; neither discussion states a connection to this comments-only change.",
+        "basis": "source",
+        "evidence": [
+          "call_db2d80579077475f82610cb50cbcdbb0",
+          "call_aab5f84dadc34259a702f9036fae7bf3"
+        ]
+      }
+    ],
+    "limitations": [
+      "The numerical check transcribes the cutoff using standard-library Python, not PyTorch or CUDA; its binary-exact inputs avoid rounding ambiguity.",
+      "No repository execution, sampling-frequency measurement or performance benchmark was performed."
+    ],
+    "links": [
+      "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f"
+    ],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Document sampling steps without changing execution",
+        "claims": [
+          {
+            "text": "The descriptions distinguish no-op, greedy selection, categorical sampling, temperature scaling, normalization, sorting and three truncation filters. SS_Sample adds Gumbel noise through extension calls before argmax and maps sorted positions back to token IDs.",
+            "basis": "source",
+            "evidence": [
+              "call_f2c6a3b52b0747b3a78d6c26fa273212",
+              "call_9542b9bdcbd84be9882f37889c84dfc5"
+            ]
+          },
+          {
+            "text": "Temperature divides logits or raises probability weights to the reciprocal temperature. Normalization uses softmax for logits and division by row sums for weights. Sorting records token indices alongside descending values; its new docstring ends with the unexplained fragment \u201cstate.indices\u201d.",
+            "basis": "source",
+            "evidence": [
+              "call_9542b9bdcbd84be9882f37889c84dfc5",
+              "call_f2c6a3b52b0747b3a78d6c26fa273212"
+            ]
+          },
+          {
+            "text": "Top-k masks sorted positions after K, using zero for probabilities or negative infinity for logits. Min-p instead retains probabilities greater than or equal to min_p times the row maximum, so equality survives and sorting is unnecessary for its unsorted branch.",
+            "basis": "source",
+            "evidence": [
+              "call_9542b9bdcbd84be9882f37889c84dfc5"
+            ]
+          },
+          {
+            "text": "CustomSampler inserts prerequisites requested by each step, executes the resulting list and reshapes the final sample. Its construction-time planning state remains INIT throughout, while runtime steps track normalization and sorting. The new TODO proposes future redundancy elimination and fusion rather than changing this mechanism.",
+            "basis": "source",
+            "evidence": [
+              "call_9542b9bdcbd84be9882f37889c84dfc5",
+              "call_f2c6a3b52b0747b3a78d6c26fa273212"
+            ]
+          },
+          {
+            "text": "For probabilities [0.5, 0.25, 0.125, 0.125] and P=0.625, a scalar transcription retained only mass 0.5; the newly documented smallest prefix exceeding P would retain mass 0.75.",
+            "basis": "execution",
+            "evidence": [
+              "call_445cf23a99ba4d91af3d64e94de7d7b6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "top-p-description-mismatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new top-p docstring promises a crossing token that the existing implementation generally excludes.",
+        "trigger": "A normalized sorted distribution crosses P after its first token, for example [0.5, 0.25, 0.125, 0.125] with P=0.625.",
+        "expected_behavior": "Under the new description, retain the smallest leading set whose cumulative probability exceeds P: the first two tokens in this example.",
+        "actual_behavior": "The implementation preserves the first token unconditionally and retains subsequent tokens only when their inclusive cumulative probability is <= P, leaving just the first token in this example.",
+        "locations": [
+          {
+            "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_TopP.run"
+          }
+        ],
+        "source_evidence": [
+          "call_f2c6a3b52b0747b3a78d6c26fa273212",
+          "call_9542b9bdcbd84be9882f37889c84dfc5",
+          "call_5fa3b32a28624378ab7b44634f95ef02",
+          "call_e4ef472467b24b539983c7c84450a82b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search found TopPSampler constructing this step in both temperature-order branches. CustomSampler.forward directly invokes step.run. The existing preset docstring describes <= P with at least one candidate; DefaultSampler uses min-p instead.",
+            "evidence": [
+              "call_5fa3b32a28624378ab7b44634f95ef02",
+              "call_e4ef472467b24b539983c7c84450a82b",
+              "call_9542b9bdcbd84be9882f37889c84dfc5"
+            ],
+            "limits": "External custom compositions were not inventoried."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed inclusive cumulative sums and reproduced the unshifted mask, then compared it with the documented crossing-prefix rule.",
+            "evidence": [
+              "call_445cf23a99ba4d91af3d64e94de7d7b6"
+            ],
+            "limits": "Standard-library scalar model, not repository execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-sorted-argmax",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The sorted-argmax problem identified in the parent annotation is carried over unchanged despite the new selection docstring.",
+        "trigger": "A custom chain reaches SS_Argmax.run with sorted logits or probabilities.",
+        "expected_behavior": "Map each row's selected position to its token ID and populate state.sample.",
+        "actual_behavior": "Sorted branches assign indexed values to state.state instead of state.sample, then overwrite state.state with DONE. If indexing completes, forward still cannot reshape the unset sample.",
+        "locations": [
+          {
+            "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Argmax.run"
+          }
+        ],
+        "source_evidence": [
+          "call_9542b9bdcbd84be9882f37889c84dfc5",
+          "call_f2c6a3b52b0747b3a78d6c26fa273212",
+          "call_d6b9528255a1468790eedcf55aea9614",
+          "call_e4ef472467b24b539983c7c84450a82b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared parent implementation with the comments-only diff. Whole-parent-tree SS_Argmax search and preset inspection found built-in constructions starting directly from INIT; CustomSampler.forward is the direct step runner. Reach therefore includes custom sorted-greedy chains, not the inspected built-in greedy branches.",
+            "evidence": [
+              "call_9542b9bdcbd84be9882f37889c84dfc5",
+              "call_f2c6a3b52b0747b3a78d6c26fa273212",
+              "call_d6b9528255a1468790eedcf55aea9614",
+              "call_e4ef472467b24b539983c7c84450a82b"
+            ],
+            "limits": "No runtime reproduction or external caller inventory."
+          }
+        ]
+      }
+    ],
+    "summary": "Documents sampling-step roles and future optimization work without changing execution; the top-p description conflicts with its cutoff logic, and sorted argmax remains unchanged."
+  },
+  "evidence": {
+    "call_f2c6a3b52b0747b3a78d6c26fa273212": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+        "offset": 151,
+        "max_bytes": 2897
+      },
+      "result_sha256": "b20e652a53c916688bcac6781806d545c24f6935bb03fc31af6d9f352c00a47a"
+    },
+    "call_9542b9bdcbd84be9882f37889c84dfc5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "dfe59a8d1e1de5bf56e0d5348f2c87e02ae41c18c99c8fae3ba087bb4e52ced5"
+    },
+    "call_68222b7dc1544971bb620caf007579d4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "4b660f8a56b66e06e075f6919aae2d802140798a16b5e1851e441b7ec6fdf337"
+    },
+    "call_d6b9528255a1468790eedcf55aea9614": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "query": "SS_Argmax",
+        "limit": 100
+      },
+      "result_sha256": "61546b1dea43d858057c5f8297925449672931c33b229988ae4ba7e89e100696"
+    },
+    "call_5fa3b32a28624378ab7b44634f95ef02": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "query": "SS_TopP",
+        "limit": 100
+      },
+      "result_sha256": "e12692b7cd5916dc3a6e5574844bfc6d2af19784be561552146b4c0225e96827"
+    },
+    "call_e4ef472467b24b539983c7c84450a82b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "50342baba83cdae314149323325e9fb9b3241f9fc87f3352db6d735d91b76550"
+    },
+    "call_db2d80579077475f82610cb50cbcdbb0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8572e02b2f0088524b994992edd068a99c873f32ff9413a4e350ac19e39627ae"
+    },
+    "call_aab5f84dadc34259a702f9036fae7bf3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6975e29ad1430380602b6b10e35388be56591f0f58564a1ad4b959748b7d88af"
+    },
+    "call_445cf23a99ba4d91af3d64e94de7d7b6": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import itertools,json\np=[0.5,0.25,0.125,0.125]; t=0.625\nc=list(itertools.accumulate(p)); actual=[p[0]]+[x if s<=t else 0 for x,s in zip(p[1:],c[1:])]\nn=next(i+1 for i,s in enumerate(c) if s>t)\nprint(json.dumps({'probabilities':p,'top_p':t,'cumulative':c,'implementation_retained':actual,'implementation_mass':sum(actual),'documented_smallest_prefix':p[:n],'documented_mass':sum(p[:n])}))"
+        ]
+      },
+      "result_sha256": "21d3284d55484d6722afc3e1d941663bbeb223dbb575acdc986da35105f3c203"
+    }
+  }
+}

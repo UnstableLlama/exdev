@@ -1,0 +1,363 @@
+{
+  "schema_version": 5,
+  "sha": "a39fdfc4d5bdac1c677eecefbb1932b586c0dca9",
+  "parent_shas": [
+    "965f5b2f0aa69e8d079cbeaffee59443ba9c8044"
+  ],
+  "cutoff_date": "2025-05-27T11:55:04+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Attention copied epsilon and constant bias from its Q head norm, then unconditionally overwrote them with 1e-6 and 0.0. This discarded model-specific settings before fused normalization.",
+        "basis": "source",
+        "evidence": [
+          "call_9326d23dda8a47bc88b44029f988018a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Moving both defaults into the no-head-norm branch preserves supplied normalization settings without changing the no-norm initialization or the native interface.",
+        "basis": "source",
+        "evidence": [
+          "call_c2b94c06da76452c9903cea249d6983b"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Gemma3's paired head norms retain their explicit unit bias. Qwen3 and Qwen3 MoE retain their configured epsilon; their omitted constant bias already defaults to zero. All three attention backends forward the preserved values when RoPE is active. The separate RMSNorm path without RoPE already uses each norm's own settings.",
+        "basis": "source",
+        "evidence": [
+          "call_960df13d6f894d93b98e2671a8745cf9",
+          "call_2875999e852044a9aa22513ad4a583a5",
+          "call_cb9a253bc32248b694d6fa10f0411d12",
+          "call_cca541f8f7fe4c51b06bbc7b9bfc7779",
+          "call_9326d23dda8a47bc88b44029f988018a"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the normalization-fusion ancestor entry, which records the overwritten settings and separate native reduction and bounds concerns. The task removes the settings overwrite, not those native concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ec0ce23bc56241019e204b07fb58a365"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d concerns conversion and a discussion-attributed tokenizer truncation problem. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading. Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, concerns scaling policy. Their connection here is inferred only from attention or rope.py path overlap, not evidence that this fix addresses them.",
+        "basis": "inference",
+        "evidence": [
+          "call_814f45f4c4d342a1993a6aa5e38cf246",
+          "call_5c9134d62c274c7c88e78578a3cadda7",
+          "call_3deae48e03894a2f90bd0b8f04ec12c5"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA execution, model inference or repository test suite was run. The bounded Python check executes isolated constructor statements with stub objects, not Attention initialization or normalization kernels.",
+      "Existing RoPE tests use epsilon 1e-6 and zero bias and bypass Attention construction; they do not exercise this regression.",
+      "Literal searches establish inspected repository consumers, not dynamic or external consumers."
+    ],
+    "links": [
+      "c82af98d57c4ffd21b67baad0eb89a5ed9091759"
+    ],
+    "chapters": [
+      {
+        "id": "attention",
+        "title": "Preserve head-normalization parameters",
+        "claims": [
+          {
+            "text": "The constructor requires K norm when Q norm is supplied and checks their epsilon equality. It caches Q's epsilon and constant bias for the fused path. The patch makes the fallback assignments mutually exclusive with those copies; tensor loading and backend selection remain unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_c2b94c06da76452c9903cea249d6983b",
+              "call_9326d23dda8a47bc88b44029f988018a"
+            ]
+          },
+          {
+            "text": "Attention.load obtains Q/K weight tensors. Each decode method passes those tensors and the cached scalars through RoPE.apply to ext.rope. The kernel normalizes using reciprocal sqrt(mean(x\u00b2)+epsilon), then multiplies by weight plus constant bias before rotation. Thus 1e-6 is a denominator stabilizer, while zero means no weight offset\u2014not an additive activation bias.",
+            "basis": "source",
+            "evidence": [
+              "call_9326d23dda8a47bc88b44029f988018a",
+              "call_d44125266ac8419188966e463c94a65b",
+              "call_b2830fd3f9604da687c684731e1ec524"
+            ]
+          },
+          {
+            "text": "An isolated assignment check preserved the no-norm result (1e-6, 0), changed a supplied unit-bias case from (1e-6, 0) to (1e-6, 1), and changed a supplied nondefault-epsilon case from (1e-6, 0) to (1e-5, 0).",
+            "basis": "execution",
+            "evidence": [
+              "call_65cac10d07fc41af819dceaa81479923"
+            ]
+          },
+          {
+            "text": "The existing test passes normalization parameters directly to RoPE.apply; the science sampling utility omits them and retains no-normalization defaults. Neither consumes Attention's cached scalars at those direct calls, so this constructor edit does not change those calls.",
+            "basis": "source",
+            "evidence": [
+              "call_8ebeb05452414c25bb34703ba56a7433",
+              "call_93e1407b896a4d29a6bc120c72af20c3",
+              "call_5621376e0bbc4a53be4509a42cb6320a",
+              "call_d44125266ac8419188966e463c94a65b"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-normalization-reduction",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The parameter repair leaves the inherited shared reduction-store concern unchanged.",
+        "trigger": "Fused head normalization with nonuniform per-lane squared values.",
+        "expected_behavior": "Store the complete warp reduction once for each warp.",
+        "actual_behavior": "Every lane writes its reduction result to the same shared sums slot without a lane-zero guard. This remains reachable through normalization-enabled calls from all three Attention decode routes and the RoPE test.",
+        "locations": [
+          {
+            "commit": "a39fdfc4d5bdac1c677eecefbb1932b586c0dca9",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel::apply_norm"
+          }
+        ],
+        "source_evidence": [
+          "call_b2830fd3f9604da687c684731e1ec524",
+          "call_c2b94c06da76452c9903cea249d6983b",
+          "call_9326d23dda8a47bc88b44029f988018a",
+          "call_93e1407b896a4d29a6bc120c72af20c3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the inherited observation with the parent kernel, direct callers and the complete task diff; the unguarded store is carried over.",
+            "evidence": [
+              "call_ec0ce23bc56241019e204b07fb58a365",
+              "call_b2830fd3f9604da687c684731e1ec524",
+              "call_8ebeb05452414c25bb34703ba56a7433"
+            ],
+            "limits": "No device execution or race detection."
+          }
+        ]
+      },
+      {
+        "id": "inherited-padded-input-reads",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged rotary kernel still reads frequency and normalization weights in padded lanes.",
+        "trigger": "A head width not divisible by 64, such as the test's width 80, or a shorter partial-rotary frequency array.",
+        "expected_behavior": "Inactive lanes avoid reads outside the frequency and normalization arrays.",
+        "actual_behavior": "inv_freq[t] and the half2 normalization-weight load lack width guards. For width 80, 64 launched lanes address 40 frequency entries and, when normalization is enabled, 128 half-weight elements despite an 80-element weight vector. Attention routes and direct RoPE calls can reach this kernel; the science call omits normalization but still uses frequencies.",
+        "locations": [
+          {
+            "commit": "a39fdfc4d5bdac1c677eecefbb1932b586c0dca9",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_b2830fd3f9604da687c684731e1ec524",
+          "call_c2b94c06da76452c9903cea249d6983b",
+          "call_93e1407b896a4d29a6bc120c72af20c3",
+          "call_5621376e0bbc4a53be4509a42cb6320a"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Calculated launched lanes and addressed element counts from the inspected launch formula.",
+            "evidence": [
+              "call_65cac10d07fc41af819dceaa81479923",
+              "call_b2830fd3f9604da687c684731e1ec524"
+            ],
+            "limits": "Integer bounds calculation only; does not establish compiler-emitted reads or an observed CUDA fault."
+          }
+        ]
+      }
+    ],
+    "summary": "Preserves model-supplied epsilon and weight bias for fused Q/K normalization by restricting defaults to attention without head norms; native kernel concerns remain unchanged."
+  },
+  "evidence": {
+    "call_c2b94c06da76452c9903cea249d6983b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a39fdfc4d5bdac1c677eecefbb1932b586c0dca9",
+        "offset": 158,
+        "max_bytes": 693
+      },
+      "result_sha256": "be6dc94165f3e8d57cc5da4783bfaf07c5699f0e08fd5f98a596f4fa0ac34be8"
+    },
+    "call_9326d23dda8a47bc88b44029f988018a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "0211335ee748326029615afa03c948257174e6fe7c7d839cdd9b8544564e905a"
+    },
+    "call_7947ec2f504b49768d9faac4e1b68205": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "query": "norm_constant_bias",
+        "limit": 100
+      },
+      "result_sha256": "3717531f51e0d8361cf50a81b0faa1f56c2706eae844c982991d1571fa0e581b"
+    },
+    "call_fb2640636c6e44f6b8cba755cdeac26e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "query": "q_norm",
+        "limit": 100
+      },
+      "result_sha256": "fc10cc39ba7de2140231454d2f5bba7675d1d0b138fe905d99e450ed1589b795"
+    },
+    "call_421bd1ace2304233923d2f91620c8b66": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/attn.py",
+        "limit": 20,
+        "max_bytes": 8000
+      },
+      "result_sha256": "48e7c9b6fead576b993cbc73a2dd47bf42fcca1083848b686c842337816ce160",
+      "catalog_only": true
+    },
+    "call_ec0ce23bc56241019e204b07fb58a365": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "max_bytes": 16000
+      },
+      "result_sha256": "597d0cc17d10c90903f4b0f71997c1971bcd70e15cdafcd32525ad5bb20eeac5"
+    },
+    "call_b2830fd3f9604da687c684731e1ec524": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b71eecf05983b3e7e834c2debe54eb04568183607db947a9277d5f9a88df45ce"
+    },
+    "call_960df13d6f894d93b98e2671a8745cf9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 3600,
+        "max_bytes": 4000
+      },
+      "result_sha256": "a2ee92fe8b80480e8106707caca9136e4e34fd65cc1c202a50e0807a757991b2"
+    },
+    "call_2875999e852044a9aa22513ad4a583a5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "exllamav3/models/qwen3.py",
+        "offset": 2800,
+        "max_bytes": 2200
+      },
+      "result_sha256": "a0a45c927da9e789d114f26a6b20903bae9b5a3c015e66c811a0589fd2e3705f"
+    },
+    "call_cb9a253bc32248b694d6fa10f0411d12": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "offset": 2800,
+        "max_bytes": 1600
+      },
+      "result_sha256": "149769550a86b0dfb5d12b711089823b49643e801fcb1025e2d30828e9b20226"
+    },
+    "call_cca541f8f7fe4c51b06bbc7b9bfc7779": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "d5c22ccaad8b93ea452456a6a977fcfb94778c1cfa7a4a9573a7fda0a9a2df7c"
+    },
+    "call_d44125266ac8419188966e463c94a65b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "exllamav3/util/rope.py",
+        "offset": 10000,
+        "max_bytes": 5500
+      },
+      "result_sha256": "8a7673484d6f2d0a08670142fe22c1b34255ccbaa247ab81ad31249054d75348"
+    },
+    "call_814f45f4c4d342a1993a6aa5e38cf246": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 12000
+      },
+      "result_sha256": "7cd005fc3050c7da21307c7f2b72e87b14e812434d70034b30193c580581f4db"
+    },
+    "call_5c9134d62c274c7c88e78578a3cadda7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "977e5666b06bba232c2d303823e610adb461a1a057fc1bb2b749a15c814e9eb2"
+    },
+    "call_3deae48e03894a2f90bd0b8f04ec12c5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 10000
+      },
+      "result_sha256": "c1d6a8d8da0b7c1a373f3a8c5f1a65be2a8c2d89ef9bf4a5aef49fba3d42eeaf"
+    },
+    "call_65cac10d07fc41af819dceaa81479923": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib,types\ns=pathlib.Path('exllamav3/modules/attn.py').read_text(); t=ast.parse(s)\nc=next(n for n in t.body if isinstance(n,ast.ClassDef) and n.name=='Attention'); f=next(n for n in c.body if isinstance(n,ast.FunctionDef) and n.name=='__init__'); branch=next(n for n in f.body if isinstance(n,ast.If) and ast.unparse(n.test)=='q_norm'); defaults=[n for n in f.body if isinstance(n,ast.Assign) and any(ast.unparse(x) in ('self.norm_eps','self.norm_constant_bias') for x in n.targets)]\nfor present,eps,bias in [(False,1e-6,0.),(True,1e-6,1.),(True,1e-5,0.)]:\n def calc(new):\n  o=types.SimpleNamespace(register_submodule=lambda x:None); norm=types.SimpleNamespace(rms_norm_eps=eps,constant_bias=bias) if present else None\n  b=ast.parse(ast.unparse(branch)).body[0]\n  if new:b.orelse+=defaults\n  code=ast.fix_missing_locations(ast.Module(body=[b]+([] if new else defaults),type_ignores=[])); exec(compile(code,'assignments','exec'),dict(self=o,q_norm=norm,k_norm=norm)); return o.norm_eps,o.norm_constant_bias\n print(present,eps,bias,'before',calc(False),'after',calc(True))\nprint('D80 launched lanes',((80//2+31)//32)*32,'frequency entries',80//2,'weight elements addressed',((80//2+31)//32)*64)"
+        ]
+      },
+      "result_sha256": "2ef69331d05de2f2af3ac32dca6813d9bee8d55a811dbe7dc362a945d38dc196"
+    },
+    "call_8ebeb05452414c25bb34703ba56a7433": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "query": ".apply(",
+        "limit": 100,
+        "path": ""
+      },
+      "result_sha256": "8f5fbe4cb8192546a7e25f42dee86a5e012829edf6f2b94712702cb35bebb826"
+    },
+    "call_93e1407b896a4d29a6bc120c72af20c3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "tests/test_rope.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "e7a1b50fe496622e2bc6a55421203c37f6cf394277d3dc4b913f03f4a9312133"
+    },
+    "call_5621376e0bbc4a53be4509a42cb6320a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+        "path": "science/kv_quant_exp.py",
+        "offset": 1700,
+        "max_bytes": 2200
+      },
+      "result_sha256": "516382760a19e45326db9b808b901395d25c54cfd24d1fa82f5f51417bef741d"
+    }
+  }
+}

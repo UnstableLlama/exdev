@@ -1,0 +1,184 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Accepted page sizes can produce out-of-range vector accesses and unsigned block-length underflow.",
+  "trigger": "Call the exposed function with a contiguous uint8 cache shaped (2,129), valid int32 order [0,1], and 129-byte scratch.",
+  "expected_behavior": "Rotate the two pages without accessing outside their storage, or reject unsupported sizes.",
+  "actual_behavior": "The wrapper accepts these dimensions. Each block initially receives two bytes, but copies 16-byte vectors. Block 65 begins at byte 130 while its clamped end is 129; unsigned subtraction produces a huge nonzero length instead of skipping the block.",
+  "verification": [
+    {
+      "method": "scalar_transcription",
+      "description": "Modeled the interval calculation and 64-bit unsigned subtraction; obtained 18446744073709551615 for block 65. Parent search found no callers; the added test uses aligned sizes, so the demonstrated reach is unsupported inputs to the new extension API.",
+      "evidence": [
+        "call_494aa88721cc488083738f6f98ee32c5"
+      ],
+      "limits": "No CUDA memory access was executed; unsigned arithmetic was modeled explicitly."
+    }
+  ],
+  "defect_id": "exllamav3-unchecked-vector-partition",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+      "run": ".teacher/runs/commit-000195-001",
+      "local_id": "unchecked-vector-partition",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "unchecked-vector-partition",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Accepted page sizes can produce out-of-range vector accesses and unsigned block-length underflow.",
+        "trigger": "Call the exposed function with a contiguous uint8 cache shaped (2,129), valid int32 order [0,1], and 129-byte scratch.",
+        "expected_behavior": "Rotate the two pages without accessing outside their storage, or reject unsupported sizes.",
+        "actual_behavior": "The wrapper accepts these dimensions. Each block initially receives two bytes, but copies 16-byte vectors. Block 65 begins at byte 130 while its clamped end is 129; unsigned subtraction produces a huge nonzero length instead of skipping the block.",
+        "locations": [
+          {
+            "commit": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+            "path": "exllamav3/exllamav3_ext/generator/cache.cu",
+            "symbol": "cache_rotate_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_c9324f9c32734247865a3b03d77658ca",
+          "call_0354daa0d15e48ec9f350069abe8ee2a",
+          "call_e1a2eb99e67347609255d15340854c1d"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the interval calculation and 64-bit unsigned subtraction; obtained 18446744073709551615 for block 65. Parent search found no callers; the added test uses aligned sizes, so the demonstrated reach is unsupported inputs to the new extension API.",
+            "evidence": [
+              "call_494aa88721cc488083738f6f98ee32c5"
+            ],
+            "limits": "No CUDA memory access was executed; unsigned arithmetic was modeled explicitly."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9be91d644d8272db7bfd5e759084b74bc08704ae",
+      "run": ".teacher/runs/commit-000197-001",
+      "local_id": "inherited-vector-boundary",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-vector-boundary",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited vector-boundary problem remains; changing !block_size to block_size <= 0 does not prevent unsigned underflow.",
+        "trigger": "Call cache_rotate with a contiguous uint8 cache of shape (2,129), 129-byte scratch and a valid pair schedule such as [-1,0,0,1,1,-1].",
+        "expected_behavior": "Reject unsupported page sizes or copy within each allocation.",
+        "actual_behavior": "Two-byte block partitions still issue 16-byte transfers. Block 65 starts at byte 130, beyond the clamped end of 129; unsigned subtraction produces a huge positive length that passes the new guard.",
+        "locations": [
+          {
+            "commit": "9be91d644d8272db7bfd5e759084b74bc08704ae",
+            "path": "exllamav3/exllamav3_ext/generator/cache.cu",
+            "symbol": "cache_rotate_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_2b617257a6eb4980b07a7e8c51b433e4",
+          "call_5632406deded4d54bae23b6cd27f1851"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled block 65 with 64-bit unsigned subtraction, obtaining 18446744073709551615.",
+            "evidence": [
+              "call_bc91113dce6d4fdcb1f3fdf394e7ac82"
+            ],
+            "limits": "No GPU access executed. Existing test shapes avoid this case; this concrete trigger concerns the exposed native API, not a demonstrated model-cache shape."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000195-001.md",
+      "description": "Reviewer-only second trigger: empty order is accepted, order[0] reads empty storage and unsigned rotate_len-1 wraps."
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000195-001__draft.json",
+      "sha256": "9119e7aaf8fc22adfc36bef134403df808faed4845720ec5fc8f3ad65df1e5ae"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000195-001.md",
+      "sha256": "07c8cef9695b27a37bbc1c01309118df9728b12c35ab404ff0308a1905002545"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000197-001__draft.json",
+      "sha256": "0799b0ec0bced86e8eaf0c167080acb28452d998d58bc69b85ccbaf1f4934321"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000197-001.md",
+      "sha256": "4ca7705fcb176196cd83779db9768d323fe46b5ecd091acda4af012c1b72d2a5"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000195-001/draft.json",
+      "source_id": ".teacher/runs/commit-000195-001/draft.json",
+      "content_sha256": "9119e7aaf8fc22adfc36bef134403df808faed4845720ec5fc8f3ad65df1e5ae",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000195-001.md",
+      "source_id": "reviews/verdicts/commit-000195-001.md",
+      "content_sha256": "07c8cef9695b27a37bbc1c01309118df9728b12c35ab404ff0308a1905002545",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000197-001/draft.json",
+      "source_id": ".teacher/runs/commit-000197-001/draft.json",
+      "content_sha256": "0799b0ec0bced86e8eaf0c167080acb28452d998d58bc69b85ccbaf1f4934321",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000197-001.md",
+      "source_id": "reviews/verdicts/commit-000197-001.md",
+      "content_sha256": "4ca7705fcb176196cd83779db9768d323fe46b5ecd091acda4af012c1b72d2a5",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+      "available_at": "2025-05-27T11:27:51+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9be91d644d8272db7bfd5e759084b74bc08704ae",
+      "available_at": "2025-05-28T22:23:08+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "965f5b2f0aa69e8d079cbeaffee59443ba9c8044",
+      "9be91d644d8272db7bfd5e759084b74bc08704ae"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

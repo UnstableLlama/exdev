@@ -1,0 +1,158 @@
+{
+  "defect_id": "exllamav3-first-pass-cost-buffer",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "First-pass final-state selection reads the preceding cost buffer.",
+  "trigger": "A rotated first pass completes before tail-biting state selection.",
+  "expected_behavior": "Select the state from the final iteration costs.",
+  "actual_behavior": "forward writes the newest costs to temp_costs; argmin_cost reads temp_costs_inc, the preceding iteration. The selected state can differ from the final-cost minimum.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "paths": [
+        "exllamav3/exllamav3_ext/quant/quantize.cu"
+      ],
+      "status": "reviewer_source_supported",
+      "rationale": "Finding in the approved root entry; introduction confirmed by the 178 reviewer correction."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "run": ".teacher/assemblies/root-002"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "d359bcc0d366c64fe7bed2e13446641d9f99c163",
+      "run": ".teacher/runs/commit-000176-001"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "d359bcc0d366c64fe7bed2e13446641d9f99c163",
+      "run": ".teacher/runs/commit-000176-001",
+      "local_id": "inherited-first-pass-cost-buffer",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-first-pass-cost-buffer",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The modified quantize_tiles_kernel carries over the first-pass final-state selection discrepancy recorded by the ancestor entry. Adding codebook specialization does not repair it.",
+        "trigger": "A tile's rotated first pass finishes and argmin_cost selects the state used to initialize tail-biting backtracking.",
+        "expected_behavior": "Select the minimum from the costs produced by the final forward iteration.",
+        "actual_behavior": "forward writes the latest costs to temp_costs, but argmin_cost reads temp_costs_inc. A scalar buffer-ownership trace places iterations 255 and 254 in those buffers respectively. The selected state can therefore differ from the final-cost minimum. The direct native caller is quantize_tiles; inspected Python wrappers expose it to scale search, LDLQ and tile tests for all three codebooks.",
+        "locations": [
+          {
+            "commit": "d359bcc0d366c64fe7bed2e13446641d9f99c163",
+            "path": "exllamav3/exllamav3_ext/quant/quantize.cu",
+            "symbol": "quantize_tiles_kernel::argmin_cost"
+          }
+        ],
+        "source_evidence": [
+          "call_32c5b63f5e71486587bffc278b3dd848",
+          "call_6c7783620b5147b2868b76034e614969",
+          "call_05fd26e7c7424efa85fd195414197836",
+          "call_63f86391c9c644a093e2a380ad0893ca"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent buffer swap, cost write and argmin read against the task's complete quantize.cu diff; those operations are unchanged.",
+            "evidence": [
+              "call_32c5b63f5e71486587bffc278b3dd848",
+              "call_6c7783620b5147b2868b76034e614969"
+            ],
+            "limits": "No GPU execution or measured effect on selected paths."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Tracked ownership across 256 swaps and writes; the latest buffer held iteration 255 and the argmin buffer held iteration 254.",
+            "evidence": [
+              "call_909ba39d35ac425981d3725f7e3f30e2"
+            ],
+            "limits": "This models buffer ownership only, not Viterbi arithmetic, synchronization or model quality."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "verification": {
+    "method": "source_inspection",
+    "repository_execution": false,
+    "limits": "Source-only defect status; scalar transcriptions are not repository/tensor/CUDA execution. No continuous affected range or runtime impact established."
+  },
+  "evidence": [
+    {
+      "file": "evidence/root-002-entry.json",
+      "sha256": "e3bfb397d2b4143bb9f0abde29707d4c657b429ddee0ebb6269f4e1b718e4d65",
+      "source": ".teacher/assemblies/root-002/entry.json"
+    },
+    {
+      "file": "evidence/commit176-ledger-draft.json",
+      "sha256": "d22a5e0af3fb2a5801d93c0897528fba5fdfb3c351d3dcc7c63795b5c7f822f1",
+      "source": ".teacher/runs/commit-000176-001/draft.json"
+    },
+    {
+      "file": "evidence/commit177-ledger-draft.json",
+      "sha256": "90af5d924de40a66fb1e0c371063263a542be117d04e0517cd5ece788d0f3869",
+      "source": ".teacher/runs/commit-000177-001/draft.json"
+    },
+    {
+      "file": "evidence/commit178-ledger-verdict.md",
+      "sha256": "bd6e8432eb1bce48ff6f0f0f4c570b51b6af2ba15c62717366ad60d3ff529b1b",
+      "source": "reviews/verdicts/commit-000178-001.md"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000176-001__draft.json",
+      "sha256": "d22a5e0af3fb2a5801d93c0897528fba5fdfb3c351d3dcc7c63795b5c7f822f1"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000176-001.md",
+      "sha256": "1dcb904e968250bc53754fc7a2e42769c2caeaaea3d4030f6b3605b4b0c07ca9"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "d359bcc0d366c64fe7bed2e13446641d9f99c163",
+      "available_at": "2025-05-21T19:15:13+02:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000176-001/draft.json",
+      "source_id": ".teacher/runs/commit-000176-001/draft.json",
+      "content_sha256": "d22a5e0af3fb2a5801d93c0897528fba5fdfb3c351d3dcc7c63795b5c7f822f1",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000176-001.md",
+      "source_id": "reviews/verdicts/commit-000176-001.md",
+      "content_sha256": "1dcb904e968250bc53754fc7a2e42769c2caeaaea3d4030f6b3605b4b0c07ca9",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "d359bcc0d366c64fe7bed2e13446641d9f99c163"
+    ],
+    "limits": "Only explicitly source-supported revisions; no continuous range."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "New identity requested by 178 verdict; ledger acceptance pending. Never teacher input."
+}

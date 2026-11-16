@@ -1,0 +1,249 @@
+{
+  "schema_version": 5,
+  "sha": "00bbb58384359ced00025238360cdcdcafad7c3c",
+  "parent_shas": [
+    "2445cab0949fe69c5055bebe9aeefd88e41069e9"
+  ],
+  "cutoff_date": "2025-04-17T11:16:38+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The change adds a diagnostic for comparing a tensor's value distribution with the procedural codebook, rather than changing quantization itself.",
+        "basis": "source",
+        "evidence": [
+          "call_d9709749784742469850627572a7dba6"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "A single CUDA block reuses a shared histogram: first counting every 16-bit codebook state, then counting input elements. Separate normalization produces comparable probability masses despite different sample counts.",
+        "basis": "source",
+        "evidence": [
+          "call_d9709749784742469850627572a7dba6"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Python gains the extension entry point test_distribution(input, dist_output, ref_output, min_value, max_value), which writes into caller-provided outputs. The parent-tree search finds no existing callers, and the diff adds no workflow integration.",
+        "basis": "source",
+        "evidence": [
+          "call_2e4ff436f8754160a18d7d28aace6cff",
+          "call_d98b679676ba4c3cb7d69f87b3728880",
+          "call_9eb73fb693b74792a055a9dba68094b9",
+          "call_d9709749784742469850627572a7dba6"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The inspected discussions report an undefined __cxa_call_terminate symbol (#7), incoherent Cogito output at bpw <= 2.5 (#15), an invalid CUDA configuration during conversion (#16), and missing torch during installation (#17). None explicitly connects its report to this histogram addition.",
+        "basis": "source",
+        "evidence": [
+          "call_242066abe80e42bf8c82cbcd1fcbdbdf",
+          "call_69d24f530c234360b3df20824c550ee3",
+          "call_5f03a84dff9b44b4b1103f5aef74a09e",
+          "call_53808808ae04445bb12195f317a10105"
+        ]
+      }
+    ],
+    "limitations": [
+      "No extension build or GPU execution was performed; CUDA synchronization, launch success and performance remain unmeasured.",
+      "The scalar check models unsigned 32-bit decoder arithmetic and binary16 rounding, but uses Python arithmetic for histogram indexing; it does not establish CUDA behavior for nonfinite values, invalid ranges or integer overflow.",
+      "The caller search establishes absence of literal parent-tree references, not absence of external or dynamically constructed calls."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "quantizer",
+        "title": "CUDA distribution comparison diagnostic",
+        "claims": [
+          {
+            "text": "The wrapper selects the input device and current CUDA stream, checks that input is float32, derives the bin count from ref_output.numel(), and launches one block of 1024 threads. MAX_BINS=1024 bounds the shared integer histogram; the source explicitly describes the routine as not optimized.",
+            "basis": "source",
+            "evidence": [
+              "call_d9709749784742469850627572a7dba6"
+            ]
+          },
+          {
+            "text": "Each sample is transformed by (value-min_value)/(max_value-min_value)*num_bins, converted to an integer and clamped into the end bins. Thus out-of-range values contribute to endpoint mass rather than being discarded. Counts are divided by sample count, not bin width, so the outputs are normalized histograms rather than probability densities.",
+            "basis": "source",
+            "evidence": [
+              "call_d9709749784742469850627572a7dba6"
+            ]
+          },
+          {
+            "text": "The reference enumerates 65,536 states, the complete uint16_t domain, through decode_3inst_f. That function converts the half-precision 3INST result to float; the existing decode_pcb_f also selects 3INST, while 2MAD remains a commented-out alternative. The diagnostic hardcodes 3INST rather than following the generic decoder selector.",
+            "basis": "source",
+            "evidence": [
+              "call_d9709749784742469850627572a7dba6",
+              "call_e1355c70e4de46f29fe86ce72f49b94f"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription enumerated all 65,536 states, yielding extrema -3.95703125 and 3.97265625. With 16 bins over [-4,4], counts totaled 65,536 and normalized mass totaled 1.0. The launch divides reference enumeration into 64 states per thread and uses 4096 bytes for 1024 four-byte counters.",
+            "basis": "execution",
+            "evidence": [
+              "call_40724d7f504e439eb68ba8fff184c195"
+            ]
+          },
+          {
+            "text": "Reusing one shared histogram avoids a multi-block reduction, but limits parallelism and concentrates atomic updates within one block. This is consistent with a simple diagnostic implementation, not evidence of a performance improvement.",
+            "basis": "inference",
+            "evidence": [
+              "call_d9709749784742469850627572a7dba6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unchecked-output-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly exposed diagnostic does not validate the destination histogram capacity.",
+        "trigger": "Call test_distribution with valid contiguous CUDA float32 input, ref_output containing N bins where 1 <= N <= 1024, and dist_output containing fewer than N float32 elements.",
+        "expected_behavior": "Reject the mismatched output capacity before launching the kernel.",
+        "actual_behavior": "The wrapper derives N solely from ref_output; write_histogram writes N floats through dist_output's raw pointer without checking its size, potentially writing beyond its allocation. Reach is direct extension callers; no parent-tree callers or new workflow call sites were found.",
+        "locations": [
+          {
+            "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+            "path": "exllamav3/exllamav3_ext/quant/quantize.cu",
+            "symbol": "test_distribution"
+          }
+        ],
+        "source_evidence": [
+          "call_d9709749784742469850627572a7dba6",
+          "call_9eb73fb693b74792a055a9dba68094b9",
+          "call_2e4ff436f8754160a18d7d28aace6cff"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced ref_output.numel() through the launch argument to both output-writing loops and inspected the complete wrapper checks and caller search.",
+            "evidence": [
+              "call_d9709749784742469850627572a7dba6",
+              "call_9eb73fb693b74792a055a9dba68094b9"
+            ],
+            "limits": "No malformed invocation was executed; memory corruption or a specific CUDA error was not observed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a Python-exposed CUDA diagnostic that compares normalized input and exhaustive 3INST codebook histograms using a single shared-memory block."
+  },
+  "evidence": {
+    "call_2e4ff436f8754160a18d7d28aace6cff": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+        "offset": 176,
+        "max_bytes": 4212
+      },
+      "result_sha256": "7c82ee1b2c5c85f9aa9bd1c4425b390ece7f37628b92162168df450192f664ca"
+    },
+    "call_d9709749784742469850627572a7dba6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+        "offset": 865,
+        "max_bytes": 2949
+      },
+      "result_sha256": "cde232437927a8beaf86f503f74718824d5d0bd136c858234554e77833209ec7"
+    },
+    "call_d98b679676ba4c3cb7d69f87b3728880": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "00bbb58384359ced00025238360cdcdcafad7c3c",
+        "offset": 3814,
+        "max_bytes": 574
+      },
+      "result_sha256": "3a100de79b40395285befdee02a40fa45a573a21d7261d5575b7b2d50f866486"
+    },
+    "call_ac5d64501f5e4181bde2a3161ffba291": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2445cab0949fe69c5055bebe9aeefd88e41069e9",
+        "query": "decode_3inst_f",
+        "limit": 30
+      },
+      "result_sha256": "5d952a8edecb5fade3b69800adf29ad3d741e351fa8eea46ff472cea97a73bf4"
+    },
+    "call_e1355c70e4de46f29fe86ce72f49b94f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2445cab0949fe69c5055bebe9aeefd88e41069e9",
+        "path": "exllamav3/exllamav3_ext/quant/codebook.cuh",
+        "max_bytes": 14000
+      },
+      "result_sha256": "29ab35b5f45b3e037985a90c4ba7160f2b13bbaacd56686e0ed7d69c77b22499"
+    },
+    "call_9eb73fb693b74792a055a9dba68094b9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2445cab0949fe69c5055bebe9aeefd88e41069e9",
+        "query": "test_distribution",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_242066abe80e42bf8c82cbcd1fcbdbdf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f2a43bd774660c942d81fc63186945fca1b91280c8c6b723fc14d2c90b09394b"
+    },
+    "call_69d24f530c234360b3df20824c550ee3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c46f8f3f959404d2013ba801f42fdc57195a6691d905a8b85609627f9f9b4aa2"
+    },
+    "call_5f03a84dff9b44b4b1103f5aef74a09e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8c0db28ea6a9ddc130233a0db341da935baf40f85130e77140859a460c27ab82"
+    },
+    "call_53808808ae04445bb12195f317a10105": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 16000
+      },
+      "result_sha256": "bcef87fca45d07a796b11e0b75f97cd1e3f64dc2efbf7a4d4f39692bd3e54764"
+    },
+    "call_0f8c423e157e4f3ca9afa4847fe3c133": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "quantize.cu",
+        "max_bytes": 4000
+      },
+      "result_sha256": "e0d1383c6f8c66b758e9289b1273975c736c21f2c648935919928f3a1f1c28d9",
+      "catalog_only": true
+    },
+    "call_40724d7f504e439eb68ba8fff184c195": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct, collections\nh=lambda x:struct.unpack('<e',struct.pack('<e',x))[0]\nvals=[]\nfor i in range(65536):\n x=((i*89226354+64248484)&0xffffffff)&0x8fff8fff\n x^=0x3b603b60\n a,b=struct.unpack('<ee',struct.pack('<I',x)); vals.append(h(a+b))\nbins=[0]*16\nfor v in vals: bins[max(0,min(15,int((v+4)/8*16)))]+=1\nprint({'states':len(vals),'per_thread':65536//1024,'min':min(vals),'max':max(vals),'histogram_sum':sum(bins),'normalized_sum':sum(n/65536 for n in bins),'shared_histogram_bytes':1024*4})"
+        ]
+      },
+      "result_sha256": "4550c21ab01de24f11c327411b4c9ef8febd41bf138856940abc3b948f04aa5c"
+    }
+  }
+}

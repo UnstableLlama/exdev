@@ -1,0 +1,319 @@
+{
+  "schema_version": 5,
+  "sha": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+  "parent_shas": [
+    "b124ceb2d598902e5a084fc06c1b378be1dfb6a3"
+  ],
+  "cutoff_date": "2025-04-27T01:09:33+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The sampler gains history-dependent repetition, presence and frequency penalties, complementing its existing temperature and probability filters.",
+        "basis": "source",
+        "evidence": [
+          "call_3aeac119b6574611ac70dbee9b92618c",
+          "call_92e4d85add8846b3b476c8d169ce215c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "History requirements are declared by sampling steps and aggregated by CustomSampler. Jobs allocate pinned CPU history storage only when requested, refresh it before sampling, and pass it through SamplingState to the native functions. Requirement aggregation happens before no-op replacement, so neutral penalty steps still request history.",
+        "basis": "source",
+        "evidence": [
+          "call_3aeac119b6574611ac70dbee9b92618c",
+          "call_e620a548e59e4c1fa07f9ee12aac173d",
+          "call_7acec2984c9c4b95a5c9d003209eaae8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The new steps support initial or already-modified unsorted logits, produce FP32 logits, and reject other sampling states. Native wrappers explicitly limit penalties to batch size one. Existing default sampler presets are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_3aeac119b6574611ac70dbee9b92618c",
+          "call_a4f179f5cacf4535b823f57ef5e8843b",
+          "call_73e1a40a59cd4b4aa3d7ccda1b9a291c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The reviewed discussions concern distinct reported problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d; #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5\u201d; and #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022\u201d. Their text does not establish a relationship to this penalty implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_3a46185c5b7048afa9fabe198d59a93c",
+          "call_d8289a2029034844961ebe89bc7d4abe",
+          "call_3572c2f91aa24ee29c2ddbedced7d915"
+        ]
+      }
+    ],
+    "limitations": [
+      "CUDA kernels and repository tests were not executed. Scalar calculations do not establish GPU concurrency, floating-point edge cases or pinned-host-memory accessibility.",
+      "The source labels the methods Transformers-style and OAI-style; exact correspondence with those external implementations or the cited paper was not independently established."
+    ],
+    "links": [],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "History-dependent logit penalties",
+        "claims": [
+          {
+            "text": "SS_RepP applies a sign-dependent transformation: positive logits are divided by rep_p, while nonpositive logits are multiplied. Each token uses the strongest recency weight among its occurrences, interpolating between its original and penalized logit. SS_PresFreqP subtracts accumulated weighted frequency penalties and a maximum weighted presence penalty; despite its docstring saying \u201cAdded\u201d, positive values reduce logits.",
+            "basis": "source",
+            "evidence": [
+              "call_a4f179f5cacf4535b823f57ef5e8843b",
+              "call_3aeac119b6574611ac70dbee9b92618c"
+            ]
+          },
+          {
+            "text": "Distance counts backward from one for the newest token. sustain_range gives the full-penalty window; decay_range fades older contributions linearly to zero. Defaults use a finite 100,000,000-token sustain window and zero decay. Neutral penalties or nonpositive combined windows select SS_NoOp.",
+            "basis": "source",
+            "evidence": [
+              "call_a4f179f5cacf4535b823f57ef5e8843b",
+              "call_3aeac119b6574611ac70dbee9b92618c"
+            ]
+          },
+          {
+            "text": "Each CUDA block covers 4,096 vocabulary entries with 1,024 threads and scans history for matching IDs. Repetition uses one shared float array; presence/frequency uses two. This partitions output ownership but repeats history scanning across vocabulary blocks.",
+            "basis": "source",
+            "evidence": [
+              "call_a4f179f5cacf4535b823f57ef5e8843b"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription reproduced the finite decay fixture [2,2,2,1.75,1.5,1.25,1,1,1,1]. Arithmetic also gives 63 blocks for 256,000 vocabulary entries and shared-array footprints of 16 KiB and 32 KiB. This was not a CUDA test.",
+            "basis": "execution",
+            "evidence": [
+              "call_03dbc4f2120c4c1585185cd22b9a2305"
+            ]
+          },
+          {
+            "text": "Bindings expose both native penalty functions. New tests supply pinned history tensors and inspect intermediate logits for repeated IDs, recency decay, a negative logit and a large vocabulary. Their presence is test coverage intent, not evidence of passing execution.",
+            "basis": "source",
+            "evidence": [
+              "call_a16c6d634e5643c78462db13c770d330",
+              "call_7b5092e7c9e84fe1a5c2dd7af469f3b3",
+              "call_3fd7ca52d4604945849f14dbf59d145a"
+            ]
+          },
+          {
+            "text": "Alongside penalties, top_k below one now selects a no-op rather than asserting. top_p equal to one also selects a no-op; the added zero branch remains inaccessible under the unchanged constructor assertion when assertions are enabled. SS_NoOp itself leaves sampling state unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_3aeac119b6574611ac70dbee9b92618c",
+              "call_92e4d85add8846b3b476c8d169ce215c"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "missing-combo-sampler",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The sampler package newly imports ComboSampler, but presets.py does not define it and the task supplies no implementation.",
+        "trigger": "Importing exllamav3.generator.sampler, once preceding imports succeed.",
+        "expected_behavior": "The sampler package imports successfully and exposes its implemented samplers.",
+        "actual_behavior": "Source inspection predicts an ImportError for ComboSampler. The top-level package imports the sampler package, and Generator and Job also import it, so the failure is not confined to users choosing a new penalty.",
+        "locations": [
+          {
+            "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+            "path": "exllamav3/generator/sampler/__init__.py",
+            "symbol": "ComboSampler import"
+          }
+        ],
+        "source_evidence": [
+          "call_4aa5c8ae0412454bbc1d504b099e5f70",
+          "call_73e1a40a59cd4b4aa3d7ccda1b9a291c",
+          "call_1a240252d25f42b2a0ec7f7fb1da4364",
+          "call_bff5fe79111a4ccfbf11c3922924f8de",
+          "call_a51962a8afed4f1b84beb3a337816b36"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the added import with the complete parent presets module, whole-tree ComboSampler search and task diff; inspected package import reach.",
+            "evidence": [
+              "call_4aa5c8ae0412454bbc1d504b099e5f70",
+              "call_73e1a40a59cd4b4aa3d7ccda1b9a291c",
+              "call_1a240252d25f42b2a0ec7f7fb1da4364",
+              "call_a51962a8afed4f1b84beb3a337816b36"
+            ],
+            "limits": "No repository import was executed; earlier environment or extension failures could occur first."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds composable CUDA-backed history penalties and pinned-history plumbing, with intermediate-logit tests. A newly exported but undefined ComboSampler appears to block package imports."
+  },
+  "evidence": {
+    "call_a16c6d634e5643c78462db13c770d330": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "max_bytes": 32000,
+        "offset": 182
+      },
+      "result_sha256": "80e82609b38e4ae31ffd912c34845cf94db1bc72334dc04c490feea67cb2ce1b"
+    },
+    "call_a4f179f5cacf4535b823f57ef5e8843b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 1230,
+        "max_bytes": 10000
+      },
+      "result_sha256": "82109e87394c1c6a18c02aa40ad28bc52f8f3da188d4e8c8de851610b49aaef6"
+    },
+    "call_7b5092e7c9e84fe1a5c2dd7af469f3b3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 8636,
+        "max_bytes": 10000
+      },
+      "result_sha256": "32c7f87a6cbb464c890332a547f015f8651c3bee75dd94ce7a0437fb6d6ff404"
+    },
+    "call_7acec2984c9c4b95a5c9d003209eaae8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 9394,
+        "max_bytes": 10000
+      },
+      "result_sha256": "0fea11b639bc03aa223feb305e942b7ad2332f0d7059782a616cfda4bf9ea062"
+    },
+    "call_e620a548e59e4c1fa07f9ee12aac173d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 9955,
+        "max_bytes": 10000
+      },
+      "result_sha256": "dbf40e64632faf019a0dec7d6da69c421c6d82e96e600e008c2c97b593ec625a"
+    },
+    "call_4aa5c8ae0412454bbc1d504b099e5f70": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 11431,
+        "max_bytes": 10000
+      },
+      "result_sha256": "a1ef146c1068b5977a0481d42e992db97ecf9f15622a1eb209dddb610a8ebe04"
+    },
+    "call_3aeac119b6574611ac70dbee9b92618c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 12024,
+        "max_bytes": 10000
+      },
+      "result_sha256": "8e0856561078296fd3c4a92e9b36d604ad22daf614b929091152f03a9633fd54"
+    },
+    "call_01e7df7568eb4ad6843791e2d4afb1ec": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 19426,
+        "max_bytes": 10000
+      },
+      "result_sha256": "ee3f5e5d78a43f41b699c2114db601218d065b66fe22e02e698ba3628f62939b"
+    },
+    "call_3fd7ca52d4604945849f14dbf59d145a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "40863d0690eb1cb1164bb973c9a22b1155ace172",
+        "offset": 20154,
+        "max_bytes": 10000
+      },
+      "result_sha256": "ccc9efabae7f0f12ba1764d8d75c2876d6cee45051ab3bc0b706040de868d016"
+    },
+    "call_73e1a40a59cd4b4aa3d7ccda1b9a291c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "50342baba83cdae314149323325e9fb9b3241f9fc87f3352db6d735d91b76550"
+    },
+    "call_1a240252d25f42b2a0ec7f7fb1da4364": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "query": "ComboSampler",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_bff5fe79111a4ccfbf11c3922924f8de": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "query": "import",
+        "path": "exllamav3/__init__.py",
+        "limit": 100
+      },
+      "result_sha256": "9683c055557afe92a9b452c88e9506998f749cae30b29f6ab5f0a38cde446762"
+    },
+    "call_92e4d85add8846b3b476c8d169ce215c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "da1d40004a5b2301807ea2f00862368e29e4e7d7d1c381a9380e6da8c03d71b5"
+    },
+    "call_3a46185c5b7048afa9fabe198d59a93c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2b9ad756e52e44c629fa16f8756a08e05cb75aef143830657472f66877604be4"
+    },
+    "call_d8289a2029034844961ebe89bc7d4abe": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1e50bf2b8fbeb2577439d8ee5132a03709de61a1112a9145b86329fb2863c4b6"
+    },
+    "call_3572c2f91aa24ee29c2ddbedced7d915": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f5722008ab3f3e5ea02788f4faaa678d89902b803fc739c3f3355c04f94a3005"
+    },
+    "call_a51962a8afed4f1b84beb3a337816b36": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b124ceb2d598902e5a084fc06c1b378be1dfb6a3",
+        "query": "sampler import",
+        "limit": 100
+      },
+      "result_sha256": "160f9791a292813c204117a4c90cca107de8e85815805d7a0d61f3e126fbb8f6"
+    },
+    "call_03dbc4f2120c4c1585185cd22b9a2305": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "f=[max(0,min(1,1-(10-i-4)/4)) for i in range(10)]; out=[2*(1-x)+x for x in f]; assert out==[2,2,2,1.75,1.5,1.25,1,1,1,1]; print({'decay_logits':out,'blocks_256000':(256000+4095)//4096,'shared_bytes_rep':4096*4,'shared_bytes_presfreq':2*4096*4,'default_sustain':int(10e7)})"
+        ]
+      },
+      "result_sha256": "171a60c1cc5bb1f88819e2b37940b2984f8b2b6453e646cfec3aeb7beb8d2e88"
+    }
+  }
+}

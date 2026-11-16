@@ -1,0 +1,146 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The new FP32 intermediate option is not supported end-to-end by GatedMLP.forward.",
+  "trigger": "Construct GatedMLP with interm_dtype=torch.float32 and run forward with otherwise valid FP16 inputs.",
+  "expected_behavior": "Gate/up outputs should be activated and consumed by the down projection with a compatible dtype, or the unsupported setting should be rejected before computation.",
+  "actual_behavior": "Gate and up projections allocate FP32 outputs. silu_mul and gelu_mul perform no dtype checks and reinterpret their buffers as half pointers. Their kernel processes numel/2 half2 values, not numel FP32 values. The tensor remains tagged FP32 afterward. A dense down projection then fails hgemm's FP16 input check; an EXL3 down projection first performs a supported float Hadamard but subsequently fails the same FP16-input requirement in either GEMM route. No shipped model constructor enables interm_dtype, so this concerns the new opt-in setting rather than every model workflow.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Traced gate/up dtype propagation, activation pointer casts, down projection forwarding and both GEMM input checks; inspected all model GatedMLP construction sites located by the parent-tree search.",
+      "evidence": [
+        "call_13eb6635fde84fd19b6ad2cec9ff06ad",
+        "call_ff68f6a124b0488eb9dc569d2c81d60b",
+        "call_82216054571e4367893b3e0c1cd438b0",
+        "call_73f3ee3c7f08478c90a284078b93d9ce"
+      ],
+      "limits": "No native execution; external callers were not enumerated."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Computed activation write coverage for 128 FP32 elements: the half2 loop writes 256 bytes of a 512-byte tensor.",
+      "evidence": [
+        "call_0842549a05094f8daeae42df3bc215da",
+        "call_ff68f6a124b0488eb9dc569d2c81d60b"
+      ],
+      "limits": "Byte-count arithmetic only, not a CUDA execution or numerical simulation."
+    }
+  ],
+  "defect_id": "exllamav3-fp32-mlp-intermediate-contract",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "run": ".teacher/runs/commit-000071-002",
+      "local_id": "fp32-mlp-intermediate-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "fp32-mlp-intermediate-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new FP32 intermediate option is not supported end-to-end by GatedMLP.forward.",
+        "trigger": "Construct GatedMLP with interm_dtype=torch.float32 and run forward with otherwise valid FP16 inputs.",
+        "expected_behavior": "Gate/up outputs should be activated and consumed by the down projection with a compatible dtype, or the unsupported setting should be rejected before computation.",
+        "actual_behavior": "Gate and up projections allocate FP32 outputs. silu_mul and gelu_mul perform no dtype checks and reinterpret their buffers as half pointers. Their kernel processes numel/2 half2 values, not numel FP32 values. The tensor remains tagged FP32 afterward. A dense down projection then fails hgemm's FP16 input check; an EXL3 down projection first performs a supported float Hadamard but subsequently fails the same FP16-input requirement in either GEMM route. No shipped model constructor enables interm_dtype, so this concerns the new opt-in setting rather than every model workflow.",
+        "locations": [
+          {
+            "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.forward"
+          },
+          {
+            "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "act_mul_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_13eb6635fde84fd19b6ad2cec9ff06ad",
+          "call_ff68f6a124b0488eb9dc569d2c81d60b",
+          "call_82216054571e4367893b3e0c1cd438b0",
+          "call_73f3ee3c7f08478c90a284078b93d9ce"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced gate/up dtype propagation, activation pointer casts, down projection forwarding and both GEMM input checks; inspected all model GatedMLP construction sites located by the parent-tree search.",
+            "evidence": [
+              "call_13eb6635fde84fd19b6ad2cec9ff06ad",
+              "call_ff68f6a124b0488eb9dc569d2c81d60b",
+              "call_82216054571e4367893b3e0c1cd438b0",
+              "call_73f3ee3c7f08478c90a284078b93d9ce"
+            ],
+            "limits": "No native execution; external callers were not enumerated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed activation write coverage for 128 FP32 elements: the half2 loop writes 256 bytes of a 512-byte tensor.",
+            "evidence": [
+              "call_0842549a05094f8daeae42df3bc215da",
+              "call_ff68f6a124b0488eb9dc569d2c81d60b"
+            ],
+            "limits": "Byte-count arithmetic only, not a CUDA execution or numerical simulation."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000071-002__draft.json",
+      "sha256": "604ba79ccc53c0cdf08e96efaa6302d42bdb9252d2c1216da5b4fb3177bed060"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000071-002.md",
+      "sha256": "5ad9bfdfaeec6003368657487476d692bba986e1ba59c96d820a68a447fe559b"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000071-002/draft.json",
+      "source_id": ".teacher/runs/commit-000071-002/draft.json",
+      "content_sha256": "604ba79ccc53c0cdf08e96efaa6302d42bdb9252d2c1216da5b4fb3177bed060",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000071-002.md",
+      "source_id": "reviews/verdicts/commit-000071-002.md",
+      "content_sha256": "5ad9bfdfaeec6003368657487476d692bba986e1ba59c96d820a68a447fe559b",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "available_at": "2025-04-18T02:48:28+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "e9a3b6a9256fc59f888b80a7d4a58883954b39de"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "Opt-in intermediate dtype; no shipped constructor sets this option at 71. Source-only suspected."
+  ]
+}

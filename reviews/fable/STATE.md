@@ -700,3 +700,136 @@ identity and push through `gh` as described near the top of this file. Uncommitt
 - 205 approved (001, guidance 9, 24 calls; both findings true; missed: count_inf_nan strides, unused termplotlib import, -hb<4 reaches 198 zero-bin). **206 is next.** Guidance-9 calls so far: 29, 31, 12, 12, 29, 24.
 - 206 approved (001, guidance 9, 20 calls, no findings). **207 is next.** Guidance-9 calls so far: 29, 31, 12, 12, 29, 24, 20.
 - 207 approved (001, guidance 9, 13 calls; fixes 200's tensor-truth finding). **208 is next.** Guidance-9 calls so far: 29, 31, 12, 12, 29, 24, 20, 13. Cost/effect report for 9 is due to the user about now.
+- **Committed and pushed at the user's request:** `39357a9` "Walk through commit 207 ..." (everything through 207, guidance-9 adoption, guidance-10 trial runs force-added; 208's in-progress files left out). Uncommitted after it: this line and 208 onward.
+- **User decided "Yes, clear it now"** (ledger backlog): `reviews/verdicts/ledger-backlog.decision.md`. Astra told:
+  finish 208, then no 209 until `reviews/requests/ledger-backlog-001.md` is filed and accepted. My 208 verdict's
+  "Next" must say "do not start 209". Check each record against its verdict; afterwards the standing rule is
+  ledger items with the next commit's request.
+- 208 approved (001, merge of PR 45, guidance 9, 15 calls). **Next: ledger-backlog-001 request, then 209.** Guidance-9 calls so far: 29, 31, 12, 12, 29, 24, 20, 13, 15.
+- **ledger-backlog-001 accepted** (100 records, 63 identities + 37 revisions, 214 total; three holds: budget-boundary,
+  71 packed-scale, reviewer_observation validator). Correction owed with 209: `layernorm-reference-shape`
+  introduction is `f45eb4ce`. **Standing rule:** each commit's ledger items arrive with the next commit's request;
+  check them there. **209 is next.** The user is asleep; continue normally, no commit/push.
+- 209 approved (001, guidance 9, 36 calls; split-tuple finding true, upstream fix `f02c9afd` later; layernorm r002 accepted). **210 is next**; expect 209's two ledger items with it. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36.
+- 210 approved (001, guidance 9, 9 calls): **first paragraph-E case in the walk and it worked** (zeros->empty; partial-width finding filed, not left under limits). Report this to the user. Both 209 ledger items accepted. **211 is next**; expect the reconstruction-width identity with it. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9.
+- 211 approved (001, guidance 9, 35 calls; strategy-input-validation true; budget-boundary still held). reconstruction-width r001 accepted. **212 is next.** Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35.
+- 212 approved (001, version bump, guidance 9, 8 calls, no findings). strategy-input-validation r001 accepted. **213 is next**, no ledger items owed from 212. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8.
+- 213 approved (001, MiMo architecture, guidance 9, 25 calls, no findings; manual recovery after architecture trigger accepted; pins verified by my own HF query). Reviewer knowledge: Q/K/V biases present, 16 unused mtp tensors. **214 is next**, no ledger items owed. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25.
+- 214 reference-access request **resolved by me** under decision 98 point 5 (medgemma-4b-it: not inspected at the pin; declares Gemma3ForConditionalGeneration). **Tell the user** (they can overrule). At 214's review: check the five-model bundle, reuse of 164 proofs, the two gemma-3n absences, and that the request names medgemma-4b-it.
+- 214 approved (001, Gemma3ForCausalLM, guidance 9, 19 calls, no findings; five-model bundle and discovery 003 checked). **215 is next**, no ledger items owed. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19. Pattern: at 213 and 214 the teacher did not read tensor headers that were in the packet.
+- 215 approved (001, tensor-key kludge, guidance 9, 11 calls; collision finding true; missed: renamed key is written into converted Gemma3 models via get_additional_compiled_tensors). **216 is next**; expect header-name-collision ledger item. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11.
+- 216 approved (001, indexed embeddings, guidance 9, 23 calls; draft-prefill finding true; missed: out_dtype falls back to the ID dtype when both are None, latent). header-name-collision r001 accepted. **217 is next**; expect the draft-prefill ledger item. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23.
+- 217 approved (001, autosplit shape hook, guidance 9, 11 calls, no findings). draft-prefill r001 accepted. **218 is next**, no ledger items owed. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11.
+- 218 approved (001, transposed_load flag, guidance 9, 19 calls, no findings). **Watch:** first caller with transposed_load=False — check export round-trip (get_tensors always writes weight.T). **219 is next**, no ledger items owed. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19.
+- 219 approved (001, MLP pad_to, guidance 9, 11 calls; ignored-activation finding true). **220 is next**; expect the ignored-activation ledger item. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19, 11.
+- 220 approved (001, type hints, guidance 9, 7 calls, no findings). mlp-ignored-activation r001 accepted. **221 is next**, no ledger items owed. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19, 11, 7.
+- 221 approved (001, Conv module, guidance 9, 17 calls; output-dtype-unused finding true). **222 is next**; expect conv-output-dtype-unused ledger item. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19, 11, 7, 17.
+- 222 approved (001, PosEmbedding module, guidance 9, 9 calls, no findings). conv-output-dtype-unused r001 accepted. **223 is next**, no ledger items owed. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19, 11, 7, 17, 9.
+- 223 approved (001, MLP activation switch, guidance 9, 8 calls; fixes 219's ignored-activation; new unsupported-activation finding true). **224 is next**; expect two ledger items. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19, 11, 7, 17, 9, 8.
+- 224 approved (001, vision helpers + pillow, guidance 9, 12 calls, no findings; missed: pillow in requirements.txt but not setup.py). Both 223 ledger items accepted. **225 is next**; expect the reviewer-observation Pillow record. Guidance-9 calls: 29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19, 11, 7, 17, 9, 8, 12.
+- 225 approved (001, Gemma3 vision model, guidance 9, 31 calls, no findings). Reviewer finding: (height,width) passed where PIL wants (width,height), hidden by square 896. Tensor layout confirmed from 164 headers; 218 follow-up resolved as latent. **Third architecture entry in a row (213, 214, 225) that left tensor headers unread: raise with the user as a possible guidance item.** **226 is next**; expect the width/height record. Guidance-9 calls: ...8, 12, 31.
+- 226 approved (001, multimodal example, guidance 9, 12 calls, no findings; two binary PNG sections unread, acceptable). width/height record accepted. **227 is next**, no ledger items owed. Guidance-9 calls: ...31, 12.
+- 227 (mechanical, sampled, 7 calls) reviewed and agreed; 228 approved (001, comment fixes, guidance 9, 11 calls; doc finding true). **229 is next**; expect async-job-doc-reference ledger item. Guidance-9 calls: ...12, 7, 11.
+- 229 approved (001, example fix, guidance 9, 6 calls, no findings). async-job-doc-reference r001 accepted. **230 is next**, no ledger items owed. Guidance-9 calls: ...7, 11, 6.
+- 230 approved (001, RoPE angle tables, guidance 9, 24 calls; table-row-bounds true, two 185 identities carried). **231 is next**; expect one new identity and two observation revisions. Guidance-9 calls: ...11, 6, 24.
+- 231 approved (001, image size helper, guidance 9, 7 calls; float-ceiling overflow finding true, reproduced: 2,497 of 90,000, all rounding artefacts). Three 230 ledger items accepted. **232 is next**; expect the overflow ledger item. Guidance-9 calls: ...6, 24, 7.
+- 232 approved (001, GatedMLP pad_to, guidance 9, 16 calls; odd-tail finding true: teacher connected a new option to an old recorded defect by itself). Pre-run fetch failure + one retry accepted; **standing rule: one retry of a pre-run fetch failure without a request, reported; second needs a request.** vision overflow r001 accepted. **233 is next**; expect the odd-tail identity. Guidance-9 calls: ...24, 7, 16.
+- 233 approved (001, MLP out_size, guidance 9, 14 calls; carried unsupported-activation only). activation-odd-tail r001 accepted. **234 is next**; optional observation revision owed. Guidance-9 calls: ...7, 16, 14.
+- 234 approved (001, Mistral3 text+vision, guidance 9, 35 calls; resize-overflow finding true). **Reviewer finding:** the 231 overflow makes 112 patches on a side against a 110-wide angle table: tall images read past the table (230's table-row-bounds reached from the ordinary path), wide ones alias the next row. Projector width hard-coded 5120 (= text width per headers). `has_tensor` without `.weight`. Evidence gap: preprocessor_config.json / processor_config.json exist at the pins but were not recovered; asked Astra for an implementation request (not blocking). Unverified recollection: reference processor replaces the last [IMG_BREAK] with [IMG_END]; this code emits both. Hindsight: `a7e667c3` relaxes the processor-type assertion. **Fourth architecture entry with headers unread (213, 214, 225, 234): raise guidance with the user.** **235 is next.** Guidance-9 calls: ...16, 14, 35.
+
+## HANDOFF 2026-11-16 evening: read this section first; it supersedes every "pending"/"Next"/"awaiting" line above
+
+**Where the walk is.** Approved for ancestor retrieval only: commits **2 to 235**, all first attempts since 196.
+Canonical and training stay false; never approve those. **236 is next and must not start until a reviewer
+session is watching**: my 235 verdict told Astra to record the approval and stop. When I left, the journal still
+said `awaiting_full_review 235` (Astra had the verdict queued but had not yet recorded it): check
+`reports/teacher-walk-001.json` first. To resume, start the watch, then tell Astra with `codex queue` to
+proceed to 236. No request was pending and no watch was running when this was written.
+
+**Committed and pushed:** everything through 207 as `39357a9` on `main` (the user asked). **Uncommitted: 208 to
+235**, the ledger backlog batch, the guidance-9 adoption verdict, three decision files written this session and
+this file. Do not commit unless the user asks; I offered at the end of the session.
+
+**Only one reviewer session may run.** Check `list_sessions` for another running "Fable exdev" session first.
+The user keeps the Mac awake with `caffeinate -dims` in a terminal tab when running overnight.
+
+**Guidance.**
+- **Guidance 9 is the walk default** from 200 (user: "Adopt version 9"; `guidance-9-adoption.decision.md`,
+  accepted in `guidance-9-adoption-001.md`). Version 10 was trialled and not adopted
+  (`guidance-10-trial-001.md`).
+- **User decided to add tensor-header guidance** ("yeah it looks like we do need to tell them to check the tensor
+  headers though"): `reviews/verdicts/guidance-11-trial.decision.md`. It holds my **proposed** paragraph F (the
+  user has not seen the wording), the trial design (targets 213, 214, 225, 234; controls 229, 231) and the pass
+  criteria. **Next step: tell Astra to file `guidance-11-implementation-001`** (version 11 = guidance-9 text +
+  F; it needs its own branch because `>= 10` currently substitutes the revised E). Then the trial, my
+  assessment, and the user's adoption decision. Show the user the wording of F.
+- Effect of 9 so far (reported to the user): at **210** (zero fill removed) the teacher did what E asks and filed
+  the partial-width finding; at **232** it connected a new option to the root entry's odd-tail note by itself.
+  No false finding on any commit where E did not apply.
+
+**Figures (teacher tool calls).** Guidance 8, 178 to 199: 8 to 45, mean 18.0. Guidance 9, 200 to 235:
+29, 31, 12, 12, 29, 24, 20, 13, 15, 36, 9, 35, 8, 25, 19, 11, 23, 11, 19, 11, 7, 17, 9, 8, 12, 31, 12, 7, 11, 6,
+24, 7, 16, 14, 35, 11; mean 17.2 over 36 commits. The commit mix differs (many small ones lately), so this is not
+a clean comparison; the interim figure I gave the user after eight commits was 21.3.
+
+**Standing rules added this session.**
+- **Ledger** (user: "Yes, clear it now"; `ledger-backlog.decision.md`, batch accepted in
+  `ledger-backlog-001.md`): each commit's ledger items are filed with the **next** commit's request; check them
+  there (intro and fix positions at or before the walk position, supersedes chain, eligibility flags false,
+  hashes). Three holds stand: budget-boundary identity (`+1` qualification), the 71 packed-scale candidate, and
+  validator support for `reviewer_observation` (reviewer-origin records fail the schema's origin check; this is
+  disclosed each time and is not a defect of the record).
+- **Pre-run fetch failure** (232): one retry without a request is fine if reported; a second failure needs a
+  request. Citation-validation failures keep the 196 rule.
+- **Reference discovery** (`commit-000214-reference-access-001.md`, my ruling under decision 98 point 5, user
+  told): a gated repository created before the cutoff whose public metadata declares another architecture is
+  recorded "not inspected at the pin; current public metadata declares …", not as proved or absent.
+- **Sampled mechanical runs** (first at 227): review them in the same verdict as the full-review commit they
+  arrive with; run `check.py` and a replay on the sample by hand.
+- New-architecture commits stop Astra's cycle at `architecture_trigger`; Astra recovers references by hand and
+  runs a short supervisor script. Check the pins yourself against the Hugging Face commits API, read the
+  bundle's configs and **tensor headers** yourself, and check nothing about unresolved repositories is in the
+  packet.
+
+**Owed.**
+- To the user: nothing blocking. Open offers: commit and push 208 to 235; the wording of paragraph F.
+- From Astra: the implementation request for reference recovery to gather `preprocessor_config.json` and
+  `processor_config.json` (missing at 225 and 234 although present at the pins; say whether to backfill, never
+  re-authoring approved entries). No ledger items are owed from 235.
+
+**Things I am watching for (hindsight and reviewer knowledge; never to a teacher).**
+- **234 chain:** the 231 size overflow gives 112 patches on a side against a 110-wide angle table. Tall images
+  read past the table (230's table-row-bounds), wide ones alias the next row. Ledger has the reviewer
+  observation. Watch for an upstream clamp or table fix.
+- 234: projector middle width hard-coded 5120 (text width per headers); `has_tensor(prefix + "lm_head")` lacks
+  `.weight`; unverified recollection that the reference processor replaces the last `[IMG_BREAK]` with
+  `[IMG_END]` where this code emits both; `a7e667c3` (2025-06-19) later accepts `PixtralImageProcessor` too.
+  Each Mistral Small 3.1 repository also holds `consolidated.safetensors` with a second, differently named copy
+  of all weights, which the loader indexes.
+- 225: `(height, width)` passed where PIL wants `(width, height)`, hidden by the square 896 size. 218: export of a
+  `transposed_load = False` layer through `get_tensors` would transpose it; not reachable in normal conversion.
+- 224: Pillow in `requirements.txt` but not `setup.py`. 216: `out_dtype` falls back to the ID dtype when both are
+  unset (latent). 215: the renamed projector key is written into converted Gemma 3 models.
+- Upstream fixes already seen in later history, not yet reached by the walk: `f02c9afd` (2025-06-08) wraps the
+  209 split in `list(...)`; `402ab56b` (2025-10-05) removes the 197 defrag recursion (#78); the 197 draft-cache
+  relocation and the cache-rotate block rounding are fixed by the tip.
+- Earlier items still open from the previous handoff: 185's two native findings (now with 230 observations),
+  183 `k.float()`, 176 two multipliers, 186 multi-GEMM zero grid, 184 fused output dtype and aliasing, 174 FP8,
+  192/193 pre-sampler probabilities.
+
+**Patterns to keep reporting.**
+- Architecture entries leave bound tensor headers unread (213, 214, 225, 234): the reason for paragraph F.
+- A new caller or option reaching an already recorded defect: missed at 197 and 205, partly at 234, caught at
+  232. If it keeps being missed, consider guidance after F.
+
+**Lessons from this session.**
+- For a non-commit request (`ledger-backlog-001`, `…reference-access-001`, `guidance-…`) `review.sh` prints
+  errors and a bogus diff stat; read the request by hand and check its hash list with the backtick-aware `sed`.
+- A request's hash list is checked with
+  `grep -E '^- .*: \`' F | sed -E 's/^- \`?([^\`]*)\`?: \`(.*)\`/\2  \1/' | sha256sum -c`.
+- When the bundle lacks a file the commit's code requires, fetch it yourself at the pinned revision from the
+  official repository and record it as reviewer knowledge; then ask for the recovery tool to gather it.
+- Recompute teachers' numeric sweeps; with exact rational arithmetic you can tell a rounding artefact from a
+  design error (231).
+- The user wants plain one-line start and finish notes per review and decides quickly when asked one clear
+  question with a recommendation.

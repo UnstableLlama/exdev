@@ -1,0 +1,308 @@
+{
+  "schema_version": 5,
+  "sha": "30c7386b7c6a8f6899729975ef5da13cbf7b34f3",
+  "parent_shas": [
+    "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594"
+  ],
+  "cutoff_date": "2025-05-24T02:08:29+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Routing previously computed softmax over every expert, selected top-k probabilities, then renormalized the selected weights.",
+        "basis": "source",
+        "evidence": [
+          "call_04ac0a65709e44baa5bc8705fe29086d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "For finite logits in exact arithmetic, softmax preserves ordering and its full-expert denominator cancels during selected-weight renormalization. Selecting logits first therefore permits a single softmax over only the selected experts.",
+        "basis": "inference",
+        "evidence": [
+          "call_04ac0a65709e44baa5bc8705fe29086d",
+          "call_ee915d7244324f1eb23cf3289b2219e5"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change removes explicit selected-weight summation and division, and reduces softmax width from the expert count to the selected count during ordinary routing. Expert evaluation and output accumulation remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_04ac0a65709e44baa5bc8705fe29086d",
+          "call_472645478ab74da5af32537480179a01"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The introducing entry 6fc153d7 describes routed expert execution, single-token EXL3 fusion, and all-expert calibration; it also records the conditional fused-buffer cardinality mismatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ddbfe4db2ca94acca688f690d2fc0607"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d discusses decoder multipliers; issue #33, \u201cError converting model,\u201d reports file-opening failure; issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports Cholesky failure. Their inferred relevance is only shared conversion-file context, not evidence motivating this routing optimization.",
+        "basis": "inference",
+        "evidence": [
+          "call_62080a2bda474707a8eb6977bbdce3bd",
+          "call_890482559b3744799268fdc9e0e09f5b",
+          "call_c8e12ad3b7774aad9cb46614d7231fdb",
+          "call_04ac0a65709e44baa5bc8705fe29086d"
+        ]
+      }
+    ],
+    "limitations": [
+      "No GPU execution or latency measurement was performed. The scalar check uses Python double precision, not the router's FP16 tensor arithmetic.",
+      "Exact-arithmetic equivalence does not establish bitwise equality, identical tie handling after rounding, or behavior for nonfinite logits."
+    ],
+    "links": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "block-sparse-mlp",
+        "title": "Normalize only selected routing logits",
+        "claims": [
+          {
+            "text": "BlockSparseMLP.forward now passes router_logits directly to torch.topk and applies torch.softmax to its returned values along the expert dimension. The two edits work together: removing the full softmax without changing normalization would incorrectly normalize raw logits by their sum.",
+            "basis": "source",
+            "evidence": [
+              "call_04ac0a65709e44baa5bc8705fe29086d"
+            ]
+          },
+          {
+            "text": "The selected count remains num_experts_per_tok, or num_experts when activate_all_experts is true. Ordinary execution multiplies expert outputs by routing_weights before index_add_; fused execution supplies those weights to the down-projection multi-GEMM and sums its expert outputs. Neither consumer changes.",
+            "basis": "source",
+            "evidence": [
+              "call_472645478ab74da5af32537480179a01",
+              "call_04ac0a65709e44baa5bc8705fe29086d"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription compared both normalization formulas on 900 finite-logit cases with 2, 8 and 64 experts and several selected counts. Maximum absolute weight difference was 2.220446049250313e-16; this checks the algebra numerically, not repository or CUDA execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_ee915d7244324f1eb23cf3289b2219e5"
+            ]
+          },
+          {
+            "text": "The inherited all-expert fused-path mismatch is carried over: the diff changes normalization but neither the fused-path guard nor buffers sized by num_experts_per_tok.",
+            "basis": "source",
+            "evidence": [
+              "call_472645478ab74da5af32537480179a01",
+              "call_04ac0a65709e44baa5bc8705fe29086d",
+              "call_732af8b9404740cb8d76bac49561d41c"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-all-expert-fused-shape",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "All-expert routing still conflicts with fixed selected-expert fused buffers.",
+        "trigger": "One flattened token, fully EXL3 expert projections, activate_all_experts=True, and num_experts != num_experts_per_tok.",
+        "expected_behavior": "Evaluate all experts or use the ordinary path supporting that cardinality.",
+        "actual_behavior": "The first fused multi-GEMM receives num_experts indices but an output with num_experts_per_tok expert slots, violating its shape check. Inspected direct MLP callers in TransformerBlock and ParallelDecoderBlock forward params unchanged. Conversion supplies the flag during unquantized calibration; that does not establish that normal conversion reaches this fully quantized trigger.",
+        "locations": [
+          {
+            "commit": "30c7386b7c6a8f6899729975ef5da13cbf7b34f3",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_472645478ab74da5af32537480179a01",
+          "call_04ac0a65709e44baa5bc8705fe29086d",
+          "call_732af8b9404740cb8d76bac49561d41c",
+          "call_3090db4763f84af1a199300265150945",
+          "call_777927f40766494195a67aa717c91dab",
+          "call_f13c8d2377c64d049e0c02e9ae264e6f",
+          "call_a9df4390e0cc478d8e8d54d5d4cb9c6a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared unchanged fused allocations and routing cardinality against the native index/output shape check, then inspected decoder forwarding and calibration flag construction.",
+            "evidence": [
+              "call_472645478ab74da5af32537480179a01",
+              "call_732af8b9404740cb8d76bac49561d41c",
+              "call_777927f40766494195a67aa717c91dab",
+              "call_a9df4390e0cc478d8e8d54d5d4cb9c6a"
+            ],
+            "limits": "Conditional source-level observation; no end-to-end or GPU reproduction."
+          }
+        ]
+      }
+    ],
+    "summary": "Moves expert selection before softmax, eliminating redundant normalization while preserving exact-arithmetic routing weights; GPU speed and FP16 equivalence remain unmeasured."
+  },
+  "evidence": {
+    "call_04ac0a65709e44baa5bc8705fe29086d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "30c7386b7c6a8f6899729975ef5da13cbf7b34f3",
+        "offset": 168,
+        "max_bytes": 924
+      },
+      "result_sha256": "a1032fb46ed36f503ce5088c93fa544483b0c9f7f0d82fda8a477ade8c9d02e9"
+    },
+    "call_472645478ab74da5af32537480179a01": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "763d87db0eb6416b6363b1525e8c10dff386508276008b88d8b54e40920e47ba"
+    },
+    "call_3233459d3a03417a8e114c02489db365": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/block_sparse_mlp.py",
+        "limit": 10,
+        "max_bytes": 6000
+      },
+      "result_sha256": "8ded8a981079111d17edfa6644ec8cd2d89e240deadaa8527481555cf93a0dd4",
+      "catalog_only": true
+    },
+    "call_ddbfe4db2ca94acca688f690d2fc0607": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_3090db4763f84af1a199300265150945": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "query": "mlp.forward",
+        "limit": 100
+      },
+      "result_sha256": "f342a7cb4d6f15b0a6dbc961038906b44c7827c4eff16c715f88195f68a43d10"
+    },
+    "call_f13c8d2377c64d049e0c02e9ae264e6f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "query": "activate_all_expert",
+        "limit": 100
+      },
+      "result_sha256": "d2f60c1f4e4c3522077f5668c150922cba4531690ac6a7ce57e97d5770b0de75"
+    },
+    "call_777927f40766494195a67aa717c91dab": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "0d3dc93f963edab7063120909cbc2f61569139f0c140144e2dc827c7073b56db"
+    },
+    "call_a9df4390e0cc478d8e8d54d5d4cb9c6a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 11000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "2909aca738af304b58f9232a2e21f09a25913a6b13b83cb770b12ed6e48bc0e6"
+    },
+    "call_483695fe68d746fc8c69be71397661d6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "query": "idx.numel",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 20
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_489a0797a755474aab233fbe280331f7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "query": "void exl3_mgemm",
+        "limit": 20
+      },
+      "result_sha256": "0923cd2d263e211cc5fb02f2b8471de34d04ed55a7101c73fab33bc3f8b21e16"
+    },
+    "call_92fc9b8976ca4228a1d7e9aece82ea39": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "query": "exl3_mgemm(",
+        "limit": 30
+      },
+      "result_sha256": "fe30f4bdb999659dd81ac5ff7b28740d4f1fb2f43c473b116eeeaded2b3d6188"
+    },
+    "call_bea4163c26f3473883e81357d90c6962": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "query": "exl3_mgemm",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 30
+      },
+      "result_sha256": "b1cfc4532810d0e29640a633bbcedd2f282cedcead0777d76c9ea560dabf5757"
+    },
+    "call_732af8b9404740cb8d76bac49561d41c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 5000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "82a76a1f64b1c317bb3fe4abc1a1072274567be968808710827de3faeb6f3925"
+    },
+    "call_ee915d7244324f1eb23cf3289b2219e5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,random\nr=random.Random(0); err=0; n=0\nfor E in (2,8,64):\n for k in (1,E//2,E):\n  for _ in range(100):\n   z=[r.uniform(-20,20) for i in range(E)]; ix=sorted(range(E),key=lambda i:z[i],reverse=True)[:k]\n   a=[math.exp(v-max(z)) for v in z]; p=[v/sum(a) for v in a]; old=[p[i]/sum(p[j] for j in ix) for i in ix]\n   b=[math.exp(z[i]-max(z[j] for j in ix)) for i in ix]; new=[v/sum(b) for v in b]\n   err=max(err,max(abs(x-y) for x,y in zip(old,new))); n+=1\nprint({'cases':n,'max_abs_error':err,'all_expert_indices':8,'fused_output_experts':2})"
+        ]
+      },
+      "result_sha256": "82f7804016c9eb6afb310d0b210bbfb64392e42c59c767773f38bf60843675dc"
+    },
+    "call_62080a2bda474707a8eb6977bbdce3bd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d22dd66134c36d748ebe0aa46d1218c57f30971123a98e1581fa4ec0f887a916"
+    },
+    "call_890482559b3744799268fdc9e0e09f5b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 14000
+      },
+      "result_sha256": "85de4dc128c9d8489406fe0cfd7cfbd17472df89b9129b746396d847c824acac"
+    },
+    "call_c8e12ad3b7774aad9cb46614d7231fdb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c781b5693aa0e6e92b4c8ff326040736fd3c31cb09ab0e3614ab9abdc670b306"
+    }
+  }
+}

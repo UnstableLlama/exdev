@@ -1,0 +1,188 @@
+{
+  "origin": "authoring_observation",
+  "classification": "new_requirement",
+  "status": "suspected",
+  "description": "The advertised progress interfaces cover autosplit loading but silently omit explicit-device loading.",
+  "trigger": "Call load(device=..., callback=...) or iterate load_gen(device=...).",
+  "expected_behavior": "Receive callback or iterator progress for the selected loading mode.",
+  "actual_behavior": "The device branch calls unchanged _load_single(progressbar, device), which neither invokes the callback nor yields progress. Iterating load_gen still performs loading but produces no progress tuples.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Compared the unchanged explicit-device callee with the autosplit additions. Whole-tree caller search found explicit-device load calls in tests/generator_stresstest.py, whose inspected setup uses cuda:1 and optionally cuda:2 without callbacks. Those existing calls demonstrate branch use, not an existing notification failure; the omission affects callers adopting the new interfaces.",
+      "evidence": [
+        "call_8685f1405ae24244828e636045b28d7e",
+        "call_6846d67a48884d5293231998bc5885e8",
+        "call_74dd42bb83fb44e99939e5ed73e27378",
+        "call_95016320fa484754b1adc4026ad5f26f"
+      ],
+      "limits": "Source inspection only; external callers and dynamic invocation were not established."
+    }
+  ],
+  "defect_id": "exllamav3-single-device-progress",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+      "run": ".teacher/runs/commit-000076-001",
+      "local_id": "single-device-progress",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "single-device-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The advertised progress interfaces cover autosplit loading but silently omit explicit-device loading.",
+        "trigger": "Call load(device=..., callback=...) or iterate load_gen(device=...).",
+        "expected_behavior": "Receive callback or iterator progress for the selected loading mode.",
+        "actual_behavior": "The device branch calls unchanged _load_single(progressbar, device), which neither invokes the callback nor yields progress. Iterating load_gen still performs loading but produces no progress tuples.",
+        "locations": [
+          {
+            "commit": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.load_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_95016320fa484754b1adc4026ad5f26f",
+          "call_74dd42bb83fb44e99939e5ed73e27378"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unchanged explicit-device callee with the autosplit additions. Whole-tree caller search found explicit-device load calls in tests/generator_stresstest.py, whose inspected setup uses cuda:1 and optionally cuda:2 without callbacks. Those existing calls demonstrate branch use, not an existing notification failure; the omission affects callers adopting the new interfaces.",
+            "evidence": [
+              "call_8685f1405ae24244828e636045b28d7e",
+              "call_6846d67a48884d5293231998bc5885e8",
+              "call_74dd42bb83fb44e99939e5ed73e27378",
+              "call_95016320fa484754b1adc4026ad5f26f"
+            ],
+            "limits": "Source inspection only; external callers and dynamic invocation were not established."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+      "run": ".teacher/runs/commit-000099-001",
+      "local_id": "inherited-single-device-progress",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-single-device-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The previously recorded explicit-device progress omission is carried over unchanged.",
+        "trigger": "Use load_gen(device=...) expecting yielded progress, or load(device=..., callback=...) expecting callback notifications.",
+        "expected_behavior": "Receive loading progress through the requested interface.",
+        "actual_behavior": "The explicit-device branch calls _load_single, which only updates its progress bar. Loading can finish and reach the new cleanup without yielding progress or calling the callback.",
+        "locations": [
+          {
+            "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.load_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_69efe3c062e64b0a8ecbb710d2a99ead",
+          "call_6a7cbc55450c417b8a916d70448f83f5"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent explicit-device branch and _load_single with the task diff. Whole-tree load_gen search found Model.load and two loading-example callers; the examples use autosplit and exhaust their iterators. The omission reaches direct explicit-device iterator consumers and explicit-device callback users through Model.load, not the inspected example calls.",
+            "evidence": [
+              "call_02a57f63db2446d8ab9d122022aa6f1d",
+              "call_c949deb9b1bd46aba64f47bdd8690788",
+              "call_69efe3c062e64b0a8ecbb710d2a99ead",
+              "call_6a7cbc55450c417b8a916d70448f83f5"
+            ],
+            "limits": "No runtime reproduction; literal caller searches do not establish external or dynamically dispatched usage."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000076-001__draft.json",
+      "sha256": "b74b8cc9af1de262d33ac24250002cfdcbd36e8b81415b237e627b880bb86e85"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000076-001.md",
+      "sha256": "570c27fce971d8e48f6439fdbc65b4973ee2c01ec76ccbdd579bf6cca25c3248"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000099-001__draft.json",
+      "sha256": "f0b923b5fa591955873e296b1e84868e9be10028861022daaf09248c094612a8"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000099-001.md",
+      "sha256": "b42b6df0ce650090e06c0f80f3156eb7f2a7f301ebf9fa77eff8be133d0571c9"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000076-001/draft.json",
+      "source_id": ".teacher/runs/commit-000076-001/draft.json",
+      "content_sha256": "b74b8cc9af1de262d33ac24250002cfdcbd36e8b81415b237e627b880bb86e85",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000076-001.md",
+      "source_id": "reviews/verdicts/commit-000076-001.md",
+      "content_sha256": "570c27fce971d8e48f6439fdbc65b4973ee2c01ec76ccbdd579bf6cca25c3248",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000099-001/draft.json",
+      "source_id": ".teacher/runs/commit-000099-001/draft.json",
+      "content_sha256": "f0b923b5fa591955873e296b1e84868e9be10028861022daaf09248c094612a8",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000099-001.md",
+      "source_id": "reviews/verdicts/commit-000099-001.md",
+      "content_sha256": "b42b6df0ce650090e06c0f80f3156eb7f2a7f301ebf9fa77eff8be133d0571c9",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+      "available_at": "2025-04-22T22:55:48+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+      "available_at": "2025-04-27T18:54:09+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "448815bc1cf7b17e714a52fe6f70bcb53da48147",
+      "6c15b8c40f0d28807006ad65d2c9e31382a352b4"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-16T10:45:56.349385+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "76 reviewer: new interface incomplete on one branch, not a regression of previously working behavior."
+  ]
+}

@@ -1,0 +1,314 @@
+{
+  "schema_version": 5,
+  "sha": "3637103e2ff4a736544774606ddc964fc4f71362",
+  "parent_shas": [
+    "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628"
+  ],
+  "cutoff_date": "2025-06-03T03:07:57+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "GatedMLP previously inherited Linear's fixed default padding to multiples of 128, without exposing the padding control already available on ordinary MLP.",
+        "basis": "source",
+        "evidence": [
+          "call_e8cdd3658bf4405aaf61895a0bda049f",
+          "call_e091bd97b55640bcbbb2a7d126b415d4"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change appends pad_to=128 to GatedMLP's constructor and passes it to every gate, up and down projection. Applying the same setting to all three preserves agreement between the gated intermediate width and the down projection's input width.",
+        "basis": "source",
+        "evidence": [
+          "call_bd6fe2c3517449a994c9c3fb7d385669",
+          "call_e8cdd3658bf4405aaf61895a0bda049f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Callers can request unpadded dimensions with pad_to=1; existing callers retain 128-element alignment. This changes dimension preparation, not the activation or matrix-multiplication implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_bd6fe2c3517449a994c9c3fb7d385669",
+          "call_e091bd97b55640bcbbb2a7d126b415d4",
+          "call_c60c91d9d924471eb93be1574d4b98c9"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial implementation's modules entry was read. It describes the gate/up activation-multiply pipeline and records that native activation kernels process half2 pairs without an odd-element tail. Inspection of the parent kernel and task diff shows that limitation is carried over, while disabling padding exposes it to odd-sized intermediates.",
+        "basis": "source",
+        "evidence": [
+          "call_9ea15bef772842f584d3b3945ac891c5",
+          "call_a8f589daa7364e07b185c9d2de5c4d36",
+          "call_bd6fe2c3517449a994c9c3fb7d385669"
+        ]
+      },
+      {
+        "text": "Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports a sliced-weight loading mismatch; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concern conversion numerical failures. Their relevance here is inferred only from shared GatedMLP/Linear paths. None establishes that this padding-parameter change fixes its reported failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_b1a18c3c89a349aaa836cf5f9200155c",
+          "call_5df0adec043d4b8ca5b84d05f092c2f8",
+          "call_94b37018724d44e782719bd7ddc65646",
+          "call_bd6fe2c3517449a994c9c3fb7d385669"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model, PyTorch projection or CUDA kernel was executed. The bounded computation models integer dimension rounding and kernel coverage only.",
+      "The new parameter does not establish arbitrary unpadded EXL3 compatibility or validate all padding values. Quantized backend constraints were not evaluated."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Controlling GatedMLP projection padding",
+        "claims": [
+          {
+            "text": "Linear rounds each input and output dimension using (dimension + pad_to - 1) // pad_to * pad_to. Thus 128 is an alignment quantum, not a token threshold; 1 disables rounding. Gate/up retain their input-padding assertion, while down retains allow_input_padding=True. The change supplies a configurable quantum rather than removing those checks.",
+            "basis": "source",
+            "evidence": [
+              "call_e091bd97b55640bcbbb2a7d126b415d4",
+              "call_bd6fe2c3517449a994c9c3fb7d385669"
+            ]
+          },
+          {
+            "text": "The FP16 path uses the resolved dimensions for weight loading and output allocation. GatedMLP still computes down(activation(gate(x)) * up(x)), overwrites the up result with the gated product and sums slice outputs. Its slicing calculation still aligns ordinary slices to 128 independently of pad_to, and its prohibition on combining fused gate/up weights with slicing remains unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_e091bd97b55640bcbbb2a7d126b415d4",
+              "call_c60c91d9d924471eb93be1574d4b98c9",
+              "call_e8cdd3658bf4405aaf61895a0bda049f",
+              "call_bd6fe2c3517449a994c9c3fb7d385669"
+            ]
+          },
+          {
+            "text": "Whole-tree GatedMLP search and inspection found constructors in Cohere, Cohere2, DeciLM, Gemma2, Gemma3, GLM4, Llama, Phi3 and Qwen3. Each uses named arguments and omits pad_to, so each retains the old default. No subclass appeared in that search. TransformerBlock and ParallelDecoderBlock consume the existing forward result and projection lists without a changed interface.",
+            "basis": "source",
+            "evidence": [
+              "call_0753846c3ea744b5bcd9f01a47672c7e",
+              "call_3bf4e3122909424180de4e8d34977e82",
+              "call_83e4f29976614c9b82d8515b88407a6b"
+            ]
+          },
+          {
+            "text": "A scalar check with hidden width 128 and intermediate width 129 produced intermediate widths 256 under pad_to=128 and 129 under pad_to=1. Modeling the native pairwise activation indexing covered only 128 of 129 elements, leaving index 128 untouched.",
+            "basis": "execution",
+            "evidence": [
+              "call_94a9fc138a214c3aa25a88cb709dee16"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unpadded-odd-activation-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Disabling padding can expose the inherited activation kernel's missing odd-element tail.",
+        "trigger": "A direct GatedMLP caller selects pad_to=1 and runs FP16 projections with an odd total intermediate element count, for example one token, hidden_size=128 and intermediate_size=129.",
+        "expected_behavior": "Every intermediate element becomes activation(gate) multiplied by up before the down projection.",
+        "actual_behavior": "act_mul_kernel processes only numel // 2 half2 pairs. With 129 elements, the last up element remains ungated and is consumed by down. No even-element guard is added. The inspected model constructors retain padding, so this observation concerns opt-in callers rather than all existing model workflows.",
+        "locations": [
+          {
+            "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.__init__"
+          },
+          {
+            "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "act_mul_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_bd6fe2c3517449a994c9c3fb7d385669",
+          "call_e8cdd3658bf4405aaf61895a0bda049f",
+          "call_a8f589daa7364e07b185c9d2de5c4d36",
+          "call_0753846c3ea744b5bcd9f01a47672c7e",
+          "call_3bf4e3122909424180de4e8d34977e82"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced configurable dimensions through LinearFP16 output allocation to GatedMLP's in-place activation call and subsequent down projection.",
+            "evidence": [
+              "call_e091bd97b55640bcbbb2a7d126b415d4",
+              "call_c60c91d9d924471eb93be1574d4b98c9",
+              "call_e8cdd3658bf4405aaf61895a0bda049f",
+              "call_a8f589daa7364e07b185c9d2de5c4d36"
+            ],
+            "limits": "No GPU execution or loaded checkpoint."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated the kernel's pairwise coverage for 129 elements; index 128 was not written.",
+            "evidence": [
+              "call_94a9fc138a214c3aa25a88cb709dee16"
+            ],
+            "limits": "Integer indexing model only; does not execute CUDA or reproduce FP16 arithmetic."
+          }
+        ]
+      }
+    ],
+    "summary": "Exposes GatedMLP padding control while preserving existing defaults; unpadded odd-sized intermediates expose an inherited activation-tail limitation."
+  },
+  "evidence": {
+    "call_bd6fe2c3517449a994c9c3fb7d385669": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "offset": 171,
+        "max_bytes": 1521
+      },
+      "result_sha256": "107be87565f6db360fa07344eadfe97934d56246c15ab4b42255c4cd72f6a656"
+    },
+    "call_e091bd97b55640bcbbb2a7d126b415d4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "5d50fc353093ebd2afc8c8afc837c22062eee143acd0eec4c34c7783879f27f5"
+    },
+    "call_e8cdd3658bf4405aaf61895a0bda049f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "c57889c572194ab1edf7f85571a21829fbe3279dbe836c8e676622fd87e9d2bb"
+    },
+    "call_0753846c3ea744b5bcd9f01a47672c7e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "query": "GatedMLP",
+        "limit": 100
+      },
+      "result_sha256": "dcd4547f41cabc594556a99f11380609e1887f47d0493272fd82de042c44bafb"
+    },
+    "call_9ea15bef772842f584d3b3945ac891c5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_3bf4e3122909424180de4e8d34977e82": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor p in Path('.').rglob('*.py'):\n s=p.read_text()\n if 'GatedMLP(' in s and p.name!='mlp.py':\n  lines=s.splitlines()\n  for i,l in enumerate(lines):\n   if 'GatedMLP(' in l: print(str(p), '\\n'+'\\n'.join(lines[i:i+22]))\n"
+        ]
+      },
+      "result_sha256": "1d0c8220ce54b248ac5831bb1dd325da435f1f6f2fb8e73981a027db5f52dff2"
+    },
+    "call_c46958f28da44392ac1203afe1c1d814": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "query": "silu_mul",
+        "limit": 40
+      },
+      "result_sha256": "acb1e3ae95e00072bf804a2d79bf48d572a9e26cb3e3bbdc36fe1c6a3175de8b"
+    },
+    "call_a8f589daa7364e07b185c9d2de5c4d36": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "path": "exllamav3/exllamav3_ext/activation.cu",
+        "max_bytes": 12000
+      },
+      "result_sha256": "bbc0d16681538d36597e8ac8ed30935b66aec5633a1d3ab8055df95423a2a9fa"
+    },
+    "call_b1a18c3c89a349aaa836cf5f9200155c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "78cc298d7de0cd35d7df2145b7ad0b866d90bbd0aab89e5275961eb864699c36"
+    },
+    "call_cb642928ef3c4a9f829dc41b71742969": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "path": "exllamav3/modules/quant/linear_fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_f3e1a3feadcf45499e1120db80bfd3be": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "path": "exllamav3/modules/quant",
+        "limit": 30
+      },
+      "result_sha256": "d196d6ab228880b6c60ecc6e1fe154cb3624b11bea698b37391dd3d2bca669e7"
+    },
+    "call_c60c91d9d924471eb93be1574d4b98c9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ff79e6b70830c6743673877232fe9d57f140a3525c6c4bd02b016bf55e6fd75a"
+    },
+    "call_5df0adec043d4b8ca5b84d05f092c2f8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6073ce80d35035a7d00faaeca27a4b6a9ed578fb7c9c79b5292e214c5796e4a8"
+    },
+    "call_94b37018724d44e782719bd7ddc65646": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a617302ced4891d12191b5dff01cd52c288e8f20125db4aff2cc4ca1d02cd297"
+    },
+    "call_83e4f29976614c9b82d8515b88407a6b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "10d650f34158f55773f0614cb89c949738083a8633808d758fa1304de44f5e5a"
+    },
+    "call_94a9fc138a214c3aa25a88cb709dee16": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for p in (128,1):\n h,i=128,129\n print('pad_to',p,'hidden',(h+p-1)//p*p,'intermediate',(i+p-1)//p*p)\nn=129\ncovered=[j for t in range((n+511)//512*256) if t<n//2 for j in (2*t,2*t+1)]\nprint('activation numel',n,'covered',len(covered),'missing',sorted(set(range(n))-set(covered)))"
+        ]
+      },
+      "result_sha256": "9c55187acc23b1d41c2fb75a6a581f4552c0651bbc900fd1b319a37f1d06b524"
+    }
+  }
+}

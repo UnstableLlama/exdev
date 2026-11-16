@@ -1,0 +1,284 @@
+{
+  "schema_version": 5,
+  "sha": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+  "parent_shas": [
+    "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2"
+  ],
+  "cutoff_date": "2025-04-25T00:47:07+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The sampler offered top-k and cumulative top-p filtering but no probability cutoff relative to the most likely token.",
+        "basis": "source",
+        "evidence": [
+          "call_cc8aee7c156a4f0c89c67da90fb70c5c",
+          "call_cad0396b1b2943918f88727bc70a460d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "SS_MinP retains weights at least min_p times the row maximum. Unlike top-p, it can operate without sorting and does not target a cumulative probability mass.",
+        "basis": "source",
+        "evidence": [
+          "call_cad0396b1b2943918f88727bc70a460d",
+          "call_cc8aee7c156a4f0c89c67da90fb70c5c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The package exports SS_MinP, and DefaultSampler changes from temperature 0.75 followed by top-p 0.75 to min-p 0.08 followed by temperature 0.8. Existing explicit TopPSampler construction remains unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_f1cfce236be9463f863991defb7c21d8",
+          "call_4ce759ad816e499096aa1d093e79ed7a",
+          "call_8bd794e9987d4bfa9a90b2c1d0baa30d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier sampling entry identified a sorted-argmax assignment defect. Inspection of the parent and task diff shows that it is carried over, not corrected by this addition.",
+        "basis": "source",
+        "evidence": [
+          "call_8a373489aba347d5802373334195800d",
+          "call_cc8aee7c156a4f0c89c67da90fb70c5c",
+          "call_cad0396b1b2943918f88727bc70a460d"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d concerns quantization regularization. Neither discussion supplies a stated motivation for this sampling change.",
+        "basis": "source",
+        "evidence": [
+          "call_66a6812427334b0a8d7d04ef5f797ea7",
+          "call_8c09bad4cc0b4d64aa00ff3e501cea32"
+        ]
+      }
+    ],
+    "limitations": [
+      "Checks used standard-library binary64 scalar arithmetic, not PyTorch, CUDA, cuRAND or repository execution.",
+      "No generation-quality, sampling-frequency or performance measurements establish benefits of the new defaults; the rationale for choosing 0.08 and 0.8 is unestablished."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Relative-probability filtering and revised defaults",
+        "claims": [
+          {
+            "text": "SS_MinP asserts 0 < min_p <= 1. For normalized unsorted probabilities it reduces the last dimension with amax; for normalized sorted probabilities it reads the first column. Both branches multiply by a >= threshold mask and mark the result unnormalized while preserving sortedness and token-index mappings.",
+            "basis": "source",
+            "evidence": [
+              "call_cad0396b1b2943918f88727bc70a460d"
+            ]
+          },
+          {
+            "text": "Its prep method requests SS_Normalize for raw logits or unnormalized weights. CustomSampler constructs prerequisites using an unchanged INIT planning state, so the new default actually runs normalization, min-p, temperature, then sampling. Normalization converts input logits to float before softmax.",
+            "basis": "source",
+            "evidence": [
+              "call_cad0396b1b2943918f88727bc70a460d",
+              "call_cc8aee7c156a4f0c89c67da90fb70c5c",
+              "call_4ce759ad816e499096aa1d093e79ed7a"
+            ]
+          },
+          {
+            "text": "The default cutoff is 8% of the largest probability, not an absolute probability of 0.08. Temperature follows filtering and raises retained weights to 1/0.8 = 1.25, changing their relative weights without changing the already selected support for finite positive inputs.",
+            "basis": "source",
+            "evidence": [
+              "call_cad0396b1b2943918f88727bc70a460d",
+              "call_4ce759ad816e499096aa1d093e79ed7a",
+              "call_cc8aee7c156a4f0c89c67da90fb70c5c"
+            ]
+          },
+          {
+            "text": "SS_Sample consumes these unnormalized weights through gumbel_noise_log and torch.argmax. The native wrapper requires matching float tensors; its kernel logs each weight and adds Philox-generated Gumbel noise. No additional normalization or sorting is inserted in the new default.",
+            "basis": "source",
+            "evidence": [
+              "call_cc8aee7c156a4f0c89c67da90fb70c5c",
+              "call_9aa6bfd478274602bb4ded9c761cd0e4",
+              "call_4ce759ad816e499096aa1d093e79ed7a"
+            ]
+          },
+          {
+            "text": "A scalar transcription on probabilities [0.5, 0.3, 0.125, 0.04, 0.035] produced threshold 0.04, retaining the equality-boundary token and removing only 0.035. Sorted and unsorted masks agreed; min_p=1 retained both tied maxima in [0.4, 0.4, 0.2].",
+            "basis": "execution",
+            "evidence": [
+              "call_5dffa793ded24326b231168f6df0725a"
+            ]
+          },
+          {
+            "text": "Avoiding the old default's full sort is a plausible computational advantage, but the change also alters truncation semantics and temperature ordering; it is not merely an equivalent faster implementation.",
+            "basis": "inference",
+            "evidence": [
+              "call_cc8aee7c156a4f0c89c67da90fb70c5c",
+              "call_4ce759ad816e499096aa1d093e79ed7a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-sorted-argmax",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged sorted branches of SS_Argmax do not populate the sample tensor.",
+        "trigger": "A custom chain reaches SS_Argmax with sorted logits or sorted probabilities, including a sorted min-p composition.",
+        "expected_behavior": "Map each row's selected position back to its token ID and assign state.sample.",
+        "actual_behavior": "The branches assign indexed values to state.state, then overwrite it with DONE; state.sample remains None, so forward cannot return its reshaped sample if indexing reaches completion.",
+        "locations": [
+          {
+            "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Argmax.run"
+          }
+        ],
+        "source_evidence": [
+          "call_cc8aee7c156a4f0c89c67da90fb70c5c",
+          "call_cad0396b1b2943918f88727bc70a460d",
+          "call_6d9d3c99556044358f373889e6c75075",
+          "call_8bd794e9987d4bfa9a90b2c1d0baa30d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree SS_Argmax search and preset inspection found built-in uses starting directly from INIT. The new default uses SS_Sample, so this observation concerns custom sorted-greedy compositions rather than DefaultSampler.",
+            "evidence": [
+              "call_6d9d3c99556044358f373889e6c75075",
+              "call_8bd794e9987d4bfa9a90b2c1d0baa30d",
+              "call_4ce759ad816e499096aa1d093e79ed7a"
+            ],
+            "limits": "No repository execution or external custom-caller inventory."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds composable min-p filtering and makes it the default before temperature scaling, replacing default top-p filtering."
+  },
+  "evidence": {
+    "call_f1cfce236be9463f863991defb7c21d8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "offset": 151,
+        "max_bytes": 2377
+      },
+      "result_sha256": "4fd72ccade4cddee3c8a33097828fec93ec19bb406f726e77609539f0d9776d9"
+    },
+    "call_cad0396b1b2943918f88727bc70a460d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "offset": 582,
+        "max_bytes": 1388
+      },
+      "result_sha256": "40d1b30abef38be1f8f58f13774d7ebe04f155edcfb48930ff2327d725051630"
+    },
+    "call_4ce759ad816e499096aa1d093e79ed7a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+        "offset": 1970,
+        "max_bytes": 558
+      },
+      "result_sha256": "36912193692b7b46a7eccfcec2894d58dd04e573ce8951c2e5dd68d25f050691"
+    },
+    "call_cc8aee7c156a4f0c89c67da90fb70c5c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "01291930478130b72fcc14cd70c7caad75e1689210d56589fe2986a6376b31f4"
+    },
+    "call_bfc75c124a6a4d65832b2b69f82473f5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "271c92122efa1097cdf48566961938a5521083ab",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0351ee34bcda1bbff1971eeb3969e99405ed52e90ae408ae1682db6375bf07cd"
+    },
+    "call_8a373489aba347d5802373334195800d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "sampling",
+        "max_bytes": 16384
+      },
+      "result_sha256": "a66a8bcfded5188b40074dbc6b1e9660d298438e7388b5a1836808e198a2177b"
+    },
+    "call_6d9d3c99556044358f373889e6c75075": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+        "query": "SS_Argmax",
+        "limit": 100
+      },
+      "result_sha256": "61546b1dea43d858057c5f8297925449672931c33b229988ae4ba7e89e100696"
+    },
+    "call_8bd794e9987d4bfa9a90b2c1d0baa30d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+        "path": "exllamav3/generator/sampler/presets.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "384271c4b3fd48ce94029d48089b60ab5d753ccb081a3ddb3523281d468113f5"
+    },
+    "call_1d3e854b1b9643e3ab26617149592bbe": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+        "query": "gumbel_noise_log",
+        "limit": 50
+      },
+      "result_sha256": "213a3178aa8b81c945bac501e89a656c272b73ea5d55c310e94db7540962cdcd"
+    },
+    "call_9aa6bfd478274602bb4ded9c761cd0e4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8fa88a230b2c6d241ee2aabc7259f5d458d0e0f2",
+        "path": "exllamav3/exllamav3_ext/generator/gumbel.cu",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d54ae28b77aff164d928c82047102f1224d6212cbcccdcc4eac4a8e2d7564953"
+    },
+    "call_66a6812427334b0a8d7d04ef5f797ea7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "40c8094eb0c67822693ce9d2e159fc8896972396798af5188cfc84dcb97e3556"
+    },
+    "call_8c09bad4cc0b4d64aa00ff3e501cea32": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2d05142059d72197e338c72e294042efb386bd5ecc09a1fdc6992696a706ce9b"
+    },
+    "call_5dffa793ded24326b231168f6df0725a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "p=[0.5,0.3,0.125,0.04,0.035]; t=max(p)*0.08; w=[x if x>=t else 0 for x in p]; q=[x**(1/0.8) for x in w]; print({'threshold':t,'retained':w,'normalized_after_temperature':[x/sum(q) for x in q]}); assert w==[0.5,0.3,0.125,0.04,0]; print('min_p=1 retains ties:',[x for x in [0.4,0.4,0.2] if x>=max([0.4,0.4,0.2])]); print('sorted/unsorted masks agree:', sorted(w,reverse=True)==[x if x>=t else 0 for x in sorted(p,reverse=True)])"
+        ]
+      },
+      "result_sha256": "40fbae5690dda5963f562da73537a723f15d0a42359dd417b1ec6d4279603eb4"
+    }
+  }
+}
