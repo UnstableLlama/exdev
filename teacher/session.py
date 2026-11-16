@@ -85,6 +85,24 @@ you read none, say so.
 When one commit makes several edits, check whether any of them supplies a precondition another needs before
 describing them as independent.'''
 
+GUIDANCE_8_ADDITION = '''When the task starts calling an existing function, method or mechanism from a place that did not call it before,
+or copies code that calls it, search the parent tree for its existing callers and read the code around each call.
+Compare the conditions, guards, argument preparation and error handling there with the new call; name any that
+the new call omits and state what the inspected code would do without it. If there are no other callers, say so.'''
+
+GUIDANCE_9_ADDITION = '''When the task removes, comments out or bypasses a check, guard, conversion or initialisation, or replaces a call
+that performed one, read the removed or bypassed code and say what it prevented or guaranteed. Then say whether
+anything in the inspected code still prevents or guarantees it. If nothing does and the source shows an input or
+call path that reaches the unguarded case, report it under findings as suspected, with its limits; do not leave
+it only under uncertainty. If you could not establish a path that reaches it, say what you searched.'''
+
+GUIDANCE_10_ADDITION = '''When the task removes, comments out or bypasses a check, guard, conversion or initialisation, replaces a call
+that performed one, or changes a call that used to run every time so that it now runs once or only under a
+condition, read the removed or bypassed code and say what it prevented or guaranteed. Then say whether anything
+in the inspected code still prevents or guarantees it. If nothing does and the source shows an input or call path
+that reaches the unguarded case, report it under findings as suspected, with its limits; do not leave it only
+under uncertainty. If you could not establish a path that reaches it, say what you searched.'''
+
 class FreshSession:
     def __init__(self, packet):
         self.runner = Runner(packet)
@@ -138,6 +156,12 @@ class FreshSession:
         from .coverage_request import INSTRUCTION
         coverage_instruction = ('\n'+INSTRUCTION if 'coverage_request' in manifest else '')
         additional_guidance = GUIDANCE_7 if manifest.get('guidance_version',1)>=7 else GUIDANCE_6 if manifest.get('guidance_version',1)==6 else ''
+        if manifest.get('guidance_version',1)>=8:
+            additional_guidance += '\n\n'+GUIDANCE_8_ADDITION
+        if manifest.get('guidance_version',1)>=10:
+            additional_guidance += '\n\n'+GUIDANCE_10_ADDITION
+        elif manifest.get('guidance_version',1)>=9:
+            additional_guidance += '\n\n'+GUIDANCE_9_ADDITION
         adopted_instruction = '\n'+additional_guidance if additional_guidance else ''
         self.initial = [{'role':'system','content':SYSTEM+message_instruction+provenance_instruction+merge_instruction+discussion_instruction+dispatch_instruction+config_instruction+coverage_instruction+closed_instruction+adopted_instruction},
                         {'role':'user','content':json.dumps(task, sort_keys=True)}]

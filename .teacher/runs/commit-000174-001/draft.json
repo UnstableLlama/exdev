@@ -1,0 +1,476 @@
+{
+  "schema_version": 5,
+  "sha": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+  "parent_shas": [
+    "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1"
+  ],
+  "cutoff_date": "2025-05-18T16:02:48+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The ordinary Linear loading path previously ignored companion weight scales. This change adds optional weight_scale_inv loading and blockwise multiplication, but does not establish complete FP8 checkpoint support.",
+        "basis": "source",
+        "evidence": [
+          "call_4df611a1a55e4b06abd1e1067e8526e0",
+          "call_7b2093a566444ba890430ad0d6f037ff"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Scaling is performed during loading so the existing LinearFP16 implementation can consume the resulting dense matrix without a new inference kernel. The helper mutates a view of the original weight; its returned four-dimensional view is deliberately not assigned by the caller.",
+        "basis": "source",
+        "evidence": [
+          "call_4df611a1a55e4b06abd1e1067e8526e0",
+          "call_5b8df967d5c942a8ba92189b864792f2"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Absent scales preserve the previous path. Present scales affect primary or alternate ordinary weights before LinearFP16 construction and CPU slice extraction. EXL3 loading still takes precedence, and the fused-weight fallback does not load scales.",
+        "basis": "source",
+        "evidence": [
+          "call_4273dba6af6449679bf48e7b318a708f",
+          "call_4df611a1a55e4b06abd1e1067e8526e0",
+          "call_5b8df967d5c942a8ba92189b864792f2"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial modules entry and the sliced-loading fix entry. They establish the storage-independent Linear interface and the prior requirement to preserve full checkpoint dimensions until slice extraction.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_af10566c97c541fdb53d15b8ceff1db0",
+          "call_b5ad2285a7d14c61ac0d9895991b3d08"
+        ]
+      },
+      {
+        "text": "The refactored dev, pad1 and pad2 variables retain CPU staging and disabled loader padding for sliced linears; these edits support the new scale load rather than changing the slice policy.",
+        "basis": "source",
+        "evidence": [
+          "call_4df611a1a55e4b06abd1e1067e8526e0"
+        ]
+      },
+      {
+        "text": "Overlapping discussions concern different failures: #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d concerns quantization padding; #11, \u201cAssertionError: bias is wrong datatype,\u201d concerns bias conversion; #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d was attributed in discussion to tokenizer truncation; #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d concerns slice-padding dimensions. Their relationship here is inferred only from shared linear.py paths, not evidence that this scale patch addresses them.",
+        "basis": "inference",
+        "evidence": [
+          "call_da19d246ca8c464f9dfc3c9bd1db0e51",
+          "call_cd32ced506a648f789a3befb3675658a",
+          "call_95672934dc5a444ab424964fb3892a4d",
+          "call_7108deb2fc574ee09378a44815474aca",
+          "call_4df611a1a55e4b06abd1e1067e8526e0"
+        ]
+      },
+      {
+        "text": "Other inspected discussions likewise provide no explicit FP8 connection: #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports Cholesky failure; #33, \u201cError converting model,\u201d reports file-opening failure and later repetitive GLM4 output; #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension import failure; PR #26, \u201cSuperior 3INST parameters,\u201d proposes decoder changes. Connections to this task are inferred solely from shared inspected loading, model or evaluation paths.",
+        "basis": "inference",
+        "evidence": [
+          "call_3ec2884ce72048698098172076815d6e",
+          "call_ac6816a8a26c478088c399814de83708",
+          "call_110bc7acff054af98943322ea26041f9",
+          "call_f1f78238ed7348c4b27e165d10efc357",
+          "call_4e55f898318f40baa020308cb8d9cdd2",
+          "call_7475b5d041134caaa766d14c47618b37"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch, native loader, GPU kernel or complete model load was executed. The standard-library check models indexing and shapes only, not FP16 rounding, overflow or asynchronous execution.",
+      "No checkpoint header or format specification establishes the intended scale orientation, FP8 encoding or coverage of partial edge blocks."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "48747ba09dee3ec78964653df0eb926c53f41c2e"
+    ],
+    "chapters": [
+      {
+        "id": "loading",
+        "title": "Block scales at the dense-weight loading boundary",
+        "claims": [
+          {
+            "text": "apply_fp8_scales_ requires two-dimensional tensors and exact weight dimensions equal to 128 times the corresponding scale dimensions. Reshaping to [scale_rows,128,scale_columns,128] and broadcasting [scale_rows,1,scale_columns,1] applies one multiplier per 128\u00d7128 block. The constant is a block edge length, not a dispatch threshold; the code multiplies by scale_inv rather than taking its reciprocal.",
+            "basis": "source",
+            "evidence": [
+              "call_4df611a1a55e4b06abd1e1067e8526e0"
+            ]
+          },
+          {
+            "text": "Weights are requested with transposition and, for unsliced layers, padding before scaling. Scales are requested without either transformation. Consequently the helper requires scales aligned with the already-transposed, possibly padded weight, not merely with its original file shape.",
+            "basis": "source",
+            "evidence": [
+              "call_4df611a1a55e4b06abd1e1067e8526e0",
+              "call_7b2093a566444ba890430ad0d6f037ff"
+            ]
+          },
+          {
+            "text": "A bounded integer check verified the block-view address identity for a 256\u00d7384 matrix. It also showed that a 2\u00d73 scale grid accepts 256\u00d7384 but rejects its transpose, and that leaving an asymmetric 2\u00d72 checkpoint-oriented grid untransposed changes scale assignments for 32,768 of 65,536 elements.",
+            "basis": "execution",
+            "evidence": [
+              "call_701d650ac2824dc0bf1f03c6e1fa2c4f"
+            ]
+          },
+          {
+            "text": "LinearFP16 retains a two-dimensional weight for matrix multiplication, slicing and export. Ignoring the helper's return preserves that representation while sharing the modified storage. Conversion subsequently obtains that same dense weight through get_weight_tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_4df611a1a55e4b06abd1e1067e8526e0",
+              "call_5b8df967d5c942a8ba92189b864792f2",
+              "call_4273dba6af6449679bf48e7b318a708f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "fp8-dtype-not-loadable",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new scale operation does not supply the missing file-dtype support needed to load actual FP8 weights.",
+        "trigger": "Linear.load selects ordinary weights whose safetensors dtype is an FP8 identifier.",
+        "expected_behavior": "Decode the FP8 weights into a supported dense dtype and apply the companion scales.",
+        "actual_behavior": "SafetensorsCollection.get_tensor calls convert_dtype first. It recognizes only I32, I16, F16, BF16 and F32, and raises ValueError for other identifiers before the scale helper can run. This inherited loader restriction remains unchanged.",
+        "locations": [
+          {
+            "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load_fp16"
+          },
+          {
+            "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "convert_dtype"
+          }
+        ],
+        "source_evidence": [
+          "call_4df611a1a55e4b06abd1e1067e8526e0",
+          "call_7b2093a566444ba890430ad0d6f037ff",
+          "call_db36d70c67da40ff957ccd8dfb627c03"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the sole parent-tree load_fp16 caller, Linear.load, through get_tensor to dtype conversion. The restriction affects file-backed FP8 loads, not necessarily injected new_tensors.",
+            "evidence": [
+              "call_db36d70c67da40ff957ccd8dfb627c03",
+              "call_4273dba6af6449679bf48e7b318a708f",
+              "call_7b2093a566444ba890430ad0d6f037ff"
+            ],
+            "limits": "No actual FP8 checkpoint was loaded."
+          }
+        ]
+      },
+      {
+        "id": "scaling-before-deferred-read",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Scaling runs before deferred weight and scale reads complete.",
+        "trigger": "A file-backed ordinary linear with a present, shape-compatible scale tensor is loaded with mt_fread and deferred_mode enabled, using dtypes already accepted by the loader.",
+        "expected_behavior": "Multiply populated weight blocks by populated scales and retain that result.",
+        "actual_behavior": "Both get_tensor calls can return allocated placeholders. The helper immediately multiplies them, while end_deferred_load later copies the unscaled transposed weight into the destination, overwriting the operation.",
+        "locations": [
+          {
+            "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load_fp16"
+          }
+        ],
+        "source_evidence": [
+          "call_4df611a1a55e4b06abd1e1067e8526e0",
+          "call_7b2093a566444ba890430ad0d6f037ff"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected Linear.load, recursive Module.load, Model._load_single and _load_autosplit, and both model_diff load sequences. They place module loading between begin_deferred_load and end_deferred_load. Unsliced linears permit deferral; sliced linears normally disable it through can_defer_load.",
+            "evidence": [
+              "call_db36d70c67da40ff957ccd8dfb627c03",
+              "call_5121f05abbf9423a814da15b61d03613",
+              "call_dd03e6726e494cba9239ae04f8d980c4",
+              "call_4c523cccc8404ae7aa67d7ded8ad110d",
+              "call_2d412c38dd284bf4bd39d1f4e9464236",
+              "call_4273dba6af6449679bf48e7b318a708f"
+            ],
+            "limits": "Source ordering only; no asynchronous loader or tensor operation was executed."
+          }
+        ]
+      },
+      {
+        "id": "scale-orientation-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "Checkpoint-oriented block scales are not transposed alongside their weights.",
+        "trigger": "An eagerly loaded checkpoint supplies a scale grid aligned with its original [out_features,in_features] weight rather than the internal transposed matrix.",
+        "expected_behavior": "Preserve each weight block's associated scale through transposition.",
+        "actual_behavior": "A rectangular grid can fail the shape assertion; a square asymmetric grid passes but assigns off-diagonal block scales to the wrong blocks.",
+        "locations": [
+          {
+            "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.apply_fp8_scales_"
+          }
+        ],
+        "source_evidence": [
+          "call_4df611a1a55e4b06abd1e1067e8526e0",
+          "call_7b2093a566444ba890430ad0d6f037ff"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the exact 128-block shape condition and compared transposed versus untransposed scale indexing. The helper is new; parent search found no existing callers, and the task adds only the load_fp16 call.",
+            "evidence": [
+              "call_701d650ac2824dc0bf1f03c6e1fa2c4f",
+              "call_676d3ee37f76422da21a2784a5b7f525",
+              "call_4df611a1a55e4b06abd1e1067e8526e0"
+            ],
+            "limits": "Conditional compatibility observation: no inspected checkpoint establishes that it uses this orientation."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional 128\u00d7128 block scaling to ordinary Linear loading while retaining dense FP16 execution. Inspection identifies missing FP8 file-dtype support, premature scaling during deferred loads, and a conditional scale-orientation mismatch."
+  },
+  "evidence": {
+    "call_4df611a1a55e4b06abd1e1067e8526e0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9",
+        "offset": 165,
+        "max_bytes": 2384
+      },
+      "result_sha256": "aa2d1df75291261aebe60d4b68884d0e3eba6eecca2b6cdc5f3fec1cd67db82e"
+    },
+    "call_4273dba6af6449679bf48e7b318a708f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 25000
+      },
+      "result_sha256": "11ca51c746f7d447db497210d088703161496856a4ec7276bb419971d44be599"
+    },
+    "call_7b2093a566444ba890430ad0d6f037ff": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_db36d70c67da40ff957ccd8dfb627c03": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "query": "load_fp16",
+        "limit": 100
+      },
+      "result_sha256": "313a7602accc47c976f2a7ba0eb8207893b70f9d90b94a697cd656efec19c980"
+    },
+    "call_9c5545195f304daea0d2024cc0995898": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "query": "FP8",
+        "limit": 100
+      },
+      "result_sha256": "160643e993b4f91e4dcc75a9905fb419b3b638e005748b9756b6e8d4e8ee17f0"
+    },
+    "call_e4c1720b5eca4b5a9ee03e5d7e2b84d4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/linear.py",
+        "limit": 20,
+        "max_bytes": 16000
+      },
+      "result_sha256": "dfb85c29467ab47d6abc3e47eeb4a59edb39dca502e1f81dbfc93ca1c6c52fc2",
+      "catalog_only": true
+    },
+    "call_b5ad2285a7d14c61ac0d9895991b3d08": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "48747ba09dee3ec78964653df0eb926c53f41c2e",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b01787c2ae02ae3e4c2e940716ffef4e604c93e2d20bee0c0aee2d66f145739c"
+    },
+    "call_af10566c97c541fdb53d15b8ceff1db0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_5121f05abbf9423a814da15b61d03613": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "query": "begin_deferred_load",
+        "limit": 100
+      },
+      "result_sha256": "3bfc6cad5fcfe2cf2473db73c6c9b886522ba2c10495fba46fe89207284153de"
+    },
+    "call_dd03e6726e494cba9239ae04f8d980c4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "path": "exllamav3/models/model.py",
+        "offset": 0,
+        "max_bytes": 12500
+      },
+      "result_sha256": "f2daa98c8107b48d522fff7ccf7f140fba0ed0549b659fd3d17eaf85ec632127"
+    },
+    "call_5b8df967d5c942a8ba92189b864792f2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_da19d246ca8c464f9dfc3c9bd1db0e51": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 20000
+      },
+      "result_sha256": "9900a2d7ed8c2e6c87b7f3b5eb094b2632d1a9278ec3fa0975a8230b86385d5a"
+    },
+    "call_cd32ced506a648f789a3befb3675658a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 20000
+      },
+      "result_sha256": "f8f9381be0b4cfe1d8ed149434da7ab06316037fb49f9a80d1f1db28aece79af"
+    },
+    "call_95672934dc5a444ab424964fb3892a4d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 25000
+      },
+      "result_sha256": "eea4ad27c9b1e48410e37b1929bfea7f0920f7d97ff74fae9279f63e2569f885"
+    },
+    "call_7108deb2fc574ee09378a44815474aca": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2ea8e8a6ebe325fa07e2b3c39738370a4a03436f73f7e8968cb182610b911ff1"
+    },
+    "call_3ec2884ce72048698098172076815d6e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "25a079c468b00b3894967a0df27f46d7c7e675756849360492aa68ca597b68b9"
+    },
+    "call_ac6816a8a26c478088c399814de83708": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 24000
+      },
+      "result_sha256": "820cb72b3b2e82ee1f2c5a2507364e505f3e044cf38e2f2e7d285c3bb90841ef"
+    },
+    "call_110bc7acff054af98943322ea26041f9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 24000,
+        "max_bytes": 24000
+      },
+      "result_sha256": "398822f92da34e5535df9a5eb77ba51fb057ecb3a42e117b9b016e0adeab74ac"
+    },
+    "call_087ff9d512bf4b5b9ff9907513c1a7a0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "query": "weight_scale",
+        "limit": 100
+      },
+      "result_sha256": "bf79bcd25ec542e9d4947cfac5718813110625ff62a6ef18df47ef73380dbf8d"
+    },
+    "call_676d3ee37f76422da21a2784a5b7f525": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "query": "apply_fp8_scales_",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_4c523cccc8404ae7aa67d7ded8ad110d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "9b6975e0608cb65d65b8e36c780e5328139495f3fea96c99ba250cffafa74a17"
+    },
+    "call_2d412c38dd284bf4bd39d1f4e9464236": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "path": "eval/model_diff.py",
+        "offset": 0,
+        "max_bytes": 4000
+      },
+      "result_sha256": "33d539aaf70bc38b57df8eea656d298225c55bfbc57005a70472fd9d6b84f14b"
+    },
+    "call_4e55f898318f40baa020308cb8d9cdd2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "db38cf0149c2b91be911f548470818d80db5ea16452197a9a3d6ef9d3134fbac"
+    },
+    "call_7475b5d041134caaa766d14c47618b37": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16000,
+        "max_bytes": 45000
+      },
+      "result_sha256": "e032a1d63ba50a130e094e530732759d95b12de74eda465e639ce85e88bb9bff"
+    },
+    "call_f1f78238ed7348c4b27e165d10efc357": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f85e770a20e4d372d2b66eeed96dd9043c64192997912bfe94642e22c688cf1f"
+    },
+    "call_701d650ac2824dc0bf1f03c6e1fa2c4f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "b=128\nfor ws,ss in [((256,384),(2,3)),((384,256),(2,3))]:\n print(ws,ss,'accepted',all(w==s*b for w,s in zip(ws,ss)))\ns=[[1,2],[3,4]]\nbad=sum(s[i//b][j//b]!=s[j//b][i//b] for i in range(256) for j in range(256))\nprint('square checkpoint-oriented scales: mismatched transposed elements',bad,'of',256**2)\nassert bad==32768\n# Flattened 4D view addresses coincide with 2D matrix addresses.\nassert all((((i//b)*b+i%b)*3+j//b)*b+j%b==i*384+j for i in range(256) for j in range(384))\nprint('128x128 block-view indexing verified for 256x384')"
+        ]
+      },
+      "result_sha256": "3816f0754e08f843370049c27c30fef6f8e31381bc4a4286230cbf1ef265ea1b"
+    }
+  }
+}

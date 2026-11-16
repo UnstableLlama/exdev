@@ -1,0 +1,265 @@
+{
+  "schema_version": 5,
+  "sha": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+  "parent_shas": [
+    "07ffea7f89c5a701130e48fd0aeaefe52a660210"
+  ],
+  "cutoff_date": "2025-05-18T10:58:14+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Comparison runs lacked a command-line label filter; cache clearing also omitted the reference-logit argument used in evaluation cache keys.",
+        "basis": "source",
+        "evidence": [
+          "call_4847b060da13498384eea32408647675",
+          "call_2591ebe7f57e4ff8857d6e0a97816fe7"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Filtering before invalidation and evaluation makes the selected models define both operations. Moving invalidation after reference discovery supplies the logits_file argument needed to match evaluation keys.",
+        "basis": "source",
+        "evidence": [
+          "call_4847b060da13498384eea32408647675",
+          "call_f542e5d58b3242898d1434a0eee891cb",
+          "call_2591ebe7f57e4ff8857d6e0a97816fe7"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "--mask selects models by case-insensitive substring alternatives separated by semicolons. --clear_cache now targets only retained specifications and includes the full evaluation argument tuple.",
+        "basis": "source",
+        "evidence": [
+          "call_4847b060da13498384eea32408647675"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The reference-logit introduction entry was read. It records both the cache-key mismatch and a no-reference finalization defect. Inspection shows this change repairs the former but carries over the latter.",
+        "basis": "source",
+        "evidence": [
+          "call_81c07c741bf54d3b9508587f91bd84bf",
+          "call_4847b060da13498384eea32408647675",
+          "call_f542e5d58b3242898d1434a0eee891cb"
+        ]
+      },
+      {
+        "text": "PR #30, \u201cfix: don't add min_p and top_p samplers to stack if falsy,\u201d discusses sampler assertions and disabled values. Its shared word \u201cmask\u201d does not establish a relationship to this model-label filter.",
+        "basis": "inference",
+        "evidence": [
+          "call_9d012106ab1f461abab3adc1a2ba92f6",
+          "call_4847b060da13498384eea32408647675"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model evaluation, GPU execution, shelve invalidation or safetensors access was executed. Standard-library checks transcribed filtering, serialization and arithmetic only.",
+      "Caller reach is established for the inspected comparison script and literal repository searches, not external integrations."
+    ],
+    "links": [
+      "3873d40ae2734261f72aa85261ac06b6e307c1e4"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Selective comparison runs and matching cache invalidation",
+        "claims": [
+          {
+            "text": "The optional -mask/--mask string is applied after model specifications are loaded and the last out_logits reference is moved first. Matching preserves that ordering, uses uppercase substring comparisons with OR semantics, and does not interpret regular expressions or trim whitespace. An omitted or empty mask bypasses filtering.",
+            "basis": "source",
+            "evidence": [
+              "call_4847b060da13498384eea32408647675",
+              "call_f542e5d58b3242898d1434a0eee891cb"
+            ]
+          },
+          {
+            "text": "A trailing semicolon introduces an empty substring, which matches every label. The scalar check retained all three sample labels for 'exl3;', retained only EXL3 and EXL2 for 'exl3;exl2', and retained none for ' exl3'.",
+            "basis": "execution",
+            "evidence": [
+              "call_8b198cf92547498e997f3c56dc6653e5"
+            ]
+          },
+          {
+            "text": "Reference discovery remains independent of filtering: logits_file survives even when the selected reference model is excluded. Retained candidates can therefore use an existing reference file without evaluating its producer, but the filter does not ensure that file exists.",
+            "basis": "source",
+            "evidence": [
+              "call_4847b060da13498384eea32408647675",
+              "call_f542e5d58b3242898d1434a0eee891cb"
+            ]
+          },
+          {
+            "text": "The disk cache serializes positional and keyword arguments into its key. Passing data specification, model specification and logits_file to invalidation now matches test_ppl's call, including when logits_file is None. This is a coordinated cache repair, not merely relocation of the old clearing loop.",
+            "basis": "source",
+            "evidence": [
+              "call_4847b060da13498384eea32408647675",
+              "call_2591ebe7f57e4ff8857d6e0a97816fe7"
+            ]
+          },
+          {
+            "text": "A standard-library transcription verified that the former two-argument clearing key differs from the three-argument evaluation key.",
+            "basis": "execution",
+            "evidence": [
+              "call_8b198cf92547498e997f3c56dc6653e5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "filtered-reference-dependency",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Filtering can remove the reference producer while retaining its consumers.",
+        "trigger": "A mask excludes the out_logits reference but retains an uncached candidate, and the computed reference file does not exist.",
+        "expected_behavior": "Generate the required reference logits or reject the selection before candidate evaluation.",
+        "actual_behavior": "main preserves logits_file but removes its producer; test_ppl loads the candidate and then attempts to open the absent reference file.",
+        "locations": [
+          {
+            "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+            "path": "eval/compare_q.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_4847b060da13498384eea32408647675",
+          "call_f542e5d58b3242898d1434a0eee891cb"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced CLI main through filtering to test_ppl and load_tensor. Whole-tree searches found main as the sole direct test_ppl caller and no compare_q importer.",
+            "evidence": [
+              "call_b5e5461b4ea04a08af8f54a321af5b68",
+              "call_72d97861c3be4144b732ef7af5521b59",
+              "call_f542e5d58b3242898d1434a0eee891cb"
+            ],
+            "limits": "No filesystem-library execution; an existing reference file or cached candidate result avoids this trigger."
+          }
+        ]
+      },
+      {
+        "id": "inherited-no-reference-finalization",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The existing no-reference finalization failure remains unchanged.",
+        "trigger": "An uncached evaluation completes its forward passes with nonempty valid data and logits_file=None.",
+        "expected_behavior": "Return perplexity without requiring reference logits.",
+        "actual_behavior": "kl_div_count remains zero and unconditional finalization divides 0.0 by 0.0. collect_logits is also left uninitialized, although division fails first.",
+        "locations": [
+          {
+            "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+            "path": "eval/compare_q.py",
+            "symbol": "test_ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_f542e5d58b3242898d1434a0eee891cb",
+          "call_4847b060da13498384eea32408647675"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The unchanged test_ppl body remains reachable from main, its only direct caller found by whole-tree search, independently of the plotting flag --kld.",
+            "evidence": [
+              "call_b5e5461b4ea04a08af8f54a321af5b68",
+              "call_f542e5d58b3242898d1434a0eee891cb"
+            ],
+            "limits": "Model inference was not executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluating the final zero-over-zero expression raised ZeroDivisionError.",
+            "evidence": [
+              "call_8b198cf92547498e997f3c56dc6653e5"
+            ],
+            "limits": "This arithmetic check did not execute test_ppl."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds case-insensitive model-label filtering and repairs evaluation cache invalidation; reference dependencies remain unchecked and the inherited no-reference failure persists."
+  },
+  "evidence": {
+    "call_4847b060da13498384eea32408647675": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e1d2fa11d6573ea1aeaddacffc028e08a83f91b1",
+        "offset": 161,
+        "max_bytes": 1752
+      },
+      "result_sha256": "eb6982b3c4f76f4e38df61eb43ac65d59df065bceb67df607d643e30b45a9278"
+    },
+    "call_f542e5d58b3242898d1434a0eee891cb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+        "path": "eval/compare_q.py",
+        "max_bytes": 25000
+      },
+      "result_sha256": "8607fa5804ed1d4b3e4894dd0a48f031bf99ca37504d8d7b906201abc12ab7cc"
+    },
+    "call_81c07c741bf54d3b9508587f91bd84bf": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "fdd50e0bca94673d562e0a01317b52c798a2f49ea297cb6146fbd4b2dfcdc723"
+    },
+    "call_2591ebe7f57e4ff8857d6e0a97816fe7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_b5e5461b4ea04a08af8f54a321af5b68": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+        "query": "test_ppl(",
+        "limit": 100
+      },
+      "result_sha256": "e65f8e9f5c9bed546305e0f494fd178eb6bd23d11c4350f2fbfbad00cc944207"
+    },
+    "call_72d97861c3be4144b732ef7af5521b59": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+        "query": "compare_q",
+        "limit": 100
+      },
+      "result_sha256": "8a8d492d6f05aee3360d447393b1219cb2fc5a08cb03d9d970500245b5a971dc"
+    },
+    "call_9d012106ab1f461abab3adc1a2ba92f6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/30",
+        "max_bytes": 16000
+      },
+      "result_sha256": "72035305456f746ff79111470f96331bff2562cf70c73e5d0cae8ca3727f183c"
+    },
+    "call_8b198cf92547498e997f3c56dc6653e5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nlabels=['HF reference','EXL3 3bpw','EXL2 4bpw']\ndef filt(mask):\n return [s for s in labels if not mask or any(m.upper() in s.upper() for m in mask.split(';'))]\nfor mask in [None,'exl3;exl2','exl3;',' exl3','missing']:\n print(repr(mask),filt(mask))\ndef key(args): return str((json.dumps(args,sort_keys=True),json.dumps({},sort_keys=True)))\na=({'dataset':'wiki2'},{'label':'EXL3'},'ref.safetensors')\nprint('old_clear_matches',key(a[:2])==key(a),'new_clear_matches',key(a)==key(a))\ntry: print(0.0/0.0)\nexcept ZeroDivisionError: print('no_reference_finalization: ZeroDivisionError')"
+        ]
+      },
+      "result_sha256": "d9f00d25e482f0629ec1fdb574a630367ea5446197fd023be28e2d9835498489"
+    }
+  }
+}

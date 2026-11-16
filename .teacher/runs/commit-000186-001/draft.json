@@ -1,0 +1,450 @@
+{
+  "schema_version": 5,
+  "sha": "1284d43c76349160992d42a241c81071fcc7b919",
+  "parent_shas": [
+    "c82af98d57c4ffd21b67baad0eb89a5ed9091759"
+  ],
+  "cutoff_date": "2025-05-25T13:33:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "The change retunes EXL3 GEMM for small reduction dimensions, re-enables shape 1, and separates single-matrix from multi-matrix scheduling.",
+        "basis": "source",
+        "evidence": [
+          "call_03ba85c9aa374d168a3d1adc9af07679",
+          "call_fb9cf5a937bd4bbd8d50d3cb598da12c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The shape-1 registration, deeper pipeline and new five-fragment loop are interdependent: the newly selected specialization requires the added loop to perform multiplication. The macro extraction preserves the existing one-through-four-stage operation order.",
+        "basis": "source",
+        "evidence": [
+          "call_3a4f64b15d904164b83a4aae002d95d6",
+          "call_fb9cf5a937bd4bbd8d50d3cb598da12c",
+          "call_50979acd58c446beaf778a074e14f6c6"
+        ]
+      },
+      {
+        "text": "Smaller tiles and deeper staging plausibly trade more pipeline storage for better overlap on short-K workloads. Reducing blocks per matrix can also permit more concurrent matrices. These are interpretations of the implementation, not measured speedups.",
+        "basis": "inference",
+        "evidence": [
+          "call_50979acd58c446beaf778a074e14f6c6",
+          "call_38080e6040f045e4b932629b85a71bef",
+          "call_03ba85c9aa374d168a3d1adc9af07679"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Single GEMM can use more blocks, while multi-GEMM halves its tile-based block allowance. Shape 1 becomes available through both dispatch tables, although its new automatic selection rule applies only to single GEMM.",
+        "basis": "source",
+        "evidence": [
+          "call_03ba85c9aa374d168a3d1adc9af07679",
+          "call_fb9cf5a937bd4bbd8d50d3cb598da12c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier cooperative-GEMM entry was read. It establishes the extraction of the inner pipeline, cooperative Hadamard fusion, shape-based dispatch and an already-recorded Boolean threshold defect.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_e886e10983e443ddac232dceb5bb5e51"
+        ]
+      },
+      {
+        "text": "Issue #5, \u201cWill exl3 quants need requanting later?\u201d, asks about format stability and subsequently Ampere support. The response distinguishes working Ampere support from desired performance.",
+        "basis": "source",
+        "evidence": [
+          "call_c029dfb855504a6588f4ccdea0dc3d2f"
+        ]
+      },
+      {
+        "text": "Issue #5 is related performance context because its response mentions Ampere and the EXL3 GEMM kernel, both present in this change. It does not establish a direct issue-to-commit relationship.",
+        "basis": "inference",
+        "evidence": [
+          "call_c029dfb855504a6588f4ccdea0dc3d2f",
+          "call_03ba85c9aa374d168a3d1adc9af07679"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, kernel execution, numerical comparison or timing benchmark was performed.",
+      "The Python checks model fragment ordering and integer arithmetic only; they do not model asynchronous copies, GPU synchronization, register allocation or floating-point reduction.",
+      "The inspected sources do not establish why 2048 or the new divisor 24 is optimal for the named device tiers.",
+      "Literal whole-tree searches do not establish compatibility for dynamic or external callers."
+    ],
+    "links": [
+      "5d470a29780927c1c8c874609597823f210ae3b9"
+    ],
+    "chapters": [
+      {
+        "id": "gemm",
+        "title": "Retuned GEMM shapes, pipelines and matrix concurrency",
+        "claims": [
+          {
+            "text": "Shape 1 retains its (M,K,N) tile of (16,16,128), but changes from three shared-memory stages and two fragment slots to six and five. Its block size remains 256 threads. Shapes 2 and 3 use (16,32,128) and (16,32,256), respectively, with 512 threads.",
+            "basis": "source",
+            "evidence": [
+              "call_472951bff18b494ba421144a9d74a3b7",
+              "call_fb9cf5a937bd4bbd8d50d3cb598da12c"
+            ]
+          },
+          {
+            "text": "FSTAGE schedules global loading, waits for shared data, loads/dequantizes a fragment slot, multiplies another slot, reduces at a K-column or slice boundary, and advances. Five-stage execution cycles load/multiply pairs (1,0), (2,1), (3,2), (4,3), (0,4). The pre-loop load of slot 0 supplies the first multiplication; load_frags stops loading when its input slice is exhausted.",
+            "basis": "source",
+            "evidence": [
+              "call_3a4f64b15d904164b83a4aae002d95d6",
+              "call_50979acd58c446beaf778a074e14f6c6"
+            ]
+          },
+          {
+            "text": "A scalar schedule model consumed tiles in order for fragment counts 1\u20135 and slice lengths 1\u201339. Applying the inspected shared-memory formula to new shape 1 gives 10,240 bytes at two bits, 13,312 at four bits and 19,456 at eight bits, all below the source's 90-KiB ceiling. This does not change the host's fixed 90-KiB launch allocation.",
+            "basis": "execution",
+            "evidence": [
+              "call_98aec4ae86c048d286bdc4893afae37c",
+              "call_50979acd58c446beaf778a074e14f6c6",
+              "call_38080e6040f045e4b932629b85a71bef"
+            ]
+          },
+          {
+            "text": "For CC_OLD/Ampere at up to four bits, K <= 2048 now selects shape 2 regardless of N. Ada adds the same short-K preference at up to three bits only for single GEMM. Hopper/Blackwell select shape 1 for single GEMM at exactly two or four bits when K <= 2048. Other rules remain, including divisibility-based wider tiles; positive forced indices bypass automatic selection.",
+            "basis": "source",
+            "evidence": [
+              "call_03ba85c9aa374d168a3d1adc9af07679",
+              "call_656022c52c8640af84b036a235c66ec2"
+            ]
+          },
+          {
+            "text": "The selected kernels retain cooperative input/output transforms, 16-row iteration and the shared inner routine. Shape compatibility checks require K and N to be divisible by the selected tile dimensions. The host selector does not itself invoke that compatibility helper.",
+            "basis": "source",
+            "evidence": [
+              "call_9bc9485739724c30be202b7f36763b1b",
+              "call_656022c52c8640af84b036a235c66ec2",
+              "call_38080e6040f045e4b932629b85a71bef"
+            ]
+          },
+          {
+            "text": "For tile-aligned dimensions, let T=(K/tile_K)*(N/tile_N). Single GEMM changes its block cap from floor(T/12) to T and clamps the result to at least one. Multi-GEMM instead changes floor(T/12) to floor(T/24), without a lower clamp. Its host computes matrix concurrency as min(total_sms/num_sms, output-matrix count), so fewer blocks per matrix can increase grid-z concurrency.",
+            "basis": "source",
+            "evidence": [
+              "call_03ba85c9aa374d168a3d1adc9af07679",
+              "call_38080e6040f045e4b932629b85a71bef"
+            ]
+          },
+          {
+            "text": "Whole-tree search found two callers of select_gemm_shape, both updated with the new multi argument: false for single GEMM and true for multi-GEMM. The header declaration remains on the five-argument form; no remaining five-argument call was found.",
+            "basis": "source",
+            "evidence": [
+              "call_d152207677b04eb7a27024f744d8726d",
+              "call_03ba85c9aa374d168a3d1adc9af07679",
+              "call_472951bff18b494ba421144a9d74a3b7",
+              "call_fb9cf5a937bd4bbd8d50d3cb598da12c"
+            ]
+          },
+          {
+            "text": "The benchmark changes its bitrate variable K from eight to one, raises timed runs from 50 to 60, adds matrix dimensions (2048,4096), and includes shape 1 in forced comparisons. It checks compatibility, warms up ten calls and cycles buffers to reduce cache bias; it explicitly does not test correctness. Its one-bit default does not exercise the new automatic two/four-bit shape-1 rule.",
+            "basis": "source",
+            "evidence": [
+              "call_b2ac2ee48aee4ab2baf1d6f38c8eb2e9",
+              "call_4561cab62bf44605be9a6701ab08e07a",
+              "call_03ba85c9aa374d168a3d1adc9af07679"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "zero-multi-grid",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The tighter multi-GEMM cap expands the range that produces zero blocks and reaches integer division by zero.",
+        "trigger": "For example, automatic Ampere multi-GEMM with K=512, N=128 and bits=2 selects shape 2, giving 16 tiles and num_sms=0 under division by 24; the previous division by 12 gave one block.",
+        "expected_behavior": "A nonempty supported matrix should receive a positive block count or be rejected before concurrency arithmetic.",
+        "actual_behavior": "exl3_mgemm computes total_sms / num_sms without a zero guard. Direct Python callers occur in attention's fused K/V projection and the fused expert gate/up/down path; their inspected call sites do not enforce a minimum tile count. This does not establish that typical model dimensions trigger the condition.",
+        "locations": [
+          {
+            "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_exl3_mgemm_kernel"
+          },
+          {
+            "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_03ba85c9aa374d168a3d1adc9af07679",
+          "call_38080e6040f045e4b932629b85a71bef",
+          "call_da84d59aa1074698ba78355a1f4d8508",
+          "call_c8f9812dd9c74a1dbccdeca94c5cbf29",
+          "call_9924fc1c08554d6e95479b80c4346795"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "For 16 tiles and 80 available SMs, Python calculated old cap 1 and new multi cap 0.",
+            "evidence": [
+              "call_98aec4ae86c048d286bdc4893afae37c"
+            ],
+            "limits": "No repository or CUDA execution; downstream division was identified by inspection."
+          }
+        ]
+      },
+      {
+        "id": "inherited-boolean-threshold",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The earlier recorded Boolean dimension comparison is carried over unchanged.",
+        "trigger": "Hopper/Blackwell automatic selection with bits=3, K=16384 and N=4096 reaches (size_k && bits >= 3) > 8192.",
+        "expected_behavior": "A meaningful dimension threshold should compare a dimension; the precise intended selection rule is unestablished.",
+        "actual_behavior": "The Boolean value cannot exceed 8192, so this ternary always chooses shape 2. Both single and multi selectors call this function; positive forced shapes bypass it.",
+        "locations": [
+          {
+            "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_gemm_shape"
+          }
+        ],
+        "source_evidence": [
+          "call_656022c52c8640af84b036a235c66ec2",
+          "call_03ba85c9aa374d168a3d1adc9af07679",
+          "call_d152207677b04eb7a27024f744d8726d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent selector and its two callers with the complete task diff; the expression remains.",
+            "evidence": [
+              "call_656022c52c8640af84b036a235c66ec2",
+              "call_03ba85c9aa374d168a3d1adc9af07679"
+            ],
+            "limits": "No performance consequence measured."
+          }
+        ]
+      },
+      {
+        "id": "stale-selector-declaration",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The header still advertises a five-argument selector whose definition has become six-argument.",
+        "trigger": "A translation unit calls select_gemm_shape using the unchanged header declaration.",
+        "expected_behavior": "The declaration should match the available definition.",
+        "actual_behavior": "The declared five-argument overload has no matching definition in the inspected tree. Both discovered repository calls use the new definition locally, so this is not evidence of a current internal build failure.",
+        "locations": [
+          {
+            "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cuh",
+            "symbol": "select_gemm_shape"
+          }
+        ],
+        "source_evidence": [
+          "call_d152207677b04eb7a27024f744d8726d",
+          "call_472951bff18b494ba421144a9d74a3b7",
+          "call_03ba85c9aa374d168a3d1adc9af07679",
+          "call_fb9cf5a937bd4bbd8d50d3cb598da12c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Searched the whole parent tree and compared every selector occurrence against the task diff.",
+            "evidence": [
+              "call_d152207677b04eb7a27024f744d8726d",
+              "call_03ba85c9aa374d168a3d1adc9af07679",
+              "call_fb9cf5a937bd4bbd8d50d3cb598da12c"
+            ],
+            "limits": "No external consumer or linker test was run."
+          }
+        ]
+      }
+    ],
+    "summary": "Re-enables a deeper-pipelined shape 1 and retunes single/multi-GEMM dispatch and block counts. Speedups are unmeasured; inspection identifies an expanded zero-block multi-GEMM hazard, a stale declaration and a carried-over selector defect."
+  },
+  "evidence": {
+    "call_3a4f64b15d904164b83a4aae002d95d6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "offset": 163,
+        "max_bytes": 4607
+      },
+      "result_sha256": "413fb1ceffad53367c4b3b419c8d2dce67e2c51cf4edb3e28ce5bf65c5e8ffef"
+    },
+    "call_03ba85c9aa374d168a3d1adc9af07679": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "offset": 4770,
+        "max_bytes": 3917
+      },
+      "result_sha256": "f2e0545cd34b6acbe305689cc667d7d63eaf4a904dda36cb4e11bd8b9adb873b"
+    },
+    "call_fb9cf5a937bd4bbd8d50d3cb598da12c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "offset": 8687,
+        "max_bytes": 1665
+      },
+      "result_sha256": "f341f406d711393107e7e77a533d50b148c14a718a8859d4bb5eddef779779d9"
+    },
+    "call_b2ac2ee48aee4ab2baf1d6f38c8eb2e9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "offset": 10352,
+        "max_bytes": 712
+      },
+      "result_sha256": "c2832e853a0206c2f69333156aeca182b69af2b6e5a1a19ef92574438e1a6ff1"
+    },
+    "call_656022c52c8640af84b036a235c66ec2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "8db39905efabe8aea6f5158f247fc1309905d183b700d76b04427a66d91245dc"
+    },
+    "call_50979acd58c446beaf778a074e14f6c6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh",
+        "max_bytes": 32000
+      },
+      "result_sha256": "604c037b7df05829761e4cf8f79b655eeafecb3f6e330aea5c32e42bd6b79297"
+    },
+    "call_45ad7aaac0f5426991d496f73ef0812c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exl3_kernel_map",
+        "limit": 10,
+        "max_bytes": 5000
+      },
+      "result_sha256": "fdd004e809680e2f0dacb36bfeea05c852a6d1ac1dabd4e26c532564c368ebfc",
+      "catalog_only": true
+    },
+    "call_e886e10983e443ddac232dceb5bb5e51": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3aa5d68c832354a9a33eb4f7c4f5ecc80c79b8f944f6dfee62b3b08581859d37"
+    },
+    "call_d152207677b04eb7a27024f744d8726d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "query": "select_gemm_shape",
+        "limit": 100
+      },
+      "result_sha256": "27464f8c9d5556e2221419aded6e9c3dfc81a27f78bc2de7dd55dad6896bda28"
+    },
+    "call_9bc9485739724c30be202b7f36763b1b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "max_bytes": 20000
+      },
+      "result_sha256": "232aef31ab54b57ae8e8f8e83986165df15149074a5061526159cb77c555f619"
+    },
+    "call_4561cab62bf44605be9a6701ab08e07a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "science/qgemm_benchmark.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "e396503d99400a5789c1fca25b1358fad3906fb98016b9719128cb5efff8e457"
+    },
+    "call_a2c47b051f7e485a94378ef57443db9d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "query": "select_exl3_",
+        "limit": 100
+      },
+      "result_sha256": "d932a2855020afad7644f435b7cbd38182576d2bb218cb104d4715d3f8acdc77"
+    },
+    "call_38080e6040f045e4b932629b85a71bef": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "77c7379e18fede599c2785fca963f04e8c238a40e2681cf96751dcef2affcc04"
+    },
+    "call_472951bff18b494ba421144a9d74a3b7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cuh",
+        "max_bytes": 14000
+      },
+      "result_sha256": "80195e19b58b18f294204a7ffcde4668dc107a9d167577738064e5899b0c4661"
+    },
+    "call_c029dfb855504a6588f4ccdea0dc3d2f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/5",
+        "max_bytes": 14000
+      },
+      "result_sha256": "5d5197e88b4c7c701bbbe17668337a62ebe2c2cfc55e75b1861b543eb57c5aed"
+    },
+    "call_98aec4ae86c048d286bdc4893afae37c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for stages in range(1,6):\n for length in range(1,40):\n  buf=[None]*stages; nxt=0; out=[]\n  if stages>1: buf[0]=nxt; nxt+=1\n  for i in range(length):\n   mul=i%stages; load=(i+1)%stages if stages>1 else 0\n   if nxt<length: buf[load]=nxt; nxt+=1\n   out.append(buf[mul])\n  assert out==list(range(length)),(stages,length,out)\nprint('fragment schedule: stages 1..5, lengths 1..39 consume ordered tiles')\nfor bits in (2,4,8):\n print('shape1 shared bytes',bits,6*(2*16*16+2*(16//16)*(128//16)*256//16*bits)+4*4*256)\nfor tiles in (16,24,48):\n print('tiles, old cap, new single cap, new multi cap:',tiles,min(tiles//12,80),max(min(tiles,80),1),min(tiles//24,80))\nprint('inherited condition', (bool(16384) and 3>=3)>8192)"
+        ]
+      },
+      "result_sha256": "6f8d14affb82791425e1403dd31787171e9a66248fe486379b39ed0b6d615d4b"
+    },
+    "call_da84d59aa1074698ba78355a1f4d8508": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "query": "exl3_mgemm",
+        "limit": 100
+      },
+      "result_sha256": "52d8072d16676a2d9cc47ac8a0603781da4009fe65db77c9e723e111d4b2a8e1"
+    },
+    "call_c8f9812dd9c74a1dbccdeca94c5cbf29": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 9500,
+        "max_bytes": 4400
+      },
+      "result_sha256": "8350bcd84da2d86a60c9f504246b0fc125481bdfb9e1f0d64718f729e7a9d9ec"
+    },
+    "call_9924fc1c08554d6e95479b80c4346795": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 8500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "632ada5d42a53d66eb48ffca370aebb5a1c92593d11adfec8a425440d85b9fe9"
+    }
+  }
+}

@@ -1,0 +1,372 @@
+{
+  "schema_version": 5,
+  "sha": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+  "parent_shas": [
+    "d54648bfaba4ab016fc3345938cc9c0f1b02be48"
+  ],
+  "cutoff_date": "2025-05-25T13:53:01+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "RMSNorm.forward flattened its input and restored its output shape on every call. The change removes that Python-side shape handling.",
+        "basis": "source",
+        "evidence": [
+          "call_b5903412a51c4016b63172c59c223861"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The edits are interdependent: accepting unflattened tensors requires native RMSNorm to use the final dimension as width and multiply all leading dimensions into its row count.",
+        "basis": "source",
+        "evidence": [
+          "call_87a9f5453a4847a9a1fb8823ddbab963",
+          "call_b5903412a51c4016b63172c59c223861"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The wrapper returns its allocated output directly, preserving input shape and existing output-dtype selection. Reduced host overhead is plausible, but no speedup was measured.",
+        "basis": "inference",
+        "evidence": [
+          "call_b5903412a51c4016b63172c59c223861"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root modules entry was read. It describes the original flatten/restore implementation, four-element vector accesses, and float-intermediate normalization.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_8cb855281afc48d6b2f2641570adf7c2"
+        ]
+      },
+      {
+        "text": "Issue #39, \u201cGemma 3 architecture not in list?\u201d, concerns branch availability and subsequently discusses frontend behavior and memory allocation. It provides no explicit connection to this RMSNorm change.",
+        "basis": "source",
+        "evidence": [
+          "call_b1ff194215854b1c9f15bf18e4c656c3"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch, CUDA kernel, model execution or performance benchmark was run. The scalar check covers indexing only, not floating-point precision, allocation behavior or native integer overflow.",
+      "Caller inspection covered literal native RMSNorm calls and named normalization forward calls; it does not establish every dynamically dispatched module caller or external user's input layout.",
+      "No inspected internal producer was established to generate the transposed input used in the layout finding."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "rmsnorm",
+        "title": "Move RMSNorm shape handling into the native wrapper",
+        "claims": [
+          {
+            "text": "Python now allocates empty_like(x) without first creating a two-dimensional view, passes x and y directly to ext.rms_norm, and returns y. Removing the params annotation does not change argument order or its unused status.",
+            "basis": "source",
+            "evidence": [
+              "call_a4fa560c784a43b5b808eb6018814aec",
+              "call_b5903412a51c4016b63172c59c223861"
+            ]
+          },
+          {
+            "text": "Native validation moves width divisibility and weight-length checks from dimension 1 to dimension -1. Full shape equality replaces two individual input/output dimension checks; the macro compares sizes, not strides. Rows become the product of leading dimensions, initialized to one, so a vector has one row.",
+            "basis": "source",
+            "evidence": [
+              "call_87a9f5453a4847a9a1fb8823ddbab963",
+              "call_9be022419b5c4a82b8ed216fcd298f3e"
+            ]
+          },
+          {
+            "text": "The CUDA calculation is unchanged: each block normalizes one packed row using float square accumulation and reciprocal square root, then multiplies by weight plus constant_bias. Width must remain divisible by four because reads and writes process four elements. The 1024-thread block size is unchanged, not a new dispatch threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_391df4c0b77b4672944332358ab087cf",
+              "call_87a9f5453a4847a9a1fb8823ddbab963"
+            ]
+          },
+          {
+            "text": "A standard-library indexing transcription verified complete contiguous coverage for shapes (8), (2,8), (2,3,8), and (2,3,4,8), yielding respectively 1, 2, 6, and 24 rows. This supports the flattening identity, not GPU correctness.",
+            "basis": "execution",
+            "evidence": [
+              "call_d16b648cae2a442c9d101ca719798bc3"
+            ]
+          },
+          {
+            "text": "Inspected callers retain compatible shape expectations: TransformerBlock and ParallelDecoderBlock consume shape-preserving normalization; all three attention implementations normalize four-dimensional Q/K only in their no-RoPE fallback; science/kv_quant_exp.py uses normalized three-dimensional activations for projection; test_qgemm.py supplies (1,batch_size,width). None needs a new argument for this change.",
+            "basis": "source",
+            "evidence": [
+              "call_7edd1053f5004cdf98fd362c0441923d",
+              "call_5df24e1a94724af69dd7fc27d3bc9c86",
+              "call_29695d0764964d439be46997094a9ec2",
+              "call_1c591648530d4a9fae87a22130f10145",
+              "call_153c3642c0b54f42bad5f7713aba9104"
+            ]
+          },
+          {
+            "text": "The existing forward_torch alternative explicitly reduces the last axis and retains its own dtype conversions. The optimized native path still uses packed pointer arithmetic; eliminating views does not make its kernel stride-aware.",
+            "basis": "source",
+            "evidence": [
+              "call_a4fa560c784a43b5b808eb6018814aec",
+              "call_391df4c0b77b4672944332358ab087cf",
+              "call_b5903412a51c4016b63172c59c223861"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "strided-input",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Removing the flattening view removes its incidental rejection of incompatible layouts without adding stride validation or contiguous conversion.",
+        "trigger": "Call RMSNorm.forward with a CUDA float/half tensor shaped (2,8,4), with strides (32,1,8), and a four-element half weight.",
+        "expected_behavior": "Normalize each logical final-axis row, or reject the unsupported layout before launching.",
+        "actual_behavior": "The changed shape checks accept this shape, while the kernel reads packed groups at row*dim. For the first logical row it reads offsets 0,1,2,3 instead of 0,8,16,24. The former flattening view could not merge these leading dimensions without copying.",
+        "locations": [
+          {
+            "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+            "path": "exllamav3/modules/rmsnorm.py",
+            "symbol": "RMSNorm.forward"
+          },
+          {
+            "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+            "path": "exllamav3/exllamav3_ext/norm.cu",
+            "symbol": "rms_norm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_b5903412a51c4016b63172c59c223861",
+          "call_391df4c0b77b4672944332358ab087cf",
+          "call_9be022419b5c4a82b8ed216fcd298f3e",
+          "call_7edd1053f5004cdf98fd362c0441923d"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Compared logical strided offsets against the kernel's packed indexing.",
+            "evidence": [
+              "call_d16b648cae2a442c9d101ca719798bc3"
+            ],
+            "limits": "No tensor library or GPU execution; reach is an explicitly supplied public-wrapper input, not a demonstrated model-generated layout."
+          }
+        ]
+      },
+      {
+        "id": "existing-test-arity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The existing native normalization tests remain on a four-argument call form.",
+        "trigger": "Run test_rms_norm or test_rms_norm_benchmark against the inspected extension binding.",
+        "expected_behavior": "Calls reach normalization and its correctness or timing checks.",
+        "actual_behavior": "All three test call sites omit required constant_bias; the declaration takes five arguments and the binding supplies no default. The task leaves this mismatch unchanged.",
+        "locations": [
+          {
+            "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+            "path": "tests/test_ext_norm.py",
+            "symbol": "test_rms_norm"
+          },
+          {
+            "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+            "path": "tests/test_ext_norm.py",
+            "symbol": "test_rms_norm_benchmark"
+          }
+        ],
+        "source_evidence": [
+          "call_7361cadbd66d49cd9285548a61d950c6",
+          "call_5b3297f241064a9db40a3467e7ad8011",
+          "call_487ac09b7828456cb8258ebe80325fe3",
+          "call_61bb6e1a7f4f4f479a30b09d07efd170"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared every literal ext.rms_norm caller found by whole-tree search with its declaration and binding. RMSNorm.forward supplies all five arguments; the test calls do not.",
+            "evidence": [
+              "call_7361cadbd66d49cd9285548a61d950c6",
+              "call_a4fa560c784a43b5b808eb6018814aec",
+              "call_5b3297f241064a9db40a3467e7ad8011",
+              "call_61bb6e1a7f4f4f479a30b09d07efd170"
+            ],
+            "limits": "Tests were not executed; this is an inherited test-interface mismatch, not a newly introduced inference-path failure."
+          }
+        ]
+      }
+    ],
+    "summary": "RMSNorm moves flattening metadata work into C++ and returns its output directly. CUDA arithmetic is unchanged; speedup is unmeasured, and unsupported layouts lose an incidental view-time rejection."
+  },
+  "evidence": {
+    "call_87a9f5453a4847a9a1fb8823ddbab963": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "offset": 162,
+        "max_bytes": 1886
+      },
+      "result_sha256": "142e43b1b6b682ecbe1965378d937f7426be3c57dafa01af9102179adf6a9037"
+    },
+    "call_b5903412a51c4016b63172c59c223861": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "offset": 1275,
+        "max_bytes": 773
+      },
+      "result_sha256": "4a80b7c02c8a9a3b3afd8c50aabfdbc9f0e640d72e4fee617398a39209facb9a"
+    },
+    "call_391df4c0b77b4672944332358ab087cf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/exllamav3_ext/norm.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "1c1a1a295e4f13aab490f4b390a2db9c824435ad971e4ddab51d702cf854193b"
+    },
+    "call_7361cadbd66d49cd9285548a61d950c6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "query": "rms_norm",
+        "limit": 100
+      },
+      "result_sha256": "d240166cca3b47cb74176b65538e8d0d397307fbec24c3bb057ad35454385cd7"
+    },
+    "call_090abf5aa1274d3c945c0f78cdb89064": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "rmsnorm.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "618bb602b70191d49a8df9951549849b409a122038b52cd409ece1c1a534ebbd",
+      "catalog_only": true
+    },
+    "call_8cb855281afc48d6b2f2641570adf7c2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_a4fa560c784a43b5b808eb6018814aec": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/modules/rmsnorm.py"
+      },
+      "result_sha256": "121a2c85c82ab8da2ed3a397088cbb06d488924780b8ed98cf8a258311c208c4"
+    },
+    "call_9be022419b5c4a82b8ed216fcd298f3e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/exllamav3_ext/util.h",
+        "max_bytes": 14000
+      },
+      "result_sha256": "db3dfc4ef4cc2afc424fb7a86a572f673e0a92b7ac4a1e3fdec507669fc4b105"
+    },
+    "call_5b3297f241064a9db40a3467e7ad8011": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "tests/test_ext_norm.py"
+      },
+      "result_sha256": "73e89ab77aa512d2eb563c2e3482640f909ecebcf06955cb8cf47bcc88a0b47c"
+    },
+    "call_487ac09b7828456cb8258ebe80325fe3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/exllamav3_ext/norm.cuh"
+      },
+      "result_sha256": "58f3978e2e01e1e105653de2234716af2a43d6d597e00744dbc7e1dfe89621c7"
+    },
+    "call_7edd1053f5004cdf98fd362c0441923d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "query": "norm.forward",
+        "limit": 100
+      },
+      "result_sha256": "8c7089018a4516e536216f2ff153a95a6a1a55a612777316b11b868bd3b1c64a"
+    },
+    "call_29695d0764964d439be46997094a9ec2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 10000,
+        "max_bytes": 11500
+      },
+      "result_sha256": "f3a6b854b9252c6c8f725a9aae45c3b6a69b1b8673baba4804ec693c47df036d"
+    },
+    "call_5df24e1a94724af69dd7fc27d3bc9c86": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_61bb6e1a7f4f4f479a30b09d07efd170": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/exllamav3_ext/bindings.cpp",
+        "offset": 0,
+        "max_bytes": 3200
+      },
+      "result_sha256": "816d9b1cf6834748b218df970521f3d54ebb5bdea7776e16a381b806cca471b7"
+    },
+    "call_1c591648530d4a9fae87a22130f10145": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "science/kv_quant_exp.py",
+        "offset": 0,
+        "max_bytes": 3500
+      },
+      "result_sha256": "b17711810dc5da629a4ef26319f8265204558dde71356cd75a333681e5e4a106"
+    },
+    "call_153c3642c0b54f42bad5f7713aba9104": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "tests/test_qgemm.py",
+        "offset": 0,
+        "max_bytes": 2200
+      },
+      "result_sha256": "fd4b0144e6490a8fd230588f1366847e2fff47279b6dfd368f27f989177d3707"
+    },
+    "call_b1ff194215854b1c9f15bf18e4c656c3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/39",
+        "max_bytes": 16000
+      },
+      "result_sha256": "5904f84b82d97a4b456ef05efd64f47f7a44984fb96155a5238f984e39278f19"
+    },
+    "call_d16b648cae2a442c9d101ca719798bc3": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,itertools,json\nout=[]\nfor shape in [(8,), (2,8),(2,3,8),(2,3,4,8)]:\n rows=math.prod(shape[:-1]); d=shape[-1]\n offsets=[r*d+c for r in range(rows) for c in range(d)]\n assert offsets==list(range(math.prod(shape)))\n out.append({'shape':shape,'rows':rows,'elements':len(offsets)})\nprint(json.dumps(out))\n# A last-two-axis transpose: logical shape (2,8,4), strides (32,1,8).\nprint('strided logical row 0 offsets', [i*8 for i in range(4)], 'kernel offsets', list(range(4)))"
+        ]
+      },
+      "result_sha256": "c63752ef256f15725b7b6866e3098fd781410ad69e250f70391756aa0eec4a52"
+    }
+  }
+}

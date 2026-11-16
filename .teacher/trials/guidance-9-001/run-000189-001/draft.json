@@ -1,0 +1,180 @@
+{
+  "schema_version": 5,
+  "sha": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+  "parent_shas": [
+    "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6"
+  ],
+  "cutoff_date": "2025-05-25T13:33:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "LinearFP16.forward zero-filled its output before assigning the matrix product, doing initialization that successful multiplication does not need.",
+        "basis": "source",
+        "evidence": [
+          "call_c1a1a6ca205e49929683b4e2b0e15816",
+          "call_69a96ef9e0924ad39ec98c84ca926a91"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing zeros with empty avoids the explicit zero-fill while preserving allocation shape, device and subsequent multiplication. This is a performance optimization, not a reduction in output storage.",
+        "basis": "inference",
+        "evidence": [
+          "call_2b076d6d2fcd41bd94b06cc99f5d9704",
+          "call_c1a1a6ca205e49929683b4e2b0e15816"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Bias addition and restoration of the input's leading dimensions remain unchanged; correctness now explicitly relies on multiplication writing the output before bias reads it.",
+        "basis": "source",
+        "evidence": [
+          "call_2b076d6d2fcd41bd94b06cc99f5d9704",
+          "call_c1a1a6ca205e49929683b4e2b0e15816"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root quantized-inference entry was read. It establishes the original dense alternative and its cuBLAS alpha=1, beta=0 overwrite design.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_028b605b66f0406aa0ea4591c6432c6d"
+        ]
+      },
+      {
+        "text": "Issue #39, \u201cGemma 3 architecture not in list?\u201d, concerns architecture availability and later frontend/BOS discussion; it supplies no explicit connection to this allocation change.",
+        "basis": "source",
+        "evidence": [
+          "call_80429a6b008a49d1b17bd46e9e5f20df"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch or CUDA execution or performance measurement was performed. A scalar computation would not establish allocation cost or native output-write behavior.",
+      "The dtype expression now uses truthiness rather than an explicit None test. Actual torch.dtype truthiness was not tested; equivalence is conditional on supplied dtype objects being truthy."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "linear-fp16",
+        "title": "Allocate dense linear output without zero initialization",
+        "claims": [
+          {
+            "text": "forward flattens input leading dimensions and allocates a two-dimensional output. Matching input/output dtypes select torch.matmul with out=y; differing dtypes select ext.hgemm. Neither selection changes in this commit.",
+            "basis": "source",
+            "evidence": [
+              "call_c1a1a6ca205e49929683b4e2b0e15816",
+              "call_2b076d6d2fcd41bd94b06cc99f5d9704"
+            ]
+          },
+          {
+            "text": "The native alternative requires two-dimensional, shape-compatible half inputs and half or float output. Both cuBLAS branches pass alpha=1 and beta=0, selecting the product without accumulation of previous output contents. This existing overwrite contract supplies the precondition for removing zero initialization.",
+            "basis": "source",
+            "evidence": [
+              "call_69a96ef9e0924ad39ec98c84ca926a91",
+              "call_2b076d6d2fcd41bd94b06cc99f5d9704"
+            ]
+          },
+          {
+            "text": "Dtype selection changes from first_not_none(out_dtype, self.out_dtype, torch.half) to an or chain. The helper selected the first non-None value; the replacement selects the first truthy value, retaining the same priority for truthy dtype values and falling back to half.",
+            "basis": "source",
+            "evidence": [
+              "call_2b076d6d2fcd41bd94b06cc99f5d9704",
+              "call_689269118bde4ef39c2f2d4a686e6f0e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "LinearFP16 replaces zero-filled output allocation with empty allocation and simplifies dtype selection. Existing multiplication paths supply overwrite semantics; speedup and numerical behavior were not measured."
+  },
+  "evidence": {
+    "call_2b076d6d2fcd41bd94b06cc99f5d9704": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "offset": 169,
+        "max_bytes": 692
+      },
+      "result_sha256": "73a0def067644d159b79afcf9093a81bf7ad77f422eb14a8a0f02d79ecd5e246"
+    },
+    "call_c1a1a6ca205e49929683b4e2b0e15816": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/modules/quant/fp16.py"
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_dd317fd330d34d12bf0dbad3d7660c3a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "query": "void hgemm"
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_69a96ef9e0924ad39ec98c84ca926a91": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu"
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_480b4d1885d64ee68e33477bd48f3bd6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/quant/fp16.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "4caa7678ba582c81788a8cc4a68bdaf9d058925b561622f301d0d1341e5ccc1c",
+      "catalog_only": true
+    },
+    "call_028b605b66f0406aa0ea4591c6432c6d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantized-inference",
+        "max_bytes": 16384
+      },
+      "result_sha256": "02b6734d29272cca0d4ea8a56ffcd9ba2d18a4cc524cb44db9d12c4d8741226c"
+    },
+    "call_1bf34ed29ffb47378b6e76293cb821cf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "query": "def first_not_none"
+      },
+      "result_sha256": "7632d9fd9400fedcd77e24a164ae19d29e861c0b1d40d2832b0f76ff2fc0a289"
+    },
+    "call_689269118bde4ef39c2f2d4a686e6f0e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/util/misc.py",
+        "offset": 0,
+        "max_bytes": 5000
+      },
+      "result_sha256": "097bd3f57c949313fd06424ce4076b3858330b0178e4dafb03f819496829175e"
+    },
+    "call_80429a6b008a49d1b17bd46e9e5f20df": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/39",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b552786e1f52ca4097dd246e602372e290f28377f3e51a01fead0cce569c8a93"
+    }
+  }
+}

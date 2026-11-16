@@ -1,0 +1,407 @@
+{
+  "schema_version": 5,
+  "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+  "parent_shas": [
+    "a905cffb1a3f66792ea000e9b589557aac3f9d14"
+  ],
+  "cutoff_date": "2025-05-12T21:23:48+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "model_diff.py loaded each module directly and left collection file handles open across module comparisons.",
+        "basis": "source",
+        "evidence": [
+          "call_480e64a072574c4fb924bb9e708fa642",
+          "call_5bcb9fe25b3e412fb674c20207a10123"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Both branches now bracket module.load with begin_deferred_load/end_deferred_load and close their collection after forwarding and unloading. Completing deferred reads before forward is essential because deferred get_tensor returns destination storage before populating it.",
+        "basis": "source",
+        "evidence": [
+          "call_12752221fd0b421786659b834d03027a",
+          "call_5bcb9fe25b3e412fb674c20207a10123"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change enables batched loading and bounds handle retention to each branch's module processing. It leaves comparison formulas and device selection unchanged; speed and resource savings are not measured.",
+        "basis": "source",
+        "evidence": [
+          "call_12752221fd0b421786659b834d03027a",
+          "call_480e64a072574c4fb924bb9e708fa642"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read ancestor entries 25d9388 and 9575f7d: they explain the B-state prefix and final-logit diagnostics respectively. The latter records the perplexity-axis observation retained here.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_189798984a15437999fade547628388e",
+          "call_ac55ff1b7da746e482bfa95ba7b1a7da"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d proposes decoder changes and discusses model_diff.py evaluation. Its relationship to this loading change is only contextual inference from the shared script, not an established fix linkage.",
+        "basis": "inference",
+        "evidence": [
+          "call_c03400b8c9f3488581fd187b6a8fc20e",
+          "call_45a3c959104641d6a8fbc18817b00a52",
+          "call_12752221fd0b421786659b834d03027a"
+        ]
+      },
+      {
+        "text": "Issue #7 reports an undefined __cxa_call_terminate import symbol; issue #34 reports a Cholesky failure during quantization. Neither discussion establishes that this script-loading change addresses its reported failure.",
+        "basis": "source",
+        "evidence": [
+          "call_ff3054c3a5724f9cae365d34870005a1",
+          "call_dac76e918aee44129a55d359ed1ff231",
+          "call_12752221fd0b421786659b834d03027a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model inference, native loader execution, GPU test or file-handle measurement was performed.",
+      "The scalar check models perplexity indexing only, not Torch empty-slice behavior or numerical results.",
+      "Exception cleanup is not added: an exception before end_deferred_load or close bypasses those operations."
+    ],
+    "links": [
+      "25d9388bce25b89c48a4a078bc6fc8365c661692",
+      "9575f7d8b2afce94122bcf6141a63bfc01f207f2"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Module-scoped deferred loading and handle release",
+        "claims": [
+          {
+            "text": "For the default mt_fread loader, eligible get_tensor calls queue destinations and metadata. end_deferred_load groups requests by file and CPU/CUDA destination, sorts by size, and splits work into chunks capped at 2*1024**2 bytes (2 MiB). It then applies temporary-buffer transformations and clears deferred state. Explicit no_defer requests and the Python loader remain immediate.",
+            "basis": "source",
+            "evidence": [
+              "call_5bcb9fe25b3e412fb674c20207a10123"
+            ]
+          },
+          {
+            "text": "close releases populated native handles and sets their entries to None while retaining tensor indexes and headers, allowing later modules to reopen shards. Unlike retaining handles throughout evaluation, this trades potential reopen overhead for earlier release.",
+            "basis": "source",
+            "evidence": [
+              "call_5bcb9fe25b3e412fb674c20207a10123",
+              "call_12752221fd0b421786659b834d03027a"
+            ]
+          },
+          {
+            "text": "Existing Model._load_single and _load_autosplit guard deferred loading with module.can_defer_load; autosplit also aborts deferred state on exceptions before handling out-of-memory retries. The new script calls omit both the capability guard and recovery. Existing conversion and compilation callers close collections after immediate reads, while Model.load_gen closes after model loading.",
+            "basis": "source",
+            "evidence": [
+              "call_74af6c45fd964861afa360a3baa94815",
+              "call_981e77ef842342c1854908b4b4976616",
+              "call_12752221fd0b421786659b834d03027a",
+              "call_e6322ab78a04464cb9fa58ade0d5ca1d",
+              "call_27d90a341b3a4f90ae624609a16c0413",
+              "call_2b7d0269a6ff487badfd71c35cb37fed"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unguarded-deferred-sliced-load",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Unconditional deferred loading bypasses the existing sliced-module safety guard.",
+        "trigger": "A compared module contains a sliced unquantized Linear loaded through the normal weight-key path with mt_fread.",
+        "expected_behavior": "Honor can_defer_load and complete immediate reads before load-time copies of sliced weights.",
+        "actual_behavior": "Linear.load_fp16 queues the weight, then LinearFP16 copies its still-unpopulated destination into separate storage; end_deferred_load later populates the original destination, not that copy. The inspected reach is the two new main-loop calls when such modules occur, not all models.",
+        "locations": [
+          {
+            "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+            "path": "eval/model_diff.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_12752221fd0b421786659b834d03027a",
+          "call_eea776438e6d4d54b6c27c13b6baf047",
+          "call_3356cd7251f24c939b3db2f828e0a9b9",
+          "call_fcc5d7b936f942a0aa2c8ee90a7add52"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both existing deferred-load callers and the sliced Linear/GatedMLP capability checks with the new unconditional calls and LinearFP16's copy.",
+            "evidence": [
+              "call_74af6c45fd964861afa360a3baa94815",
+              "call_981e77ef842342c1854908b4b4976616",
+              "call_7dafb689be064faf9905ca9de80b6e28",
+              "call_b27fd9b4ac9146f29783461b745ece72",
+              "call_fcc5d7b936f942a0aa2c8ee90a7add52"
+            ],
+            "limits": "No sliced model or tensor-library execution was performed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-perplexity-axis-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously recorded perplexity vocabulary-versus-sequence bound remains unchanged.",
+        "trigger": "The number of prediction positions exceeds vocabulary size.",
+        "expected_behavior": "Accumulate every prediction position.",
+        "actual_behavior": "main.ppl bounds its sequence slices by logits_.shape[1], the vocabulary dimension. With 2047 prediction positions and vocabulary 1024 it covers only 1024 positions.",
+        "locations": [
+          {
+            "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_480e64a072574c4fb924bb9e708fa642",
+          "call_12752221fd0b421786659b834d03027a",
+          "call_f00e7495a0ee43708a3b4250f82dd65e"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Parent-tree search and script inspection locate the nested helper's direct caller in main's per-model final-logit loop. The task changes loading only, carrying this bound over.",
+            "evidence": [
+              "call_f00e7495a0ee43708a3b4250f82dd65e",
+              "call_480e64a072574c4fb924bb9e708fa642",
+              "call_12752221fd0b421786659b834d03027a"
+            ],
+            "limits": "Search does not establish external entry points."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library transcription counted 1024 covered and 1023 omitted prediction positions.",
+            "evidence": [
+              "call_5038f0da3e094a1fa34a1a1a47aef315"
+            ],
+            "limits": "Index arithmetic only; repository inference code did not run."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds per-module deferred loading and handle closure to model comparison, but omits existing sliced-module guards and retains the earlier perplexity indexing issue."
+  },
+  "evidence": {
+    "call_12752221fd0b421786659b834d03027a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "offset": 205,
+        "max_bytes": 1142
+      },
+      "result_sha256": "0c5be039ca011f79b4a7c61502f0bbfb66f553202db5c7c92c3bc7550d8396b8"
+    },
+    "call_74af6c45fd964861afa360a3baa94815": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "query": "begin_deferred_load",
+        "limit": 100
+      },
+      "result_sha256": "43f6d5198ad47e78002d69ab963be376c45d41cd7ae94703430fc1124cb73b15"
+    },
+    "call_5bcb9fe25b3e412fb674c20207a10123": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_981e77ef842342c1854908b4b4976616": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "b563e44bdbcf0902c6aaeb586580ac0a6fc46482b7960deb553195fb7d12cf03"
+    },
+    "call_480e64a072574c4fb924bb9e708fa642": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "eval/model_diff.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "2080d5ab198d4f4f7c2e0c10d4298ee777b4ab6a0626eed7e9ec2ea039510459"
+    },
+    "call_ac55ff1b7da746e482bfa95ba7b1a7da": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9074ff680208193b56d7a0f8296f7897f41a0eda1be10d33026d0152b41a2d7a"
+    },
+    "call_7dafb689be064faf9905ca9de80b6e28": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "query": "can_defer_load",
+        "limit": 100
+      },
+      "result_sha256": "052f25c8e092609aa72abb9ab17c49df9a6f1c166137c8eb30eef45ac1f6011f"
+    },
+    "call_3356cd7251f24c939b3db2f828e0a9b9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 4500,
+        "max_bytes": 7000
+      },
+      "result_sha256": "09929fb7b24b14a5ea97fd52a5c9574cd1d0f1f55730b6cf9a4c14003246ef79"
+    },
+    "call_b27fd9b4ac9146f29783461b745ece72": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 4500,
+        "max_bytes": 4000
+      },
+      "result_sha256": "02acc3e34e4cb2517eb4ed1771befddc27285f9e8c0b132a33c2d1d590c757e4"
+    },
+    "call_eea776438e6d4d54b6c27c13b6baf047": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "e4c409f55edfdb9af953103ba0ab1236577a92404f10d07d43a61d6a93abed12"
+    },
+    "call_189798984a15437999fade547628388e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b7276ce3791638d914689c9bffe337a8f3dcf3a47a603af361914863652f677f"
+    },
+    "call_c03400b8c9f3488581fd187b6a8fc20e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 20000
+      },
+      "result_sha256": "73ff273753b024c44af7c97fdd6b8631a875fb70c294f8c21347486e200d6828"
+    },
+    "call_45a3c959104641d6a8fbc18817b00a52": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 20000,
+        "max_bytes": 40000
+      },
+      "result_sha256": "f9c9aad50fdf152f3f6e11a217fe3c2b92e5b6033e371483dc31b6597a0dd6d8"
+    },
+    "call_ff3054c3a5724f9cae365d34870005a1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 20000
+      },
+      "result_sha256": "eccd0ba7a871cbb7f0d8f0015722510ee22e8a01edb86b641a1f8bf06596bb6b"
+    },
+    "call_dac76e918aee44129a55d359ed1ff231": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "39a97ecdfe5dd78c0d501ec707a56f88498042c49eea3cc8f79f8bb678294ce2"
+    },
+    "call_f00e7495a0ee43708a3b4250f82dd65e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "query": "ppl(",
+        "limit": 100
+      },
+      "result_sha256": "6f72ca5379609c973d616e625a32f60656bcd6e709da161f3a5cebc08d64cd37"
+    },
+    "call_2b7d0269a6ff487badfd71c35cb37fed": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "query": "stc.close()",
+        "limit": 100
+      },
+      "result_sha256": "9dd90636edf7843ddc647056920bc74afc4032cab472588be5d87dd184a38353"
+    },
+    "call_e6322ab78a04464cb9fa58ade0d5ca1d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 9000,
+        "max_bytes": 3300
+      },
+      "result_sha256": "8b5d379d9e7a40a64b33b6eac99eb57ce14151ad842648b416074af17eadc5b6"
+    },
+    "call_27d90a341b3a4f90ae624609a16c0413": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "fd0948c00ff158ae58c4a23283492a58cb1991778f661442e6c959435212e47d"
+    },
+    "call_a6fb6e7b2ed940339d2324dc5227061e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/modules/quant/linear_fp16.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_948ec585cb664415821d97742b8b3b38": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "query": "class LinearFP16",
+        "limit": 20
+      },
+      "result_sha256": "e1232f83548500dd9ef3df6001652e149a09105950ffbf824a50de018185d94f"
+    },
+    "call_fcc5d7b936f942a0aa2c8ee90a7add52": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_5038f0da3e094a1fa34a1a1a47aef315": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "n,v=2047,1024\nb=0; covered=0\nwhile b<v:\n a=b;b=min(b+v*10240//v,v);covered+=len(range(n)[a:b])\nprint({'prediction_positions':n,'vocabulary':v,'covered':covered,'omitted':n-covered})"
+        ]
+      },
+      "result_sha256": "6e6dba8b8f694ef3c74904c21fe0bc99e696f993c96a5d4f23bd966a95200a79"
+    }
+  }
+}

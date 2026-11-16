@@ -1,0 +1,298 @@
+{
+  "schema_version": 5,
+  "sha": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+  "parent_shas": [
+    "afac0a4320d9c4df31a8747ad1061da521698117"
+  ],
+  "cutoff_date": "2025-05-25T02:13:11+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Attention previously invoked K and V projections separately. The change combines eligible EXL3 projections for small token batches, targeting greater GPU parallelism.",
+        "basis": "source",
+        "evidence": [
+          "call_88a24655e6f6483fbee176ac53080c0d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The native edits are prerequisites for the attention call: the wrapper now accepts absent indices, and the kernel interprets them as sequential matrix selection rather than dereferencing a null pointer.",
+        "basis": "source",
+        "evidence": [
+          "call_9eafcf70e8bc411785bb52749a865325",
+          "call_e4b991e8faab4693bc86d72915e068aa",
+          "call_88a24655e6f6483fbee176ac53080c0d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Q remains separate. Unfused K/V execution remains available when fusion is unavailable or batch size times sequence length exceeds 32; this is not a threshold on the number of KV heads.",
+        "basis": "source",
+        "evidence": [
+          "call_88a24655e6f6483fbee176ac53080c0d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier routed-expert entry establishes MultiLinear's origin and its equal-dimension, equal-bitrate, bias-free, unscaled preconditions.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_a140760372164d4ea0bf9fb8e02c8457"
+        ]
+      },
+      {
+        "text": "That entry's all-expert fused-buffer mismatch is carried over: routing can select num_experts while buffers still use num_experts_per_tok, and the native index-count check remains. Moving MultiLinear does not repair this conditional BlockSparseMLP failure.",
+        "basis": "source",
+        "evidence": [
+          "call_5000e232f340452e8626ee7d047f4743",
+          "call_b090f6abccdd436c831e32332e295c58",
+          "call_f9854c039dc24ddf91e7145f9a568c74"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d concerns conversion and tokenizer truncation. Its relationship here is only inferred shared-source context: its traceback passes through project_qkv, specifically the unchanged Q projection, rather than the new fused K/V call.",
+        "basis": "inference",
+        "evidence": [
+          "call_52f9ca7fdfe34d07aba812b8700defed",
+          "call_88a24655e6f6483fbee176ac53080c0d"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA execution, numerical-equivalence test, or speed measurement was performed. The Python check models integer dispatch and shape arithmetic only.",
+      "The inspected source does not establish an empirical justification for the 32-token crossover.",
+      "Full compatibility of the new direct native call with every Linear instrumentation path and model-specific customization remains unestablished."
+    ],
+    "links": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "attention",
+        "title": "Parallel K/V projection through reusable multi-GEMM",
+        "claims": [
+          {
+            "text": "MultiLinear moves unchanged from block_sparse_mlp.py into its own module. It retains references to the linears and constructs device pointer tables for trellis weights and input/output transforms. Its constructor asserts uniform dimensions, bit width and experimental codebook multipliers, absent bias and softcap, and unit post-scale. Its unload method remains a no-op.",
+            "basis": "source",
+            "evidence": [
+              "call_f9854c039dc24ddf91e7145f9a568c74",
+              "call_18165254a59c4f85a72b4da84373dcbe"
+            ]
+          },
+          {
+            "text": "Attention.load attempts fusion when K and V are EXL3, have equal output widths and bit widths, and lack bias. MultiLinear then enforces its additional assertions. Attention initializes the helper to None and clears its reference during unload.",
+            "basis": "source",
+            "evidence": [
+              "call_88a24655e6f6483fbee176ac53080c0d",
+              "call_18165254a59c4f85a72b4da84373dcbe"
+            ]
+          },
+          {
+            "text": "For m = batch size \u00d7 query length at most 32, project_qkv views the shared input as [1,m,hidden_size], allocates separate transformed-input scratch [2,m,hidden_size] and FP16 output [2,m,num_kv_heads\u00d7head_dim], and calls exl3_mgemm without indices or routing weights. Output slices 0 and 1 become K and V with their original three-dimensional shapes.",
+            "basis": "source",
+            "evidence": [
+              "call_88a24655e6f6483fbee176ac53080c0d"
+            ]
+          },
+          {
+            "text": "The existing kernel broadcasts a single input matrix across projections but applies each projection's own input transform, trellis multiplication and output transform. Omitting weights leaves the output-transform normalization unchanged. The three attention consumers\u2014SDPA, uncached FlashAttention and cached FlashAttention\u2014continue reshaping K/V into heads before normalization, RoPE and attention.",
+            "basis": "source",
+            "evidence": [
+              "call_9a5f247c869d4bb6b902d05c358efe09",
+              "call_41e9c5dd08cb40388b38fcfc39f49bdd"
+            ]
+          },
+          {
+            "text": "Whole-tree search found the existing Python multi-GEMM calls only in BlockSparseMLP: gate and up broadcast an input with selected-expert indices; down consumes per-expert inputs and supplies routing weights. Those calls remain indexed and use a single-token guard. Attention instead explicitly constructs two output slots and permits up to 32 tokens; it supplies no expert-routing data.",
+            "basis": "source",
+            "evidence": [
+              "call_73d71e48f3dc4a9aa84945d0eab83d82",
+              "call_5000e232f340452e8626ee7d047f4743",
+              "call_88a24655e6f6483fbee176ac53080c0d"
+            ]
+          },
+          {
+            "text": "The selector supports bit widths 1\u20138 and reduces the per-matrix grid using a tile-count heuristic divided by 12, marked experimentally chosen. The launcher then uses concurrency = min(total_sms / selected_sms, output_matrix_count). For K/V, this can schedule two matrix groups concurrently, but does not guarantee doubled parallelism.",
+            "basis": "source",
+            "evidence": [
+              "call_116cfaf1d42a402ba84a3e29441d0d54",
+              "call_b090f6abccdd436c831e32332e295c58"
+            ]
+          },
+          {
+            "text": "A scalar transcription with 80 total SMs yielded concurrency two for a 20-SM per-matrix grid, but one for 50- or 80-SM grids. It also confirmed that both [1,32] and [2,16] token layouts meet the cutoff, whereas [1,33] does not.",
+            "basis": "execution",
+            "evidence": [
+              "call_877e13b4ddf246e1aabef11bbf00e538"
+            ]
+          },
+          {
+            "text": "The implementation supports the stated small-KV-head motivation: narrow projections can leave capacity for another matrix group. The tradeoff is additional two-projection scratch/output allocation and a specialized path instead of separate Linear.forward calls; actual benefit remains workload-dependent.",
+            "basis": "inference",
+            "evidence": [
+              "call_88a24655e6f6483fbee176ac53080c0d",
+              "call_b090f6abccdd436c831e32332e295c58",
+              "call_116cfaf1d42a402ba84a3e29441d0d54"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Reuses multi-GEMM to combine eligible EXL3 K/V projections for at most 32 tokens, with sequential matrix selection and conditional two-matrix GPU concurrency."
+  },
+  "evidence": {
+    "call_9eafcf70e8bc411785bb52749a865325": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "offset": 219,
+        "max_bytes": 7993
+      },
+      "result_sha256": "555068409da6f1492560a683da63672fc7d8eb3901f9ad107683b1eead9a62ad"
+    },
+    "call_e4b991e8faab4693bc86d72915e068aa": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "offset": 796,
+        "max_bytes": 597
+      },
+      "result_sha256": "6b4b7403db367119b899e8053e4428245b6f2dc4db58f378074e7ea5a6d5e3bd"
+    },
+    "call_88a24655e6f6483fbee176ac53080c0d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "offset": 1393,
+        "max_bytes": 2943
+      },
+      "result_sha256": "4000196e99cb6fb8ae6fbe74fddebc8ef836bea4ae2be29502b483d6e0c8eff0"
+    },
+    "call_f9854c039dc24ddf91e7145f9a568c74": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "offset": 4336,
+        "max_bytes": 2072
+      },
+      "result_sha256": "f7ae105a9d9b1c1b828cc897b47bb7a3ae91784d802ad9fd4e2a9b50c0d6d5ec"
+    },
+    "call_18165254a59c4f85a72b4da84373dcbe": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "offset": 6408,
+        "max_bytes": 1804
+      },
+      "result_sha256": "383fb154b6122699b96b43aad51fb92ff88023c58634a4b935f3252a175192bf"
+    },
+    "call_73d71e48f3dc4a9aa84945d0eab83d82": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "query": "exl3_mgemm",
+        "limit": 100
+      },
+      "result_sha256": "454d2db6d212cf76c179d89937e86f87904c9b6c933e6cd2b204d0618ddbf224"
+    },
+    "call_b090f6abccdd436c831e32332e295c58": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 24000
+      },
+      "result_sha256": "34db18cfc13215eb16c7ef95065453f416986118d42cb9f397d7ed1a10307a4b"
+    },
+    "call_9a5f247c869d4bb6b902d05c358efe09": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "max_bytes": 16000
+      },
+      "result_sha256": "238d4aad001fabff64f440ab848eeda78d54de378dce6e9de3a97100bbc5aad8"
+    },
+    "call_5000e232f340452e8626ee7d047f4743": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "1583a73e99a8460dbb0a2fac2037f7147f8678431c676d0114d31d8f4ac7cafa"
+    },
+    "call_de4d936a2f834491b78eba07a9526de7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "MultiLinear",
+        "limit": 10
+      },
+      "result_sha256": "5f9bdb8bbdcc17660aa8b846e20102db125b4b6b7e7b23817ab825e18fc5f763",
+      "catalog_only": true
+    },
+    "call_a140760372164d4ea0bf9fb8e02c8457": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_116cfaf1d42a402ba84a3e29441d0d54": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "offset": 4900,
+        "max_bytes": 10000
+      },
+      "result_sha256": "c7fc4e5e95bf6972e446b9e39cea1fb7d088eb2ee4d1d6a7fa65f824d228c0d9"
+    },
+    "call_d2eac1baecd14f3b8e685a82445a204e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "query": "MultiLinear",
+        "limit": 100
+      },
+      "result_sha256": "1d3a08f5befc11fc274c0602a58e07a9cb3b38a5896da57d866af3a8079198bf"
+    },
+    "call_41e9c5dd08cb40388b38fcfc39f49bdd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "e15240e796fac1d25a2f0ca26a6e92dff12a3d9ffa96184991f07d718a5ccfbc"
+    },
+    "call_52f9ca7fdfe34d07aba812b8700defed": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "856f000d3c43e2c3674c63d20e695b1e233bc7caca01f4ecfdc5cf701a8872b3"
+    },
+    "call_877e13b4ddf246e1aabef11bbf00e538": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for total, per in [(80,20),(80,50),(80,80)]:\n c=min(total//per,2)\n print(total,per,c,per*c)\nfor b,q in [(1,32),(2,16),(1,33)]:\n m=b*q; print('tokens',m,'fused',m<=32,'output elements',2*m*512)\n"
+        ]
+      },
+      "result_sha256": "4bbb359c5763ace52851598d12da15d3e15c5c6254ab7a935099ac0f159269d5"
+    }
+  }
+}

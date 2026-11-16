@@ -1,0 +1,376 @@
+{
+  "schema_version": 5,
+  "sha": "6693b5010504364efbfd099fdc839aab971e7708",
+  "parent_shas": [
+    "f1cfd3fb4e19a201a2738803fd4e57232ca1c481"
+  ],
+  "cutoff_date": "2025-05-25T02:13:11+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The Torch reference generated adjacent GPTJ sine/cosine coefficients but applied NEOX split-half rotation, leaving its existing GPTJ rotation helper unused.",
+        "basis": "source",
+        "evidence": [
+          "call_a2c542775282416e81fa3e416c56a7fc"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change pairs style-specific coefficient layouts with style-specific rotation helpers and moves reference arithmetic to float before converting results to half.",
+        "basis": "source",
+        "evidence": [
+          "call_fd170c9e76d543ff81989d85272829e9"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Adds GPTJ rotation to the reference path, not a new GPT-J model architecture or native kernel. It also introduces an unconditional conversion of optional K that prevents query-only reference calls.",
+        "basis": "source",
+        "evidence": [
+          "call_fd170c9e76d543ff81989d85272829e9",
+          "call_a2c542775282416e81fa3e416c56a7fc"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial modules entry and the native-GPTJ entry. They establish the reference implementation's origins and record its previously unused GPTJ helper and incomplete partial-rotation support.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0f69ac2376e64006924a9d042d1dccc9",
+          "call_53134a9db20e4850a5fe8b067bbc5878"
+        ]
+      },
+      {
+        "text": "The connection to issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d and closed issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d is inferred solely from their rope.py import traceback lines. They describe installation failures, not rotary arithmetic. Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, concerns scaling policy in the same file; that file overlap does not establish motivation for this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_00a9b5c7f2e744a7b96e4d3f033024a1",
+          "call_d5fc4efec0ff42deaa358b1b4ccf497a",
+          "call_9231e86321674892a908d4cd36b2155e",
+          "call_fd170c9e76d543ff81989d85272829e9"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Torch implementation, CUDA kernel or repository test was executed. The scalar check uses Python double precision, not float intermediates and half rounding.",
+      "Whole-tree literal searches establish the inspected repository callers, not dynamic or external consumers."
+    ],
+    "links": [
+      "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Style-correct reference RoPE",
+        "claims": [
+          {
+            "text": "NEOX splits the last dimension into halves and rotates corresponding channels; GPTJ slices even and odd channels and interleaves their rotated values. Both implement (u cos \u2212 v sin, v cos + u sin), but with different channel pairings. The new Q/K wrappers reuse the corresponding single-tensor helper for each tensor.",
+            "basis": "source",
+            "evidence": [
+              "call_fd170c9e76d543ff81989d85272829e9",
+              "call_a2c542775282416e81fa3e416c56a7fc"
+            ]
+          },
+          {
+            "text": "compute_sincos already duplicated frequency coefficients by concatenation for NEOX and repeat-interleave for GPTJ. Dispatching apply_torch to the matching helper supplies the missing pairing agreement; every non-NEOX style takes the GPTJ branch.",
+            "basis": "source",
+            "evidence": [
+              "call_a2c542775282416e81fa3e416c56a7fc",
+              "call_fd170c9e76d543ff81989d85272829e9"
+            ]
+          },
+          {
+            "text": "Position IDs are explicitly converted to float before the frequency outer product. Removing the half conversion retains float coefficients in the reference cache, while Q/K are converted to float for rotation and then to half. Cache expansion still uses 2048-position allocation increments, not a rotary threshold. Non-in-place results are now explicitly half; in-place mode copies those rounded results into the original tensors.",
+            "basis": "source",
+            "evidence": [
+              "call_fd170c9e76d543ff81989d85272829e9",
+              "call_a2c542775282416e81fa3e416c56a7fc"
+            ]
+          },
+          {
+            "text": "Whole-tree searches found compute_sincos consumed only by expand_cache, and cached coefficients consumed locally by apply_torch. Renamed application and rotation helpers have no other matched callers. The sole matched direct apply_torch caller is tests/test_rope.py; no RoPE subclass appeared in the whole-tree RoPE search.",
+            "basis": "source",
+            "evidence": [
+              "call_0ce03097da444fe7b4dc2f911769f588",
+              "call_d9a7b21c3edd442a9b071ea5b6216bfe",
+              "call_b7341b21183247e1b529a6dd55da9671",
+              "call_6f933b713f684352b7defce522d6a625",
+              "call_2e07d7a4f90149b1a9e221ba246391fe",
+              "call_cb5a198a6272410d9bafa9f7479e5295"
+            ]
+          },
+          {
+            "text": "A scalar transcription for four channels and two distinct angles matched adjacent-pair rotation exactly, differed from the old split-half application by up to 3.2211, and preserved squared norm within 7.11e\u221215. This checks the pairing algebra, not repository execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_3afaaec943b64d09af1c281c4d56ca86"
+            ]
+          },
+          {
+            "text": "The earlier GPTJ reference mismatch is removed for full-width Q/K inputs. The partial-rotation limitation remains: neither new helper separates an unrotated tail before multiplying by shorter coefficients.",
+            "basis": "source",
+            "evidence": [
+              "call_a2c542775282416e81fa3e416c56a7fc",
+              "call_fd170c9e76d543ff81989d85272829e9"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "optional-k-conversion",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new precision conversions bypass the optional-K guards.",
+        "trigger": "Call RoPE.apply_torch(q, None).",
+        "expected_behavior": "Rotate Q and return a None K through the existing query-only branch.",
+        "actual_behavior": "k.float() raises before that branch; the later k.half() is also unconditional. Four existing test shapes supply None K.",
+        "locations": [
+          {
+            "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+            "path": "exllamav3/util/rope.py",
+            "symbol": "RoPE.apply_torch"
+          }
+        ],
+        "source_evidence": [
+          "call_fd170c9e76d543ff81989d85272829e9",
+          "call_d9c1694b8c604d8abf23369e12e653a3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search found the test helper as the sole direct caller; it supplies optional K without a guard. The diff introduces the dereference before existing None-aware handling.",
+            "evidence": [
+              "call_2e07d7a4f90149b1a9e221ba246391fe",
+              "call_d9c1694b8c604d8abf23369e12e653a3",
+              "call_fd170c9e76d543ff81989d85272829e9"
+            ],
+            "limits": "Not executed; external callers are outside the search."
+          }
+        ]
+      },
+      {
+        "id": "reference-test-discarded-results",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged comparison test discards both implementations' returned tensors.",
+        "trigger": "Run test_rope with non-None K so reference conversion can proceed.",
+        "expected_behavior": "Compare rotated reference outputs with native outputs.",
+        "actual_behavior": "Both calls use the default in_place=False and ignore their returns; assertions compare reproducibly regenerated input tensors. Active parametrization also excludes GPTJ.",
+        "locations": [
+          {
+            "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+            "path": "tests/test_rope.py",
+            "symbol": "test_rope"
+          }
+        ],
+        "source_evidence": [
+          "call_d9c1694b8c604d8abf23369e12e653a3",
+          "call_a2c542775282416e81fa3e416c56a7fc"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the parametrized test and both methods' allocation/return behavior; the task changes neither test nor in-place default.",
+            "evidence": [
+              "call_d9c1694b8c604d8abf23369e12e653a3",
+              "call_a2c542775282416e81fa3e416c56a7fc",
+              "call_fd170c9e76d543ff81989d85272829e9"
+            ],
+            "limits": "Test weakness established by source inspection, not a measured passing run."
+          }
+        ]
+      },
+      {
+        "id": "partial-reference-width",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Partial rotary dimensions remain unsupported by the reference application.",
+        "trigger": "Pass full-width Q/K with head_dim=128 and partial_rotary_factor=0.5 to apply_torch.",
+        "expected_behavior": "Rotate the first 64 channels and retain the remaining channels.",
+        "actual_behavior": "Frequency construction produces 64-wide expanded coefficients, while both style helpers multiply the entire 128-wide tensor, producing incompatible last dimensions.",
+        "locations": [
+          {
+            "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+            "path": "exllamav3/util/rope.py",
+            "symbol": "RoPE.apply_torch"
+          }
+        ],
+        "source_evidence": [
+          "call_a2c542775282416e81fa3e416c56a7fc",
+          "call_fd170c9e76d543ff81989d85272829e9"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared frequency construction with both new full-vector helpers. The sole matched direct caller sets partial_rotary_factor=1.0, so the inspected test does not exercise this inherited limitation.",
+            "evidence": [
+              "call_2e07d7a4f90149b1a9e221ba246391fe",
+              "call_d9c1694b8c604d8abf23369e12e653a3",
+              "call_a2c542775282416e81fa3e416c56a7fc",
+              "call_fd170c9e76d543ff81989d85272829e9"
+            ],
+            "limits": "No tensor execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds adjacent-pair GPTJ reference rotation and float intermediates, but breaks optional-K calls; existing tests neither enable GPTJ nor compare returned outputs."
+  },
+  "evidence": {
+    "call_fd170c9e76d543ff81989d85272829e9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "offset": 175,
+        "max_bytes": 3638
+      },
+      "result_sha256": "0c056d3f46a3f4fa77d8dfd7f8c4d6f129f6aaebb6fc05a0d11d30b733feed55"
+    },
+    "call_a2c542775282416e81fa3e416c56a7fc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "path": "exllamav3/util/rope.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "3d45cc3a491a1fba37dba5ac0087247a823b626b3f937433da94d9ea9308bddf"
+    },
+    "call_2e07d7a4f90149b1a9e221ba246391fe": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "query": "apply_torch",
+        "limit": 100
+      },
+      "result_sha256": "7e0131308bb00c12d470eb845d398f4ed35747bf702237a10001a276dc5a11c8"
+    },
+    "call_0ce03097da444fe7b4dc2f911769f588": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "query": "compute_sincos",
+        "limit": 100
+      },
+      "result_sha256": "04f11b66aade3de778cb99d7409ff921fdb11361f3def31797d0ab7204f6ea5c"
+    },
+    "call_0507f63999044c588d6d99a101fbf614": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "query": "GPTJ",
+        "limit": 100
+      },
+      "result_sha256": "71bcf67128ff3564daf380b7c47a45711230433587176aa9a3a4c210b4d0e741"
+    },
+    "call_6f933b713f684352b7defce522d6a625": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "query": "_rotate_half",
+        "limit": 100
+      },
+      "result_sha256": "3326bf81516cf6f5d870124c1ad245359b22ce8e6ab78beb688c356b55e9ef4c"
+    },
+    "call_b7341b21183247e1b529a6dd55da9671": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "query": "_apply_rope_embed",
+        "limit": 100
+      },
+      "result_sha256": "a10c2e602f48cb1af7f296951cc2f61d7a3b3956aa2744564be2b38fce793a04"
+    },
+    "call_d9a7b21c3edd442a9b071ea5b6216bfe": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "query": "cached_sin",
+        "limit": 100
+      },
+      "result_sha256": "0f7e767d6d450d639015bd1ca989bfbb2f1d612eb87a98d27cd386b9267e661c"
+    },
+    "call_d9c1694b8c604d8abf23369e12e653a3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "path": "tests/test_rope.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "c3105d94eb9487fce4595fe3c607fa32134a9e6807ccb4737135342d32c299d7"
+    },
+    "call_53134a9db20e4850a5fe8b067bbc5878": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "bcc096667169d8f34c602ce495b372e3fc9afd2b",
+        "max_bytes": 16000
+      },
+      "result_sha256": "370b6cda11fa7bf617b45a01a9aba70d41a812110079573d6d98b0546931cb5c"
+    },
+    "call_0f69ac2376e64006924a9d042d1dccc9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_00a9b5c7f2e744a7b96e4d3f033024a1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "503b6a5c961762351b530f54cbfaff5faa354258c9f587c29a8cc28336d17ff5"
+    },
+    "call_9231e86321674892a908d4cd36b2155e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d2348d5cc14da2a9e08e1b01ea75a4593f0aab450bb34c7f658f548a3e610b1e"
+    },
+    "call_d5fc4efec0ff42deaa358b1b4ccf497a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "971ca47fd74812412b42e839b2b5e93e36bcacaed4f911f4e44a83cb36a58a27"
+    },
+    "call_cb5a198a6272410d9bafa9f7479e5295": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "query": "RoPE",
+        "limit": 100
+      },
+      "result_sha256": "fa9678e17b0f0663dcf6c0ddadb9182f983c262535b661ca2ec2263334eb5541"
+    },
+    "call_3afaaec943b64d09af1c281c4d56ca86": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nx=[1.,2.,3.,4.]; a=[.7,.2]; s=[math.sin(t) for t in a]; c=[math.cos(t) for t in a]\nr=[-x[1],x[0],-x[3],x[2]]\ny=[x[i]*c[i//2]+r[i]*s[i//2] for i in range(4)]\nexpected=[]\nfor j in range(2):\n u,v=x[2*j:2*j+2];expected.extend([u*c[j]-v*s[j],v*c[j]+u*s[j]])\noldrot=[-x[2],-x[3],x[0],x[1]]\nold=[x[i]*c[i//2]+oldrot[i]*s[i//2] for i in range(4)]\nprint({'new':y,'pair_formula_max_error':max(abs(u-v) for u,v in zip(y,expected)), 'old_max_difference':max(abs(u-v) for u,v in zip(y,old)), 'norm_error':abs(sum(t*t for t in y)-sum(t*t for t in x))})"
+        ]
+      },
+      "result_sha256": "43dce2a6aa27ed1cc1600e707a0d805947a4c6a04ae6fb10634b9d9983361ff8"
+    }
+  }
+}

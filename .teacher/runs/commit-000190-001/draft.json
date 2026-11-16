@@ -1,0 +1,284 @@
+{
+  "schema_version": 5,
+  "sha": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+  "parent_shas": [
+    "d54648bfaba4ab016fc3345938cc9c0f1b02be48"
+  ],
+  "cutoff_date": "2025-05-25T13:53:01+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "RMSNorm.forward flattened its input and restored its output shape through Python view operations even though the kernel already addresses contiguous rows.",
+        "basis": "source",
+        "evidence": [
+          "call_c9e24392fc914c0ba21a5e41393ee840",
+          "call_634269edcc324c46a7afecba795e57d0"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The edits are coupled: removing Python flattening requires the native wrapper to derive width from the last dimension and multiply all preceding dimensions into its row count.",
+        "basis": "source",
+        "evidence": [
+          "call_7a53daeebf4b4d1ab6257df5fa819892",
+          "call_9c4f6c0bc47d4f4ea9dfcc7c562fa167"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This removes Python shape bookkeeping and two view operations without changing the normalization kernel. Reduced CPU overhead is plausible, but no speedup was measured.",
+        "basis": "inference",
+        "evidence": [
+          "call_7a53daeebf4b4d1ab6257df5fa819892",
+          "call_9c4f6c0bc47d4f4ea9dfcc7c562fa167"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root runtime entry was read. It describes vectorized RMSNorm and records the non-float-as-half dtype classification; inspection of the parent and task diff shows that classification is carried over unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_0d10b940a4644d08bdde640243932677",
+          "call_634269edcc324c46a7afecba795e57d0",
+          "call_7a53daeebf4b4d1ab6257df5fa819892"
+        ]
+      }
+    ],
+    "limitations": [
+      "No extension build, GPU execution, numerical comparison or timing was performed.",
+      "The scalar check covers small contiguous shapes with Python integers; it does not establish strided-layout behavior, native integer-overflow behavior or GPU arithmetic.",
+      "The inspected native callers are RMSNorm.forward and extension tests; broader model entry-point compatibility was not exhaustively traced."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "rmsnorm",
+        "title": "Move RMSNorm flattening bookkeeping into the native wrapper",
+        "claims": [
+          {
+            "text": "forward now allocates empty_like directly from the original input and returns that tensor directly. Output dtype selection, epsilon, weights and constant bias are unchanged; params remains unused and only loses its dict annotation.",
+            "basis": "source",
+            "evidence": [
+              "call_c9e24392fc914c0ba21a5e41393ee840",
+              "call_9c4f6c0bc47d4f4ea9dfcc7c562fa167"
+            ]
+          },
+          {
+            "text": "Native validation now requires matching complete input/output shapes, last-axis width matching weight axis zero, and width divisible by four. The full-shape macro compares tensor sizes, not merely element counts.",
+            "basis": "source",
+            "evidence": [
+              "call_7a53daeebf4b4d1ab6257df5fa819892",
+              "call_a7f241ed06934a76b791b14c5018eee7"
+            ]
+          },
+          {
+            "text": "The unchanged kernel launches one 1,024-thread block per flattened row. Four is the vector width of its half4/float4 loads and stores; each row computes x \u00d7 (w + constant_bias) / sqrt(mean(x\u00b2) + epsilon), with float accumulation and separate half/float input-output instantiations.",
+            "basis": "source",
+            "evidence": [
+              "call_634269edcc324c46a7afecba795e57d0"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription checked 255 positive shapes of ranks one through four: multiplying leading dimensions and using row \u00d7 width plus four-element vector offsets covered contiguous storage exactly.",
+            "basis": "execution",
+            "evidence": [
+              "call_7bebbbd0917f4672a51846e23f367e77"
+            ]
+          },
+          {
+            "text": "Whole-tree rms_norm search located the module wrapper and direct extension tests. The wrapper supplies all five arguments and creates matching output shapes. Tests use matching two-dimensional buffers, which agree with the revised shape convention, but their four-argument calls remain incompatible with the inspected five-argument native declaration.",
+            "basis": "source",
+            "evidence": [
+              "call_267298af90414317bbcb87eeddb066c3",
+              "call_c9e24392fc914c0ba21a5e41393ee840",
+              "call_cb1a838725944a08b5d116960b2185d0",
+              "call_aef9ab0f600441d594311d959b65286c"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-dtype-dispatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The native wrapper still treats every non-float dtype as half.",
+        "trigger": "Calling rms_norm with input or output other than float32 or float16 while satisfying its shape and weight checks.",
+        "expected_behavior": "Reject unsupported input/output dtypes.",
+        "actual_behavior": "Dispatch selects half pointers for non-float tensors; the final invalid-dtype branch cannot reject them.",
+        "locations": [
+          {
+            "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+            "path": "exllamav3/exllamav3_ext/norm.cu",
+            "symbol": "rms_norm"
+          }
+        ],
+        "source_evidence": [
+          "call_634269edcc324c46a7afecba795e57d0",
+          "call_7a53daeebf4b4d1ab6257df5fa819892"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared unchanged dtype dispatch with the task diff and inspected located direct callers. RMSNorm.forward adds no dtype guard; tests supply only half/float.",
+            "evidence": [
+              "call_267298af90414317bbcb87eeddb066c3",
+              "call_c9e24392fc914c0ba21a5e41393ee840",
+              "call_cb1a838725944a08b5d116960b2185d0"
+            ],
+            "limits": "No unsupported-dtype invocation or broader model workflow was executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-test-argument-mismatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Existing direct extension tests omit constant_bias.",
+        "trigger": "Running test_rms_norm or its benchmark against the inspected native binding.",
+        "expected_behavior": "Tests invoke the five-argument RMSNorm interface.",
+        "actual_behavior": "All three test call sites pass only four arguments; the native declaration requires five and the located binding supplies no default.",
+        "locations": [
+          {
+            "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+            "path": "tests/test_ext_norm.py",
+            "symbol": "test_rms_norm"
+          }
+        ],
+        "source_evidence": [
+          "call_cb1a838725944a08b5d116960b2185d0",
+          "call_aef9ab0f600441d594311d959b65286c",
+          "call_267298af90414317bbcb87eeddb066c3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared all located extension calls with the declaration. The production Python wrapper supplies constant_bias; the task does not modify the tests.",
+            "evidence": [
+              "call_c9e24392fc914c0ba21a5e41393ee840",
+              "call_cb1a838725944a08b5d116960b2185d0",
+              "call_aef9ab0f600441d594311d959b65286c"
+            ],
+            "limits": "Argument-binding failure was not executed."
+          }
+        ]
+      }
+    ],
+    "summary": "RMSNorm removes Python reshape bookkeeping by calculating flattened row counts natively; kernel arithmetic is unchanged and performance remains unmeasured."
+  },
+  "evidence": {
+    "call_7a53daeebf4b4d1ab6257df5fa819892": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "offset": 162,
+        "max_bytes": 1886
+      },
+      "result_sha256": "142e43b1b6b682ecbe1965378d937f7426be3c57dafa01af9102179adf6a9037"
+    },
+    "call_9c4f6c0bc47d4f4ea9dfcc7c562fa167": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c94905bf794f3b3bee00cd1f6645e624cc33cd12",
+        "offset": 1275,
+        "max_bytes": 773
+      },
+      "result_sha256": "4a80b7c02c8a9a3b3afd8c50aabfdbc9f0e640d72e4fee617398a39209facb9a"
+    },
+    "call_634269edcc324c46a7afecba795e57d0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/exllamav3_ext/norm.cu",
+        "max_bytes": 24000
+      },
+      "result_sha256": "1c1a1a295e4f13aab490f4b390a2db9c824435ad971e4ddab51d702cf854193b"
+    },
+    "call_c9e24392fc914c0ba21a5e41393ee840": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "121a2c85c82ab8da2ed3a397088cbb06d488924780b8ed98cf8a258311c208c4"
+    },
+    "call_670fa82491d642268f6c59b0cd0b455a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "norm.cu",
+        "max_bytes": 5000
+      },
+      "result_sha256": "7cb9252f3ac878c056e0566a64f6c609d7e8e06269368096087e787603fb0945",
+      "catalog_only": true
+    },
+    "call_0d10b940a4644d08bdde640243932677": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "runtime",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de1b97ae94bf13488b4bad98c6eb3de8b285753d46b56295711c375be802464"
+    },
+    "call_267298af90414317bbcb87eeddb066c3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "query": "rms_norm",
+        "limit": 100
+      },
+      "result_sha256": "d240166cca3b47cb74176b65538e8d0d397307fbec24c3bb057ad35454385cd7"
+    },
+    "call_cb1a838725944a08b5d116960b2185d0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "tests/test_ext_norm.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "73e89ab77aa512d2eb563c2e3482640f909ecebcf06955cb8cf47bcc88a0b47c"
+    },
+    "call_a7f241ed06934a76b791b14c5018eee7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/exllamav3_ext/util.h",
+        "max_bytes": 10000
+      },
+      "result_sha256": "db3dfc4ef4cc2afc424fb7a86a572f673e0a92b7ac4a1e3fdec507669fc4b105"
+    },
+    "call_aef9ab0f600441d594311d959b65286c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "path": "exllamav3/exllamav3_ext/norm.cuh",
+        "max_bytes": 2000
+      },
+      "result_sha256": "58f3978e2e01e1e105653de2234716af2a43d6d597e00744dbc7e1dfe89621c7"
+    },
+    "call_7bebbbd0917f4672a51846e23f367e77": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import itertools, math\nn=0\nfor rank in range(1,5):\n for lead in itertools.product(range(1,5),repeat=rank-1):\n  for dim in (4,8,12):\n   shape=lead+(dim,); rows=math.prod(lead)\n   offsets=[r*dim+c*4+k for r in range(rows) for c in range(dim//4) for k in range(4)]\n   assert offsets==list(range(math.prod(shape)))\n   n+=1\nprint(n, 'shapes: native flattened row/vector offsets cover contiguous storage exactly')"
+        ]
+      },
+      "result_sha256": "3c6a3016afc1345a7952b1f7c48df14b81a60a36f976bc23045b3b75bd364954"
+    }
+  }
+}

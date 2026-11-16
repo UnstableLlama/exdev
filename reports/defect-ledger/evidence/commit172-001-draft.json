@@ -1,0 +1,244 @@
+{
+  "schema_version": 5,
+  "sha": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+  "parent_shas": [
+    "475dfcca479d4333d69e759f96d50045663cf69b"
+  ],
+  "cutoff_date": "2025-05-18T00:19:59+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "GGUF storage accounting previously included only seven projection-name suffixes, excluding other weight tensors from both the decoder BPW numerator and denominator.",
+        "basis": "source",
+        "evidence": [
+          "call_4616113e9a824c6f91521ab5cfe4dd02"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing the projection whitelist with a .weight suffix test broadens coverage without maintaining architecture-specific projection names. The tradeoff is that normalization and other matching weights now contribute too; this is not exclusively an MoE change.",
+        "basis": "source",
+        "evidence": [
+          "call_4616113e9a824c6f91521ab5cfe4dd02"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The returned tuple retains its interface. compare_q.test_ppl consumes its layer BPW, head BPW and storage bits, converts bits to GiB, and exposes the values to result reporting and plotting. These are tensor-storage estimates, not measured runtime GPU allocations.",
+        "basis": "source",
+        "evidence": [
+          "call_0165472d929341ca97eef52f91f816a3",
+          "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial usage-evaluation entry was read. It establishes the earlier projection-based GGUF accounting, embedding fallback for the head, and the distinction between calculated storage and runtime VRAM.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_33c135f959214cb9ac96f705208947c2"
+        ]
+      }
+    ],
+    "limitations": [
+      "No real GGUF file, llama.cpp inference, or GPU memory measurement was executed. The scalar check uses synthetic tensor metadata and does not establish actual GGUF tensor ordering or naming coverage.",
+      "The reason for moving metadata accounting before model construction is not established by the supplied evidence."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Broader GGUF weight accounting",
+        "claims": [
+          {
+            "text": "get_storage_info reads GGUF tensor metadata and computes an element-weighted BPW: total n_bytes \u00d7 8 divided by total n_elements. The factor eight converts bytes to bits. Explicit output.weight takes precedence as the head; token_embd.weight supplies a fallback while head_bpw is zero. Other .weight tensors now enter the aggregate through an elif branch; nonmatching tensors remain excluded.",
+            "basis": "source",
+            "evidence": [
+              "call_0165472d929341ca97eef52f91f816a3",
+              "call_4616113e9a824c6f91521ab5cfe4dd02"
+            ]
+          },
+          {
+            "text": "A Python scalar transcription with a synthetic expert weight demonstrates the accounting change: decoder BPW changes from 8 to 5.333333333333333 and decoder-plus-head storage from 2400 to 3200 bits. Including more weights can therefore increase counted storage while decreasing the weighted BPW.",
+            "basis": "execution",
+            "evidence": [
+              "call_a3be7d745a0b4047a4c5885a9e56a47a"
+            ]
+          },
+          {
+            "text": "load_llamacpp now obtains storage information after backend initialization but before constructing Llama. Its constructor options and forwarding implementation are unchanged. The broader selection does not require this reordering to perform its arithmetic.",
+            "basis": "source",
+            "evidence": [
+              "call_4616113e9a824c6f91521ab5cfe4dd02",
+              "call_0165472d929341ca97eef52f91f816a3"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "embedding-order",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new fallback branch makes decoder accounting sensitive to embedding/head tensor order.",
+        "trigger": "A positive-sized output.weight precedes token_embd.weight in GGUFReader.tensors.",
+        "expected_behavior": "Reordering identical tensor metadata should not change decoder BPW or decoder-plus-head storage.",
+        "actual_behavior": "Once output.weight sets head_bpw, token_embd.weight fails the head condition and falls into the new .weight aggregate. With embedding first it is excluded instead. The synthetic check changes the result from (5.333333333333333, 16, 3200) to (8, 16, 4800).",
+        "locations": [
+          {
+            "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+            "path": "eval/compare_q_llamacpp.py",
+            "symbol": "get_storage_info"
+          }
+        ],
+        "source_evidence": [
+          "call_4616113e9a824c6f91521ab5cfe4dd02",
+          "call_0b1d5bc396dd40c1af1bd7445cddef7e",
+          "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-tree caller search identifies load_llamacpp as this helper's direct caller; compare_q dispatches to that loader through its llamacpp registry entry. The observation concerns fresh accounting on that path, not every evaluation backend.",
+            "evidence": [
+              "call_0b1d5bc396dd40c1af1bd7445cddef7e",
+              "call_7a261e185ae349279f5a570d31ffbde5",
+              "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+            ],
+            "limits": "No actual GGUF ordering was inspected."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Executed Python versions of the old and changed classification loops on synthetic metadata, then swapped head and embedding order.",
+            "evidence": [
+              "call_a3be7d745a0b4047a4c5885a9e56a47a"
+            ],
+            "limits": "This does not execute GGUFReader or the repository helper."
+          }
+        ]
+      },
+      {
+        "id": "cached-accounting",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Existing disk-cache entries can bypass the corrected accounting.",
+        "trigger": "get_storage_info is called with arguments already cached under lcpp_get_storage_info before this change.",
+        "expected_behavior": "Storage reporting reflects the updated tensor-selection rule.",
+        "actual_behavior": "The unchanged decorator returns the previously stored tuple without running the modified loop. Its key contains serialized arguments, not a code version. The comparison CLI clears only test_ppl entries, not this storage cache.",
+        "locations": [
+          {
+            "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+            "path": "eval/compare_q_llamacpp.py",
+            "symbol": "get_storage_info"
+          }
+        ],
+        "source_evidence": [
+          "call_0165472d929341ca97eef52f91f816a3",
+          "call_4616113e9a824c6f91521ab5cfe4dd02",
+          "call_af7bf2074fc54123a7bc63fb7bba4801",
+          "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the direct loader caller, cache-hit return, unchanged cache namespace, and comparison CLI invalidation.",
+            "evidence": [
+              "call_0b1d5bc396dd40c1af1bd7445cddef7e",
+              "call_af7bf2074fc54123a7bc63fb7bba4801",
+              "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+            ],
+            "limits": "No persistent cache or filesystem behavior was executed; fresh cache keys run the changed implementation."
+          }
+        ]
+      }
+    ],
+    "summary": "Broadens llama.cpp BPW accounting to non-head .weight tensors and moves metadata inspection before model construction; cached results and tensor-order sensitivity remain caveats."
+  },
+  "evidence": {
+    "call_4616113e9a824c6f91521ab5cfe4dd02": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+        "offset": 192,
+        "max_bytes": 1712
+      },
+      "result_sha256": "8c09f5c51b403dba24e3d0853fe9c0d8363b2e45eacd3f70147b05803cb272dc"
+    },
+    "call_0165472d929341ca97eef52f91f816a3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+        "path": "eval/compare_q_llamacpp.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "b444fa32a40aac1617569b1279baf14a3fd3f0141a691027e86dcbd222f943d1"
+    },
+    "call_33c135f959214cb9ac96f705208947c2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_7a261e185ae349279f5a570d31ffbde5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+        "query": "llamacpp",
+        "limit": 100
+      },
+      "result_sha256": "3feec0e052374dfdf781ab061ce876fbe9edb1bde6b8c7313662945cf910ab80"
+    },
+    "call_af7bf2074fc54123a7bc63fb7bba4801": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_0b1d5bc396dd40c1af1bd7445cddef7e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+        "query": "get_storage_info",
+        "limit": 100
+      },
+      "result_sha256": "31c1627c5c675a73721d6eb31407913b83386b0f830b0582499a1bc949d82f29"
+    },
+    "call_68a74a8a5ce44291a9cab509c1a0e9ca": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "475dfcca479d4333d69e759f96d50045663cf69b",
+        "path": "eval/compare_q.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "8607fa5804ed1d4b3e4894dd0a48f031bf99ca37504d8d7b906201abc12ab7cc"
+    },
+    "call_a3be7d745a0b4047a4c5885a9e56a47a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def calc(ts,new):\n b=n=h=hn=0\n for name,nb,ne in ts:\n  head=(name=='token_embd.weight' and h==0) or name=='output.weight'\n  if new:\n   if head: h=nb*8/ne;hn=ne\n   elif name.endswith('.weight'): b+=nb*8;n+=ne\n  else:\n   if any(name.endswith('.'+s+'.weight') for s in ['ffn_down','ffn_gate','ffn_up','attn_q','attn_k','attn_v','attn_output']): b+=nb*8;n+=ne\n   if head: h=nb*8/ne;hn=ne\n return (b/n,h,hn*h+b)\na=[('token_embd.weight',200,100),('output.weight',200,100),('blk.0.attn_q.weight',100,100),('blk.0.ffn_up_exps.weight',100,200)]\nprint('synthetic old/new',calc(a,False),calc(a,True))\nprint('output before embedding',calc([a[1],a[0]]+a[2:],True))"
+        ]
+      },
+      "result_sha256": "fe8373bc40e540ce815425429e1b0b44d420a997d2f634ff3700d9e988e40b72"
+    }
+  }
+}

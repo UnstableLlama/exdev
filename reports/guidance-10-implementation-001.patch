@@ -1,0 +1,65 @@
+--- a/teacher/session.py
++++ b/teacher/session.py
+@@ -95,6 +95,13 @@
+ anything in the inspected code still prevents or guarantees it. If nothing does and the source shows an input or
+ call path that reaches the unguarded case, report it under findings as suspected, with its limits; do not leave
+ it only under uncertainty. If you could not establish a path that reaches it, say what you searched.'''
++
++GUIDANCE_10_ADDITION = '''When the task removes, comments out or bypasses a check, guard, conversion or initialisation, replaces a call
++that performed one, or changes a call that used to run every time so that it now runs once or only under a
++condition, read the removed or bypassed code and say what it prevented or guaranteed. Then say whether anything
++in the inspected code still prevents or guarantees it. If nothing does and the source shows an input or call path
++that reaches the unguarded case, report it under findings as suspected, with its limits; do not leave it only
++under uncertainty. If you could not establish a path that reaches it, say what you searched.'''
+ 
+ class FreshSession:
+     def __init__(self, packet):
+@@ -151,7 +158,9 @@
+         additional_guidance = GUIDANCE_7 if manifest.get('guidance_version',1)>=7 else GUIDANCE_6 if manifest.get('guidance_version',1)==6 else ''
+         if manifest.get('guidance_version',1)>=8:
+             additional_guidance += '\n\n'+GUIDANCE_8_ADDITION
+-        if manifest.get('guidance_version',1)>=9:
++        if manifest.get('guidance_version',1)>=10:
++            additional_guidance += '\n\n'+GUIDANCE_10_ADDITION
++        elif manifest.get('guidance_version',1)>=9:
+             additional_guidance += '\n\n'+GUIDANCE_9_ADDITION
+         adopted_instruction = '\n'+additional_guidance if additional_guidance else ''
+         self.initial = [{'role':'system','content':SYSTEM+message_instruction+provenance_instruction+merge_instruction+discussion_instruction+dispatch_instruction+config_instruction+coverage_instruction+closed_instruction+adopted_instruction},
+--- a/teacher/walk_inputs.py
++++ b/teacher/walk_inputs.py
+@@ -59,7 +59,7 @@
+         raise ValueError('Walk packet lacks task commit message')
+     if contract.get('version',1)>=5:
+         expected_guidance = 5 if contract.get('version',1)>=8 else 4 if contract.get('version',1)>=7 else 3 if contract.get('version',1)>=6 else 2
+-        allowed_guidance = (5, 6, 7, 8, 9) if expected_guidance == 5 else (expected_guidance,)
++        allowed_guidance = (5, 6, 7, 8, 9, 10) if expected_guidance == 5 else (expected_guidance,)
+         if manifest.get('guidance_version') not in allowed_guidance:
+             raise ValueError('Missing dispatch guidance version')
+         actual_refs=signatures([i for i in manifest['evidence'] if i['source_id'] in contract['reference_source_ids']])
+--- a/tests/test_walk_inputs.py
++++ b/tests/test_walk_inputs.py
+@@ -61,7 +61,7 @@
+             with self.assertRaisesRegex(ValueError,'evidence'):prepare(self.repo,self.task,9,self.root/'broken',directory)
+ 
+     def test_guidance_eight_default_preserves_legacy_inputs(self):
+-        from teacher.session import GUIDANCE_6, GUIDANCE_7, GUIDANCE_8_ADDITION, GUIDANCE_9_ADDITION
++        from teacher.session import GUIDANCE_6, GUIDANCE_7, GUIDANCE_8_ADDITION, GUIDANCE_9_ADDITION, GUIDANCE_10_ADDITION
+         directory = self.bundle()
+         packet = self.root/'guidance-trial'
+         manifest = prepare(self.repo, self.task, 9, packet, directory)
+@@ -106,6 +106,15 @@
+         self.assertEqual(fifth.initial[1:], fourth.initial[1:])
+         self.assertEqual(fifth.tools, fourth.tools)
+         self.assertEqual(fifth.reasoning_effort, fourth.reasoning_effort)
++        manifest['guidance_version'] = 10
++        (packet/'manifest.json').write_text(json.dumps(manifest))
++        validate_bundle(packet, directory/'000009-eligible.json')
++        revised = FreshSession(packet)
++        self.assertEqual(revised.initial[0]['content'], fourth.initial[0]['content']+'\n\n'+GUIDANCE_10_ADDITION)
++        self.assertNotIn(GUIDANCE_9_ADDITION, revised.initial[0]['content'])
++        self.assertEqual(revised.initial[1:], fourth.initial[1:])
++        self.assertEqual(revised.tools, fourth.tools)
++        self.assertEqual(revised.reasoning_effort, fourth.reasoning_effort)
+         manifest['guidance_version'] = 7
+         # Adoption does not weaken evidence integrity checks.
+         manifest['walk_input_contract']['reference_signatures'] = [['missing', '0'*64]]

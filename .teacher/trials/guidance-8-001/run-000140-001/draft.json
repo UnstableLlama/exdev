@@ -1,0 +1,458 @@
+{
+  "schema_version": 5,
+  "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+  "parent_shas": [
+    "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+  ],
+  "cutoff_date": "2025-05-11T15:35:09+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Explicit-device loading read modules without the deferred-loading lifecycle already used by autosplit.",
+        "basis": "source",
+        "evidence": [
+          "call_7f6c15b99df647adbd232baeffe75e13",
+          "call_1505428e0a0241a589080b875e53e44a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Reusing module-scoped batching plausibly reduces individual-read overhead while retaining eligibility guards. This is an inferred performance rationale, not a measured speedup.",
+        "basis": "inference",
+        "evidence": [
+          "call_1505428e0a0241a589080b875e53e44a",
+          "call_c589f41859d340b5886fc4caeeb53ea7"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Eligible modules now complete their deferred reads before the single-device progress bar advances. Device placement, including prefer_cpu, is unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_1505428e0a0241a589080b875e53e44a"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read ancestor 647bb7d549b8485ad052ac0650148bd35fcee6d4: it establishes the deferred-loader lifecycle, constructor-safety requirements and an odd-element CUDA BF16 conversion observation. Read 6c15b8c40f0d28807006ad65d2c9e31382a352b4: it describes shared successful-load cleanup and the explicit-device progress omission.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_dfd00b225431468db1eaaca6238e96b7",
+          "call_b2af5fe9206c4c62b165d4214d59c56e"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension import failure. Issue #33, \u201cError converting model,\u201d ultimately reports too many open files during compilation. Their connections here are inferred only from model.py and loader-source overlap, respectively; neither establishes motivation or validation for this change.",
+        "basis": "inference",
+        "evidence": [
+          "call_e42c20da53c141eb95cfaec2da4a34c8",
+          "call_e8da5752046c4504a2ce61e12478e7e2",
+          "call_aa4b01968b2242988c690fccc3390d35",
+          "call_1505428e0a0241a589080b875e53e44a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository loading implementation or GPU kernel was executed; throughput, peak memory and CUDA ordering remain unmeasured.",
+      "The scalar check models chunk arithmetic and bit interpretation only, not native conversion or zero-block launch behavior.",
+      "No affected odd-sized BF16 checkpoint was demonstrated. Literal caller searches do not establish external or dynamically dispatched usage."
+    ],
+    "links": [
+      "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "6c15b8c40f0d28807006ad65d2c9e31382a352b4"
+    ],
+    "chapters": [
+      {
+        "id": "loading",
+        "title": "Deferred reads for explicit-device loading",
+        "claims": [
+          {
+            "text": "_load_single now checks can_defer_load, begins deferral, loads the module, and flushes before updating progress. The whole-tree search finds load_gen as its sole direct caller; load_gen selects it when device is supplied, and Model.load exhausts that generator.",
+            "basis": "source",
+            "evidence": [
+              "call_1505428e0a0241a589080b875e53e44a",
+              "call_bdad27424e8f43678fb326b69ffcd55e",
+              "call_7f6c15b99df647adbd232baeffe75e13"
+            ]
+          },
+          {
+            "text": "Eligibility is recursive: leaves permit deferral, composites require every child to permit it, sliced Linear instances reject it, and GatedMLP rejects multiple slices. The new caller preserves the same guard as autosplit.",
+            "basis": "source",
+            "evidence": [
+              "call_0c66e527d95848e59567352e8140cae3",
+              "call_9e5db7193db340d7904b4f25cbd87cc9",
+              "call_8fb7f9209aa94beeb5b2c0bb18eca12d",
+              "call_9e5f480a0b2f466ebf7d8d9f888d194a",
+              "call_1505428e0a0241a589080b875e53e44a"
+            ]
+          },
+          {
+            "text": "Only mt_fread requests switch to deferred reads, unless no_defer is set. Python-backend reads and in-memory overrides remain immediate. Deferred requests allocate destinations before population, retaining temporary tensors when transposition, padding or FP32 conversion requires them.",
+            "basis": "source",
+            "evidence": [
+              "call_c589f41859d340b5886fc4caeeb53ea7"
+            ]
+          },
+          {
+            "text": "The flush groups requests by CPU/CUDA and filename, sorts each group by descending byte size, and divides reads into at-most-2-MiB jobs. Native CUDA loading stages through host buffers; afterward Python copies transformed temporary tensors into destinations. This batches within each module, not across the whole model.",
+            "basis": "source",
+            "evidence": [
+              "call_c589f41859d340b5886fc4caeeb53ea7",
+              "call_f64fa403fec84ab39124e9c89aa82a84",
+              "call_1505428e0a0241a589080b875e53e44a"
+            ]
+          },
+          {
+            "text": "The existing autosplit caller wraps loading in exception handling that aborts pending reads before OOM recovery or rethrow. The new single-device caller copies the successful lifecycle but not that cleanup.",
+            "basis": "source",
+            "evidence": [
+              "call_4ddb2b0b4ba44eafa953a52a7d8c1566",
+              "call_7f6c15b99df647adbd232baeffe75e13",
+              "call_1505428e0a0241a589080b875e53e44a"
+            ]
+          },
+          {
+            "text": "A scalar transcription confirms the current chunk limit is 2,097,152 bytes. Pair-only conversion leaves one element uncovered for counts 1, 3, 2049 and 1,048,577; interpreting BF16-one bits as FP16 produces 1.875 rather than 1.0.",
+            "basis": "execution",
+            "evidence": [
+              "call_f50a003758ce40de9ee314b056a22566"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "single-device-deferred-abort",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new single-device lifecycle omits exception-time deferred-state cleanup.",
+        "trigger": "An eligible module's load or deferred flush raises after begin_deferred_load.",
+        "expected_behavior": "Clear pending requests and deferred_mode before propagating the exception, as autosplit does.",
+        "actual_behavior": "The exception escapes with deferred_mode still true and potentially retained destination tensors. A subsequent eligible load on the same collection encounters begin_deferred_load's assertion.",
+        "locations": [
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model._load_single"
+          }
+        ],
+        "source_evidence": [
+          "call_1505428e0a0241a589080b875e53e44a",
+          "call_7f6c15b99df647adbd232baeffe75e13",
+          "call_c589f41859d340b5886fc4caeeb53ea7"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both lifecycle callers and loader reset operations. The sole direct _load_single caller is load_gen's explicit-device branch, also reachable through Model.load.",
+            "evidence": [
+              "call_bdad27424e8f43678fb326b69ffcd55e",
+              "call_4ddb2b0b4ba44eafa953a52a7d8c1566",
+              "call_7f6c15b99df647adbd232baeffe75e13"
+            ],
+            "limits": "No failure injection or retry was executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-deferred-bf16-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited odd-element CUDA BF16 conversion gap persists and is now reachable through explicit-device deferred loading.",
+        "trigger": "An eligible module requests a file-backed, odd-element BF16 tensor on CUDA with conversion to FP16 and without bypassing deferral.",
+        "expected_behavior": "Convert every element before consuming the FP16 destination.",
+        "actual_behavior": "The CUDA helper passes numel / 2 to a pair-conversion kernel, leaving the odd final element unconverted. The task does not modify that helper.",
+        "locations": [
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_d385a1bbbe114f68a77bc288ba5f05e1",
+          "call_f64fa403fec84ab39124e9c89aa82a84",
+          "call_c589f41859d340b5886fc4caeeb53ea7",
+          "call_1505428e0a0241a589080b875e53e44a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-tree helper search identifies stloader_deferred_cuda as the direct caller. Traced it through end_deferred_load to the existing autosplit and new explicit-device lifecycle; CPU conversion handles individual elements.",
+            "evidence": [
+              "call_966b637c6f604552b4bfee1dc6e6fc7b",
+              "call_d385a1bbbe114f68a77bc288ba5f05e1",
+              "call_f64fa403fec84ab39124e9c89aa82a84"
+            ],
+            "limits": "Conditional reach, not evidence that every model contains affected tensors."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled current chunk splitting and pair coverage, and decoded an illustrative unchanged BF16 bit pattern as binary16.",
+            "evidence": [
+              "call_f50a003758ce40de9ee314b056a22566"
+            ],
+            "limits": "Standard-library arithmetic only; no GPU kernel execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-single-device-progress",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The previously recorded explicit-device callback and generator-progress omission remains unchanged.",
+        "trigger": "Use load_gen(device=...) expecting progress tuples, or load(device=..., callback=...) expecting notifications.",
+        "expected_behavior": "Receive progress through the requested interface.",
+        "actual_behavior": "_load_single updates only its progress bar; it neither yields progress nor invokes the callback.",
+        "locations": [
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.load_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_1505428e0a0241a589080b875e53e44a",
+          "call_7f6c15b99df647adbd232baeffe75e13"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected all literal load_gen call sites: Model.load forwards arguments; both examples use autosplit rather than explicit-device loading.",
+            "evidence": [
+              "call_516db9b5274140018135a08f23b2feeb",
+              "call_c325f437378f48adbce05973a20619ba",
+              "call_7f6c15b99df647adbd232baeffe75e13"
+            ],
+            "limits": "No runtime progress test."
+          }
+        ]
+      }
+    ],
+    "summary": "Extends guarded, module-scoped deferred loading to explicit-device loads. Performance is unmeasured; exception cleanup is omitted and inherited conversion and progress limitations remain."
+  },
+  "evidence": {
+    "call_1505428e0a0241a589080b875e53e44a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "offset": 176,
+        "max_bytes": 841
+      },
+      "result_sha256": "5fd1dd6c7f04857f762af4e8d32b434de4a8515b2b637bc2ca1cc65de5c1ff98"
+    },
+    "call_7f6c15b99df647adbd232baeffe75e13": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "41e9edf406ab6e409935bd573e4519043b64d03918c3f6b3f567af298471c979"
+    },
+    "call_4ddb2b0b4ba44eafa953a52a7d8c1566": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "query": "deferred_load",
+        "limit": 100
+      },
+      "result_sha256": "d70cafb1123b99b3196a390985b9a511dd7b79ca97c77a58220178b0d1c1e37a"
+    },
+    "call_c589f41859d340b5886fc4caeeb53ea7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_eb6b96e2e7044c2585ca635f5f6160ba": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "models/model.py",
+        "limit": 20,
+        "max_bytes": 8000
+      },
+      "result_sha256": "066f6d5eae1c8a21b359feaecae1ac7d3ffdfa974ef4cc0dfda9e0d32455a859",
+      "catalog_only": true
+    },
+    "call_b2af5fe9206c4c62b165d4214d59c56e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6c15b8c40f0d28807006ad65d2c9e31382a352b4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "adf063bfea10af3cf14d094b2da8929a748b5d2d3f4a3f9bb7530f115a64b488"
+    },
+    "call_dfd00b225431468db1eaaca6238e96b7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "061e4dce54d3bb9055e5308e37b95f431258d57cae23de19023d4c772984212d"
+    },
+    "call_0c66e527d95848e59567352e8140cae3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "query": "can_defer_load",
+        "limit": 100
+      },
+      "result_sha256": "7701127d8d7eba2d137ef19f7b992c295ad137c7b4c4b3244d3361348ddc4d45"
+    },
+    "call_9e5db7193db340d7904b4f25cbd87cc9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 3000
+      },
+      "result_sha256": "9b6975e0608cb65d65b8e36c780e5328139495f3fea96c99ba250cffafa74a17"
+    },
+    "call_8fb7f9209aa94beeb5b2c0bb18eca12d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 6300,
+        "max_bytes": 1600
+      },
+      "result_sha256": "9ec72469323cb6f77e9a18787ac4c8bea1bc84574d1deb45fa8deacc46fb1283"
+    },
+    "call_cd53d89923ca41bb9e4c48f5d64fa32b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 6400,
+        "max_bytes": 1700
+      },
+      "result_sha256": "104cec3d2d0adad481b63dc04286750732e9ec45583c4b86b1e3b168424f12cd"
+    },
+    "call_9e5f480a0b2f466ebf7d8d9f888d194a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 5800,
+        "max_bytes": 650
+      },
+      "result_sha256": "f143befe80406a7475fcb267c1c163a21aa9c19dc27ff2bbc9afc8dfb3035409"
+    },
+    "call_9fbc730c9319415a94f3dfdf5d10814e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/exllamav3_ext/stloader.cu",
+        "max_bytes": 8000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_966b637c6f604552b4bfee1dc6e6fc7b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "query": "inplace_bf16_to_fp16",
+        "limit": 30
+      },
+      "result_sha256": "d638b325b2215d9ae49955a93faa11f0f63cf2d4326f95070b5696f54299191a"
+    },
+    "call_d385a1bbbe114f68a77bc288ba5f05e1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+        "max_bytes": 5000
+      },
+      "result_sha256": "313d816cfbdf8b70471c6619d333fc7e37d06f52c3670cee53cdce5ac271f384"
+    },
+    "call_f64fa403fec84ab39124e9c89aa82a84": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "offset": 5500,
+        "max_bytes": 7000
+      },
+      "result_sha256": "b5ff40e98b1c2e27ad223a575ab133bdcbaae4f01eda5e4de36b9c41bfd32c1d"
+    },
+    "call_bdad27424e8f43678fb326b69ffcd55e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "query": "_load_single",
+        "limit": 30
+      },
+      "result_sha256": "d73cbe7b8195af4fdd05f5065c02a35eb36d9f522868fc0f04a2c91d8447b1aa"
+    },
+    "call_e42c20da53c141eb95cfaec2da4a34c8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 14000
+      },
+      "result_sha256": "ef644847665af1a3749128371e62da0e0bb8f0ffe4b6bd28150959f97d61b43b"
+    },
+    "call_e8da5752046c4504a2ce61e12478e7e2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "42f6f9f77302e3cdb426ef307c92c25032fb9c0bfa107e8bd29ac705115fb8ba"
+    },
+    "call_aa4b01968b2242988c690fccc3390d35": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 14000
+      },
+      "result_sha256": "d8dadd011dc4f8d98b78b8740a29c3cbe6d397f24ba7a7b804000eec3189cb13"
+    },
+    "call_516db9b5274140018135a08f23b2feeb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "query": "load_gen(",
+        "limit": 40
+      },
+      "result_sha256": "082ed42a36636c0e87c09ffaa38112889a2affc67db1d87521c14b3205678fdf"
+    },
+    "call_c325f437378f48adbce05973a20619ba": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "path": "examples/loading.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "79bb990913974980a2fcef1079846ae5d1b102238a61aa241d1e73cf1a6930cd"
+    },
+    "call_f50a003758ce40de9ee314b056a22566": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct\nchunk=2*1024**2\nprint('chunk_bytes',chunk)\nfor n in (1,2,3,2049,1048577):\n sizes=[min(chunk,2*n-i) for i in range(0,2*n,chunk)]\n covered=sum(2*((s//2)//2) for s in sizes)\n print(n, 'chunks',len(sizes),'converted',covered,'unconverted',n-covered)\nprint('BF16_one_bits_as_FP16',struct.unpack('<e',struct.pack('<H',0x3f80))[0])"
+        ]
+      },
+      "result_sha256": "945e1aabbde9005356331b60462782f1a41f8c3d431660aeb67636eefcb5b8aa"
+    }
+  }
+}

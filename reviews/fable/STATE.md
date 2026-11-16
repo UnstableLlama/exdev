@@ -372,7 +372,7 @@ hold (130 verdict); the default-path BOS loss in HumanEval (150 verdict, intent 
 (reviewer-assisted; their 001s were rejected). 159 was approved mechanically. **172 is being authored now**, the
 first commit under guidance 7; its request will be `reviews/requests/commit-000172-001.md`. No request was
 pending when this was written. Nothing is committed since `d980d21`: everything from 130 on lives only in this
-machine (about 600 uncommitted paths). The user has not asked for a commit; it would be reasonable to offer one.
+(172 onward) is uncommitted. Do not commit again unless the user asks.
 
 **Only one reviewer session may run.** Two ran at once on the 15th and both wrote the 153/002 verdict. My watch
 was stopped at this handoff. Before starting, check `list_sessions` for another running "Fable exdev" session.
@@ -433,3 +433,243 @@ describe the altered-text tasks; five story sections unread).
 - Check Astra's session log before believing a notification failed or Astra is stuck: the queue warning about
   "could not resume thread" is normal and the message still arrives.
 - Keep tool output short; this session ran long mostly on output I did not need.
+
+**Correction, added after the handoff section was written:** the user then asked for a commit. Everything
+through 171 is committed and pushed: `0ed73a1` on `main` ("Walk through commit 171: token-cost driver, guidance
+7, reviews 130-171"), local and remote equal. It includes the four guidance-6 trial runs (force-added; their
+packets are ignored). The in-progress 172 run directory was left out. Work from 172 on is uncommitted, as are
+this correction and the matching line in `reviews/FABLE-HANDOFF.md`. Do not commit again unless the user asks.
+
+## After 172 (2026-11-15 night, new session after the handoff above)
+
+- **172 approved** (ancestor retrieval only), verdict `reviews/verdicts/commit-000172-001.md`. First run under
+  guidance 7: 8 tool calls, 1 ancestor read, 2 whole-tree greps, 2 findings (both true, suspected). Canonical-use
+  conditions: says `--clear_cache` clears `test_ppl` entries (it clears nothing, 165); misses that a cached
+  `test_ppl` result keeps the old numbers; does not carry the two 165 findings. Both 165 r002 ledger revisions
+  accepted. Watch restarted; Astra notified.
+- `codex` is not on PATH under `bash -ls`; use
+  `~/.codex/packages/standalone/releases/0.167.0-aarch64-unknown-linux-musl/bin/codex queue …`.
+- Guidance-7 figures so far, tool calls / ancestor reads: 172 8/1. Token cost not yet profiled.
+- **Fourth paragraph, wording proposed to the user, NOT approved, no teacher has seen it:**
+  "When the task starts calling an existing function, method or mechanism from a place that did not call it
+  before, or copies code that calls it, search the parent tree for its existing callers and read the code around
+  each call. Compare the conditions, guards, argument preparation and error handling there with the new call;
+  name any that the new call omits and state what the inspected code would do without it. If there are no other
+  callers, say so."
+- **173 approved** (clean; `-mask` filter; fixes 165's `--clear_cache` key, so that watch item is closed; the
+  zero-over-zero one remains). Guidance-7 figures: 173 8/1. Four ledger candidates accepted.
+- **174 approved** (`Linear: Load scaled FP8 weights`; three true findings: FP8 dtype not loadable, scaling lost
+  under deferred load, scale not transposed). Guidance-7 figures: 174 26/2 (10 of the calls are web fetches for five
+  closed catalog rows); Astra 0.98M. 172 0.57M, 173 0.83M.
+  Watching for (hindsight, never to a teacher): a later commit adding 8-bit float dtypes to `convert_dtype`, and a
+  fix for scaling under deferred load (`no_defer` or scaling after `end_deferred_load`). From memory only, not
+  checked: DeepSeek-V3 style checkpoints store `weight_scale_inv` laid out like the stored weight.
+- **Guidance 8 trial approved by the user** ("Approve trial"): decision file
+  `reviews/verdicts/guidance-8-trial.decision.md`; Astra notified. Trial positions 154, 140, controls 157, 156.
+  Expect `guidance-8-implementation-001` then `guidance-8-trial-001`. Not adoption; walk stays on 7.
+- Guidance-7 report given to the user after 174 (cost about the same; searches happening; no false findings).
+- **175 approved** (fixes 165's zero-over-zero; both 165 watch items are now closed). Figures: 175 10/2, Astra
+  1.11M (includes staging the guidance-8 patch). `check.py` shows `teacher/session.py` and `teacher/walk_inputs.py`
+  as bad from now until the guidance-8 implementation is accepted and committed: the working copies carry the
+  trial patch (applied 20:50:21, after 175's validation). Check each run's recorded hashes against the patch time.
+- **guidance-8-implementation-001 accepted** (trial gate only). Next expected: 176 and `guidance-8-trial-001`.
+  For the suite, put the codex bin directory on PATH or two wire tests error.
+- **176 approved** (MCG / MUL1 experimental codebooks, 38 files). Figures: 176 48/1 (20 `git_show`, 11 web
+  fetches), Astra 0.89M. Reviewer finding the teacher missed: both multipliers set → quantize uses MUL1,
+  decode/reconstruct use MCG, GEMM refuses; reachable by resuming a job with the other option. This is the kind of
+  gap paragraph D is meant for (a guard one caller has and the others lack); 176 would be a good extra trial case.
+  Watching for a later fix. `codebook_scale` stays 1.2437 for MUL1 whose RMS is 1.0004.
+- **Guidance-8 trial passed** (`reviews/verdicts/guidance-8-trial-001.md`): 154 and 140 found, 157 and 156
+  clean; calls 74 against 44 (154: 10 under guidance 6, 23 under 8). Reported to the user with a recommendation
+  to adopt; **awaiting the user's decision; walk stays on 7.** If adopted: decision file, Astra changes the
+  default to 8 with an adoption request, as was done for 7.
+- **Guidance 8 adopted by the user** ("Adopt it"): `reviews/verdicts/guidance-8-adoption.decision.md`; Astra
+  notified. Expect a 177 request possibly still under 7, then `guidance-8-adoption-001` (check: default 8, text
+  unchanged, older packets identical, suite with codex on PATH). Owed after a few commits under 8: cost and
+  effect against 172 to 176 (calls/ancestor reads: 172 8/1, 173 8/1, 174 26/2, 175 10/2, 176 48/1; Astra input
+  0.57M, 0.83M, 0.98M, 1.11M, 0.89M).
+- **177 approved** (clean; sampler reseeds only when a step asks). Last commit under guidance 7: 19/1, Astra
+  0.70M. Guidance-7 baseline for the later comparison is 172 to 177. Next: `guidance-8-adoption-001`, then 178
+  under guidance 8.
+- **guidance-8-adoption-001 accepted.** Guidance 8 is the walk default from 178. In reviews from 178: the
+  "system same as previous" line will be False once (177 was version 7); confirm the only difference is paragraph D.
+- **178 approved** (clean; first under guidance 8; three asserts commented out). Guidance-8 figures, calls /
+  ancestor reads / Astra input: 178 9/2 (two chunks of one chapter)/0.56M. Paragraph D did not apply (no new
+  call site). Correction sent to Astra: sorted-argmax and cost-buffer never had ledger identities (root-entry
+  findings); to be filed as new identities introduced at `543c4b27`.
+- **179 approved** (clean; BlockSparseMLP top-k on logits). Guidance 8: 179 17/1, Astra 0.90M. Paragraph D not
+  triggered (no new call site), though the teacher did trace `exl3_mgemm`'s shape check.
+- **180 approved** (clean; `profile_opt` no-op helper). Guidance 8: 180 15/1, Astra 0.59M. Paragraph D not
+  triggered yet in 178 to 180 (no commit added a call to an existing function from a new place). Report to the
+  user is due once one does, or after about five commits.
+- **181 approved** (K/V allocation patterns). Guidance 8: 181 9/1. Reviewer note: the root entry's
+  "exact-budget boundary" finding ignores that `budget` already has +1; the real effect is surplus drifting up by
+  one bit per call. Recorded as a canonical-use condition at 181; applies to the root entry too.
+- **182 approved** (fused K/V `exl3_mgemm` in attention). First walk commit where paragraph D applies; the
+  teacher compared the existing callers and reported no finding; I found none either. Guidance 8: 182 16/1,
+  Astra 0.58M. Guidance-8 figures so far, calls / Astra input: 178 9/0.56M, 179 17/0.90M, 180 15/0.59M,
+  181 9/0.54M, 182 16/0.58M. Guidance-7 (172 to 177): 8, 8, 26, 10, 48, 19 calls; 0.57M to 1.11M.
+  Report to the user is due now (five commits, D exercised once).
+- **183 approved** (clean; GPTJ in the Torch reference RoPE; three true findings, one new: `k.float()` on an
+  absent K). Guidance 8: 183 16/2, Astra 0.67M. Watching for a later fix of the optional-K conversion and of the
+  test that discards results.
+- **184 approved** (BlockSparseMLP routing moved to the extension; persistent buffers; in-kernel reduction;
+  three true findings). Guidance 8: 184 23/1, Astra 0.83M. Second commit where paragraph D applies (routing
+  bypasses `Linear.forward`); the teacher flagged the bypass but left bias as "unestablished" rather than reading
+  `LinearFP16.forward`: a partial use of D, recorded as a canonical-use condition.
+- **185 approved** (fused RoPE + head norm kernel; three new true findings: norm epsilon/bias overwritten in
+  `Attention.__init__` (Gemma 3 loses bias 1.0), every lane writes the warp sum, padded reads of `inv_freq` and
+  norm weight). Guidance 8: 185 45/4, Astra 0.55M. Paragraph D visibly worked: the unguarded store was found by
+  comparing with `block_reduce_sum_f`'s guarded one. Watching for later fixes of all three.
+- **186 approved** (GEMM tuning; zero multi-GEMM grid below 24 tiles, Boolean threshold inherited, stale
+  five-argument declaration). Guidance 8: 186 19/1, Astra 0.57M. Guidance-8 calls so far 178 to 186:
+  9, 17, 15, 9, 16, 16, 23, 45, 19.
+- **187 approved** (clean; float attention output for Mixtral and Qwen3 MoE). Guidance 8: 187 45/3 (11 config
+  fetches for a two-line change: the reference-configuration instruction, not paragraph D), Astra 1.10M.
+- **188 approved** (LinearEXL3 overhead; no teacher findings). Reviewer finding: kernel-attribute cache keyed by
+  pointer only, not device; upstream fixes it at `dc69b167` (2025-05-30, "GEMM: Set kernel attribute per
+  device"). When the walk reaches `dc69b167`, check the entry recognises the fix from 188's entry. Guidance 8:
+  188 16/2, Astra 0.65M. Calls 178 to 188: 9, 17, 15, 9, 16, 16, 23, 45, 19, 45, 16.
+  Pattern worth telling the user: at 184 and 188 the teacher saw the relevant fact and labelled it "not
+  established" instead of filing a suspected finding.
+- **189 approved** (clean; `torch.empty` output in `LinearFP16`). Guidance 8: 189 10/2, Astra 0.60M.
+  Attribute-cache ledger r001 accepted.
+- **190 approved** (RMSNorm flattening moved to native; removed `view` was an implicit contiguity guard:
+  canonical-use condition). Guidance 8: 190 11/1, Astra 0.58M. Third case (184, 188, 190) of "saw it, called it
+  not established". Calls 178 to 190: 9, 17, 15, 9, 16, 16, 23, 45, 19, 45, 16, 10, 11.
+- **Fifth paragraph (E) drafted and shown to the user; NOT approved; no teacher has seen it.** Wording:
+  "When the task removes, comments out or bypasses a check, guard, conversion or initialisation, or replaces a
+  call that performed one, read the removed or bypassed code and say what it prevented or guaranteed. Then say
+  whether anything in the inspected code still prevents or guarantees it. If nothing does and the source shows an
+  input or call path that reaches the unguarded case, report it under findings as suspected, with its limits; do
+  not leave it only under uncertainty. If you could not establish a path that reaches it, say what you searched."
+  Proposed trial as version 9: targets 184, 188, 190; controls 189, 178. Needs the user's approval first.
+- **191 approved** (clean; batched translation example; two true findings). Guidance 8: 191 19/2, Astra 0.79M.
+- **Guidance 9 trial approved by the user** ("Approve trial"): `reviews/verdicts/guidance-9-trial.decision.md`;
+  Astra notified. Targets 184, 188, 190; controls 189, 178. Expect `guidance-9-implementation-001` then
+  `guidance-9-trial-001`. Not adoption; walk stays on 8.
+- **192 approved** (clean; probabilities and top tokens; default path raises UnboundLocalError; reported
+  probabilities are pre-sampler). Guidance 8: 192 18/2, Astra 0.85M. Hindsight: `cf220845` (next commit, same
+  title) fixes the unbound return; check 193's entry recognises it.
+- **guidance-9-implementation-001 accepted** (trial gate only; default stays 8). Next: 193 (expected to be the
+  fix `cf220845`) and `guidance-9-trial-001`.
+- **193 approved** (clean; fixes 192's unbound return; teacher recognised it from 192's entry). Guidance 8:
+  193 13/1, Astra 0.55M. Guidance-8 calls 178 to 193: 9, 17, 15, 9, 16, 16, 23, 45, 19, 45, 16, 10, 11, 19, 18, 13.
+- **Guidance-9 trial assessed: mixed** (`reviews/verdicts/guidance-9-trial-001.md`). 190 found; 184 bias found
+  but alias finding lost; 188 device cache still under uncertainty (new finding for removed native checks);
+  controls 189 and 178 clean; calls 83 against 69. Reported to the user with options (adopt as is / revise
+  wording to cover "a call that used to run every time now runs once or conditionally" and re-run 188 plus a
+  control / drop). **Awaiting the user's decision; walk stays on 8.**
+- **194 approved** (clean; two unused declarations commented out). Guidance 8: 194 15/2, Astra 0.58M.
+- **195 approved** (new `cache_rotate` kernel and test; partition/underflow and unused test dtype true; empty
+  `order` underflow listed only as a precondition: canonical-use condition, fourth "saw it, not flagged" case).
+  Guidance 8: 195 8/1, Astra 0.58M. Watching for the first library caller of `cache_rotate` (paragraph D case).
+- **User chose "Revise and re-test"** for the fifth paragraph: `reviews/verdicts/guidance-10-trial.decision.md`;
+  Astra notified. Version 10 = paragraph E with the clause "or changes a call that used to run every time so that
+  it now runs once or only under a condition". Trial: 188, controls 189, 178. Expect
+  `guidance-10-implementation-001` then `guidance-10-trial-001`. Walk stays on 8.
+- **196/001 failed validation** (a `source_inspection` item cited only `repo_grep` and `run`); recovery verdict
+  written, 196/002 authorized. New standing rule: one automatic fresh retry after a citation-validation failure,
+  disclosed in the next request; a second failure needs a request. 196 is `a39fdfc4` "Attn: Fix head norm bias",
+  the fix of 185's overwritten-settings finding: check 002 recognises it. `review.sh` cannot parse a recovery
+  request (no backticked Upstream line); read those by hand.
+- **guidance-10-implementation-001 accepted** (trial gate; version 9 text unchanged; default 8). To build a test
+  packet use `cp -al` (the runner refuses symlinks). Next: 196/002 and `guidance-10-trial-001`.
+- **196/002 approved** (clean; fixes 185's overwritten norm settings; teacher recognised it). Guidance 8:
+  196 19/1, Astra 0.45M. For a second attempt on a shared packet: `sed` the packet path into a copy of
+  `check.py` and replay against the 001 packet by hand (done this time; `review.sh` cannot).
+
+## HANDOFF 2026-11-16 (PST): read this section first; it supersedes every "pending"/"Next"/"awaiting" line above
+
+**Where the walk is.** Approved for ancestor retrieval only: commits **2 to 196**. 196 is attempt **002** (001
+failed citation validation; recovery verdict `commit-000196-001.md`). Canonical and training stay false; never
+approve those. **197 is next**; its request will be `reviews/requests/commit-000197-001.md`. No request was
+pending when this was written. My watch was stopped at this handoff (the exit-255 notice was my own `pkill`).
+
+**Committed and pushed at this handoff** (the user asked): everything through 196, the guidance-8 work, the
+guidance-8 and guidance-9 trial runs (force-added) and the guidance-9/10 trial gates. See `git log -1`. The
+guidance-10 trial directory (`.teacher/trials/guidance-10-001`, in progress) was left out. Do not commit again
+unless the user asks.
+
+**Only one reviewer session may run.** Check `list_sessions` for another running "Fable exdev" session first.
+
+**Guidance, current state.**
+- **Guidance 8 is the walk default** (adopted by the user, "Adopt it"): guidance 7's three paragraphs plus D
+  (existing function called from a new place: compare with its existing callers). Decision files
+  `guidance-8-trial.decision.md`, `guidance-8-adoption.decision.md`; assessment `guidance-8-trial-001.md`.
+- **Fifth paragraph E (removed or bypassed protection) is NOT adopted.** Version 9 trial was mixed
+  (`guidance-9-trial-001.md`): 190 found, 184 bias found but another finding lost, 188's device-less cache still
+  under uncertainty, controls 189 and 178 clean, calls 83 against 69. The user chose **"Revise and re-test"**:
+  version 10 = E plus the clause "or changes a call that used to run every time so that it now runs once or only
+  under a condition" (`guidance-10-trial.decision.md`; gate accepted in `guidance-10-implementation-001.md`).
+  The user was shown the full revised text and has not objected.
+- **Expected next from Astra: `reviews/requests/guidance-10-trial-001.md`** (three sessions: 188, controls 189,
+  178; the 188 run had started). Assess it like the earlier two: hashes; each system text equals the approved
+  guidance-8 run's text plus a blank line plus `GUIDANCE_10_ADDITION`; manifests differ in `guidance_version`
+  only; replay with `Runner` against the trial packet; read the findings and limits sections.
+  **Pass:** at 188 the kernel-attribute cache keyed without a device is a suspected finding; 189 and 178 gain
+  none. What I told the user I would then recommend: if 188 moves and the controls stay clean, adopt the revised
+  text; if not, adopt the version-9 text for what it achieves and say what it does not catch. **Either adoption
+  needs the user's decision** and then a decision file, an adoption request from Astra (default 8 to 9 or 10),
+  and my check, as for 7 and 8.
+
+**Owed to the user.**
+1. The guidance-10 trial result and a recommendation (above).
+2. Nothing else is outstanding: the guidance-7 and guidance-8 cost and effect reports were given.
+
+**Figures (teacher tool calls; Astra input tokens).** Guidance 7, 172 to 177: 8, 8, 26, 10, 48, 19; 0.57M to
+1.11M. Guidance 8, 178 to 196: 9, 17, 15, 9, 16, 16, 23, 45, 19, 45, 16, 10, 11, 19, 18, 13, 15, 8, 19; 0.45M to
+1.10M. No rejection since 163; every commit approved first time except 196's validation failure.
+
+**Loop mechanics (changes since the last handoff).**
+- `codex` is not on PATH under `bash -ls`. Notify with
+  `~/.codex/packages/standalone/releases/0.167.0-aarch64-unknown-linux-musl/bin/codex queue --thread 01a1da07-7653-7b81-8507-f69683828acb --resume -C $HOME/git/exdev --message "…"`.
+  The "could not resume thread" warning is normal. Put that bin directory on PATH before running the test suite
+  or two wire tests error.
+- Routine pass: `reviews/fable/review.sh > /tmp/x.txt`, then read the file with long lines cut and the
+  `issue`/`pull_request` lines filtered. It cannot handle a recovery request, a second attempt on a shared
+  packet (copy `check.py` with the packet path replaced, replay by hand) or a non-commit request.
+- Cost per commit: `python3 reviews/fable/token_profile.py PREVIOUS_VERDICT THIS_REQUEST label`.
+- To build a test packet at another guidance version use `cp -al` (the runner refuses symlinks) inside
+  `.teacher/`, replace `manifest.json`, and delete the copy afterwards.
+- When Astra applies an implementation patch right after a run, `check.py` shows `teacher/session.py` or
+  `teacher/walk_inputs.py` as bad for that run: compare the run's recorded hashes with the previous run's and
+  the file mtimes with the validation report's.
+- **Standing rule (196/001 verdict):** after a citation-validation failure Astra may make one fresh unassisted
+  attempt on the same packet without a request, must say so in the next request, and keeps the failed run. A
+  second failure at the same position needs a request.
+- Upstream history after the cutoff is reviewer hindsight: I may read it
+  (`git --git-dir=.sources/exllamav3.git log CUTOFF..HEAD -- path`) and record it under a "Reviewer knowledge"
+  heading; it never goes to a teacher and a ledger fix is not recorded before the walk reaches the fix.
+
+**Things I am watching for (hindsight, never to a teacher).**
+- `dc69b167` (2025-05-30) "GEMM: Set kernel attribute per device" fixes 188's cache finding (ledger
+  `exllamav3-kernel-attribute-cache-device`). Check that entry recognises it.
+- 185's two native findings still open after 196: every lane writes the warp sum in `apply_norm`; padded reads
+  of `inv_freq` and the norm weight. 183: `k.float()` on an absent K in `apply_torch`.
+- 176: both multipliers set (quantize uses MUL1, decode/reconstruct MCG, GEMM refuses); reachable on resume.
+- 186: multi-GEMM zero grid below 24 tiles, then division by zero; Boolean threshold; stale five-argument
+  declaration. 184: all-experts buffer count, fused output dtype, aliasing. 174: FP8 dtype not loadable, scaling
+  lost under deferred load, scale not transposed. 181: `[0,1,2,1]` still gives unequal K/V; the root entry's
+  "exact budget" finding ignores the `+1` (real effect: surplus drifts up one bit per call).
+- 195: `cache_rotate` has no library caller yet; its first caller is a paragraph-D case (unchecked page size,
+  empty `order`).
+- 192/193: reported probabilities are pre-sampler, not "final sampling" ones; still open.
+
+**Astra's open ledger work (administrative, not blocking):** identities owed for 174 (three), 181, 183 (three),
+184 (two), 185 (three, plus fix at 196 for the settings one), 186, 190, 191 (two), 192 (two, plus fix at 193 for
+the unbound return), 195 (two); the root optional-output identity; discussion-history cache; older revisions.
+The budget-boundary identity stays held for the `+1` qualification.
+
+**A pattern to keep reporting.** At 184, 188, 190 and 195 the teacher saw the relevant fact and filed it under
+"not established" instead of as a suspected finding. Nothing it wrote was wrong, so each was approved with a
+canonical-use condition. Paragraph E is the attempt to fix this.
+
+**Lessons from this session.**
+- When a commit calls or bypasses an existing function, read that function myself and list what it did that the
+  new path does not (182, 184, 188, 190).
+- Recompute arithmetic claims independently when it is cheap (176's RMS figures, 181's allocator runs).
+- I told Astra three times to update ledger records that did not exist; check the ledger directory before
+  writing "the X record gains…".
+- Tell the user about a trial's weaknesses (wording written from the targets, one run per position) with the
+  result, not after.

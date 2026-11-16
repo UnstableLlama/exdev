@@ -1,0 +1,470 @@
+{
+  "schema_version": 5,
+  "sha": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+  "parent_shas": [
+    "6693b5010504364efbfd099fdc839aab971e7708"
+  ],
+  "cutoff_date": "2025-05-25T02:20:06+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "BlockSparseMLP previously performed routing through Python tensor calls, allocated fused-path workspaces on each forward, and launched a separate output sum.",
+        "basis": "source",
+        "evidence": [
+          "call_809723051f4d414d909e89b8a5d77b28"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change combines native routing, reusable buffers and an in-kernel expert reduction. The reduction is a prerequisite for replacing out_d.sum(dim=0) with a view of its first expert slot; those edits are not independent.",
+        "basis": "source",
+        "evidence": [
+          "call_b804fe012a314f45bba3d09ccca5f9fd"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This removes repeated Python orchestration and workspace allocation from single-token fused execution, at the cost of retaining workspaces for the loaded layer. CPU overhead reduction is plausible but was not measured.",
+        "basis": "inference",
+        "evidence": [
+          "call_b804fe012a314f45bba3d09ccca5f9fd"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The read introduction entry establishes the original routed-expert implementation, MultiLinear preconditions and an all-expert fused-buffer mismatch. Inspection of the parent and task diff shows that mismatch is carried over.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_7ee27a00703e4870b6696c5df320109e"
+        ]
+      },
+      {
+        "text": "Both setup.py and the JIT loader recursively collect C++ sources, so the new libtorch source requires no explicit source-list edit.",
+        "basis": "source",
+        "evidence": [
+          "call_1f25def32b3a427e87a0ae08defd8aa0"
+        ]
+      },
+      {
+        "text": "Related-file discussions concern different problems: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension loading; #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d reports compilation; #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d concerns padding during loading; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d concerns Cholesky failure. Any connection to this task is inferred only from shared ext.py, setup.py, linear.py or convert_model.py paths, not evidence of its motivation.",
+        "basis": "inference",
+        "evidence": [
+          "call_ebf25646a195403cb98c674713394e2b",
+          "call_170e1e55006a4feba280401d40e2490d",
+          "call_df2563b757b648d1a563aff842eb0d1e",
+          "call_5855f96f39c245c8bafb746f4d72855e"
+        ]
+      }
+    ],
+    "limitations": [
+      "No extension compilation, CUDA execution, end-to-end model test or timing measurement was performed.",
+      "Scalar checks model indexing and arithmetic only, not cooperative synchronization, ATen out-buffer behavior or GPU floating-point equivalence.",
+      "External checkpoint coverage, concurrent forwards and downstream consumers retaining module outputs were not established."
+    ],
+    "links": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "block-sparse-mlp",
+        "title": "Native routing and reusable single-token expert execution",
+        "claims": [
+          {
+            "text": "Forward flattens tokens and calls blocksparse_mlp_routing through the new binding. The native helper computes y @ gate_tensor, selects top-k logits and normalizes only those logits with softmax. It returns indices first and weights second, matching the Python unpacking. A Python equivalent remains present but its call is commented out.",
+            "basis": "source",
+            "evidence": [
+              "call_b804fe012a314f45bba3d09ccca5f9fd"
+            ]
+          },
+          {
+            "text": "For exactly one flattened token and ordinary routing, load-time FP16 logit/weight buffers and int64 index buffers are reused; top-k is unsorted. Larger inputs or activate_all_experts use allocating ATen operations, selecting either num_experts_per_tok or all experts. Conversion supplies the exact activate_all_experts key and separately recomputes ordinary-routing reference states.",
+            "basis": "source",
+            "evidence": [
+              "call_b804fe012a314f45bba3d09ccca5f9fd",
+              "call_593c78ddb74e4dc5aa74baf29ff1d215",
+              "call_1f25def32b3a427e87a0ae08defd8aa0"
+            ]
+          },
+          {
+            "text": "ExpertsCFG retains input-transform, gate, up, activation and down-output buffers with num_experts_per_tok expert slots and one token per slot. Activation aliases the up buffer when its dtype is already FP16. These buffers are allocated even for nonquantized layers and released by clearing the configuration on unload.",
+            "basis": "source",
+            "evidence": [
+              "call_b804fe012a314f45bba3d09ccca5f9fd"
+            ]
+          },
+          {
+            "text": "Expert dispatch remains unchanged: multiple tokens or nonuniformly EXL3 storage use the ordinary expert loop; single-token fully EXL3 layers use three multi-GEMMs. MultiLinear still requires matching dimensions, bit widths and codebook multipliers, no expert biases or softcaps, and unit post-scale.",
+            "basis": "source",
+            "evidence": [
+              "call_809723051f4d414d909e89b8a5d77b28",
+              "call_b804fe012a314f45bba3d09ccca5f9fd",
+              "call_8a2e638f8b9446e4a7614a9c82dd337d"
+            ]
+          },
+          {
+            "text": "The kernel already applies routing weights during each expert's output transform. After its existing grid synchronization, the new reduction lets only z=0 blocks sum expert planes into plane zero. The 32-element division and lane arithmetic distribute one output element per warp lane. FP32 outputs accumulate as float; FP16 outputs use sequential half additions.",
+            "basis": "source",
+            "evidence": [
+              "call_ab60bc4a4c2b4f7495e95a073319207f",
+              "call_b804fe012a314f45bba3d09ccca5f9fd"
+            ]
+          },
+          {
+            "text": "Only calls supplying weights receive the new reduction. The inspected gate/up calls and attention K/V call pass None, preserving separate outputs; the expert down call supplies routing weights and now consumes plane zero. The native entry point still requires FP16 inputs and FP16 or FP32 outputs.",
+            "basis": "source",
+            "evidence": [
+              "call_f7dc2b0fc7de4c9c9edf3482bcb32010",
+              "call_1f25def32b3a427e87a0ae08defd8aa0",
+              "call_e439c416a67a4bcd90e55cfa80a6cb94",
+              "call_b804fe012a314f45bba3d09ccca5f9fd"
+            ]
+          },
+          {
+            "text": "A scalar transcription covered every output exactly once for nine tested width/grid combinations. Sequential half rounding of [2048, 1, -2048] produced 0 versus 1 for wide accumulation followed by half rounding, demonstrating why the new reduction should not be assumed numerically identical to another reduction implementation.",
+            "basis": "execution",
+            "evidence": [
+              "call_3cc0f35c170645f18f22ac398dfa3afe"
+            ]
+          },
+          {
+            "text": "The inspected decoder callers normalize inputs to FP16, pass params without a per-call MLP dtype override, and immediately add the result into the residual. Mixtral constructs FP16 MLP outputs; Qwen3 MoE requests FP32 outputs. Both agree with the cached constructor-selected dtype, although the public per-call override no longer works on the fused path.",
+            "basis": "source",
+            "evidence": [
+              "call_7403577d1ca94eee80d1b7414c8d9def",
+              "call_ad0ccd3204df434f9a14b69bf8361287",
+              "call_b804fe012a314f45bba3d09ccca5f9fd"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "routing-bias-bypass",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Direct router matmul drops the optional bias previously applied by LinearFP16.forward.",
+        "trigger": "Load a routing-gate weight with a nonzero optional bias and execute BlockSparseMLP.forward.",
+        "expected_behavior": "Route using y @ weight + bias, as before.",
+        "actual_behavior": "RoutingCFG stores only weight and the native helper computes matmul without bias. Linear.load_fp16 still accepts the bias, and no inspected router guard forbids it. This affects both routing branches conditionally; no supplied checkpoint demonstrates such a bias.",
+        "locations": [
+          {
+            "commit": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+            "path": "exllamav3/exllamav3_ext/libtorch/blocksparse_mlp.cpp",
+            "symbol": "blocksparse_mlp_routing"
+          }
+        ],
+        "source_evidence": [
+          "call_b804fe012a314f45bba3d09ccca5f9fd",
+          "call_4f479d22cb5d4af1b191c9ddb6249c34",
+          "call_1f25def32b3a427e87a0ae08defd8aa0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the bypassed Linear/LinearFP16 path with the new helper and inspected decoder callers and model construction sites.",
+            "evidence": [
+              "call_7403577d1ca94eee80d1b7414c8d9def",
+              "call_e43329dd3f3446d48a1e0aa54e304393"
+            ],
+            "limits": "Conditional supported-loader input, not an observed model failure."
+          }
+        ]
+      },
+      {
+        "id": "fused-output-dtype",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused path ignores the forward call's out_dtype argument.",
+        "trigger": "Call a single-token fully EXL3 BlockSparseMLP with out_dtype different from its constructor-selected output dtype.",
+        "expected_behavior": "Honor the per-call override as the previous allocation did.",
+        "actual_behavior": "The output buffer is allocated during load using only self.out_dtype or FP16; forward returns its view without conversion. The ordinary path still honors the override. Inspected decoder callers do not supply this override.",
+        "locations": [
+          {
+            "commit": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_b804fe012a314f45bba3d09ccca5f9fd",
+          "call_809723051f4d414d909e89b8a5d77b28",
+          "call_7403577d1ca94eee80d1b7414c8d9def"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared old per-call allocation with cached allocation and inspected the two decoder forwarding sites.",
+            "evidence": [
+              "call_2f8761b6e44f483995268341fc3da34e",
+              "call_b804fe012a314f45bba3d09ccca5f9fd"
+            ],
+            "limits": "No tensor execution or demonstrated in-tree caller requesting a conflicting dtype."
+          }
+        ]
+      },
+      {
+        "id": "all-expert-fused-shape",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited all-expert routing mismatch persists with cached workspaces.",
+        "trigger": "One flattened token, fully EXL3 experts, activate_all_experts=True, and num_experts unequal to num_experts_per_tok.",
+        "expected_behavior": "Evaluate all experts or use the ordinary expert path.",
+        "actual_behavior": "Routing returns num_experts indices while cached fused buffers contain num_experts_per_tok slots. The first multi-GEMM rejects the index/output dimension mismatch. Conversion supplies the flag, but default conversion reaching this fully quantized single-token condition is not established.",
+        "locations": [
+          {
+            "commit": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_b804fe012a314f45bba3d09ccca5f9fd",
+          "call_e439c416a67a4bcd90e55cfa80a6cb94",
+          "call_1f25def32b3a427e87a0ae08defd8aa0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked routing cardinality, unchanged fused dispatch, cached dimensions, native shape check and decoder params forwarding.",
+            "evidence": [
+              "call_b804fe012a314f45bba3d09ccca5f9fd",
+              "call_e439c416a67a4bcd90e55cfa80a6cb94",
+              "call_7403577d1ca94eee80d1b7414c8d9def"
+            ],
+            "limits": "No CUDA execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Moves MoE routing into the extension, caches single-token workspaces and folds weighted expert reduction into multi-GEMM; performance remains unmeasured, with conditional compatibility changes and an inherited shape mismatch."
+  },
+  "evidence": {
+    "call_b804fe012a314f45bba3d09ccca5f9fd": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+        "max_bytes": 16000,
+        "offset": 0
+      },
+      "result_sha256": "3feedcaa129e142750be8e1b075525a445eacd79f5795983f4bd729f9497fc70"
+    },
+    "call_809723051f4d414d909e89b8a5d77b28": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "26c1be8af75276bf93df58cc20478e20f6d905bfba6bda756097a0e856ee19fb"
+    },
+    "call_947d590012174ddb93d4cf774df048a6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "block_sparse_mlp.py",
+        "limit": 30,
+        "max_bytes": 5000
+      },
+      "result_sha256": "c681eca98fcf672c69ad22ee2833cc679cde8957156bb1e005c98929eb09e91a",
+      "catalog_only": true
+    },
+    "call_7ee27a00703e4870b6696c5df320109e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_593c78ddb74e4dc5aa74baf29ff1d215": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "query": "activate_all",
+        "limit": 100
+      },
+      "result_sha256": "4191a254ecb6d0adf2aabdea9ce2ae41aba028ee1ffc1cc5784613e1e19db97b"
+    },
+    "call_f7dc2b0fc7de4c9c9edf3482bcb32010": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "query": "exl3_mgemm(",
+        "limit": 100
+      },
+      "result_sha256": "968bd3ee6233f4cfd89d0a02ca83f39a1d14b943bd1501e0039c7280533aee3d"
+    },
+    "call_ab60bc4a4c2b4f7495e95a073319207f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3d41eed14b2e441de8c3a46294d02bea86328db102992f35283d9100af416f79"
+    },
+    "call_e439c416a67a4bcd90e55cfa80a6cb94": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 26000
+      },
+      "result_sha256": "77c7379e18fede599c2785fca963f04e8c238a40e2681cf96751dcef2affcc04"
+    },
+    "call_2f8761b6e44f483995268341fc3da34e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "query": "self.mlp.forward",
+        "limit": 100
+      },
+      "result_sha256": "88a58d03fdbb94dcd2d5fe29c0badc0e26f0e411a4e68317d259243df2328400"
+    },
+    "call_e43329dd3f3446d48a1e0aa54e304393": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "query": "BlockSparseMLP",
+        "limit": 100
+      },
+      "result_sha256": "0c76e9142f12e84ee8327d373dec986f0b3f6dbf173137290fa2c9d1db6f39b4"
+    },
+    "call_4f479d22cb5d4af1b191c9ddb6249c34": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 23000
+      },
+      "result_sha256": "d27c57770abd83133876d010e5c78e72d77554d407946f1cd19808fb49c5949b"
+    },
+    "call_7403577d1ca94eee80d1b7414c8d9def": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_ad0ccd3204df434f9a14b69bf8361287": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f in ['exllamav3/models/mixtral.py','exllamav3/models/qwen3_moe.py','exllamav3/modules/quant/linear_fp16.py','exllamav3/ext.py','setup.py','exllamav3/modules/attn.py','exllamav3/conversion/convert_model.py']:\n p=Path(f)\n print('\\nFILE',f)\n s=p.read_text().splitlines()\n if 'models/' in f: a,b=85,145\n elif 'attn.py' in f: a,b=265,310\n elif 'convert_model.py' in f: a,b=295,340\n else:a,b=0,len(s)\n print('\\n'.join(f'{i+1}: {s[i]}' for i in range(a,min(b,len(s)))))"
+        ]
+      },
+      "result_sha256": "c6f9f7e890677efb8108c6b66ade1c72005e8c47688ea0fc8bc85a517f291937"
+    },
+    "call_78fd894a16fc4c26a4a38fee9dfd0453": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "path": "exllamav3/modules/quant",
+        "limit": 50
+      },
+      "result_sha256": "d196d6ab228880b6c60ecc6e1fe154cb3624b11bea698b37391dd3d2bca669e7"
+    },
+    "call_1f25def32b3a427e87a0ae08defd8aa0": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,a,b in [('exllamav3/modules/quant/fp16.py',0,300),('exllamav3/ext.py',0,220),('setup.py',0,180),('exllamav3/modules/attn.py',265,310),('exllamav3/conversion/convert_model.py',295,340)]:\n s=Path(f).read_text().splitlines();print('\\nFILE',f);print('\\n'.join(f'{i+1}: {s[i]}' for i in range(a,min(b,len(s)))))"
+        ]
+      },
+      "result_sha256": "6936ac96978098f7a2eeccfa0b485aad6752b643e4569ab141f7aee6831d7984"
+    },
+    "call_170e1e55006a4feba280401d40e2490d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 14000
+      },
+      "result_sha256": "1136c9901d049d27ee62af90b2951f4fcadfb70d0266b973433d9c2615f6506b"
+    },
+    "call_df2563b757b648d1a563aff842eb0d1e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "ebf8dabf41dfbe6f92b38e42088d236cdfbe35b44d46cb3e97c10dd5fba0b668"
+    },
+    "call_ebf25646a195403cb98c674713394e2b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "84897119c17cbc61718aedeca277d0c4bbbbb00d3e9a4fef8a1b2dcb54e40c4f"
+    },
+    "call_29fa242de9f747f98dc9144e588909f4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ee73a336ca833d956d9a7191112ce331a39d2912262ab97b7e502c7f7808f919"
+    },
+    "call_457b293843e848f7a82877c44977a47e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16000,
+        "max_bytes": 100000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_d46a834d206e46eab69c943178a53270": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2cb96f02cf3f4003903a92505d8af3ef9992e2f0051937e878573a303912489b"
+    },
+    "call_5855f96f39c245c8bafb746f4d72855e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "71bb91fd47d182633ff8fe85384d4756de4d861a0ca7b6a07f8399061cdead97"
+    },
+    "call_3cc0f35c170645f18f22ac398dfa3afe": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct\nh=lambda x:struct.unpack('e',struct.pack('e',x))[0]\na=[2048.,1.,-2048.];s=h(a[0])\nfor x in a[1:]:s=h(s+x)\nprint('sequential_half',s,'wide_then_half',h(sum(a)))\nfor n in (128,256,4096):\n for gx in (1,7,32):\n  block=128; visits=[0]*n\n  for bx in range(gx):\n   for t in range(block):\n    w=t//32+block//32*bx\n    while w<n//32:\n     visits[w*32+t%32]+=1;w+=gx*block//32\n  assert all(v==1 for v in visits)\nprint('reduction lane coverage: 9 dimension/grid cases passed')\nprint('all-expert index count 8 versus buffer count 2:',8==2)"
+        ]
+      },
+      "result_sha256": "6b9b494cffe9b31e2d00dca64182d331dade1ddfaf842e5114928cf07173383a"
+    },
+    "call_8a2e638f8b9446e4a7614a9c82dd337d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6693b5010504364efbfd099fdc839aab971e7708",
+        "path": "exllamav3/modules/multilinear.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "41d7a294e913bf7780e6e589e7c40f9efc902b870f76d70fd954d21e8ee28816"
+    }
+  }
+}

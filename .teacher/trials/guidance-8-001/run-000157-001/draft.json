@@ -1,0 +1,341 @@
+{
+  "schema_version": 5,
+  "sha": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+  "parent_shas": [
+    "cb7c70cde0ec5137c70d12afeffacd40d5db4770"
+  ],
+  "cutoff_date": "2025-05-14T17:53:08+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The change adds another cleanup boundary for conversion's cached input-file handles. The parent already closes the collection immediately after loading each module slice; this is additional cleanup, not the first.",
+        "basis": "source",
+        "evidence": [
+          "call_77f306a96a9a480fa32387e3142cd7d6",
+          "call_1870475cec514df187a2f964793cd241"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "SafetensorsCollection.close() closes every cached native handle group and resets its entry to None, retaining tensor metadata so subsequent requests can reopen files. It requires new_tensors to be None.",
+        "basis": "source",
+        "evidence": [
+          "call_4b7941003ac34ee4bd9721f5df95b271"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Any handles open at the new boundary are released before saving the converted module. The diff does not alter quantization, output formats or checkpoint logic.",
+        "basis": "source",
+        "evidence": [
+          "call_77f306a96a9a480fa32387e3142cd7d6",
+          "call_1870475cec514df187a2f964793cd241"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The original conversion chapter establishes module-by-module calibration, quantization and artifact assembly. It also records an earlier double-prefixed output-path hazard.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_b624e5056b994571bf0f3e36e57ece3e"
+        ]
+      },
+      {
+        "text": "That output-path hazard is absent from the inspected parent and remains absent after this one-line change: main passes qtensors/<module-key>.safetensors to save_tensor, which prefixes work_dir once; compile_model reads work_dir/qtensors.",
+        "basis": "source",
+        "evidence": [
+          "call_1870475cec514df187a2f964793cd241",
+          "call_379a3873c82c44ca8bd6187d1c4bffcf",
+          "call_77f306a96a9a480fa32387e3142cd7d6"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d is related by inference: its traceback reaches the same cached native loader and later reports \u201cToo many open files.\u201d However, that failure occurred during compile_model, whose separate qtensors collection already closes between modules in the parent. The discussion reports successful conversion before this task and later shifts to GLM inference/sampling; it is not verification of this patch.",
+        "basis": "inference",
+        "evidence": [
+          "call_da5902a1ec2a451f921fb1471c10f311",
+          "call_d8409a6690a34bad82c88124708b72b2",
+          "call_379a3873c82c44ca8bd6187d1c4bffcf"
+        ]
+      },
+      {
+        "text": "Other conversion-related discussions describe different failures: #8 an invalid reshape, #11 a bias datatype assertion, #16 a CUDA configuration error discussed as tokenizer truncation, PR #13 missing BOS handling, #34 Cholesky failure, and #38 a Nemotron tensor-size mismatch. Their connection here is only inferred from shared conversion call sites, not evidence that closing handles fixes them.",
+        "basis": "inference",
+        "evidence": [
+          "call_26353ff12af1494a9cf8ff8235793470",
+          "call_d98fbe9908ef4975b7b3b1786f1b23c1",
+          "call_4399823a820049c8b0e97dc36c09f3d3",
+          "call_a2396d77fb404b76af0f8a9adfcf09b3",
+          "call_c5967ff1918647b6942e9c21e1502c3b",
+          "call_d5335a02373e4bebb3583f5a06943f6c"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d discusses decoder parameters and model_diff evaluation, rather than handle cleanup; its mention of the inspected evaluation file does not establish a causal relationship to this task.",
+        "basis": "inference",
+        "evidence": [
+          "call_c06c59cea71041c1958fba11f2f15623",
+          "call_422956cbeeb94874930e8ff9f058aec0"
+        ]
+      }
+    ],
+    "limitations": [
+      "No conversion, native loader or filesystem-library behavior was executed. Handle-count reduction and successful conversion of extremely large models remain unmeasured.",
+      "The inspected flow already closes handles after loading. Which subsequent operation reopens handles before the new close, and therefore how often this addition does useful work, remains unestablished.",
+      "No useful scalar computation would establish this resource-lifetime effect; a synthetic handle model would not test the native loader."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Close cached input files after each converted slice",
+        "claims": [
+          {
+            "text": "main now calls config.stc.close() immediately after collecting converted tensors and unloading the module, inside the current_slice loop. Thus cleanup runs per slice, including unsliced modules, before the accumulated q_tensors dictionary is written.",
+            "basis": "source",
+            "evidence": [
+              "call_77f306a96a9a480fa32387e3142cd7d6",
+              "call_1870475cec514df187a2f964793cd241"
+            ]
+          },
+          {
+            "text": "The close occurs before set_new_tensors(q_tensors), satisfying close's no-override assertion. The later in-memory reload clears that override again. Cached file handles and retained converted tensors have separate lifetimes: close does not clear q_tensors or the collection's headers.",
+            "basis": "source",
+            "evidence": [
+              "call_1870475cec514df187a2f964793cd241",
+              "call_4b7941003ac34ee4bd9721f5df95b271"
+            ]
+          },
+          {
+            "text": "Native opening creates one FILE stream per loader thread for each cached file; native closing closes those streams and frees any corresponding pinned host buffers. Releasing this cache can reduce resource pressure, at the cost of reopening files if later requested.",
+            "basis": "inference",
+            "evidence": [
+              "call_4b5f50ccb3bf4cf19c106a9283756673",
+              "call_4b7941003ac34ee4bd9721f5df95b271"
+            ]
+          },
+          {
+            "text": "Existing callers use the same normal-completion pattern: model_diff closes after unload and after ending deferred loading; compile_model closes after collecting each module's tensors; Model.load_gen closes after loading; VariantSafetensorsCollection delegates to constituent collections. Conversion's existing post-load close also remains. The added call introduces neither deferred loading nor an exception-cleanup wrapper.",
+            "basis": "source",
+            "evidence": [
+              "call_37ccae4050354061afc873f8b1f4b144",
+              "call_5be69cec2c3449c0a3693dcb4f0e7eca",
+              "call_379a3873c82c44ca8bd6187d1c4bffcf",
+              "call_df7601d240214133b9a5e4c29bbbd816",
+              "call_4b7941003ac34ee4bd9721f5df95b271",
+              "call_77f306a96a9a480fa32387e3142cd7d6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds per-slice file-handle cleanup after conversion unload, supplementing the existing post-load close without changing quantization or serialization."
+  },
+  "evidence": {
+    "call_77f306a96a9a480fa32387e3142cd7d6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "offset": 226,
+        "max_bytes": 543
+      },
+      "result_sha256": "9c09ce893e97e7f226cbe0065a38f22cf2a6164a9d1463207f2f103d361443e5"
+    },
+    "call_1870475cec514df187a2f964793cd241": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "8ac46f1afa171e41d8ca0016316c722a8ae5abe16536a492a52cff7748776fb7"
+    },
+    "call_37ccae4050354061afc873f8b1f4b144": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "query": "stc.close("
+      },
+      "result_sha256": "d4f990d190bafe828aa8021460f7af0200d174a24fc9318d7f7ee3f4fc7ce3c5"
+    },
+    "call_4b7941003ac34ee4bd9721f5df95b271": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_5be69cec2c3449c0a3693dcb4f0e7eca": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "path": "eval/model_diff.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "b2da9e0e42bb28fb784e3bf5847984f6aaeb14eece71e1d1998da110242c70b1"
+    },
+    "call_379a3873c82c44ca8bd6187d1c4bffcf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "915deae0808d586aa1ee30bf3a2aab0f407861821d038376f35756b1f13f84bc"
+    },
+    "call_df7601d240214133b9a5e4c29bbbd816": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "path": "exllamav3/models/model.py",
+        "offset": 11000,
+        "max_bytes": 5800
+      },
+      "result_sha256": "94f8dbdd5e70b62499c7d50da410295a6a157a99629e98279ba217cf56c87322"
+    },
+    "call_7b934e2c996440ada313b403fb722321": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "conversion/convert_model.py",
+        "limit": 25,
+        "max_bytes": 7000
+      },
+      "result_sha256": "313755c2089a3995d56364419e7a45b9c53d77bf74008b832ffa1b0fdf0b991c",
+      "catalog_only": true
+    },
+    "call_75429bc4f930418aa00159f3a1272db7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "conversion/convert_model.py",
+        "offset": 15,
+        "max_bytes": 4000
+      },
+      "result_sha256": "0bf3e5bdac116f42b3747fffbe3fccbbdde99cc1a35f2ab8e50647872d2f77a3",
+      "catalog_only": true
+    },
+    "call_b624e5056b994571bf0f3e36e57ece3e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "conversion",
+        "max_bytes": 16384
+      },
+      "result_sha256": "edbf5d62a8d51728040b0c6b2c3e7d4ad552cc5a8e56385f194f283883691541"
+    },
+    "call_d5335a02373e4bebb3583f5a06943f6c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 15000
+      },
+      "result_sha256": "c14a156f191b7341f46b5980103e178a260692e4fc8c72de35e32a12732db00b"
+    },
+    "call_da5902a1ec2a451f921fb1471c10f311": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f883b9d7481220f0397dd26333cf91d43109a84dfcbfc2c909ccdb46cef7f25d"
+    },
+    "call_d8409a6690a34bad82c88124708b72b2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 30000
+      },
+      "result_sha256": "ff7caec1d0aa7f2575fa1ec58f6557916b221b1ee274d90e39462bfa7acc1a2e"
+    },
+    "call_c5967ff1918647b6942e9c21e1502c3b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "31be0fd22526b8a85437b6d664b85a48025fb18562a3d58dffb9a61bdc8b3dd9"
+    },
+    "call_26353ff12af1494a9cf8ff8235793470": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 20000
+      },
+      "result_sha256": "64238f212c6eb94419c1a537e3cde33b04a69b4f5f1da2825d2634056a4487f9"
+    },
+    "call_d98fbe9908ef4975b7b3b1786f1b23c1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 18000
+      },
+      "result_sha256": "bce398c87a4fbcc1ee16e8eb378258de5402c938c146741c75f7f5ac9ee6328c"
+    },
+    "call_4399823a820049c8b0e97dc36c09f3d3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "bbcbf42a3b36d0f4626a6767b36b26f7ed7dc923037e31921ebaaa4b37edf36d"
+    },
+    "call_a2396d77fb404b76af0f8a9adfcf09b3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 10000
+      },
+      "result_sha256": "92487fa29e2c638f7a96a243aa9c620ea0e68181c0624164356f0f58752d8a75"
+    },
+    "call_0e43c5b783df47d9a5f1f3fa0ece32f4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 6500,
+        "max_bytes": 5000
+      },
+      "result_sha256": "4e69b000ded3c7d1cd8d6f6af781a859585da2532864111a1061c3c175e9b4ab"
+    },
+    "call_4b5f50ccb3bf4cf19c106a9283756673": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cb7c70cde0ec5137c70d12afeffacd40d5db4770",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "offset": 0,
+        "max_bytes": 9000
+      },
+      "result_sha256": "b47b3fbc829225ce5761efe29c29996ab2eaea85e9219921ddfe75604a89bc50"
+    },
+    "call_c06c59cea71041c1958fba11f2f15623": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 10000
+      },
+      "result_sha256": "bca68babe392a8053258f7d4aad8d77ae00a8d1f5dce657a4a25e0863bbe5fe0"
+    },
+    "call_422956cbeeb94874930e8ff9f058aec0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 10000,
+        "max_bytes": 45000
+      },
+      "result_sha256": "8da2df15a92669269ae35771013bfc6c5a075daa48fdbace20bdb6f56fd48267"
+    }
+  }
+}

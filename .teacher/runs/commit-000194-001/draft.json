@@ -1,0 +1,328 @@
+{
+  "schema_version": 5,
+  "sha": "8b1fccf7a6bfdcce65008c1fd456994ee4423685",
+  "parent_shas": [
+    "cf220845799b12c9475232e2cb309db360f083d3"
+  ],
+  "cutoff_date": "2025-05-27T11:27:37+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "noise",
+    "problem": [
+      {
+        "text": "The change comments out two unused declarations: sampling's positive-infinity constant and the lane index inside fused RoPE normalization.",
+        "basis": "source",
+        "evidence": [
+          "call_c383ec7b6b104cd5924d1a997783c3dc",
+          "call_4c9a1a074c334dcfa5759a80fae2acc0"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "These edits are consistent with suppressing unused-variable warnings without changing computation. Neither declaration supplies a precondition for the other edit.",
+        "basis": "inference",
+        "evidence": [
+          "call_c98338e3e0bd44ba85be2f4773879ae3",
+          "call_53ee6d62f9534d4ab03bf33f1125c53a",
+          "call_08f3bb02ccd44da29b219daa33a22c59"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Sampling retains its negative-infinity masking, and RoPE retains its normalization arithmetic and launch geometry. No interface or dispatch changes occur.",
+        "basis": "source",
+        "evidence": [
+          "call_c383ec7b6b104cd5924d1a997783c3dc",
+          "call_4c9a1a074c334dcfa5759a80fae2acc0",
+          "call_53ee6d62f9534d4ab03bf33f1125c53a",
+          "call_08f3bb02ccd44da29b219daa33a22c59"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial sampling chapter and the fused-RoPE entry. They establish the existing native sampling implementation and the normalization kernel's previously recorded reduction and padded-read concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_b401fdf23ffb446586f67b3339f7f223",
+          "call_49f336fd45d14ae094aed8d8e277f5a4"
+        ]
+      },
+      {
+        "text": "The whole-parent search for 'compiler' also found compiler discovery in ext.py, a GEMM comment and calibration prose; those occurrences do not establish the warning diagnostics addressed here.",
+        "basis": "source",
+        "evidence": [
+          "call_a51505a80cf342d6b9d60e119a104ddf"
+        ]
+      },
+      {
+        "text": "Issue #7, 'quantizing model: undefined symbol: __cxa_call_terminate', reports an extension-import failure; #29, 'Auto-YaRN for Qwen3? Maybe even set it dynamically?', discusses scaling policy. Their connection to this inspection is inferred from their references to util/rope.py, not evidence that this cleanup addresses either issue. Closed issue #16, 'RuntimeError: CUDA error: invalid configuration argument', concerns conversion failure attributed in its discussion to tokenizer truncation, not unused declarations.",
+        "basis": "inference",
+        "evidence": [
+          "call_eba6d38c508745c486b800c4e95fa333",
+          "call_f41770943ef246f9ad15f136f72563ac",
+          "call_6e6019ace0844d6b9d11977b18aaa50c",
+          "call_c383ec7b6b104cd5924d1a997783c3dc",
+          "call_4c9a1a074c334dcfa5759a80fae2acc0"
+        ]
+      }
+    ],
+    "limitations": [
+      "No compiler invocation, CUDA test or warning log was available; warning removal and runtime equivalence were not measured.",
+      "The Python bounds calculation models integer launch arithmetic only, not emitted GPU loads, memory faults or scheduling.",
+      "Caller inspection establishes the native rope wrapper and RoPE.apply path, not exhaustive reach through dynamic or external consumers."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "c82af98d57c4ffd21b67baad0eb89a5ed9091759"
+    ],
+    "chapters": [
+      {
+        "id": "compiler-warnings",
+        "title": "Remove unused declarations without changing kernels",
+        "claims": [
+          {
+            "text": "POS_INF_F32 has only its declaration in the parent-tree literal search. Commenting it out leaves NEG_INF_F32 active for masked logits and initial maxima; it does not change Gumbel noise or argmax selection.",
+            "basis": "source",
+            "evidence": [
+              "call_c98338e3e0bd44ba85be2f4773879ae3",
+              "call_08f3bb02ccd44da29b219daa33a22c59",
+              "call_c383ec7b6b104cd5924d1a997783c3dc"
+            ]
+          },
+          {
+            "text": "RoPE's deleted lane expression computes threadIdx.x modulo 32, while the retained division by 32 identifies the warp. The lane value was never consumed. In particular, commenting it out does not add a lane-zero guard to the shared reduction store; the inherited normalization concern remains.",
+            "basis": "source",
+            "evidence": [
+              "call_53ee6d62f9534d4ab03bf33f1125c53a",
+              "call_ce9b0c82267c4c599666e15a41c40cee",
+              "call_4c9a1a074c334dcfa5759a80fae2acc0"
+            ]
+          },
+          {
+            "text": "A scalar calculation of the unchanged launch formula gives 64 x-threads for an 80-element head: 24 frequency indices and 48 half-weight elements exceed their logical full-width arrays. The cleanup does not change these bounds.",
+            "basis": "execution",
+            "evidence": [
+              "call_fa2a7e09bc504e7687d4aac76131cd66",
+              "call_53ee6d62f9534d4ab03bf33f1125c53a",
+              "call_4c9a1a074c334dcfa5759a80fae2acc0"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-warp-sum-store",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The fused normalization shared-store race is carried over, not repaired by removing the unused lane index.",
+        "trigger": "Enable fused normalization with nonuniform per-lane squared activation sums.",
+        "expected_behavior": "Store the complete warp reduction once, using a lane-zero guard as block_reduce_sum_f does.",
+        "actual_behavior": "Every lane writes its shuffle-down result to the same shared slot before normalization reads it. The native rope wrapper launches this kernel, and the inspected RoPE.apply call forwards optional normalization weights.",
+        "locations": [
+          {
+            "commit": "8b1fccf7a6bfdcce65008c1fd456994ee4423685",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel::apply_norm"
+          }
+        ],
+        "source_evidence": [
+          "call_53ee6d62f9534d4ab03bf33f1125c53a",
+          "call_ce9b0c82267c4c599666e15a41c40cee",
+          "call_4c9a1a074c334dcfa5759a80fae2acc0",
+          "call_630bcd4f08da488b8741f6ab987bf568",
+          "call_7d30c1f2cbea48e886d9b8ca65d3f3c0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unguarded store with the existing guarded reduction helper and traced the native wrapper and Python extension call.",
+            "evidence": [
+              "call_53ee6d62f9534d4ab03bf33f1125c53a",
+              "call_ce9b0c82267c4c599666e15a41c40cee",
+              "call_7d30c1f2cbea48e886d9b8ca65d3f3c0"
+            ],
+            "limits": "No GPU race detection or observed numerical result."
+          }
+        ]
+      },
+      {
+        "id": "inherited-padded-input-reads",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "RoPE's unguarded frequency and normalization-weight reads remain unchanged.",
+        "trigger": "Use a head width not divisible by 64, or rotary frequencies shorter than the launched x dimension.",
+        "expected_behavior": "Padded lanes avoid reads beyond the logical frequency and normalization-weight arrays.",
+        "actual_behavior": "All x-threads read inv_freq[t]; normalization also reads a half2 weight without a head-width guard. RoPE.apply forwards the frequency and weight tensors without padding them in the inspected call path.",
+        "locations": [
+          {
+            "commit": "8b1fccf7a6bfdcce65008c1fd456994ee4423685",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_53ee6d62f9534d4ab03bf33f1125c53a",
+          "call_4c9a1a074c334dcfa5759a80fae2acc0",
+          "call_630bcd4f08da488b8741f6ab987bf568",
+          "call_7d30c1f2cbea48e886d9b8ca65d3f3c0"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the inspected launch formula for head width 80, yielding 64 threads versus 40 frequency entries and 80 half-weight elements.",
+            "evidence": [
+              "call_fa2a7e09bc504e7687d4aac76131cd66",
+              "call_53ee6d62f9534d4ab03bf33f1125c53a"
+            ],
+            "limits": "Integer bounds model only; no CUDA execution or demonstrated memory fault."
+          }
+        ]
+      }
+    ],
+    "summary": "Comments out two unused CUDA declarations to address compiler warnings; computation is unchanged, including inherited RoPE reduction and bounds concerns."
+  },
+  "evidence": {
+    "call_c383ec7b6b104cd5924d1a997783c3dc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8b1fccf7a6bfdcce65008c1fd456994ee4423685",
+        "offset": 155,
+        "max_bytes": 1218
+      },
+      "result_sha256": "2bc77b7da55617c9d86fa223ddfd34ccab8ce609ec08a97292336029e63acfa4"
+    },
+    "call_4c9a1a074c334dcfa5759a80fae2acc0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "8b1fccf7a6bfdcce65008c1fd456994ee4423685",
+        "offset": 780,
+        "max_bytes": 593
+      },
+      "result_sha256": "49daa1b29e32df280f60ae4918e1f18e645e7ab08df11dda98467a9c7a91f84d"
+    },
+    "call_53ee6d62f9534d4ab03bf33f1125c53a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 24000
+      },
+      "result_sha256": "ef5c6db6950cda656dcb204da22d4a33bb80ef5825f946fa02b24495de982c34"
+    },
+    "call_49f336fd45d14ae094aed8d8e277f5a4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "max_bytes": 16384
+      },
+      "result_sha256": "597d0cc17d10c90903f4b0f71997c1971bcd70e15cdafcd32525ad5bb20eeac5"
+    },
+    "call_c98338e3e0bd44ba85be2f4773879ae3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "query": "POS_INF_F32",
+        "limit": 100
+      },
+      "result_sha256": "be1e56842e7aca8f1fa90fbc6e23d51ac6a85e827bdbcd6e3d2f8a596ab821ea"
+    },
+    "call_a51505a80cf342d6b9d60e119a104ddf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "query": "compiler",
+        "limit": 100
+      },
+      "result_sha256": "49ba33ef3ab2b16fe82b182750552bbc50e8fcab9bf521f94d2c804bbeca257c"
+    },
+    "call_630bcd4f08da488b8741f6ab987bf568": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "query": "rope(",
+        "limit": 100
+      },
+      "result_sha256": "56e203cf77a1f3668aad084b1722b7a4cbc2304b9d948165af70dc9b722613bd"
+    },
+    "call_7d30c1f2cbea48e886d9b8ca65d3f3c0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "path": "exllamav3/util/rope.py",
+        "offset": 10900,
+        "max_bytes": 6500
+      },
+      "result_sha256": "840ca2ccc01695f0084f76b1bc4a20f157fa5b775c11a61fb05f036fec2662f0"
+    },
+    "call_ce9b0c82267c4c599666e15a41c40cee": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "path": "exllamav3/exllamav3_ext/reduction.cuh",
+        "max_bytes": 12000
+      },
+      "result_sha256": "0ad70125969a695bff216d9c65b643089b8fe40cc74cd51b98ebedad02193fb1"
+    },
+    "call_6e6019ace0844d6b9d11977b18aaa50c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0aaaddea5a0056eb26d8289e042ef3c65a81108a7e160bfc42337323b30b091a"
+    },
+    "call_eba6d38c508745c486b800c4e95fa333": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a6265406809e0bd533869bfa4eee17d4e13666a02bb87212b52983b76c6c0b1e"
+    },
+    "call_f41770943ef246f9ad15f136f72563ac": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9be65a16ba1fd792c9c13d3cf7e122984310d83f7083091e35f9d552aef7370b"
+    },
+    "call_b401fdf23ffb446586f67b3339f7f223": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "sampling",
+        "max_bytes": 16384
+      },
+      "result_sha256": "a66a8bcfded5188b40074dbc6b1e9660d298438e7388b5a1836808e198a2177b"
+    },
+    "call_08f3bb02ccd44da29b219daa33a22c59": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "cf220845799b12c9475232e2cb309db360f083d3",
+        "path": "exllamav3/exllamav3_ext/generator/sampling_basic.cu",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a1cd992ffa36e79db0cbc57ec7992347b89b4e6e3908d99dfe1f4f9350aeda0c"
+    },
+    "call_fa2a7e09bc504e7687d4aac76131cd66": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "d=80; threads=((d//2+31)//32)*32; print({'head_dim':d,'threads':threads,'excess_frequency_indices':threads-d//2,'excess_weight_elements':2*threads-d})"
+        ]
+      },
+      "result_sha256": "095247b7c93f8bffaded1fe3f693b3637a93fc55613751a125a565ad8ed857aa"
+    }
+  }
+}

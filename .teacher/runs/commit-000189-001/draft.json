@@ -1,0 +1,184 @@
+{
+  "schema_version": 5,
+  "sha": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+  "parent_shas": [
+    "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6"
+  ],
+  "cutoff_date": "2025-05-25T13:33:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "LinearFP16.forward zero-initialized an output buffer immediately before matrix multiplication wrote into it.",
+        "basis": "source",
+        "evidence": [
+          "call_cc2ff63e62a04f2e8318553daa4cd493"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing zeros with empty avoids requesting initialization. This relies on multiplication producing the output before the subsequent in-place bias addition.",
+        "basis": "inference",
+        "evidence": [
+          "call_88c8916292284ba3ac450d585d49ab2d",
+          "call_cc2ff63e62a04f2e8318553daa4cd493"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Output dimensions, device, multiplication dispatch, bias addition and final reshaping remain unchanged; no speedup is measured.",
+        "basis": "source",
+        "evidence": [
+          "call_88c8916292284ba3ac450d585d49ab2d",
+          "call_cc2ff63e62a04f2e8318553daa4cd493"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root quantized-inference entry establishes the dense backend's provenance. The later dtype-dispatch entry explains the existing Torch/native split and records native alpha=1, beta=0 operation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0503fe4345c1466daa918efa6b9920c4",
+          "call_b2f0ee6400c3433aa26c8c79298643f6"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Torch, CUDA or cuBLAS execution, numerical comparison or allocation benchmark was performed. A standard-library scalar calculation would not validate library output-buffer handling or initialization cost.",
+      "Equivalence of the dtype expressions depends on supplied dtype values being truthy; actual torch.dtype truth behavior was not executed."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "74abd5e135f574f958faa6507f40c12c3f0cadba"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Allocate dense linear output without initialization",
+        "claims": [
+          {
+            "text": "forward flattens the input's leading dimensions and now allocates an empty (flattened rows, out_features) tensor on the input device. Matching input/output dtypes use torch.matmul with out=y; differing dtypes use ext.hgemm. Bias is added only after multiplication, and the original leading dimensions are restored.",
+            "basis": "source",
+            "evidence": [
+              "call_88c8916292284ba3ac450d585d49ab2d",
+              "call_cc2ff63e62a04f2e8318553daa4cd493"
+            ]
+          },
+          {
+            "text": "The retained native helper requires two-dimensional half inputs, compatible matrix dimensions and half or float output. Its half-output cublasHgemm and float-output cublasGemmEx calls both set alpha=1 and beta=0, requesting the matrix product without accumulation of the previous output. This existing overwrite policy supplies the precondition for removing initialization; dispatch itself is not changed.",
+            "basis": "source",
+            "evidence": [
+              "call_4c2352ee71a44146abdce2888f4881d3",
+              "call_88c8916292284ba3ac450d585d49ab2d"
+            ]
+          },
+          {
+            "text": "The accompanying dtype edit replaces first_not_none(out_dtype, self.out_dtype, torch.half) with an or chain. The former selects the first value that is not None; the latter selects the first truthy value. Both retain call-level, instance-level, then half ordering for truthy dtype values. This expression simplification does not supply the overwrite precondition needed by empty allocation.",
+            "basis": "source",
+            "evidence": [
+              "call_0773b117e0264b8c9d02a5e9005c9bba",
+              "call_88c8916292284ba3ac450d585d49ab2d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "LinearFP16 stops zero-initializing its matrix-product output and simplifies dtype fallback. Existing overwrite-oriented multiplication supports the change; performance and numerical behavior remain unmeasured."
+  },
+  "evidence": {
+    "call_88c8916292284ba3ac450d585d49ab2d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "offset": 169,
+        "max_bytes": 692
+      },
+      "result_sha256": "73a0def067644d159b79afcf9093a81bf7ad77f422eb14a8a0f02d79ecd5e246"
+    },
+    "call_cc2ff63e62a04f2e8318553daa4cd493": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/modules/quant/fp16.py"
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_330ca0ae4d1d403ea8b4bcd2a6aa3967": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "query": "hgemm",
+        "limit": 100
+      },
+      "result_sha256": "45efbd0b8293a66a3cce8f065ab03bd529d4506684e3122364513b9b8a3bbeca"
+    },
+    "call_4c2352ee71a44146abdce2888f4881d3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu"
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_88a17e28fc8c473db60535538231761c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/quant/fp16.py",
+        "limit": 20
+      },
+      "result_sha256": "4caa7678ba582c81788a8cc4a68bdaf9d058925b561622f301d0d1341e5ccc1c",
+      "catalog_only": true
+    },
+    "call_b2f0ee6400c3433aa26c8c79298643f6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6b5ca9c7b0acbdd995ae71bbc2707a84981b6ccaafd820d52556f007f8a871db"
+    },
+    "call_0503fe4345c1466daa918efa6b9920c4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantized-inference",
+        "max_bytes": 16384
+      },
+      "result_sha256": "02b6734d29272cca0d4ea8a56ffcd9ba2d18a4cc524cb44db9d12c4d8741226c"
+    },
+    "call_cf2ba994b903448aac71a8e7456b6ceb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "query": "def first_not_none"
+      },
+      "result_sha256": "7632d9fd9400fedcd77e24a164ae19d29e861c0b1d40d2832b0f76ff2fc0a289"
+    },
+    "call_f89b7429c45246b39688406234937d97": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/util/misc.py",
+        "offset": 1800,
+        "max_bytes": 1800
+      },
+      "result_sha256": "6df7a7653e6ff0841cff1c9c67e8983c16860fee26189f601e0d9049919ba7b1"
+    },
+    "call_0773b117e0264b8c9d02a5e9005c9bba": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/util/misc.py"
+      },
+      "result_sha256": "097bd3f57c949313fd06424ce4076b3858330b0178e4dafb03f819496829175e"
+    }
+  }
+}

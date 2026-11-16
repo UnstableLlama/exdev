@@ -1,0 +1,252 @@
+{
+  "schema_version": 5,
+  "sha": "afac0a4320d9c4df31a8747ad1061da521698117",
+  "parent_shas": [
+    "bc3d38f04de2afbddf51e89986f91090137dec8a"
+  ],
+  "cutoff_date": "2025-05-24T13:30:23+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The stated goal is equal K/V projection bitrates; two existing allocation candidates increased V alone.",
+        "basis": "source",
+        "evidence": [
+          "call_2305816f3c424e77800e5a040e28b0bc"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change raises K's increment to match V in two Q/K/V/O patterns, replacing [0,0,1,0] and [0,0,2,0] with [0,1,1,0] and [0,2,2,0]. It changes the candidate search space rather than enforcing equality after selection.",
+        "basis": "source",
+        "evidence": [
+          "call_2305816f3c424e77800e5a040e28b0bc",
+          "call_f8ecb2a14e2343669b960c63e6713c58"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "For those candidates, matching K to V costs additional bits proportional to K's weight count. This can change the selected allocation and the surplus returned to the caller; MLP-only allocation is unaffected.",
+        "basis": "source",
+        "evidence": [
+          "call_f8ecb2a14e2343669b960c63e6713c58",
+          "call_2305816f3c424e77800e5a040e28b0bc"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root conversion entry describes allocation as a fixed size-based heuristic rather than a calibration-error search, and records an exact-budget selection boundary.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_d3e43f3e396344aaa1295c43ae55f0c1"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model conversion, GPU execution, quality evaluation or performance measurement was performed. Checks executed an extracted allocator with synthetic projection objects and the two substitutions applied in memory."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Pair K/V increments in the allocation heuristic",
+        "claims": [
+          {
+            "text": "allocate_transformer orders attention projections as Q/K/V/O. Its pattern entries are integer bitrate increments above floor(effective budget per weight), with a minimum base of one and a per-projection cap of eight. Attention and MLP candidates are combined, costed using projection weight counts, and sorted for budget selection.",
+            "basis": "source",
+            "evidence": [
+              "call_f8ecb2a14e2343669b960c63e6713c58"
+            ]
+          },
+          {
+            "text": "Both direct callers, TransformerBlock.allocate_q and ParallelDecoderBlock.allocate_q, pass their attention projections in that order and return the strategy and surplus unchanged. They bypass allocation only when both attention and MLP are absent.",
+            "basis": "source",
+            "evidence": [
+              "call_3d418e2f67224b9985cdc583145f4bd1",
+              "call_4e8ae04fca8b491d80ab31f83eea28fe"
+            ]
+          },
+          {
+            "text": "With four 128-weight attention projections, target 3 and incoming surplus 383, the extracted parent allocator returned Q/K/V/O = 3/3/5/3; applying the patch returned 3/4/4/3. Both returned surplus 128: this example redistributes the same bit cost from V to K.",
+            "basis": "execution",
+            "evidence": [
+              "call_ae68911a0b9a4bf0ac437a5ec3a34756"
+            ]
+          },
+          {
+            "text": "The patch leaves both the unequal [0,1,2,1] candidate and the inherited exact-cost bisect boundary intact. Thus the change does not establish universal K/V equality or correct the previously documented budget boundary.",
+            "basis": "source",
+            "evidence": [
+              "call_f8ecb2a14e2343669b960c63e6713c58",
+              "call_2305816f3c424e77800e5a040e28b0bc"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "remaining-unequal-kv",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "A retained candidate can still allocate different K and V bitrates, contrary to the commit's stated goal.",
+        "trigger": "Attention-only allocation with Q/K/V/O weight counts 256/128/128/256, target 3 and incoming surplus 640.",
+        "expected_behavior": "K and V receive equal bitrates if the stated goal is universal.",
+        "actual_behavior": "The patched allocator selects 3/4/5/4 and returns surplus 1.",
+        "locations": [
+          {
+            "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+            "path": "exllamav3/conversion/allocation.py",
+            "symbol": "allocate_transformer"
+          }
+        ],
+        "source_evidence": [
+          "call_f8ecb2a14e2343669b960c63e6713c58",
+          "call_2305816f3c424e77800e5a040e28b0bc",
+          "call_4e8ae04fca8b491d80ab31f83eea28fe"
+        ],
+        "verification": [
+          {
+            "method": "repository_execution",
+            "description": "Executed the extracted parent function with the two task substitutions and synthetic objects providing keys and weight counts.",
+            "evidence": [
+              "call_a3aa1d3a7efd4f9e9581298e45dd4e92"
+            ],
+            "limits": "Not a complete conversion. Both inspected block callers expose this allocator; occurrence of these budgets in real models was not measured."
+          }
+        ]
+      },
+      {
+        "id": "inherited-exact-budget-boundary",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited exact-cost candidate exclusion remains unchanged.",
+        "trigger": "Four 128-weight attention projections, target 3 and incoming surplus 255 yield budget 1792, exactly matching the patched 3/4/4/3 candidate.",
+        "expected_behavior": "Select the largest candidate within budget, including an exact match.",
+        "actual_behavior": "bisect_right searches with (budget,), which sorts before equal-cost two-element tuples; allocation instead returns 3/3/3/3 with surplus 256.",
+        "locations": [
+          {
+            "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+            "path": "exllamav3/conversion/allocation.py",
+            "symbol": "allocate_transformer"
+          }
+        ],
+        "source_evidence": [
+          "call_f8ecb2a14e2343669b960c63e6713c58",
+          "call_2305816f3c424e77800e5a040e28b0bc",
+          "call_3d418e2f67224b9985cdc583145f4bd1"
+        ],
+        "verification": [
+          {
+            "method": "repository_execution",
+            "description": "Executed the extracted, patched allocator on the exact-budget example.",
+            "evidence": [
+              "call_ae68911a0b9a4bf0ac437a5ec3a34756"
+            ],
+            "limits": "Synthetic projection objects only. The condition applies through either inspected block caller when its budget matches a candidate cost."
+          }
+        ]
+      }
+    ],
+    "summary": "Pairs K/V increments in two allocation candidates, but a remaining unequal candidate prevents a universal equality guarantee."
+  },
+  "evidence": {
+    "call_2305816f3c424e77800e5a040e28b0bc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "afac0a4320d9c4df31a8747ad1061da521698117",
+        "offset": 170,
+        "max_bytes": 584
+      },
+      "result_sha256": "32690e1c25bc7c6a9aeef16d08a0b996ece30adcb2edaec055a3022967dd10b7"
+    },
+    "call_f8ecb2a14e2343669b960c63e6713c58": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc3d38f04de2afbddf51e89986f91090137dec8a",
+        "path": "exllamav3/conversion/allocation.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "82f2f1263caabb940d2cf21471c61b42cf3bddec721ed8f03500e4827fb8cab7"
+    },
+    "call_3b60fa46bed34faeb62381b7f205afa7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/conversion/allocation.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "3eb00a21e4ced94188d87b6bca42a92edc3ac3c8ac4f2fcdfb6f55b01a993683",
+      "catalog_only": true
+    },
+    "call_d3e43f3e396344aaa1295c43ae55f0c1": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "conversion",
+        "max_bytes": 16384
+      },
+      "result_sha256": "edbf5d62a8d51728040b0c6b2c3e7d4ad552cc5a8e56385f194f283883691541"
+    },
+    "call_3d418e2f67224b9985cdc583145f4bd1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc3d38f04de2afbddf51e89986f91090137dec8a",
+        "query": "allocate_transformer",
+        "limit": 100
+      },
+      "result_sha256": "05532263991ba112e8edba166117a9a84855db4fce710be4d6208ea0db921524"
+    },
+    "call_4e8ae04fca8b491d80ab31f83eea28fe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc3d38f04de2afbddf51e89986f91090137dec8a",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_ae68911a0b9a4bf0ac437a5ec3a34756": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast, pathlib, math, bisect\ns=pathlib.Path('exllamav3/conversion/allocation.py').read_text(); t=ast.parse(s); f=next(x for x in t.body if isinstance(x,ast.FunctionDef) and x.name=='allocate_transformer'); src=ast.get_source_segment(s,f); ns={}; exec('from __future__ import annotations\\nimport math,bisect\\n'+src,ns)\nclass L:\n def __init__(self,key): self.key=key\n def weights_numel(self): return 128\nargs=[L(k) for k in 'qkvo']+[None]*3\nprint('parent',ns['allocate_transformer'](3,383,*args))\npatched=src.replace('[0, 0, 1, 0]','[0, 1, 1, 0]').replace('[0, 0, 2, 0]','[0, 2, 2, 0]'); exec('from __future__ import annotations\\n'+patched,ns)\nprint('patched unequal candidate',ns['allocate_transformer'](3,383,*args))\nprint('patched exact-cost boundary',ns['allocate_transformer'](3,255,*args))\nprint('patched changed selection',ns['allocate_transformer'](3,128,*args))"
+        ]
+      },
+      "result_sha256": "6e14864e8f1ef72e9a3a6f5dd9539e4bf8bf5dccbbaace81a1351ae34be08c05"
+    },
+    "call_f101faf2d4454091a69b60f82a4e375a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\ns=pathlib.Path('exllamav3/conversion/allocation.py').read_text(); f=next(n for n in ast.parse(s).body if isinstance(n,ast.FunctionDef) and n.name=='allocate_transformer'); s=ast.get_source_segment(s,f).replace('[0, 0, 1, 0]','[0, 1, 1, 0]').replace('[0, 0, 2, 0]','[0, 2, 2, 0]'); ns={};exec('from __future__ import annotations\\nimport math,bisect\\n'+s,ns)\nclass L:\n def __init__(self,k):self.key=k\n def weights_numel(self):return 128\nprint(ns['allocate_transformer'](3,512,*[L(k) for k in 'qkvo'],None,None,None))"
+        ]
+      },
+      "result_sha256": "00cf47fd0641d4a3f148b66458d7248150eb7224951f808dc274ade9deb7a184"
+    },
+    "call_a3aa1d3a7efd4f9e9581298e45dd4e92": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\ns=pathlib.Path('exllamav3/conversion/allocation.py').read_text(); f=next(n for n in ast.parse(s).body if isinstance(n,ast.FunctionDef) and n.name=='allocate_transformer'); s=ast.get_source_segment(s,f).replace('[0, 0, 1, 0]','[0, 1, 1, 0]').replace('[0, 0, 2, 0]','[0, 2, 2, 0]'); ns={};exec('from __future__ import annotations\\nimport math,bisect\\n'+s,ns)\nclass L:\n def __init__(self,k,n):self.key=k;self.n=n\n def weights_numel(self):return self.n\nprint(ns['allocate_transformer'](3,640,*[L(k,n) for k,n in zip('qkvo',[256,128,128,256])],None,None,None))"
+        ]
+      },
+      "result_sha256": "f14a1a2faaad28852aee82f94c53b78ef5e82c29c3c2a75314b09f7934827df1"
+    }
+  }
+}

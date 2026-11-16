@@ -60,13 +60,16 @@ class WalkInputTests(unittest.TestCase):
         with patch('teacher.walk_inputs.build_packet',side_effect=broken):
             with self.assertRaisesRegex(ValueError,'evidence'):prepare(self.repo,self.task,9,self.root/'broken',directory)
 
-    def test_guidance_seven_default_preserves_legacy_inputs(self):
-        from teacher.session import GUIDANCE_6, GUIDANCE_7
+    def test_guidance_eight_default_preserves_legacy_inputs(self):
+        from teacher.session import GUIDANCE_6, GUIDANCE_7, GUIDANCE_8_ADDITION, GUIDANCE_9_ADDITION, GUIDANCE_10_ADDITION
         directory = self.bundle()
         packet = self.root/'guidance-trial'
         manifest = prepare(self.repo, self.task, 9, packet, directory)
-        self.assertEqual(manifest['guidance_version'], 7)
+        self.assertEqual(manifest['guidance_version'], 8)
         validate_bundle(packet, directory/'000009-eligible.json')
+        default = FreshSession(packet)
+        manifest['guidance_version'] = 7
+        (packet/'manifest.json').write_text(json.dumps(manifest))
         adopted = FreshSession(packet)
         manifest['guidance_version'] = 5
         (packet/'manifest.json').write_text(json.dumps(manifest))
@@ -86,6 +89,32 @@ class WalkInputTests(unittest.TestCase):
         self.assertEqual(adopted.initial[1:], original.initial[1:])
         self.assertEqual(adopted.tools, original.tools)
         self.assertEqual(adopted.reasoning_effort, original.reasoning_effort)
+        manifest['guidance_version'] = 8
+        (packet/'manifest.json').write_text(json.dumps(manifest))
+        validate_bundle(packet, directory/'000009-eligible.json')
+        fourth = FreshSession(packet)
+        self.assertEqual(fourth.initial, default.initial)
+        self.assertEqual(fourth.initial[0]['content'], adopted.initial[0]['content']+'\n\n'+GUIDANCE_8_ADDITION)
+        self.assertEqual(fourth.initial[1:], adopted.initial[1:])
+        self.assertEqual(fourth.tools, adopted.tools)
+        self.assertEqual(fourth.reasoning_effort, adopted.reasoning_effort)
+        manifest['guidance_version'] = 9
+        (packet/'manifest.json').write_text(json.dumps(manifest))
+        validate_bundle(packet, directory/'000009-eligible.json')
+        fifth = FreshSession(packet)
+        self.assertEqual(fifth.initial[0]['content'], fourth.initial[0]['content']+'\n\n'+GUIDANCE_9_ADDITION)
+        self.assertEqual(fifth.initial[1:], fourth.initial[1:])
+        self.assertEqual(fifth.tools, fourth.tools)
+        self.assertEqual(fifth.reasoning_effort, fourth.reasoning_effort)
+        manifest['guidance_version'] = 10
+        (packet/'manifest.json').write_text(json.dumps(manifest))
+        validate_bundle(packet, directory/'000009-eligible.json')
+        revised = FreshSession(packet)
+        self.assertEqual(revised.initial[0]['content'], fourth.initial[0]['content']+'\n\n'+GUIDANCE_10_ADDITION)
+        self.assertNotIn(GUIDANCE_9_ADDITION, revised.initial[0]['content'])
+        self.assertEqual(revised.initial[1:], fourth.initial[1:])
+        self.assertEqual(revised.tools, fourth.tools)
+        self.assertEqual(revised.reasoning_effort, fourth.reasoning_effort)
         manifest['guidance_version'] = 7
         # Adoption does not weaken evidence integrity checks.
         manifest['walk_input_contract']['reference_signatures'] = [['missing', '0'*64]]
