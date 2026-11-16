@@ -1,0 +1,530 @@
+{
+  "schema_version": 5,
+  "sha": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+  "parent_shas": [
+    "bc607b3d08d1c56e3caff36f788af4abcf9e9576"
+  ],
+  "cutoff_date": "2025-05-30T16:58:00+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Attention assumed Q/K normalization was RMSNorm, including RMS-specific attributes and fused RoPE weights. LayerNorm also restricted affine parameters to the final-axis shape.",
+        "basis": "source",
+        "evidence": [
+          "call_81e120b6387d453895eed06ae1885fd5",
+          "call_61111e7c3fd74ad186a62e825d48343e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The edits are coupled: LayerNorm weights are excluded from RMS-only fusion, separate normalization moves before RoPE, and multidimensional affine weights are applied after final-axis normalization.",
+        "basis": "source",
+        "evidence": [
+          "call_f9b28db36adf4c95b9ac6387ca01cda6",
+          "call_af9e1a3871fe46e482d3543ba852e6f7"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Adds a reusable Q/K LayerNorm path to all three attention backends without wiring a model architecture to it. The new dispatch condition also introduces a suspected regression for loaded RMSNorm weights.",
+        "basis": "source",
+        "evidence": [
+          "call_f9b28db36adf4c95b9ac6387ca01cda6",
+          "call_3536a727487c416d91b68f207772f3a7"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the LayerNorm introduction, normalization-fusion entry and head-norm parameter repair. They establish the previous identical LayerNorm forward methods, fused RMSNorm interface and inherited native reduction/bounds concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_a35331d04eb94171ac34860416c968d8",
+          "call_8bac54b53894451eb6549aff917ef0b8",
+          "call_1ea35df655064473987bd91797dac5a4"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d reports conversion failure attributed in discussion to tokenizer truncation. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, concerns scaling policy. Their relationship to this task is inferred solely from attention/rope source-path overlap, not evidence that QK LayerNorm addresses those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_6e47bc917f364256a9bc44a2855930a5",
+          "call_a20cf0ee47264197ba8227b2ed78fe46",
+          "call_a040d7b6aefc455fad634514372c85c0"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch, CUDA kernel, model inference or repository tests were executed. Tensor truth-value and shape failures are source-based observations, not reproduced exceptions.",
+      "The scalar calculation uses Python double precision, not the implementation's half-precision intermediate operations, broadcasting machinery or GPU scheduling.",
+      "Whole-tree literal searches identify explicit consumers, not dynamic or external callers. No checkpoint-level validation or performance measurement establishes model compatibility or overhead."
+    ],
+    "links": [
+      "39e400d16aa506a98f6da102176b3310b95022f0",
+      "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+      "a39fdfc4d5bdac1c677eecefbb1932b586c0dca9"
+    ],
+    "chapters": [
+      {
+        "id": "attention",
+        "title": "Separate Q/K LayerNorm from RMSNorm fusion",
+        "claims": [
+          {
+            "text": "Attention now accepts RMSNorm or LayerNorm for Q/K. It still requires K norm when Q norm is supplied. RMSNorm retains epsilon equality checking and constant weight bias; the LayerNorm branch copies Q's layernorm_eps and sets the fused weight offset to zero. Separate calls use each LayerNorm object's own epsilon, so they do not require equal Q/K epsilon.",
+            "basis": "source",
+            "evidence": [
+              "call_f9b28db36adf4c95b9ac6387ca01cda6",
+              "call_61111e7c3fd74ad186a62e825d48343e"
+            ]
+          },
+          {
+            "text": "load exposes normalization tensors to RoPE only for RMSNorm. For LayerNorm they remain None. Each decode route reshapes Q/K to batch \u00d7 sequence \u00d7 heads \u00d7 head_dim, normalizes separately when RoPE is absent or no fused normalization tensor is available, then applies rotation. V is not normalized. Existing standalone calls without RoPE already supplied params and requested half output; the new calls retain that preparation.",
+            "basis": "source",
+            "evidence": [
+              "call_f9b28db36adf4c95b9ac6387ca01cda6",
+              "call_81e120b6387d453895eed06ae1885fd5"
+            ]
+          },
+          {
+            "text": "RoPE.apply forwards optional weights to a native kernel implementing RMS normalization, not centered LayerNorm. The wrapper requires half Q/K; native fused Q weights must be one-dimensional and head_dim long. Keeping LayerNorm outside this kernel avoids applying the wrong normalization formula and permits per-head affine weights, at the cost of separate operations; no speed comparison was measured.",
+            "basis": "source",
+            "evidence": [
+              "call_49a9766d2979437bb0291834abf603d2",
+              "call_0c9644bbea9a4b6d84c07f5bf8a5caf7",
+              "call_f9b28db36adf4c95b9ac6387ca01cda6"
+            ]
+          },
+          {
+            "text": "LayerNorm.forward preserves the existing F.layer_norm call for rank-one weights. Otherwise it normalizes only the final axis without affine parameters, multiplies by w and optionally adds b. Thus a heads \u00d7 head_dim weight can broadcast across batch and sequence without normalizing across heads. Loading, optional bias, cached float32 copies and final dtype selection are unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_af9e1a3871fe46e482d3543ba852e6f7",
+              "call_61111e7c3fd74ad186a62e825d48343e"
+            ]
+          },
+          {
+            "text": "A scalar transcription with two heads [1,3] and [2,6], separate affine rows and epsilon 1e-5 produced approximately [-1,3] and [-1,7]. This illustrates final-axis normalization followed by head-specific affine transformation, not normalization across the combined head axes.",
+            "basis": "execution",
+            "evidence": [
+              "call_8e18f1e5ce694e69bc5bde67e57eb8fc"
+            ]
+          },
+          {
+            "text": "Explicit Q/K norm builders remain RMSNorm in Qwen3, Qwen3 MoE and Gemma3; Gemma3 retains its unit weight offset. Cohere and Cohere2 construct LayerNorm only for block input and final normalization, not Q/K. Their existing rank-one-weight path is unchanged. ParallelDecoderBlock consumes input_norm through forward; TransformerBlock likewise calls forward for its norms. No LayerNorm subclass or forward_torch caller appeared in the whole-tree searches.",
+            "basis": "source",
+            "evidence": [
+              "call_3536a727487c416d91b68f207772f3a7",
+              "call_f0fc19cc0d5c4f23ace5061dccb93201",
+              "call_743b2a3aeed64a8081906b0ac41d10dc",
+              "call_b2e9a145dda74a84980b0515fe9ec5ab",
+              "call_f5ca95cd32eb4b87bb027c5fcf5ebcb3",
+              "call_6fb6c7d5cded4ba298947e3ef092ba4f",
+              "call_8553087c26864e0a8b54f152a017f173",
+              "call_2efb7a90b9104f37ae44ea1cd348a13a",
+              "call_dbbd38c976f94b62b073f7098bc8c10f"
+            ]
+          },
+          {
+            "text": "The earlier parameter-overwrite defect remains removed: defaults are still confined to attention without head norms. Native reduction and padded-read concerns remain unchanged in rope.cu. LayerNorm bypasses native normalization, but still uses native rotation; the new RMSNorm truth-value failure can prevent ordinary Attention calls from reaching the fused kernel.",
+            "basis": "source",
+            "evidence": [
+              "call_81e120b6387d453895eed06ae1885fd5",
+              "call_f9b28db36adf4c95b9ac6387ca01cda6",
+              "call_0c9644bbea9a4b6d84c07f5bf8a5caf7"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "tensor-truth-dispatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The fallback condition tests an RMSNorm weight tensor's truth value rather than its presence.",
+        "trigger": "Loaded Attention with RoPE, Q/K RMSNorm and a weight tensor containing more than one element.",
+        "expected_behavior": "Skip standalone normalization and use the existing fused RMSNorm/RoPE path.",
+        "actual_behavior": "Each decode method evaluates not self.q_norm_tensor, which requests an ambiguous multi-element tensor truth value before RoPE. Attention.forward directly dispatches to these methods; Qwen3, Qwen3 MoE and Gemma3 supply the relevant norm objects. No-norm, no-RoPE and LayerNorm cases short-circuit differently.",
+        "locations": [
+          {
+            "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.decode_sdpa_nc / decode_flash_attn_nc / decode_flash_attn"
+          }
+        ],
+        "source_evidence": [
+          "call_f9b28db36adf4c95b9ac6387ca01cda6",
+          "call_81e120b6387d453895eed06ae1885fd5",
+          "call_3536a727487c416d91b68f207772f3a7",
+          "call_de718a78310845569573d04f86eded4f",
+          "call_4a1e27c24e264f10ac44f1b090c22593"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced load's tensor assignment, all three changed conditions, forward dispatch and explicit model norm builders.",
+            "evidence": [
+              "call_f9b28db36adf4c95b9ac6387ca01cda6",
+              "call_f0fc19cc0d5c4f23ace5061dccb93201",
+              "call_743b2a3aeed64a8081906b0ac41d10dc",
+              "call_b2e9a145dda74a84980b0515fe9ec5ab"
+            ],
+            "limits": "No PyTorch execution reproduced the exception."
+          }
+        ]
+      },
+      {
+        "id": "layernorm-reference-shape",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "forward_torch retains the old affine-shape contract.",
+        "trigger": "Call LayerNorm.forward_torch with multidimensional weights newly supported by forward.",
+        "expected_behavior": "Provide the same final-axis normalization and broadcast affine transformation as forward.",
+        "actual_behavior": "forward_torch still passes the multidimensional weight directly to F.layer_norm with a one-axis normalized_shape. It lacks the new broadcast path. Whole-tree search found no repository caller, so the observed reach is the alternative method interface, not demonstrated production execution.",
+        "locations": [
+          {
+            "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+            "path": "exllamav3/modules/layernorm.py",
+            "symbol": "LayerNorm.forward_torch"
+          }
+        ],
+        "source_evidence": [
+          "call_61111e7c3fd74ad186a62e825d48343e",
+          "call_af9e1a3871fe46e482d3543ba852e6f7",
+          "call_dbbd38c976f94b62b073f7098bc8c10f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both methods with the complete LayerNorm diff and searched for alternative-method callers.",
+            "evidence": [
+              "call_61111e7c3fd74ad186a62e825d48343e",
+              "call_af9e1a3871fe46e482d3543ba852e6f7",
+              "call_dbbd38c976f94b62b073f7098bc8c10f"
+            ],
+            "limits": "No external caller or Torch shape-error execution established."
+          }
+        ]
+      },
+      {
+        "id": "inherited-native-normalization-and-bounds",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Inherited native reduction and padded-input-read concerns are carried over.",
+        "trigger": "Direct fused RoPE normalization with nonuniform lane values; or rotation with padded head width, such as 80, or shorter partial-rotary frequencies.",
+        "expected_behavior": "Store one complete sum per warp and avoid input reads beyond logical frequency/weight arrays.",
+        "actual_behavior": "Every lane writes its shuffle-down result to one shared sum slot. inv_freq[t] and normalization half2 weight loads lack padding guards. The existing test directly reaches this kernel with width 80 and normalization on/off, bypassing Attention's new dispatch failure. LayerNorm avoids the normalization-specific operations but not the frequency read.",
+        "locations": [
+          {
+            "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_0c9644bbea9a4b6d84c07f5bf8a5caf7",
+          "call_a102f58c6b974a12b3462d2158a86192",
+          "call_16681d15cad341f4a0b6f1c220865264",
+          "call_f9b28db36adf4c95b9ac6387ca01cda6"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared unchanged native code with its reduction helper, wrapper, direct test caller and task diff.",
+            "evidence": [
+              "call_0c9644bbea9a4b6d84c07f5bf8a5caf7",
+              "call_a102f58c6b974a12b3462d2158a86192",
+              "call_16681d15cad341f4a0b6f1c220865264"
+            ],
+            "limits": "No GPU race detection or observed memory fault."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed 64 launched x lanes for width 80, versus 40 full-width frequency entries.",
+            "evidence": [
+              "call_8e18f1e5ce694e69bc5bde67e57eb8fc",
+              "call_0c9644bbea9a4b6d84c07f5bf8a5caf7"
+            ],
+            "limits": "Integer launch arithmetic only, not kernel execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds standalone Q/K LayerNorm before RoPE and broadcast affine weights, while introducing a suspected RMSNorm dispatch regression and leaving the alternative LayerNorm method unchanged."
+  },
+  "evidence": {
+    "call_f9b28db36adf4c95b9ac6387ca01cda6": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "offset": 154,
+        "max_bytes": 5691
+      },
+      "result_sha256": "5b5a7603f1a05a08be065bae0bf586391d79eacb473680ef477a6aa538e0e90b"
+    },
+    "call_af9e1a3871fe46e482d3543ba852e6f7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "offset": 4928,
+        "max_bytes": 917
+      },
+      "result_sha256": "05f76b3973559dc257fb78029719ac055c9c87dba31a4e467a1cd34695831d21"
+    },
+    "call_81e120b6387d453895eed06ae1885fd5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "dd12ad88706da7fd3587af4603088e7c56cfa9877c39c7c6f6d2a939645b74a0"
+    },
+    "call_2efb7a90b9104f37ae44ea1cd348a13a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "query": "LayerNorm",
+        "limit": 100
+      },
+      "result_sha256": "7bc8edb8cfb249f938679dc863060b3c4580802e4ede02b088bd843823c3c92f"
+    },
+    "call_3536a727487c416d91b68f207772f3a7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "query": "q_norm",
+        "limit": 100
+      },
+      "result_sha256": "745fe845395fc47e2f8ee3d3f2c2f2e17170626a355e3464df5ecf73d09b815c"
+    },
+    "call_61111e7c3fd74ad186a62e825d48343e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/modules/layernorm.py"
+      },
+      "result_sha256": "0c4c72751a276ece50d8f1b18293cdc79266ab4c075e1be21957d2e581338a3f"
+    },
+    "call_a06218ce69734fd6ada719011d4911b0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "layernorm.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "fe18b39695cec762e2bebd3a80df1242b373bc033410d0009508d48baecae650",
+      "catalog_only": true
+    },
+    "call_a35331d04eb94171ac34860416c968d8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "39e400d16aa506a98f6da102176b3310b95022f0",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6a4e5f90d3d7233564fe7554e4030d70b4205bec6d8eb645252faf2ade09acb0"
+    },
+    "call_1ea35df655064473987bd91797dac5a4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a39fdfc4d5bdac1c677eecefbb1932b586c0dca9",
+        "max_bytes": 16000
+      },
+      "result_sha256": "792566eff634c073cf105a65eaf33d0c1fc247c4a9d5c2d3ac28c8224e5f15a6"
+    },
+    "call_f0fc19cc0d5c4f23ace5061dccb93201": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/models/qwen3.py",
+        "offset": 2000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "aca7b2863945aa9e51523071690665835a6998ddbf8d3e8a11dab0a90b5f0adf"
+    },
+    "call_743b2a3aeed64a8081906b0ac41d10dc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "offset": 2000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "8ce5a14e48f712eadf9ee44f2b50d82fe8e0ff51ba74bb4052cf99958906ec0a"
+    },
+    "call_b2e9a145dda74a84980b0515fe9ec5ab": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 3500,
+        "max_bytes": 5000
+      },
+      "result_sha256": "578a17731c603616af2a3bbc90f09c4ff25bb4b4f328be18363746f2d10e76eb"
+    },
+    "call_ccdcd826e7c948bb8021fba9b95b5fca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "query": "decode_",
+        "path": "exllamav3",
+        "limit": 100
+      },
+      "result_sha256": "f33a895775fc9bfd46c6c15a35afb4344c768daac4194878117f38d011392e34"
+    },
+    "call_8553087c26864e0a8b54f152a017f173": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "d21e745ed9dd0fe5df4f179216502f8c5e241b6e267a9018d7072cead62a42e9"
+    },
+    "call_f5ca95cd32eb4b87bb027c5fcf5ebcb3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/models/cohere.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "0e74eed61d8f3f978015b355d199711eb4dc02c9b7a9c60626eb64dce1e7238b"
+    },
+    "call_6fb6c7d5cded4ba298947e3ef092ba4f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/models/cohere2.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "4608acb16d486176bf61d19d3ad18fc22a14e1e63cbb7f9d5d5b20a95119377e"
+    },
+    "call_49a9766d2979437bb0291834abf603d2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/util/rope.py",
+        "offset": 10600,
+        "max_bytes": 9000
+      },
+      "result_sha256": "4397edba2dbed3669fe2feb87b4cf34680025b28f6f88a216bb59c9961bff74c"
+    },
+    "call_0c9644bbea9a4b6d84c07f5bf8a5caf7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "b71eecf05983b3e7e834c2debe54eb04568183607db947a9277d5f9a88df45ce"
+    },
+    "call_6e47bc917f364256a9bc44a2855930a5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "537a4b68a67fd4dcc403d11b4d9e6f78c12ddde814d655b74d4c2a7f1f10f3e7"
+    },
+    "call_a20cf0ee47264197ba8227b2ed78fe46": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "19b756b873ed77fd8c3940d9ef6ab0680b0e685e2923fe58c4211176d4199cfb"
+    },
+    "call_a040d7b6aefc455fad634514372c85c0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f03d42c59eee2f25937466ac073b765ff49c367e4b5a7dc6107c9ac0821cc69e"
+    },
+    "call_dbbd38c976f94b62b073f7098bc8c10f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "query": "forward_torch",
+        "limit": 100
+      },
+      "result_sha256": "3605698372739e98c91862c964a4f2d061bf0c016dce027a380e4c55f3bd24ac"
+    },
+    "call_de718a78310845569573d04f86eded4f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "query": "decode_flash_attn",
+        "limit": 100
+      },
+      "result_sha256": "f70bb931db5e30ebe13441d2000d7d84acfafbe17e5bcf721c939a9b6f9735ae"
+    },
+    "call_4a1e27c24e264f10ac44f1b090c22593": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "query": "decode_sdpa_nc",
+        "limit": 100
+      },
+      "result_sha256": "fdd9f7f54077f70b59aed2c6628997d7335c255d1c42f0cdb72b6c5921c48c72"
+    },
+    "call_8e18f1e5ce694e69bc5bde67e57eb8fc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nx=[[1.,3.],[2.,6.]]; w=[[1.,2.],[3.,4.]]; b=[[0.,1.],[2.,3.]]; eps=1e-5\nout=[]\nfor row,wr,br in zip(x,w,b):\n m=sum(row)/len(row); v=sum((z-m)**2 for z in row)/len(row)\n out.append([(z-m)/math.sqrt(v+eps)*a+c for z,a,c in zip(row,wr,br)])\nprint('last-axis normalization then per-head affine:',out)\nprint('head_dim=80: lanes',((80//2+31)//32)*32,'frequency entries',80//2)\n"
+        ]
+      },
+      "result_sha256": "08cb40294b4aad521de859999ce0d3bdaefab341ea174b4f24a7cf46a397f2bc"
+    },
+    "call_7d16904d108049d8b7ab103fe147ae34": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "query": ".apply(",
+        "path": "tests",
+        "limit": 100
+      },
+      "result_sha256": "4969a601758ab7ad2df2f28134e4d143affe236f9de80057a24b9de317802e8c"
+    },
+    "call_16681d15cad341f4a0b6f1c220865264": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "tests/test_rope.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "e7a1b50fe496622e2bc6a55421203c37f6cf394277d3dc4b913f03f4a9312133"
+    },
+    "call_8bac54b53894451eb6549aff917ef0b8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+        "max_bytes": 16000
+      },
+      "result_sha256": "597d0cc17d10c90903f4b0f71997c1971bcd70e15cdafcd32525ad5bb20eeac5"
+    },
+    "call_a102f58c6b974a12b3462d2158a86192": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bc607b3d08d1c56e3caff36f788af4abcf9e9576",
+        "path": "exllamav3/exllamav3_ext/reduction.cuh",
+        "max_bytes": 4500
+      },
+      "result_sha256": "0ad70125969a695bff216d9c65b643089b8fe40cc74cd51b98ebedad02193fb1"
+    }
+  }
+}

@@ -673,3 +673,30 @@ canonical-use condition. Paragraph E is the attempt to fix this.
   writing "the X record gains…".
 - Tell the user about a trial's weaknesses (wording written from the targets, one run per position) with the
   result, not after.
+
+**Added after the commit:** the handoff commit is `e9e83ff` on `main` ("Walk through commit 196: guidance 8
+adopted, guidance 9/10 trial gates, reviews 172-196"), local and remote equal. Commit with the history's own
+identity and push through `gh` as described near the top of this file. Uncommitted since then: this note,
+`reports/guidance-10-trial-001.json` (Astra's trial in progress) and whatever Astra writes next.
+
+**Added 2026-11-16, new session (after the handoff above).**
+- Guidance-10 trial assessed: `reviews/verdicts/guidance-10-trial-001.md`, **not passed** (188's cache still under
+  limits; controls 189 and 178 clean; 44 calls against 35). Reported to the user with the recommendation to adopt
+  the version-9 paragraph. **Awaiting the user's decision**; nothing adopted, walk on guidance 8.
+- 197 approved (attempt 001, 25 calls). Reviewer findings recorded there: the scale tensors of the quantized
+  cache give non-multiple-of-16 blocks when `token_dim // 32` is not a multiple of four; `measure`/`sort_seq`
+  recurse per chain page (upstream fix `402ab56b`, #78). Draft-cache finding true (fixed upstream later).
+- 198 approved (001, 19 calls): zero-bin finding true; fixes the 62 capacity finding. **199 is next.** Watch restarted.
+- **User adopted guidance 9** ("Adopt version 9"): `reviews/verdicts/guidance-9-adoption.decision.md`. Astra told.
+  Expect `reviews/requests/guidance-9-adoption-001.md`: check default 9, instructions = guidance 8 + E, versions
+  5-8 and 10 byte-identical, suite. Commit in progress finishes on 8. Owed later: cost/effect report for 9.
+- 199 approved (001, 9 calls, no findings). **Next: guidance-9-adoption-001 request, then 200 on guidance 9.**
+- guidance-9-adoption-001 **accepted**; guidance 9 is the walk default from 200. **200 is next.** Owed to the user after a few commits: cost/effect of 9 against 178-198 (198: 19 calls, 199: 9).
+- 200 approved (001, first on guidance 9, 29 calls): tensor-truth-value regression found by the teacher (upstream fix `95c5097b` next day; watch the ledger recognises it). **201 is next.**
+- 201 approved (001, guidance 9, 31 calls, no findings; fixes 98's cohere-qk-normalization). **202 is next.**
+- 202 approved (001, guidance 9, 12 calls, no findings): the 188 cache fix; ledger record may take it. **203 is next.** Guidance-9 calls so far: 29, 31, 12.
+- 203 approved (001, guidance 9, 12 calls; inherited ppl-axis-bound only). **204 is next.** Guidance-9 calls so far: 29, 31, 12, 12.
+- 204 approved (001, guidance 9, 29 calls, 14 of them discussion fetches; sentinel-in-test finding true). **205 is next.** Guidance-9 calls so far: 29, 31, 12, 12, 29.
+- 205 approved (001, guidance 9, 24 calls; both findings true; missed: count_inf_nan strides, unused termplotlib import, -hb<4 reaches 198 zero-bin). **206 is next.** Guidance-9 calls so far: 29, 31, 12, 12, 29, 24.
+- 206 approved (001, guidance 9, 20 calls, no findings). **207 is next.** Guidance-9 calls so far: 29, 31, 12, 12, 29, 24, 20.
+- 207 approved (001, guidance 9, 13 calls; fixes 200's tensor-truth finding). **208 is next.** Guidance-9 calls so far: 29, 31, 12, 12, 29, 24, 20, 13. Cost/effect report for 9 is due to the user about now.

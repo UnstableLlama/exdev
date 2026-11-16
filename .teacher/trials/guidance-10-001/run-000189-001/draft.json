@@ -1,0 +1,193 @@
+{
+  "schema_version": 5,
+  "sha": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+  "parent_shas": [
+    "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6"
+  ],
+  "cutoff_date": "2025-05-25T13:33:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "LinearFP16.forward zero-filled an output buffer immediately before matrix multiplication wrote its result into it.",
+        "basis": "source",
+        "evidence": [
+          "call_3a379c92d4e7403b95dcfc51645011e1"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing zeros with empty removes initialization work. The existing Torch branch supplies out=y; the native branch uses alpha=1 and beta=0, requesting a product without accumulating the previous output.",
+        "basis": "source",
+        "evidence": [
+          "call_fafcddb6438a49188f568417ed208339",
+          "call_3a379c92d4e7403b95dcfc51645011e1",
+          "call_0137a72af76b45e6b12e49ebb9937bb1"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Output dimensions, device, bias addition and final reshaping remain unchanged. Any latency improvement is unmeasured.",
+        "basis": "source",
+        "evidence": [
+          "call_fafcddb6438a49188f568417ed208339",
+          "call_3a379c92d4e7403b95dcfc51645011e1"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root quantized-inference entry establishes the dense backend\u2019s original role; the later dtype-dispatch entry explains the existing Torch/native split and native half-input restriction. Both entries were read.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_21696b8527c540fe958da282de4b74d6",
+          "call_82aa3b65a1ed49acb708edc6107f3a12"
+        ]
+      },
+      {
+        "text": "Issue #39, \u201cGemma 3 architecture not in list?\u201d, concerns architecture availability and subsequent frontend discussion, not evidence validating this output-allocation change.",
+        "basis": "source",
+        "evidence": [
+          "call_ad87dcb25df143faa1848c85f31faeae"
+        ]
+      }
+    ],
+    "limitations": [
+      "No GPU execution, numerical comparison or benchmark was performed. A scalar arithmetic model would not validate Torch/cuBLAS output-buffer behavior or allocation performance.",
+      "Successful output production still depends on the selected multiplication backend. Native hgemm checks half inputs and compatible rank-two shapes, but does not inspect cuBLAS return statuses; backend failure behavior with an uninitialized output was not tested."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "74abd5e135f574f958faa6507f40c12c3f0cadba"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Allocate dense linear output without zero filling",
+        "claims": [
+          {
+            "text": "The buffer remains a flattened-row-count \u00d7 out_features tensor. Matching input/output dtypes select torch.matmul; differing dtypes select ext.hgemm. Both precede the optional in-place bias addition, so successful multiplication supplies the initialization that bias addition needs.",
+            "basis": "source",
+            "evidence": [
+              "call_fafcddb6438a49188f568417ed208339",
+              "call_3a379c92d4e7403b95dcfc51645011e1",
+              "call_0137a72af76b45e6b12e49ebb9937bb1"
+            ]
+          },
+          {
+            "text": "The accompanying dtype edit replaces first_not_none with an or chain: call override, instance default, then torch.half. The old helper explicitly skipped only None; the new expression skips false-valued objects. The declared interface remains torch.dtype or None, and the now-unused helper import remains.",
+            "basis": "source",
+            "evidence": [
+              "call_fafcddb6438a49188f568417ed208339",
+              "call_3719e6672f8943edb2e48638ebc0ff21",
+              "call_3a379c92d4e7403b95dcfc51645011e1"
+            ]
+          },
+          {
+            "text": "The optimization trades a guaranteed zeroed allocation for reliance on the already-present overwrite operation; it does not introduce buffer reuse or fuse bias into multiplication.",
+            "basis": "inference",
+            "evidence": [
+              "call_fafcddb6438a49188f568417ed208339",
+              "call_3a379c92d4e7403b95dcfc51645011e1"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "LinearFP16 uses an uninitialized output buffer instead of zero filling it and simplifies dtype fallback. Existing multiplication supplies the output values; performance remains unmeasured."
+  },
+  "evidence": {
+    "call_fafcddb6438a49188f568417ed208339": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d54648bfaba4ab016fc3345938cc9c0f1b02be48",
+        "offset": 169,
+        "max_bytes": 692
+      },
+      "result_sha256": "73a0def067644d159b79afcf9093a81bf7ad77f422eb14a8a0f02d79ecd5e246"
+    },
+    "call_3a379c92d4e7403b95dcfc51645011e1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/modules/quant/fp16.py"
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    },
+    "call_3d7cbda2d80246b7bd1984f9f67fd2ce": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "query": "void hgemm"
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_0137a72af76b45e6b12e49ebb9937bb1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu"
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_9daaba56b9ba431caea9d213aa668234": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/quant/fp16.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "4caa7678ba582c81788a8cc4a68bdaf9d058925b561622f301d0d1341e5ccc1c",
+      "catalog_only": true
+    },
+    "call_82aa3b65a1ed49acb708edc6107f3a12": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "74abd5e135f574f958faa6507f40c12c3f0cadba",
+        "max_bytes": 12000
+      },
+      "result_sha256": "6b5ca9c7b0acbdd995ae71bbc2707a84981b6ccaafd820d52556f007f8a871db"
+    },
+    "call_21696b8527c540fe958da282de4b74d6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantized-inference",
+        "max_bytes": 16384
+      },
+      "result_sha256": "02b6734d29272cca0d4ea8a56ffcd9ba2d18a4cc524cb44db9d12c4d8741226c"
+    },
+    "call_426f764ec3964f62b8d90c3f1dfb9f7d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "query": "def first_not_none"
+      },
+      "result_sha256": "7632d9fd9400fedcd77e24a164ae19d29e861c0b1d40d2832b0f76ff2fc0a289"
+    },
+    "call_3719e6672f8943edb2e48638ebc0ff21": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "path": "exllamav3/util/misc.py",
+        "offset": 1700,
+        "max_bytes": 2400
+      },
+      "result_sha256": "98ffb07baf9924674041a3aeabfb5505d3ae17bce360c7950289ce762316cff9"
+    },
+    "call_ad87dcb25df143faa1848c85f31faeae": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/39",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b552786e1f52ca4097dd246e602372e290f28377f3e51a01fead0cce569c8a93"
+    }
+  }
+}

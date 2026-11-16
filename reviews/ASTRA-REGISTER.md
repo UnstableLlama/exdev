@@ -3728,3 +3728,220 @@ Ancestor retrieval only. reviews/verdicts/commit-000195-001.md sha256 07c8cef969
 - 196/002 request filed: reviews/requests/commit-000196-002.md. Fresh unassisted same-packet retry, exact opening, failed001 preserved;19 identical replays,2877 shared blobs,1/1 task sections. Two inherited suspected native findings; partial model/science/RoPE reads disclosed, one AST file-read/scalar run separate from9 repo_reads. Await verdict; no197. Guidance-10 three-session supervisor launching between commits: hold walk journal/run mutations during its before/after snapshot, then file trial request and apply any queued196 verdict.
 
 - 196/002 APPROVED for ancestor retrieval only (clean): reviews/verdicts/commit-000196-002.md SHA256 `f8bc955321da43b631f55beca23f468c861891989bd23463819a8666c85c61d4`; request and all14 artifact hashes verified. Failed001 remains failed/excluded. a39fdfc4 confirmed fix of185 normalization-settings identity; add196 affected to the two native185 identities. No canonical conditions. Reviewer note about a finding present only in failed001 is not a ledger candidate or teacher input. Approval application and197 launch deferred only until active guidance-10 trial snapshot completes (188 currently running); preserve journal/runs for isolation. On trial completion, inspect/file trial request, then apply this verdict as instructed and launch197 detached on8. Do not lose this authorization.
+
+## Filed guidance-10-trial-001
+
+Three completed scratch trials; 44 identical replays; walk snapshots unchanged. Trial assessment requested, no adoption; walk stays guidance 8. Request sha256 df8e5ba1c8d545f8a02833db82c0b335d64a265b7d1378f274621f18f4d37581
+
+## Applied commit-000196-002 approval
+
+Ancestor retrieval only. reviews/verdicts/commit-000196-002.md sha256 f8bc955321da43b631f55beca23f468c861891989bd23463819a8666c85c61d4. Failed attempt 001 remains excluded.
+
+All 14 request hashes verified. Manual approval because cycle --approve rejects non-first attempts. Owed: a39fdfc4 fixes the 185 settings identity and is affected by both native 185 identities. Earlier obligations remain.
+
+## Filed commit-000197-001
+
+Unassisted guidance 8; 25 identical replays, all 8 sections read, scalar-only execution. Request sha256 3c055f3dcd889c151bd1b7152e6aa791d9261bd64d9fce981bf9f9ef5c1139cc. Three suspected findings awaiting review; ledger backlog preserved. No 198 before verdict.
+
+## Recorded commit-000197-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000197-001.md sha256 4ca7705fcb176196cd83779db9768d323fe46b5ecd091acda4af012c1b72d2a5
+
+### Follow-ups
+
+1. Ledger: the draft-cache finding may be filed as suspected, introduced at `9be91d64`. The vector-boundary
+   record from 195 gains this commit as the first library caller; do not record a fix before the walk reaches
+   one. Earlier owed items stand.
+
+### Must fix before canonical use
+
+1. Apply the inherited vector-boundary finding to the new caller: state which cache tensors give a per-block
+   length that is not a multiple of 16 (reviewer finding 1), with its limits.
+2. State that the planner's two helper functions recurse to the depth of the longest cached chain.
+3. Minor: the orphan pass rewrites `access_serial` and the chain trimming rewrites `children` before the
+   movement threshold can return, so a skipped defragmentation still changes eviction order among orphans. The
+   entry states the reassignment but not that it survives the skip.
+
+## Filed commit-000198-001
+
+Unassisted guidance 8; 19 identical replays, 6/6 diff sections read; scalar-only execution. Request sha256 97203f10465f8ede859fead5ca2ae6df70931031d66357306b4ff994cc16aa63. Zero-bin finding and capacity-fix attribution await review. Prior ledger obligations retained; no 199 before verdict.
+
+## Recorded commit-000198-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000198-001.md sha256 69fece86b53d81996a307573ffd718b05622be9378a731c613b68de71dc50272
+
+### Follow-ups
+
+1. Ledger: the zero-bin finding may be filed as suspected, introduced at `40cfec59`. The 62 capacity record may
+   take this commit as its fix. Earlier owed items stand.
+
+### Must fix before canonical use
+
+1. The entry says the undersized-`dist_output` case is removed "for non-null reference buffers". It is removed
+   in both modes: the write length is `dist_output`'s own size whether or not a reference is passed.
+2. Minor: the new function's header comment is copied from the diagnostic ("Compare tensor distribution to
+   codebook"); the output's device and both tensors' contiguity are unchecked, as noted for the diagnostic at 62.
+
+
+## 2026-11-16 — Guidance 9 adoption decision
+
+Guidance 9 adoption authorized by `reviews/verdicts/guidance-9-adoption.decision.md` (SHA256 `46a059fe240b3c320ff1f7070b3e79902539a5eb843eaeff0a885d5a72ca5e7a`). Finish the in-progress 199 on guidance 8 and file its request. After its verdict, do not launch 200 or any further walk commit until `reviews/requests/guidance-9-adoption-001.md` is filed and accepted. Change only the prepare default to 9; preserve guidance 9 and 10 text and historical packets/runs. Request must include patch, full host-enabled suite, fresh-default check, exact guidance-8-plus-E instructions, and historical instruction reproduction. After a few guidance-9 commits, report cost/effect against 178–198. Administrative only; never teacher input.
+
+
+## 2026-11-16 — 199/001 filed
+
+Filed reviews/requests/commit-000199-001.md, fresh unassisted guidance 8; full single diff section, one root conversion chapter, nine exact replays and 2,910 read-only blobs verified. Bounded listing check reads parent compile.py and mocks copying; no full conversion. No new findings or ledger candidates; prior obligations remain owed. Awaiting verdict; guidance-9 adoption gate forbids any subsequent walk commit until its implementation request is accepted.
+
+## Recorded commit-000199-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000199-001.md sha256 410eef43e62b587e6fc615081f9365ddbe1b130218fa9106d5aea72a7070cb45
+
+### Follow-ups
+
+None new. Earlier owed items stand.
+
+### Must fix before canonical use
+
+None.
+
+
+## 2026-11-16 — Guidance 9 adoption implementation filed
+
+199 approval recorded with --approve (verdict SHA256 410eef43e62b587e6fc615081f9365ddbe1b130218fa9106d5aea72a7070cb45). Filed reviews/requests/guidance-9-adoption-001.md: prepare default 9, session text unchanged, all 12 historical checks equal and validated, fresh fixture exact decision addition, 280 host-enabled tests pass. Explicit advancement pause retained; no 200 until acceptance. Cost/effect comparison against 178–198 owed after a few guidance-9 commits. Existing ledger obligations remain open.
+
+
+## 2026-11-16 — Guidance 9 adoption accepted
+
+Recorded reviews/verdicts/guidance-9-adoption-001.md, SHA256 `8b01c628c04e07f2ce2b1d50f45102aeb056f5e35a2ec009620ac0cdefb857b0`; request and all 10 artifact hashes verified. Cleared adoption advancement pause; guidance 9 from 200, version 10 not adopted. Launching 200 detached. Report tool counts and ancestor reads, with cost/effect comparison against 178–198 after a few commits. Trial outputs stay unapproved/excluded; existing ledger obligations remain open.
+
+
+## 2026-11-16 — 200/001 filed
+
+Filed reviews/requests/commit-000200-001.md, first unassisted guidance-9 walk run. Both diff sections fully read; three complete ancestor entries, 29 exact replays and 2,917 read-only blobs verified. Three suspected finding groups pending review: tensor-truth dispatch, alternative LayerNorm affine-shape interface, inherited native reduction/bounds. Python scalar arithmetic only, no run file reads or GPU/PyTorch execution. Partial parent-file coverage disclosed; one path-only closed row selected, no truncation. No ledger candidates; existing obligations retained. Guidance-9 adoption and 280-test evidence included. Awaiting verdict; no 201.
+
+## Recorded commit-000200-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000200-001.md sha256 4b2de2114ae92fcf9de12eaba5c6e8a387e955595c0e9520156e8a21f3697891
+
+### Follow-ups
+
+1. Ledger: the tensor-truth-value finding may be filed as suspected, introduced at `f45eb4ce`; the
+   `forward_torch` one as suspected with its reach. The inherited group keeps its 185 identities. Earlier owed
+   items stand.
+
+### Must fix before canonical use
+
+1. Minor: the constructor branches on Q's type only. An RMSNorm Q with a LayerNorm K fails on a missing
+   `rms_norm_eps`; a LayerNorm Q with an RMSNorm K is accepted. The entry does not say that mixed types are
+   unchecked.
+
+- 201/001 request filed at reviews/requests/commit-000201-001.md; guidance 9, 31 identical tool replays, 1/1 sections and two complete ancestor prose reads. Ten mirror configs read; no tensor headers or GPU execution. No findings or new ledger candidates; older ledger obligations and guidance-9 cost comparison remain owed. Await verdict; do not start 202.
+
+## Recorded commit-000201-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000201-001.md sha256 1207dc26df2f22e67300923e0bddd5c2b52cd5720eb44e42be8988dad72f5ee0
+
+### Follow-ups
+
+1. Ledger: `cohere-qk-normalization` may take this commit as its fix. Earlier owed items stand.
+
+### Must fix before canonical use
+
+None.
+
+- 202/001 request filed at reviews/requests/commit-000202-001.md; guidance 9, 12 identical replays, 1/1 sections and two complete ancestor prose reads. Scalar cache model only, no repository execution or GPU tests. Ten artifact hashes verified. Kernel-attribute-cache-device fix attribution awaits verdict; cohere-qk-normalization fix revision and earlier ledger obligations remain owed. Await verdict; no 203.
+
+## Recorded commit-000202-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000202-001.md sha256 51c52699ac9cbfcf2827b6a8c369b7d164097d942192f60609e82ebf4a3a91cd
+
+### Follow-ups
+
+1. Ledger: `exllamav3-kernel-attribute-cache-device` may now take `dc69b167` as its fix. Earlier owed items
+   stand.
+
+### Must fix before canonical use
+
+None for this entry. The 188 condition (state the cache as a finding) stands on 188.
+
+- 203/001 request filed at reviews/requests/commit-000203-001.md; guidance 9, 12 identical replays, 1/1 sections and one complete ancestor prose read. PR 26 partial read disclosed; issue 33 fully read. Inherited ppl-axis-bound finding retains existing identity pending verdict. Scalar bounds only, no Torch/GPU execution. Ten hashes verified; prior ledger revisions and guidance-9 comparison remain owed. Await verdict; no 204.
+
+## Recorded commit-000203-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000203-001.md sha256 b5bfef2d87b626e45d9a43b2524d9c3dc5e6f7a90a18139fe6df08312c2459f2
+
+### Follow-ups
+
+1. Ledger: no new identity; `ppl-axis-bound` stays open through this commit. Earlier owed items stand.
+
+### Must fix before canonical use
+
+None.
+
+- 204/001 request filed at reviews/requests/commit-000204-001.md; guidance 9, 29 identical replays including one Invalid max_bytes result, 2/2 diff sections, two complete requested ancestor prose units. Partial production-file ranges and skipped ancestor-search results disclosed; ten discussions fully read. Six path-only rows selected, none cut. Proxy-sentinel-test finding pending review; scalar arithmetic only, no real OoM or Torch/CUDA execution. Ten hashes verified. Earlier ledger and cost-comparison obligations remain owed; no 205 before verdict.
+
+## Recorded commit-000204-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000204-001.md sha256 7d428ba649c46a998954134bdf7874ea672ca0a6c0871dd82834a12d4e77e1aa
+
+### Follow-ups
+
+1. Ledger: the sentinel finding may be filed as suspected, introduced at `1ad855ad`, reach limited to the test.
+   Earlier owed items stand.
+
+### Must fix before canonical use
+
+None.
+
+- 205/001 request filed: reviews/requests/commit-000205-001.md; ten hashes verified, 24 identical replays, 2/2 diff sections, one ancestor prose read. Both findings suspected; scalar indexing only, no Torch/CUDA execution. Catalog has two path-only rows selected and no truncation. No ledger candidates included; older obligations and guidance-9 cost comparison remain owed. Await verdict; 206 unstarted.
+
+## Recorded commit-000205-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000205-001.md sha256 61611c9feff51c50b090e684d378ffb49aac765051d4689e1aa1dd41ea056a61
+
+### Follow-ups
+
+1. Ledger: both findings may be filed as suspected, introduced at `34d2f1f5`; the 198 zero-bin record gains
+   this script as a caller path. Earlier owed items stand.
+
+### Must fix before canonical use
+
+1. The stride finding also applies to `count_inf_nan` in `stats`, which is called on the same sliced state and
+   likewise walks `numel` elements from `data_ptr()`. The entry names only the histogram.
+2. The script imports `termplotlib`, which nothing in it uses and no requirements file lists, so the script
+   fails at import where that package is absent. The entry does not mention it.
+3. `--histogram_bins` below 4 makes the tail histograms zero-length (below 2, the weight ones), which is the
+   zero-bin case recorded at 198, now reachable from a command-line argument. Also minor: values between 3σ
+   and 3σ + 0.001 fall in no histogram, and the percentages are of the counted total.
+
+- 206/001 request filed: reviews/requests/commit-000206-001.md; ten hashes verified, 20 identical replayed calls, 3/3 sections, two root ancestor chapters. No findings; scalar formulas only. PR 26 read only through byte 20000, disclosed. Six path-only catalog rows selected, no truncation. No ledger candidates; prior obligations remain open. Await verdict; 207 unstarted.
+
+## Recorded commit-000206-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000206-001.md sha256 fa34ca02c6dc102b0c907bb59b742d40937593d22e2b1ecba98794258b930dc4
+
+### Follow-ups
+
+None new. Earlier owed items stand.
+
+### Must fix before canonical use
+
+1. Minor: the entry says only `rfn` keeps the single-slice restriction but not what follows. For a module with
+   more than one slice the existing figure is withheld as "N/A", while the two new figures, taken from the same
+   state comparison, are printed. Say whether the reason for withholding `rfn` applies to them.
+
+- 207/001 request filed: reviews/requests/commit-000207-001.md; ten hashes verified, 13 identical replayed calls, 1/1 sections, one ancestor entry. Inherited native concerns remain suspected; Python control-flow stand-in and launch arithmetic only. science/kv_quant_exp.py read only through byte 4500, disclosed. One path-only catalog row selected, no truncation. No ledger candidates; older obligations remain open. Await verdict; 208 unstarted.
+
+## Recorded commit-000207-001
+
+Ancestor retrieval only. reviews/verdicts/commit-000207-001.md sha256 8fbed33b1041e3efe4ea4be5183aa0146d69315ed69cde0233c804f16711ea75
+
+### Follow-ups
+
+1. Ledger: the 200 tensor-truth-value record may take `95c5097b` as its fix. The inherited group keeps its 185
+   identities. Earlier owed items stand.
+
+### Must fix before canonical use
+
+1. Administrative: the finding's location is written against the parent `2cc8f718` rather than the task commit.
+   The file is identical at both, but locations elsewhere use the task commit.

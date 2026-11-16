@@ -1,0 +1,453 @@
+{
+  "schema_version": 5,
+  "sha": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+  "parent_shas": [
+    "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c"
+  ],
+  "cutoff_date": "2025-05-25T13:33:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "The change targets CPU overhead in LinearEXL3: repeated kernel-attribute setup, native argument checks and Python output reshaping.",
+        "basis": "source",
+        "evidence": [
+          "call_1ffdac360f33457e83458e5e2e713b83",
+          "call_bc52a350340f45c8aeacbcda1de97d7f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Allocating the final output shape and relaxing native output-shape checks are interdependent. The direct kernel receives multidimensional output storage but still computes flattened rows from A; checking C's last dimension replaces checking dimension 1.",
+        "basis": "source",
+        "evidence": [
+          "call_bc52a350340f45c8aeacbcda1de97d7f",
+          "call_1ffdac360f33457e83458e5e2e713b83",
+          "call_598438ed20c6446a9eb7230f10660073"
+        ]
+      },
+      {
+        "text": "Caching attribute setup and removing checks plausibly reduce host work, at the cost of weaker validation and additional persistent host state. No speedup is established.",
+        "basis": "inference",
+        "evidence": [
+          "call_1ffdac360f33457e83458e5e2e713b83"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both single- and multi-GEMM now share a process-global set of kernel addresses. cudaFuncSetAttribute runs only for an address absent from that set; insertion does not check the call's return status.",
+        "basis": "source",
+        "evidence": [
+          "call_1ffdac360f33457e83458e5e2e713b83"
+        ]
+      },
+      {
+        "text": "The Python API still returns input leading dimensions followed by out_features, applies bias in place, and defaults to reconstruction above 32 flattened rows. The change does not eliminate output or input-transform scratch allocation.",
+        "basis": "source",
+        "evidence": [
+          "call_996648dce5a54c0bbed944676d3ff216",
+          "call_bc52a350340f45c8aeacbcda1de97d7f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the cooperative-GEMM entry and subsequent tuning entry. They establish the fused transform interface, scratch-buffer precondition, reconstruction alternative and previously recorded selector and zero-block concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0f1bec96c7164e2b8f50a7292d0c5e0e",
+          "call_f91591e8477f48e7baaaf10102f1b14e"
+        ]
+      },
+      {
+        "text": "Issue #11, \u201cAssertionError: bias is wrong datatype,\u201d reports a constructor failure; its reporter confirms an earlier fix. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports Cholesky failure during conversion. Their relationship to this task is only inferred from shared LinearEXL3/Linear source paths, not evidence that this optimization fixes either report.",
+        "basis": "inference",
+        "evidence": [
+          "call_fdf4c3a3ca0c4cde8724e73fe3294577",
+          "call_677f1a4a97ab4eb98e65bc8f4fabac00",
+          "call_64d73f6e70be41408ffc9d7735c8a8af",
+          "call_bc52a350340f45c8aeacbcda1de97d7f"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, repository test, numerical comparison or timing benchmark was run.",
+      "Scalar checks establish shape and integer arithmetic only, not tensor layout behavior, GPU memory safety or floating-point equivalence.",
+      "The cache is keyed only by kernel address, not device or context. Correctness across devices, context recreation and concurrent calls is unestablished; eligible CUDA documentation was not inspected.",
+      "Caller searches establish literal repository occurrences, not dynamic or external consumers."
+    ],
+    "links": [
+      "5d470a29780927c1c8c874609597823f210ae3b9",
+      "1284d43c76349160992d42a241c81071fcc7b919"
+    ],
+    "chapters": [
+      {
+        "id": "linear-exl3",
+        "title": "Reduce host work around EXL3 execution",
+        "claims": [
+          {
+            "text": "forward allocates y directly with out_shape. Reconstruction creates a two-dimensional view y_ for dense GEMM and output Hadamard; direct quantized GEMM writes into y without a final view. Dtype selection becomes out_dtype or self.out_dtype or torch.half, and the unused input_dtype assignment disappears.",
+            "basis": "source",
+            "evidence": [
+              "call_bc52a350340f45c8aeacbcda1de97d7f"
+            ]
+          },
+          {
+            "text": "The native direct path derives m and k from A and n from packed B, then passes raw pointers to the kernel. Its outer kernel transforms input into A_had, processes 16-row GEMM chunks and transforms output in place. Thus output rank does not participate in kernel indexing.",
+            "basis": "source",
+            "evidence": [
+              "call_598438ed20c6446a9eb7230f10660073",
+              "call_810c729fd1f44dc9bb8d0e21b5ea454e"
+            ]
+          },
+          {
+            "text": "A standard-library shape calculation verified equal element counts between final-shaped and flattened outputs for leading shapes (), (1,), (2,3) and (2,2,8), with output width 128. This models allocation arithmetic rather than executing tensor operations.",
+            "basis": "execution",
+            "evidence": [
+              "call_80795c4463284b068f55b568152c97b0"
+            ]
+          },
+          {
+            "text": "Linear.forward remains compatible with the returned shape and continues optional softcap/post-scaling. The benchmark retains two-dimensional output and valid transform buffers; its calls remain compatible with the relaxed interface. test_qgemm explicitly compares both reconstruction settings on three-dimensional inputs, but was not run.",
+            "basis": "source",
+            "evidence": [
+              "call_64d73f6e70be41408ffc9d7735c8a8af",
+              "call_ff5de9e58b7e473287e14a8b58269654",
+              "call_91c11b1818794cc6999b354fe50c2b44",
+              "call_bfa92a81a4804c4ca0d78f94cd257b15"
+            ]
+          },
+          {
+            "text": "The removed checks previously enforced output row equality, input/output scale lengths and presence and shape of input-transform scratch. LinearEXL3 still allocates matching scratch and output, but its constructor checks scale dtypes rather than their lengths. The public native binding therefore loses protections not replaced universally by Python validation.",
+            "basis": "source",
+            "evidence": [
+              "call_1ffdac360f33457e83458e5e2e713b83",
+              "call_996648dce5a54c0bbed944676d3ff216",
+              "call_bfa92a81a4804c4ca0d78f94cd257b15"
+            ]
+          },
+          {
+            "text": "The previously recorded zero-block multi-GEMM arithmetic and Boolean selector expression are carried over unchanged. The five-argument select_gemm_shape header declaration also remains inconsistent with its six-argument definition; inspected internal selectors call the definition with six arguments.",
+            "basis": "source",
+            "evidence": [
+              "call_be770d4353ba47f2b78abe1fc1855570",
+              "call_ea39001d98cb456eb61256bc765d15ea",
+              "call_598438ed20c6446a9eb7230f10660073",
+              "call_1ffdac360f33457e83458e5e2e713b83"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "removed-transform-validation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Removing transform-buffer validation permits malformed calls to reach raw-pointer kernel accesses.",
+        "trigger": "Call the exposed exl3_gemm binding with nonempty suh but A_had=None, or construct LinearEXL3 with undersized half-precision suh/svh and use the direct path.",
+        "expected_behavior": "Reject missing scratch or incorrect scale lengths before launch, as the previous checks did.",
+        "actual_behavior": "The wrapper forwards a null scratch pointer or undersized scale storage. The kernel uses these pointers without corresponding bounds checks. Normal forward allocation supplies scratch, and benchmark callers supply valid lengths; malformed scale lengths remain accepted by the inspected constructor.",
+        "locations": [
+          {
+            "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_gemm"
+          }
+        ],
+        "source_evidence": [
+          "call_1ffdac360f33457e83458e5e2e713b83",
+          "call_810c729fd1f44dc9bb8d0e21b5ea454e",
+          "call_996648dce5a54c0bbed944676d3ff216",
+          "call_bfa92a81a4804c4ca0d78f94cd257b15"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared removed checks with kernel pointer use, constructor validation and all discovered direct Python call sites.",
+            "evidence": [
+              "call_ff5de9e58b7e473287e14a8b58269654",
+              "call_bc52a350340f45c8aeacbcda1de97d7f"
+            ],
+            "limits": "No malformed GPU call was executed; exact runtime failure is unmeasured."
+          }
+        ]
+      },
+      {
+        "id": "inherited-zero-multi-grid",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Multi-GEMM retains a zero-block case before the new attribute cache is reached.",
+        "trigger": "Automatic Ampere multi-GEMM with reduction dimension 512, output width 128 and two-bit weights selects shape 2.",
+        "expected_behavior": "Use a positive block count or reject the dimensions before concurrency division.",
+        "actual_behavior": "Sixteen tiles divided by 24 produce num_sms=0; exl3_mgemm then computes total_sms/num_sms. Direct callers include fused attention K/V and expert gate/up/down projections, without a minimum-tile check at the inspected calls.",
+        "locations": [
+          {
+            "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_be770d4353ba47f2b78abe1fc1855570",
+          "call_ea39001d98cb456eb61256bc765d15ea",
+          "call_598438ed20c6446a9eb7230f10660073",
+          "call_c7414a6c213c46a08426cebac46faf3d",
+          "call_9692bdfa25674bd19040b878d9bb1b7c",
+          "call_204a46fbf1424ebcb273c84b42a156cd"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Python calculated 16 tiles and a zero multi-GEMM cap.",
+            "evidence": [
+              "call_80795c4463284b068f55b568152c97b0"
+            ],
+            "limits": "No native division or model execution; typical model dimensions were not established to trigger this case."
+          }
+        ]
+      },
+      {
+        "id": "inherited-boolean-selector",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited selector still compares a Boolean result with 8192.",
+        "trigger": "Hopper/Blackwell automatic selection with bits=3, reduction dimension 16384 and output width 4096.",
+        "expected_behavior": "A dimension threshold should compare a dimension; the intended exact rule is unestablished.",
+        "actual_behavior": "(size_k && bits >= 3) cannot exceed 8192, so this branch always selects shape 2. Both native selectors use it; positive forced shape indices bypass it.",
+        "locations": [
+          {
+            "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_gemm_shape"
+          }
+        ],
+        "source_evidence": [
+          "call_be770d4353ba47f2b78abe1fc1855570",
+          "call_bfa92a81a4804c4ca0d78f94cd257b15",
+          "call_1ffdac360f33457e83458e5e2e713b83"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Python modeled the representative Boolean comparison and obtained false.",
+            "evidence": [
+              "call_80795c4463284b068f55b568152c97b0"
+            ],
+            "limits": "No GPU execution or measured performance consequence."
+          }
+        ]
+      }
+    ],
+    "summary": "Reduces EXL3 host work through final-shaped output allocation, fewer native checks and cached kernel attributes. Performance is unmeasured; validation weakens and inherited dispatch hazards remain."
+  },
+  "evidence": {
+    "call_1ffdac360f33457e83458e5e2e713b83": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "offset": 165,
+        "max_bytes": 4799
+      },
+      "result_sha256": "4d765044bb9a1b3ade2ae0dc0b41826fd73cb879610e2b46eafb51ebb873e5ab"
+    },
+    "call_bc52a350340f45c8aeacbcda1de97d7f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c2ec220c83d4a697f4726401aa8c7e6a5a551fa6",
+        "offset": 2863,
+        "max_bytes": 2101
+      },
+      "result_sha256": "9bbf42abc9c987f116a1d2ce4e1b7bf55eb414907b3a82a679633a97e31ac2b0"
+    },
+    "call_598438ed20c6446a9eb7230f10660073": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "77c7379e18fede599c2785fca963f04e8c238a40e2681cf96751dcef2affcc04"
+    },
+    "call_bfa92a81a4804c4ca0d78f94cd257b15": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "query": "exl3_gemm",
+        "limit": 100
+      },
+      "result_sha256": "d2e2da12df587fd169ea8afae39c10cf4605ee678ee87655b55e149ee49b71f4"
+    },
+    "call_996648dce5a54c0bbed944676d3ff216": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "c93bcd7f197a1d2c93994bcc1ab2cc42f88ee4b03525f62f80c3e4f56c95e8ab"
+    },
+    "call_f91591e8477f48e7baaaf10102f1b14e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "max_bytes": 16384
+      },
+      "result_sha256": "5f23d62d2c38ba528cda16ed68686c2446b6d5b5b0c6753da5cde49e0d75c958"
+    },
+    "call_be770d4353ba47f2b78abe1fc1855570": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "max_bytes": 14000
+      },
+      "result_sha256": "3822662cf5000736314211da2dec050277ccbd298f2aa60b404d2c34fd460620"
+    },
+    "call_bc38f21fbfbd4c59852da47b2c939453": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "query": "LinearEXL3",
+        "limit": 100
+      },
+      "result_sha256": "7a9595578a988ce041c0daab7156f21e5a3d07ad8b1105962e60c7a3a64b14bd"
+    },
+    "call_64d73f6e70be41408ffc9d7735c8a8af": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "d27c57770abd83133876d010e5c78e72d77554d407946f1cd19808fb49c5949b"
+    },
+    "call_ff5de9e58b7e473287e14a8b58269654": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "science/qgemm_benchmark.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "7b13afe984deadf22b5db2e292332bf636dd1615479fb1659e311e50edf70232"
+    },
+    "call_810c729fd1f44dc9bb8d0e21b5ea454e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "max_bytes": 12000
+      },
+      "result_sha256": "232aef31ab54b57ae8e8f8e83986165df15149074a5061526159cb77c555f619"
+    },
+    "call_fdf4c3a3ca0c4cde8724e73fe3294577": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 14000
+      },
+      "result_sha256": "3e083438c652dee453009e30e42ee3042b4dea7ee4321fd6ffef20f899d78447"
+    },
+    "call_677f1a4a97ab4eb98e65bc8f4fabac00": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d3a5d2137090f32517653c5664cc78769a275f28135e6f1e7b93d79203f02d54"
+    },
+    "call_0f1bec96c7164e2b8f50a7292d0c5e0e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3aa5d68c832354a9a33eb4f7c4f5ecc80c79b8f944f6dfee62b3b08581859d37"
+    },
+    "call_c7414a6c213c46a08426cebac46faf3d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "query": "exl3_mgemm(",
+        "limit": 50
+      },
+      "result_sha256": "e7423711bac380232c283fd10de0362df96deb7a32cf11fcd4168c381f24c88b"
+    },
+    "call_9692bdfa25674bd19040b878d9bb1b7c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 10500,
+        "max_bytes": 5000
+      },
+      "result_sha256": "030b599f5d443eb806a63218facfc6152ddc36e1f53887f41d7709383d76a729"
+    },
+    "call_32de9ea6cddc4668aa149111b1a50924": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 9750,
+        "max_bytes": 800
+      },
+      "result_sha256": "ac8ac2f5560a19f13301b07c5f340626433866a9f64c644ec655859b21786d6c"
+    },
+    "call_204a46fbf1424ebcb273c84b42a156cd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 8500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "632ada5d42a53d66eb48ffca370aebb5a1c92593d11adfec8a425440d85b9fe9"
+    },
+    "call_86900f8810bd48329d507cd7ad0b6cf9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "query": "reconstruct",
+        "limit": 100
+      },
+      "result_sha256": "3a6933ac5c085c320a77a425861b28ba67de04533c871dbddbed8f0dd922ce4d"
+    },
+    "call_91c11b1818794cc6999b354fe50c2b44": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "tests/test_qgemm.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "fd4b0144e6490a8fd230588f1366847e2fff47279b6dfd368f27f989177d3707"
+    },
+    "call_ea39001d98cb456eb61256bc765d15ea": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec839e16b83f4562ff5554b0bca5cfb10f3bc71c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cuh",
+        "max_bytes": 7000
+      },
+      "result_sha256": "e262485c1300bc90838f293a58f99b6a76be44c8a03e454a0304a1ad37ce0586"
+    },
+    "call_80795c4463284b068f55b568152c97b0": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor lead in [(),(1,),(2,3),(2,2,8)]:\n m=math.prod(lead); n=128\n assert math.prod(lead+(n,))==m*n\n print(lead,'rows',m,'elements',m*n)\nprint('shape2 tiles',512//32*(128//128),'multi cap',512//32*(128//128)//24)\nprint('boolean threshold',int(bool(16384) and 3>=3)>8192)"
+        ]
+      },
+      "result_sha256": "caf32f62e5aca3c9a870a40957c6339727e53dace0ef25943accde854ee8cb3c"
+    }
+  }
+}

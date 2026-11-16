@@ -1,0 +1,227 @@
+{
+  "schema_version": 5,
+  "sha": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+  "parent_shas": [
+    "91c7cc41881c50abf6608a07c53b9d888c9cf2a6"
+  ],
+  "cutoff_date": "2025-05-30T19:42:49+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Both GEMM launchers shared a process-wide set of configured kernel pointers. After one device inserted a kernel, another device using that same pointer skipped the attribute-setting call.",
+        "basis": "source",
+        "evidence": [
+          "call_537379f1f021497d992002dfe8294f0a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch makes configuration bookkeeping device-specific while retaining lazy initialization: each device records its own configured kernels.",
+        "basis": "source",
+        "evidence": [
+          "call_e129b54620134a1da6f1e079efcedf13"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both exl3_gemm and exl3_mgemm now attempt attribute setup independently on each device. Kernel selection, arguments, cooperative launch geometry and requested shared-memory size remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_e129b54620134a1da6f1e079efcedf13",
+          "call_537379f1f021497d992002dfe8294f0a"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier output-precision and cooperative-fusion entries were read. They describe the FP16-input/FP32-output interface and the introduction of cooperative GEMM launches with device context management, respectively.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_7f4cea34868640d1af5a8092956103ba",
+          "call_236d0249741e4c1d98476ca41e7b03db"
+        ]
+      },
+      {
+        "text": "Issue #5, \u201cWill exl3 quants need requanting later?\u201d, concerns format stability and Ampere performance. PR #36, \u201cadded max_total_tokens variable to class Generator, fixed type assert\u2026\u201d, reports a missing Generator attribute in TabbyAPI. Neither body identifies this GEMM attribute-cache change as its remedy.",
+        "basis": "source",
+        "evidence": [
+          "call_3103532a01514599a1af3c91e6e2eb63",
+          "call_6015bb2c232749eba48c71e8d176eba9"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, multi-GPU execution or performance measurement was performed. The scalar model demonstrates bookkeeping only, not CUDA attribute semantics or successful launches.",
+      "The existing unchecked cudaFuncSetAttribute return value and device-index assumptions are unchanged; their runtime consequences were not established."
+    ],
+    "links": [
+      "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "5d470a29780927c1c8c874609597823f210ae3b9"
+    ],
+    "chapters": [
+      {
+        "id": "gemm",
+        "title": "Device-local kernel attribute initialization",
+        "claims": [
+          {
+            "text": "Each launcher first guards A.device(), obtains the current CUDA device, and uses that device for context lookup. The patch reuses this device index for the attribute cache, aligning the cache lookup and insertion with the guarded launch device.",
+            "basis": "source",
+            "evidence": [
+              "call_537379f1f021497d992002dfe8294f0a",
+              "call_e129b54620134a1da6f1e079efcedf13"
+            ]
+          },
+          {
+            "text": "The single set becomes an array of MAX_DEVICES sets. MAX_DEVICES is 32, also used by DevCtx's device-property and lock arrays. Whole-parent-tree search found only the declaration and the two launchers consuming kernel_attr_set; the diff updates both consumers.",
+            "basis": "source",
+            "evidence": [
+              "call_4404226f2c16453482ebf5c01c78d94f",
+              "call_2454278d06a741fd9453587015852cac",
+              "call_e129b54620134a1da6f1e079efcedf13"
+            ]
+          },
+          {
+            "text": "On a cache miss, the launcher requests cudaFuncAttributeMaxDynamicSharedMemorySize = SMEM_MAX and inserts the kernel pointer. SMEM_MAX is 90 \u00d7 1024 bytes, described in source as the compute-capability-8.6 shared-memory maximum; the cooperative launch requests the same amount.",
+            "basis": "source",
+            "evidence": [
+              "call_da45757d77924465a4ff08ebd3b32501",
+              "call_537379f1f021497d992002dfe8294f0a"
+            ]
+          },
+          {
+            "text": "A Python model using two kernel identities on two devices produced two setup events for the old global cache and four for the new per-device cache; repeated calls on the same device stayed cached. It also calculated the shared-memory request as 92,160 bytes.",
+            "basis": "execution",
+            "evidence": [
+              "call_301eb5db99494364b351f235dcd39b4a"
+            ]
+          },
+          {
+            "text": "The apparent design goal is to avoid treating setup on one GPU as setup on every GPU, without paying the attribute-setting cost on every launch. This trades a single cache for bounded device-local caches rather than changing the numerical kernel.",
+            "basis": "inference",
+            "evidence": [
+              "call_e129b54620134a1da6f1e079efcedf13",
+              "call_537379f1f021497d992002dfe8294f0a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Makes GEMM kernel-attribute caching device-specific in both launchers, preserving lazy setup and existing kernel computation."
+  },
+  "evidence": {
+    "call_e129b54620134a1da6f1e079efcedf13": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "dc69b16752a9ee25e6dca731b9db5d7b5da26878",
+        "offset": 171,
+        "max_bytes": 1444
+      },
+      "result_sha256": "1b40fcff993977b0241915cc974a6f94e9c6d889353242e6a9568ecfa22dddb2"
+    },
+    "call_537379f1f021497d992002dfe8294f0a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "91c7cc41881c50abf6608a07c53b9d888c9cf2a6",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 24000
+      },
+      "result_sha256": "4a7cafc7064400ce80501ef180826a20c40ad3d660ebb1d50d944fa1ff7f8c45"
+    },
+    "call_2454278d06a741fd9453587015852cac": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "91c7cc41881c50abf6608a07c53b9d888c9cf2a6",
+        "query": "kernel_attr_set",
+        "limit": 100
+      },
+      "result_sha256": "fb05da420b640d4e44628b7ae1e51bcf9af5e94a546b6726836531e1e36c7b21"
+    },
+    "call_1fc764d4978445459de247c2657ec103": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "91c7cc41881c50abf6608a07c53b9d888c9cf2a6",
+        "query": "MAX_DEVICES",
+        "limit": 100
+      },
+      "result_sha256": "91f3960d41af4c6dccb4cb7210bf82fb2344f3cd511c0966206dd29daca36fb8"
+    },
+    "call_9fe32b1e15794ec5aea66df74e9d14ea": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exl3_gemm.cu",
+        "max_bytes": 6000
+      },
+      "result_sha256": "1ca74f3f9e533b913d5e1811bcaa49186ff2e8b50042caa29ce84674fa0639f4",
+      "catalog_only": true
+    },
+    "call_7f4cea34868640d1af5a8092956103ba": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+        "max_bytes": 16384
+      },
+      "result_sha256": "58984ec6ef38accc32a2b416200342b6c5398fe2567f54c30d81b525981fb6ba"
+    },
+    "call_236d0249741e4c1d98476ca41e7b03db": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3aa5d68c832354a9a33eb4f7c4f5ecc80c79b8f944f6dfee62b3b08581859d37"
+    },
+    "call_4404226f2c16453482ebf5c01c78d94f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "91c7cc41881c50abf6608a07c53b9d888c9cf2a6",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_devctx.cuh",
+        "max_bytes": 8000
+      },
+      "result_sha256": "9a5b12834330026c277dc581b0b99e347ac1e6cbce997f11dc7531705dfd24ec"
+    },
+    "call_da45757d77924465a4ff08ebd3b32501": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "91c7cc41881c50abf6608a07c53b9d888c9cf2a6",
+        "query": "SMEM_MAX",
+        "limit": 30
+      },
+      "result_sha256": "8771195dc19d1ea5464be10300ec5c10490f5dccfd9c36a7640dfe13f7145854"
+    },
+    "call_3103532a01514599a1af3c91e6e2eb63": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/5",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1657bb596c66aca3f8d3ac64e644a316d11070c0e3a13f0b4459207eb5daaa04"
+    },
+    "call_6015bb2c232749eba48c71e8d176eba9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/36",
+        "max_bytes": 8000
+      },
+      "result_sha256": "beb47ff5e336fd9a5605cfd222bebe82952c9181b10b08b6f4d88475c2aa7506"
+    },
+    "call_301eb5db99494364b351f235dcd39b4a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "seq=[(0,'K'),(0,'K'),(1,'K'),(1,'K'),(0,'L'),(1,'L')]\nold=set(); new=[set() for _ in range(32)]; a=[]; b=[]\nfor d,k in seq:\n if k not in old: a.append((d,k)); old.add(k)\n if k not in new[d]: b.append((d,k)); new[d].add(k)\nprint({'global_setup_calls':a,'per_device_setup_calls':b,'shared_memory_bytes':90*1024})"
+        ]
+      },
+      "result_sha256": "ad6763bba2916460c53dead3acf5c63fd1df5993554a51783ca439ed055a1b27"
+    }
+  }
+}

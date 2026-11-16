@@ -1,9 +1,9 @@
 # Astra tracking — administrative only
 
 <!-- cycle-status -->
-Current journal status: `awaiting_full_review`.
-Next position: `196`.
-Handover: `{"full_review": ".teacher/runs/commit-000196-002", "request": "reviews/requests/commit-000196-002.md", "sampled_mechanical": []}`.
+Current journal status: `ready`.
+Next position: `208`.
+Handover: `null`.
 Advancement pause: `null`.
 <!-- /cycle-status -->
 
@@ -41,7 +41,7 @@ The walk journal is authoritative for position, active attempts and stop status.
 
 ## Standing conditions
 
-- Contract 8 / guidance 8 / Codex 0.167.0; Linux aarch64 and Python 3.14.4
+- Contract 8 / guidance 9 / Codex 0.167.0; Linux aarch64 and Python 3.14.4
   under the recorded user decision. Record architecture and Python in provenance.
 - Salience-v3-paths: report path-only qualifying/selected counts and truncation
   on every request. Stop before a teacher if any path-qualified row is cut by
@@ -64,6 +64,12 @@ The walk journal is authoritative for position, active attempts and stop status.
   origin; preserve the label and disclose the limitation, never relabel to pass.
 
 ## Open administrative work
+
+- Guidance-9 adoption ACCEPTED; verdict and all request hashes verified. Pause cleared; walk uses guidance 9 from 200. Continue reporting tool counts and ancestor reads; cost/effect comparison against 178–198 owed after a few commits. Trial outputs stay excluded.
+
+- Guidance-9 adoption implementation filed in `reviews/requests/guidance-9-adoption-001.md`: default 9, unchanged version text, 12 historical packets reproduce, fresh fixture exact decision addition, 280 host-enabled tests pass. 199 approved; explicit advancement pause blocks 200 until acceptance.
+
+- Guidance 9 adoption authorized by `reviews/verdicts/guidance-9-adoption.decision.md` (SHA256 `46a059fe240b3c320ff1f7070b3e79902539a5eb843eaeff0a885d5a72ca5e7a`). Finish the in-progress 199 on guidance 8 and file its request. After its verdict, do not launch 200 or any further walk commit until `reviews/requests/guidance-9-adoption-001.md` is filed and accepted. Change only the prepare default to 9; preserve guidance 9 and 10 text and historical packets/runs. Request must include patch, full host-enabled suite, fresh-default check, exact guidance-8-plus-E instructions, and historical instruction reproduction. After a few guidance-9 commits, report cost/effect against 178–198. Administrative only; never teacher input.
 
 - Guidance-6 trial authorized by `reviews/verdicts/guidance-6-trial.decision.md` (SHA256 `9ba58a40c5cbcd533171324a09a0010b729e1f9c9287ec83bd222a3f12011848`). 164 is filed; the version gate, v5 identity check and host-enabled suite are complete. `reviews/requests/guidance-6-implementation-001.md` is accepted as a trial gate. Start the trials after the running 165 cycle finishes and its request is filed; snapshot walk artifacts then, so 165 does not confound the isolation comparison. Then four fresh unassisted unpublished scratch trials at 154, 158, 163 and control 156, outside walk packet/run directories, no journal attempts or ancestor approval, no reviewer material. File `guidance-6-trial-001.md`. Walk adoption requires a later user decision. Reviewer-only success criteria remain excluded from all teacher inputs.
 

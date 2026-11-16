@@ -1,0 +1,274 @@
+{
+  "schema_version": 5,
+  "sha": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+  "parent_shas": [
+    "8b0df6910382b84fd9225353c2eb4cd2708482fb"
+  ],
+  "cutoff_date": "2025-05-23T23:33:20+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Job.receive_logits repeated three invariant checks at each sampling step: matching logit rows to sequences, completed prefill, and live sequences.",
+        "basis": "source",
+        "evidence": [
+          "call_36cc8da6353647d5985aeb833df1a78a",
+          "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Removing these checks plausibly reduces Python-side sampling overhead, trading local diagnostics for reliance on the generator's preparation. No speedup is established.",
+        "basis": "inference",
+        "evidence": [
+          "call_36cc8da6353647d5985aeb833df1a78a",
+          "call_d734c3f7e759493390cad8c8c500f96a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change comments out assertions only; token constraints, sampler arguments and result handling remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_36cc8da6353647d5985aeb833df1a78a",
+          "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root generation entry was read. It describes the scheduling invariants and records an optional-output failure in receive_logits.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_7ca3d5dc028d47cbb2b7c638cdda1bf3",
+          "call_affc7f595ed34144adb852e403a184bb"
+        ]
+      },
+      {
+        "text": "PR #30, \u201cfix: don't add min_p and top_p samplers to stack if falsy,\u201d concerns sampler parameter assertions. Issue #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d concerns job construction and prompt mode. Their relationship to this task is only an inferred topical overlap\u2014assertions/sampling and job.py respectively\u2014not evidence that this change fixes either report.",
+        "basis": "inference",
+        "evidence": [
+          "call_03ca8d35db6a4e6593e307c15b39f6e8",
+          "call_f8865ad087aa4339afe6095041fa2b72",
+          "call_36a4f9c1a1b346fe81d794abc898fdff",
+          "call_36cc8da6353647d5985aeb833df1a78a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No generation, GPU execution or performance benchmark was run. The scalar check exercises optional-return control flow only.",
+      "The inspected repository caller preserves readiness and row mapping under its normal model-output contract; arbitrary external calls, custom sampler side effects and malformed model outputs were not validated."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "sampling",
+        "title": "Remove repeated sampling-boundary assertions",
+        "claims": [
+          {
+            "text": "The removed prefill assertion required every sequence's KV position to equal its token length minus one: the final input token remains for decoding. The other assertions rejected mismatched batch rows and any sequence marked non-live. No replacement checks are added inside receive_logits.",
+            "basis": "source",
+            "evidence": [
+              "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa",
+              "call_36cc8da6353647d5985aeb833df1a78a"
+            ]
+          },
+          {
+            "text": "Whole-tree search finds Generator.iterate_gen as the sole active direct caller, plus a commented-out threaded caller. iterate_gen excludes unfinished-prefill jobs, builds logit boundaries from their input sequences, skips empty intervals, and passes each job's rows one token position at a time. receive_sample appends a token and advances KV position together, preserving the readiness equality during ordinary decoding.",
+            "basis": "source",
+            "evidence": [
+              "call_3b7e1b4c0401465396ea75752d7bf664",
+              "call_d734c3f7e759493390cad8c8c500f96a",
+              "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa"
+            ]
+          },
+          {
+            "text": "Sequence initializes live=True; the generator-directory search finds no other live-field use besides the removed assertion. Thus no inspected normal caller establishes a false-live path. The scheduling checks and row construction remain, but malformed direct calls lose immediate assertion diagnostics.",
+            "basis": "source",
+            "evidence": [
+              "call_14aeddf70d664490a882f888d5012a71",
+              "call_430956b73aa44f6fb4a86e33d62760a6",
+              "call_d734c3f7e759493390cad8c8c500f96a",
+              "call_36cc8da6353647d5985aeb833df1a78a"
+            ]
+          },
+          {
+            "text": "The inherited optional-output failure remains: the task does not replace the pass branches that leave requested probability/top-token locals undefined.",
+            "basis": "source",
+            "evidence": [
+              "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa",
+              "call_36cc8da6353647d5985aeb833df1a78a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "optional-sampling-outputs",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The touched function retains an inherited failure when optional sampling outputs are requested.",
+        "trigger": "A job reaches receive_logits with return_probs=True or return_top_tokens>0 and its sampler returns normally.",
+        "expected_behavior": "Return the requested probability or top-token values for the caller to pass to receive_sample.",
+        "actual_behavior": "The enabled branches execute pass, leaving next_prob or next_k_tokens/next_k_probs unassigned; constructing the return tuple raises UnboundLocalError. The sole active repository caller, Generator.iterate_gen, directly unpacks this tuple.",
+        "locations": [
+          {
+            "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_logits"
+          }
+        ],
+        "source_evidence": [
+          "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa",
+          "call_36cc8da6353647d5985aeb833df1a78a",
+          "call_3b7e1b4c0401465396ea75752d7bf664",
+          "call_d734c3f7e759493390cad8c8c500f96a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared parent implementation, task diff and the active caller; the defective branches are carried over unchanged.",
+            "evidence": [
+              "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa",
+              "call_36cc8da6353647d5985aeb833df1a78a",
+              "call_d734c3f7e759493390cad8c8c500f96a"
+            ],
+            "limits": "No end-to-end generation was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A scalar transcription returned normally with both options disabled and raised UnboundLocalError for each enabled option.",
+            "evidence": [
+              "call_ddbaeb10db9741c8881fd5931774c000"
+            ],
+            "limits": "Models Python conditional assignments only, not repository execution or tensor sampling."
+          }
+        ]
+      }
+    ],
+    "summary": "Comments out three per-sample invariant assertions, relying on existing generator preparation. Performance is unmeasured; the inherited optional-output failure remains."
+  },
+  "evidence": {
+    "call_36cc8da6353647d5985aeb833df1a78a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "02982fcc9fed57a8e5b2bdf55cdceb12cc70f594",
+        "offset": 160,
+        "max_bytes": 767
+      },
+      "result_sha256": "a1899858853924375b4ce26b7d56ac417794aeb5c032eabd3581dcc235e5027f"
+    },
+    "call_0a91f9f6ec3c477ab2b91a61cc2a4eaa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "path": "exllamav3/generator/job.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "28a1148171427e8a99c1622449eff187f12341563263031dff138d861de20d4a"
+    },
+    "call_3b7e1b4c0401465396ea75752d7bf664": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "query": "receive_logits",
+        "limit": 100
+      },
+      "result_sha256": "361335e2a9c068d5f00760f7c7ea7e517df9a34aadbaf5facc3872ebe021b75b"
+    },
+    "call_d734c3f7e759493390cad8c8c500f96a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 12000,
+        "max_bytes": 14000
+      },
+      "result_sha256": "f5ebe9b89c9e56297828b523a155d76a21792fc67823d69d747dd9fdf0ef2ed6"
+    },
+    "call_7ca3d5dc028d47cbb2b7c638cdda1bf3": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f6e224671cf1acd067e79899a1ab9164bd9529f50e19b372cfde44ee97664cc6"
+    },
+    "call_affc7f595ed34144adb852e403a184bb": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "offset": 16384,
+        "max_bytes": 6000
+      },
+      "result_sha256": "46408465c2ee6e58d5a9559e17e3a68044c895ae9fbc960c84151cfa7f82e6a5"
+    },
+    "call_14aeddf70d664490a882f888d5012a71": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "query": ".live",
+        "path": "exllamav3/generator",
+        "limit": 100
+      },
+      "result_sha256": "01ed063278d04dc880fdcc1e6bc002d0bea59baf331ec8f775b639403fd8e837"
+    },
+    "call_430956b73aa44f6fb4a86e33d62760a6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "path": "exllamav3/generator/pagetable.py",
+        "offset": 4900,
+        "max_bytes": 3000
+      },
+      "result_sha256": "697b5805fcd4929b7cc22d8b9ea66f2995845d545dc3ec2c704f90069514c876"
+    },
+    "call_f8865ad087aa4339afe6095041fa2b72": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c8da0889d2c3bfa4f61462ab651fe243fb4a12323e8324739a9b26b86c883aae"
+    },
+    "call_36a4f9c1a1b346fe81d794abc898fdff": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "a7ed72186102cd351341950181547faac94f5222b181c1a8c1df6e18f6bae151"
+    },
+    "call_03ca8d35db6a4e6593e307c15b39f6e8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/30",
+        "max_bytes": 10000
+      },
+      "result_sha256": "1d089c8a62b0ed7d04a3f293be35751592b6b95d74fc6f0c9af61b4190bf89db"
+    },
+    "call_ddbaeb10db9741c8881fd5931774c000": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def outputs(probs,top):\n    next_token=7\n    if probs: pass\n    else: next_prob=None\n    if top: pass\n    else: next_k_tokens,next_k_probs=None,None\n    return next_token,next_k_tokens,next_k_probs,next_prob\nfor p,t in [(False,0),(True,0),(False,1)]:\n    try: print(p,t,outputs(p,t))\n    except UnboundLocalError as e: print(p,t,type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "dd5d2dcb34458f0b3692ad6ad7c120c9b6583daf44d75663191fbb80e3b6c907"
+    }
+  }
+}
