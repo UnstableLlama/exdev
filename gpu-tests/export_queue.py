@@ -46,6 +46,8 @@ def item(path):
     affected = record.get('affected_revisions') or {}
     verified = [s for s in affected.get('verified_shas', []) if re.fullmatch(r'[0-9a-f]{40}', s)]
     fixes, used = shas(record.get('fixes')), methods(record)
+    # A fix commit is never the affected commit to test, even when the ledger also lists it as verified.
+    unfixed = [s for s in verified if s not in fixes]
     executed = bool(EXECUTED & set(used))
     suspected = record['status'] == 'suspected'
     priority = (1 if suspected and fixes else 2 if suspected and record['classification'] == 'defect' and not executed
@@ -56,7 +58,9 @@ def item(path):
             'description': record['description'], 'trigger': record['trigger'],
             'expected_behavior': record['expected_behavior'], 'actual_behavior': record['actual_behavior'],
             'commits': {'introductions': shas(record.get('introductions')), 'verified_affected': verified,
-                        'latest_affected': verified[-1] if verified else None, 'fixes': fixes},
+                        'latest_affected': unfixed[-1] if unfixed else None, 'fixes': fixes,
+                        'fix_status': {row['sha']: row.get('status') for row in record.get('fixes') or []
+                                       if isinstance(row, dict) and row.get('sha') in fixes}},
             'affected_limits': affected.get('limits'), 'existing_methods': used, 'already_executed': executed}
 
 
