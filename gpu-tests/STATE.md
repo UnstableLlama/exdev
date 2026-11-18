@@ -30,5 +30,10 @@
 - Default environment is now Python 3.12: later commits import `typing.override` (exllamav3/models/mimo.py), which 3.11 lacks.
 - `eval/compare_q*.py` import about a dozen heavy third-party packages at module level. `lib/stubmods.py` and `lib/cq.py` stub them, which caps those results at `inconclusive` under the worker rules. Installing the real packages could upgrade them; that has not been tried.
 
+- pydantic is pinned to 2.11.7 in both environments: formatron 0.5.0 fails to import with the newest pydantic, and exllamav3 imports formatron at later commits.
+
 ## Progress
-Results are the directories under `gpu-tests/results/`. In flight: working down priority 1 of the queue, top first.
+Results are the directories under `gpu-tests/results/`. Nothing is in flight.
+- Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers.
+- Skipped for now, no result yet: conversion-handle-accumulation (needs a conversion run under a lowered open-file limit).
+- Next: empty-block-conversion, then the rest of priority 1.
