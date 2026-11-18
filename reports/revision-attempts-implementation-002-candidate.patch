@@ -1,0 +1,1356 @@
+diff --git a/orchestration/run_ahead.py b/orchestration/run_ahead.py
+index 33e7282..2d40a2d 100644
+--- a/orchestration/run_ahead.py
++++ b/orchestration/run_ahead.py
+@@ -152,6 +152,8 @@ def publish(state, run, request):
+     positions = sorted({d['position'] for d in item.get('ran_ahead_of', [])})
+     if positions and 'Ran ahead of: '+', '.join(map(str, positions))+'.' not in text:
+         raise ValueError('Request must disclose ran-ahead positions')
++    if item.get('revision_of_run'):
++        validate_revision_request(item, text)
+     item.update(status='pending_full_review', request=legacy.relative(request), request_sha256=digest(request))
+     for row in state['runs'] + state.get('replacement_reviews', []):
+         if row.get('run', row.get('candidate_run')) == run: row['status'] = 'pending_full_review'
+@@ -293,6 +295,8 @@ def check_verdict(item, verdict, *, outcome='approved'):
+     elif not re.search(r'\b'+outcome+r'\b', decision[1], re.I):
+         raise ValueError('Verdict does not state requested outcome')
+     request = ROOT/item['request']
++    if item.get('revision_of_run'):
++        validate_revision_request(item, request.read_text())
+     if digest(request) != item['request_sha256']:
+         raise ValueError('Request changed after publication')
+     listed = re.findall(r'^- (.+): `([a-f0-9]{64})`$', request.read_text(), re.M)
+@@ -329,8 +333,14 @@ def approve(path, run, verdict):
+         note = f'Ancestor retrieval only. {legacy.relative(verdict)} sha256 {digest(verdict)}'
+         from .ancestor_selection import installed
+         with installed():
+-            legacy.validate_run(ROOT/run, ROOT/item['packet'], ROOT/'.sources/exllamav3.git', ROOT/'data/evidence/github', item['position'])
+-            legacy.approve_run(ROOT/run, ROOT/item['packet'], 'Fable', note)
++            validation = legacy.validate_run(ROOT/run, ROOT/item['packet'], ROOT/'.sources/exllamav3.git', ROOT/'data/evidence/github', item['position'])
++            if item.get('revision_of_run'):
++                if validation.get('revision', {}).get('source') != item['revision_source']:
++                    raise ValueError('Revision provenance disagrees with reservation')
++                legacy.approve_run(ROOT/run, ROOT/item['packet'], 'Fable', note,
++                                   revision_validation=validation)
++            else:
++                legacy.approve_run(ROOT/run, ROOT/item['packet'], 'Fable', note)
+         row.update(status='approved_reviewed', verdict=legacy.relative(verdict), verdict_sha256=digest(verdict))
+         if item['kind'] == 'replacement':
+             state['approved_entries'] = [run if r == old else r for r in state['approved_entries']]
+@@ -361,12 +371,12 @@ def recover(path, authorization, *, retry_position=None):
+         if stop.get('run') and stop['run'] not in text:
+             raise ValueError('Recovery decision must identify stopped run')
+         if retry_position is None:
+-            if stop.get('outcome') in ('rejected','held','retry_awaiting_verdict'):
++            if stop.get('outcome') in ('rejected','declined','held','retry_awaiting_verdict'):
+                 item = next(q for q in state['review_queue'] if q.get('run') == stop['run'])
+                 if item['kind'] == 'forward' and not any(r['position'] == item['position'] and r['status'] in ('approved_reviewed','approved_mechanical') for r in state['runs']):
+                     raise ValueError('Forward rejection still needs an approved retry')
+         else:
+-            item = next(q for q in reversed(state['review_queue']) if (q.get('run') == stop.get('run') if stop.get('run') else q.get('position') == stop.get('position')) and q['status'] in ('failed','rejected','held'))
++            item = next(q for q in reversed(state['review_queue']) if (q.get('run') == stop.get('run') if stop.get('run') else q.get('position') == stop.get('position')) and q['status'] in ('failed','rejected','declined','held'))
+             if item['position'] != retry_position:
+                 raise ValueError('Retry must address the stopped position')
+             state['retry_only'] = dict(position=retry_position, kind=item['kind'], stopped_token=item.get('token'))
+@@ -376,14 +386,16 @@ def recover(path, authorization, *, retry_position=None):
+ 
+ 
+ def record_stop(path, run, verdict, outcome):
+-    if outcome not in ('rejected','held'):
+-        raise ValueError('Explicit rejection/hold required')
++    if outcome not in ('rejected','declined','held'):
++        raise ValueError('Explicit rejection/decline/hold required')
+     verdict = Path(verdict)
+     if not verdict.is_file(): raise ValueError('Missing verdict')
+     with transaction(path) as state:
+         require_enabled(state)
+         item = next(q for q in state['review_queue'] if q.get('run') == run)
+         if item['status'] != 'pending_full_review': raise ValueError('Not pending review')
++        if outcome == 'declined' and item['kind'] != 'replacement':
++            raise ValueError('Only a replacement can be declined')
+         check_verdict(item, verdict, outcome=outcome)
+         item.update(status=outcome, verdict=legacy.relative(verdict), verdict_sha256=digest(verdict))
+         for row in state['runs'] + state.get('replacement_reviews', []):
+@@ -478,17 +490,116 @@ def verify_selection(packet, candidates):
+     return selected
+ 
+ 
+-def prepared(path, auth, spec_path):
++def revision_source(state, spec, manifest):
++    """Validate administrative admission while the caller holds the queue lock."""
++    from teacher.revision import ARTIFACTS, position_of
++
++    prior_run = spec['revision_of_run']
++    previous = next((row for row in state['review_queue'] if row.get('run') == prior_run), None)
++    retry = state.get('retry_only', {})
++    if (not previous or previous['status'] not in ('rejected', 'declined')
++            or previous.get('revision_of_run') or not retry.get('stopped_token')
++            or retry['stopped_token'] != previous['token']
++            or previous['kind'] != spec['kind']):
++        raise ValueError('Revision requires explicit recovery of a rejected run or declined replacement')
++    if (previous['position'] != spec['position'] or position_of(prior_run) != spec['position']
++            or previous['packet'] != spec['packet']
++            or previous['packet_manifest_sha256'] != spec['packet_manifest_sha256']):
++        raise ValueError('Revision requires the same prior position and original packet')
++    if spec['task_sha'] != manifest['task_sha']:
++        raise ValueError('Revision task SHA mismatch')
++    if any(row.get('revision_of_run') == prior_run for row in state['review_queue']):
++        raise ValueError('A revision is already reserved for this rejection')
++    recovery = state['recovery_log'][-1]
++    authorization = spec['authorization']
++    if (recovery['authorization'] != authorization['path'] or recovery['sha256'] != authorization['sha256']
++            or recovery['stop']['run'] != prior_run):
++        raise ValueError('Revision authorization must match the recorded recovery')
++    verdict = ROOT/previous['verdict']
++    if digest(verdict) != previous['verdict_sha256']:
++        raise ValueError('Source verdict changed after rejection')
++    check_verdict(previous, verdict, outcome=previous['status'])
++    if not (ROOT/prior_run).resolve().is_relative_to(ROOT/'.teacher/runs'):
++        raise ValueError('Revision source must be a tracked run')
++    coverage = ROOT/spec['coverage']['path']
++    if (coverage.resolve() != ROOT/'reviews/verdicts'/(Path(spec['run']).name+'.coverage.md')
++            or coverage == verdict):
++        raise ValueError('Revision coverage must identify the exact new attempt')
++    if spec['kind'] == 'replacement' and (spec['supersedes_run'] != previous['supersedes_run']
++                                         or spec['supersedes_run'] not in state['approved_entries']):
++        raise ValueError('Declined replacement must retain its active entry')
++    if set(spec['prior_artifacts']) != set(ARTIFACTS):
++        raise ValueError('Revision source needs all four artifact digests')
++    return dict(revision_of_run=str(ROOT/prior_run), position=spec['position'], task_sha=spec['task_sha'],
++                packet=str(ROOT/spec['packet']), packet_manifest_sha256=spec['packet_manifest_sha256'],
++                prior_artifacts=spec['prior_artifacts'], coverage_path=str(coverage),
++                coverage_sha256=spec['coverage']['sha256'])
++
++
++def revision_disclosure(item, validation):
++    text = f"Reviewer-assisted revision of {item['revision_of_run']}."
++    if item.get('supersedes_run'):
++        text += f" Active entry pending verdict: {item['supersedes_run']}."
++    if item['revision_number'] == 1:
++        text += ' First live revision. Line-by-line comparison requested.'
++    text += f" Prior calls replayed: {validation['prior_identical_replayed_calls']}. New calls replayed: {validation['identical_replayed_calls']}."
++    if item['revision_number'] <= 3:
++        def usage(value):
++            return json.dumps(value, sort_keys=True) if value is not None else 'unavailable'
++        text += f" Fresh attempt tokens: {usage(validation['prior_token_usage'])}. Revision tokens: {usage(validation['token_usage'])}."
++    return text
++
++
++def revision_request_files(item):
++    from teacher.revision import ARTIFACTS, REVISION_FILES
++    run, source = ROOT/item['run'], ROOT/item['revision_of_run']
++    return [
++        *(run/name for name in (*ARTIFACTS, *REVISION_FILES, 'coverage.json')),
++        *(source/name for name in ARTIFACTS),
++        ROOT/item['packet']/'manifest.json',
++        ROOT/item['completed_record']['validation'],
++        ROOT/item['spec'],
++        Path(item['revision_source']['coverage_path']),
++        *(ROOT/path for path in item['revision_admin']),
++    ]
++
++
++def validate_revision_request(item, text):
++    report = ROOT/item['completed_record']['validation']
++    validation = json.loads(report.read_text())
++    if (validation.get('status') != 'validated'
++            or validation.get('revision', {}).get('source') != item['revision_source']):
++        raise ValueError('Revision request requires the validated reserved source')
++    if revision_disclosure(item, validation) not in text:
++        raise ValueError('Revision request is missing the exact replay, assistance or usage disclosure')
++    for heading in ('Kept', 'Added', 'Removed', 'Corrected'):
++        section = re.search(rf'(?ms)^### {heading}\s*\n(.*?)(?=^#|\Z)', text)
++        if not section or not section[1].strip() or 'AUTHOR MUST' in section[1]:
++            raise ValueError('Revision request needs a completed side-by-side comparison')
++    hashes = dict(re.findall(r'^- (.+): `([a-f0-9]{64})`$', text, re.M))
++    for file in revision_request_files(item):
++        if hashes.get(legacy.relative(file)) != digest(file):
++            raise ValueError('Missing or changed revision request artifact: '+str(file))
++    for path, expected in item['revision_admin'].items():
++        if digest(ROOT/path) != expected:
++            raise ValueError('Revision decision changed: '+path)
++    if digest(ROOT/item['spec']) != item['spec_sha256']:
++        raise ValueError('Revision reservation descriptor changed')
++
++
++def prepared(path, auth, spec_path, *, revision=False):
+     """Execute one administratively prepared replacement/retry with the shared locks.
+ 
+     Spec binds the existing recovery/plan authorization and preflight. It never
+     enters a packet, prompt, transcript or teacher provenance.
+     """
+-    from teacher.author import author
++    from teacher.author import author, author_revision
+     from .ancestor_selection import installed
+     spec_path = Path(spec_path)
+     spec = json.loads(spec_path.read_text())
+     packet, output = ROOT/spec['packet'], ROOT/spec['run']
++    if revision != ('revision_of_run' in spec):
++        raise ValueError('Revision descriptor requires explicit author_revision action')
+     kind, position = spec['kind'], spec['position']
+     with legacy.locked(path):
+         with transaction(path) as state:
+@@ -503,8 +614,20 @@ def prepared(path, auth, spec_path):
+             manifest = json.loads((packet/'manifest.json').read_text())
+             repo = ROOT/'.sources/exllamav3.git'
+             order = legacy.git(repo,'rev-list','--reverse','--topo-order',state['history_tip']).decode().split()
+-            if manifest['task_sha'] != order[position-1]: raise ValueError('Wrong position/task SHA')
+-            if kind == 'replacement':
++            if not 1 <= position <= len(order) or manifest['task_sha'] != order[position-1]:
++                raise ValueError('Wrong position/task SHA')
++            source = None
++            if revision:
++                if (output.parent != ROOT/'.teacher/runs' or output.resolve().parent != output.parent
++                        or not packet.resolve().is_relative_to(ROOT/'.teacher/retrieval')):
++                    raise ValueError('Revision requires managed run and packet paths')
++                from teacher.revision import coverage_bytes
++                source = revision_source(state, spec, manifest)
++                coverage_bytes(Path(source['coverage_path']), source['coverage_sha256'], manifest)
++                catalog_path = ROOT/'reports'/f'commit-{position:06d}-catalog-selection-001.json'
++                if not catalog_path.is_file():
++                    raise ValueError('Original catalog report is required for the revision request')
++            elif kind == 'replacement':
+                 old = spec['supersedes_run']
+                 if old not in state['approved_entries']: raise ValueError('Replacement target is not active')
+                 previous = json.loads((ROOT/spec['original_packet']/'manifest.json').read_text())
+@@ -525,21 +648,41 @@ def prepared(path, auth, spec_path):
+             else: raise ValueError('Unknown prepared work kind')
+             # Original replacement packets can retain historical approved prose.
+             candidates = list(state['approved_entries'])
+-            if kind == 'replacement':
++            if revision or kind == 'replacement':
+                 candidates += [r.get('run',r.get('candidate_run')) for r in state['runs']+state.get('replacement_reviews',[]) if r.get('status')=='superseded']
+             selected = verify_selection(packet, candidates)
+             item = reserve(state,position=position,kind=kind,files=changed_files(repo,manifest['task_sha']),run=spec['run'],packet=spec['packet'])
+             live = next(q for q in state['review_queue'] if q.get('token') == item['token'])
+             live.update(spec=legacy.relative(spec_path),spec_sha256=digest(spec_path),implementation_sha256=implementation_hashes(), selected_approved_entries=selected,packet_manifest_sha256=digest(packet/'manifest.json'))
+             if kind == 'replacement': live['supersedes_run'] = spec['supersedes_run']
++            if revision:
++                previous = next(q for q in state['review_queue'] if q.get('run') == spec['revision_of_run'])
++                admin = {previous['verdict']: previous['verdict_sha256'],
++                         authorization['path']: authorization['sha256']}
++                live.update(revision_of_run=spec['revision_of_run'], revision_source=source, revision_admin=admin,
++                            revision_number=1 + sum(q is not live and 'revision_of_run' in q
++                                                    for q in state['review_queue']))
+         try:
+             with installed(), provenance_binding(packet,output,candidates,live['implementation_sha256']):
+                 legacy.validate_bundle(packet,ROOT/'data/evidence/github'/f'{position:06d}-eligible.json')
+-                author(packet,output,auth)
++                if revision:
++                    legacy.validate_packet_blobs(packet)
++                    author_revision(packet,output,auth,revision=source)
++                else:
++                    author(packet,output,auth)
+                 validation = legacy.validate_run(output,packet,repo,ROOT/'data/evidence/github',position)
+             report = ROOT/'reports'/f'{output.name}-queue-validation.json'
+             write_json(report,validation)
+             row = dict(position=position,run=spec['run'],packet=spec['packet'],status='awaiting_review_request',validation=legacy.relative(report),spec_sha256=digest(spec_path))
++            if revision:
++                row.update(attempt_kind='revision', revision_of_run=spec['revision_of_run'])
++                files = revision_request_files(dict(live, completed_record=row))
++                summary = legacy.make_summary(output, packet, repo, position, report, catalog_path,
++                                              ROOT/'data/evidence/github')
++                summary['hashes'].update({legacy.relative(file):digest(file) for file in files})
++                summary['revision_disclosure'] = revision_disclosure(live, validation)
++                skeleton = legacy.skeleton(summary, os.environ.get('CODEX_THREAD_ID', 'SET THREAD ID'))
++                (ROOT/'reports'/f'{output.name}.skeleton.md').write_text(skeleton)
+             with transaction(path) as state: finish(state,item['token'],row=row)
+             return dict(status='awaiting_review_request',run=spec['run'],validation=legacy.relative(report))
+         except BaseException as exc:
+@@ -550,7 +693,7 @@ def prepared(path, auth, spec_path):
+ 
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument('action', choices=('enable','cycle','worker','publish','approve','stop','recover','prepared'))
++    parser.add_argument('action', choices=('enable','cycle','worker','publish','approve','stop','recover','prepared','author_revision'))
+     parser.add_argument('--state', type=Path, required=True)
+     parser.add_argument('--auth-file', type=Path, default=Path.home()/'.codex/auth.json')
+     parser.add_argument('--run'); parser.add_argument('--request', type=Path)
+@@ -561,7 +704,8 @@ def main():
+     if args.action == 'enable': result = enable(args.state,args.verdict)
+     elif args.action == 'worker': result = worker(args.state,args.auth_file)
+     elif args.action == 'cycle': result = run(args.state,args.auth_file)
+-    elif args.action == 'prepared': result = prepared(args.state,args.auth_file,args.spec)
++    elif args.action in ('prepared','author_revision'):
++        result = prepared(args.state,args.auth_file,args.spec, revision=args.action == 'author_revision')
+     elif args.action == 'recover': result = recover(args.state,args.verdict,retry_position=args.retry_position)
+     elif args.action == 'publish':
+         with transaction(args.state) as state: publish(state,args.run,args.request)
+diff --git a/teacher/ancestor_context.py b/teacher/ancestor_context.py
+index 9f1778e..9241449 100644
+--- a/teacher/ancestor_context.py
++++ b/teacher/ancestor_context.py
+@@ -25,7 +25,7 @@ def artifact_hashes(run):
+     return {name:hashlib.sha256(read_regular(run/name)).hexdigest() for name in ARTIFACTS}
+ 
+ 
+-def approve_run(run, packet, reviewer, note):
++def approve_run(run, packet, reviewer, note, *, revision_validation=None):
+     """Administrative operation: a named reviewer accepts a specific draft, never a model tool."""
+     run,packet=Path(run),Path(packet)
+     if not reviewer.strip() or not note.strip():
+@@ -47,9 +47,18 @@ def approve_run(run, packet, reviewer, note):
+         raise ValueError('Original authoring packet fingerprint mismatch')
+     if provenance.get('input_mode')!='entry_analysis' or provenance.get('published') is not False:
+         raise ValueError('Run is not an unpublished historical annotation')
+-    expected,_=verify_final(draft['annotation'],manifest,transcript,provenance)
++    from .revision import restore, selected_annotation
++    revision = restore(run, packet, provenance, transcript)
++    if revision:
++        if (not revision_validation or revision_validation.get('status') != 'validated'
++                or revision_validation.get('revision') != provenance['revision']):
++            raise ValueError('Revision approval requires validated replay through the review queue')
++        if selected_annotation(transcript, provenance) != draft['annotation']:
++            raise ValueError('Revision final does not match the draft')
++    expected,_=verify_final(draft['annotation'],manifest,transcript,provenance,
++                            prior=revision.prior if revision else ())
+     from .editorial import render
+-    if provenance.get('validation_repair_policy') and render(draft)!=read_regular(run/'draft.md').decode():
++    if (revision or provenance.get('validation_repair_policy')) and render(draft)!=read_regular(run/'draft.md').decode():
+         raise ValueError('Repair-policy draft rendering mismatch')
+     if draft!=expected or review.get('sha')!=draft['sha']:
+         raise ValueError('Draft identity or evidence differs from its recorded inputs')
+diff --git a/teacher/approval_policy.py b/teacher/approval_policy.py
+index 547a046..0a23c68 100644
+--- a/teacher/approval_policy.py
++++ b/teacher/approval_policy.py
+@@ -52,7 +52,12 @@ def assess(run, packet, repo):
+     draft=json.loads(read_regular(run/'draft.json'));m=json.loads(read_regular(packet/'manifest.json'))
+     transcript=json.loads(read_regular(run/'raw-transcript.json'))
+     provenance=json.loads(read_regular(run/'provenance.json'))
+-    expected,_=verify_final(draft['annotation'],m,transcript,provenance)
++    from .revision import restore, selected_annotation
++    revision = restore(run, packet, provenance, transcript)
++    prior = revision.prior if revision else ()
++    if revision and selected_annotation(transcript, provenance) != draft['annotation']:
++        raise ValueError('Revision final does not match the draft')
++    expected,_=verify_final(draft['annotation'],m,transcript,provenance,prior=prior)
+     if expected!=draft or render(draft)!=read_regular(run/'draft.md').decode():raise ValueError('Replay mismatch')
+     parents=git(repo,'show','-s','--format=%P',m['task_sha']).decode().split()
+     if parents!=m['task_parents']:raise ValueError('Git parent mismatch')
+@@ -60,11 +65,13 @@ def assess(run, packet, repo):
+     files=git(repo,'diff','--no-renames','--name-only','-z',base,m['task_sha'],'--').decode().strip('\0').split('\0')
+     if files==['']:files=[]
+     if files!=m.get('task_changed_files'):raise ValueError('Changed paths disagree with trusted Git diff')
+-    coverage=run_coverage(packet,m,transcript)
++    coverage=run_coverage(packet,m,transcript,prior=prior)
+     if coverage!=json.loads(read_regular(run/'coverage.json')):raise ValueError('Coverage report mismatch')
+     decision=tier(parents,files,draft['annotation'],coverage['task_read_complete'])
+     if provenance.get('validation_repair'):
+         decision={'tier':'full_review','reasons':[*decision['reasons'],'validation_repair']}
++    if revision:
++        decision = {'tier': 'full_review', 'reasons': [*decision['reasons'], 'reviewer_assisted_revision']}
+     return dict(decision,policy=POLICY,version=VERSION,sampled=sampled(m['task_sha']),changed_files=files)
+ 
+ 
+diff --git a/teacher/author.py b/teacher/author.py
+index 6b943f6..5a1c9ac 100644
+--- a/teacher/author.py
++++ b/teacher/author.py
+@@ -24,6 +24,13 @@ def author(packet, output, auth_file, transport_factory=CodexTransport, *, valid
+     return _author(packet, output, auth_file, transport_factory, validation_repair=validation_repair)
+ 
+ 
++def author_revision(packet, output, auth_file, *, revision, transport_factory=CodexTransport):
++    """Supervisor-only entry point for a separately reserved revision."""
++    from .revision import prepare
++    prepared = prepare(packet, output, revision)
++    return _author(packet, output, auth_file, transport_factory, revision=prepared)
++
++
+ def author_trial(packet, output, auth_file, *, model=TRIAL_MODEL, transport_factory=CodexTransport):
+     """Supervisor-only unpublished model comparison; no CLI or walk override."""
+     base=(ROOT/'.teacher/trials/teacher-model-001').resolve()
+@@ -35,7 +42,7 @@ def author_trial(packet, output, auth_file, *, model=TRIAL_MODEL, transport_fact
+     return _author(packet,output,auth_file,transport_factory,model=model,trial=True)
+ 
+ 
+-def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False, validation_repair=True):
++def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False, validation_repair=True, revision=None):
+     packet,output=Path(packet).resolve(),Path(output).resolve()
+     if output.is_relative_to(packet):
+         raise ValueError('Draft output must be outside the immutable packet')
+@@ -45,6 +52,8 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
+     coverage=json.loads(coverage.read_text()).get('coverage_request')
+     if coverage and output.name!=Path(coverage['path']).name.removesuffix('.coverage.md'):
+         raise ValueError('Coverage request belongs to another attempt')
++    if revision:
++        revision.extend(session)
+     output.mkdir(parents=True,exist_ok=False)
+     manifest=(packet/'manifest.json').read_bytes()
+     provenance={'model':model,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
+@@ -61,13 +70,24 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
+     if coverage:
+         provenance['coverage_request']={k:coverage[k] for k in ('path','sha256')}
+         provenance['reviewer_assisted']=True
++    if revision:
++        from .revision import ID_MAP_VERSION, REVISION_FILES, initial_input
++        write_json(output/'prior-evidence.json', revision.records)
++        write_json(output/'revision-input.json', initial_input(session))
++        (output/'revision.coverage.md').write_bytes(revision.coverage)
++        provenance.update(attempt_kind='revision', reviewer_assisted=True,
++                          guidance_version=json.loads(manifest).get('guidance_version', 1),
++                          revision={'source': revision.binding, 'id_map_version': ID_MAP_VERSION,
++                                    'artifacts': {name: hashlib.sha256((output/name).read_bytes()).hexdigest()
++                                                  for name in REVISION_FILES}})
++    provenance['token_usage'] = None
+     provenance['validation_repair_enabled']=validation_repair
+     provenance.update(repair_metadata([]))
+     write_json(output/'provenance.json',provenance)
+     write_json(output/'status.json',{'status':'running','published':False})
+     def record(transcript):
+         write_json(output/'raw-transcript.json',transcript)
+-        provenance.update(repair_metadata(transcript))
++        provenance.update(repair_metadata(transcript), token_usage=transcript[0].get('teacher_token_usage'))
+         write_json(output/'provenance.json',provenance)
+     try:
+         with (transport_factory(auth_file,model=model) if trial else transport_factory(auth_file)) as transport:
+@@ -76,10 +96,17 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
+         if manifest!=(packet/'manifest.json').read_bytes():
+             raise ValueError('Packet changed during authoring')
+         write_json(output/'draft.json',result['draft'])
+-        if coverage: result['review']['reviewer_assisted']=True
++        if revision:
++            from .revision import restore, selected_annotation
++            restore(output, packet, provenance, result['transcript'])
++            if selected_annotation(result['transcript'], provenance) != result['draft']['annotation']:
++                raise ValueError('Revision final does not match the draft')
++            result['review'].update(attempt_kind='revision', revision_of_run=revision.binding['revision_of_run'])
++        if coverage or revision:
++            result['review']['reviewer_assisted']=True
+         write_json(output/'review.json',result['review'])
+         from .coverage import run_coverage
+-        write_json(output/'coverage.json',run_coverage(packet,json.loads(manifest),result['transcript']))
++        write_json(output/'coverage.json',run_coverage(packet,json.loads(manifest),result['transcript'], prior=revision.prior if revision else ()))
+         (output/'draft.md').write_text(render(result['draft']))
+         write_json(output/'status.json',{'status':'draft','published':False})
+         return output
+diff --git a/teacher/codex_adapter.py b/teacher/codex_adapter.py
+index 6c7cabf..0a1165d 100644
+--- a/teacher/codex_adapter.py
++++ b/teacher/codex_adapter.py
+@@ -98,6 +98,15 @@ def thread_parameters(session, cwd, model=MODEL):
+                             for tool in session.tools]}
+ 
+ 
++def usage_totals(params):
++    keys = {'input': 'inputTokens', 'cached_input': 'cachedInputTokens', 'output': 'outputTokens'}
++    values = params['tokenUsage']['total']
++    totals = {key: values[name] for key, name in keys.items()}
++    if any(type(value) is not int or value < 0 for value in totals.values()) or totals['cached_input'] > totals['input']:
++        raise ValueError('Invalid server token totals')
++    return totals
++
++
+ class CodexTeacher:
+     def run(self, session, transport, record=None, max_calls=256, *, model=MODEL, validation_repair=True):
+         checked_model(model)
+@@ -108,6 +117,7 @@ class CodexTeacher:
+         manifest_bytes=(session.runner.packet/'manifest.json').read_bytes()
+         manifest=json.loads(manifest_bytes)
+         transcript=deepcopy(session.initial)
++        prior = getattr(session, 'revision_prior', ())
+         repair = None
+         repair_start = None
+         def save():
+@@ -144,6 +154,8 @@ class CodexTeacher:
+                 name=params['tool']; identity=params['callId']
+                 if name not in allowed or params.get('namespace') not in (None,''):
+                     raise ValueError('Unapproved model tool')
++                if identity.startswith('prior:'):
++                    raise ValueError('Reserved prior tool call ID')
+                 if identity in seen or len(seen)>=max_calls:
+                     raise ValueError('Duplicate tool call or tool budget exceeded')
+                 seen.add(identity)
+@@ -169,6 +181,13 @@ class CodexTeacher:
+                     if item.get('phase') in (None,'final_answer'):
+                         final=item['text']
+                         final_index=len(transcript)-1
++            elif method=='thread/tokenUsage/updated':
++                totals = usage_totals(params)
++                previous = transcript[0].get('teacher_token_usage', {})
++                if any(value < previous.get(key, 0) for key, value in totals.items()):
++                    raise ValueError('Server thread token totals decreased')
++                transcript[0]['teacher_token_usage'] = totals
++                save()
+             elif method=='turn/completed':
+                 if params['turn']['id']!=turn or params['turn']['status']!='completed' or final is None:
+                     raise ValueError('Authoring turn did not complete successfully')
+@@ -179,11 +198,11 @@ class CodexTeacher:
+                 # Check transcript integrity before entering annotation-only feedback.
+                 from .editorial import evidence_ledger
+                 from .coverage import observed_reads
+-                evidence_ledger(transcript)
+-                observed_reads(transcript)
++                evidence_ledger(transcript, complete=bool(prior))
++                observed_reads([*prior, *transcript])
+                 try:
+                     annotation=json.loads(final)
+-                    entry, review=assemble_draft(annotation,manifest,transcript)
++                    entry, review=assemble_draft(annotation,manifest,transcript,prior=prior)
+                 except ValueError as error:
+                     if not validation_repair or repair is not None or not eligible(error):
+                         if type(error) is AnnotationDiagnostic:
+@@ -222,7 +241,7 @@ class CodexTeacher:
+             elif method=='error':
+                 raise ValueError('Codex reported an authoring error')
+         manifest=json.loads((session.runner.packet/'manifest.json').read_text())
+-        entry, review=verify_final(annotation,manifest,transcript,repair_metadata(transcript))
++        entry, review=verify_final(annotation,manifest,transcript,repair_metadata(transcript),prior=prior)
+         return {'draft':entry,'review':review,'transcript':transcript,'published':False,
+                 'model':model,'reasoning_effort':session.reasoning_effort}
+ 
+diff --git a/teacher/coverage.py b/teacher/coverage.py
+index e09dd85..b7d72f1 100644
+--- a/teacher/coverage.py
++++ b/teacher/coverage.py
+@@ -84,10 +84,12 @@ def require_coverage(manifest, transcript):
+     return report
+ 
+ 
+-def run_coverage(packet, manifest, transcript):
++def run_coverage(packet, manifest, transcript, *, prior=()):
+     """Validation coverage plus administrative metrics, never added to model instructions."""
+     from pathlib import Path
+     from .worker import load_blob
++    new_transcript = transcript
++    transcript = [*prior, *transcript]
+     assigned=require_coverage(manifest,transcript)
+     reads=observed_reads(transcript)
+     ranges=[(start,end) for tool,args,start,end in reads
+@@ -105,9 +107,21 @@ def run_coverage(packet, manifest, transcript):
+         response=json.loads(m['content'])
+         prose.append({'call_id':m['call_id'],'sha':args.get('commit'),'chapter':args.get('chapter',''),
+                       'successful':response.get('ok') is True})
+-    return {'assigned_coverage':assigned,'task_sections_total':len(sections),
++    report = {'assigned_coverage':assigned,'task_sections_total':len(sections),
+             'fully_read_task_sections':complete,'task_read_complete':len(complete)==len(sections),
+             'retrieval_usage':{'report_only':True,'index_available':'ancestor_search_blob' in manifest,
+                 'task_files_available':'task_changed_files' in manifest,
+                 'matching_target_count':len(targets),'matching_targets':[{'sha':s,'chapter':c} for s,c in targets],
+                 'ancestor_prose_read_count':len(prose),'ancestor_prose_reads':prose}}
++
++    if prior:
++        report['revision_reads'] = {}
++        for label, records in (('prior', prior), ('new', new_transcript)):
++            ranges = [(start, end) for tool, args, start, end in observed_reads(records)
++                      if tool == 'git_show' and args['commit'] == manifest['task_sha']]
++            report['revision_reads'][label] = {
++                'fully_read_task_sections': [i for i, section in enumerate(sections)
++                                             if covered(ranges, section['offset'], section['offset'] + section['bytes'])],
++                'tool_calls': sum(row['role'] == 'tool' for row in records),
++            }
++    return report
+diff --git a/teacher/cycle.py b/teacher/cycle.py
+index 686fdec..ab25da3 100644
+--- a/teacher/cycle.py
++++ b/teacher/cycle.py
+@@ -232,16 +232,25 @@ def prepare_packet(repo, sha, position, packet, evidence, store, sources, *, anc
+     return read(Path(packet) / 'manifest.json')
+ 
+ 
+-def replay_result(runner, call, result):
++def replay_result(runner, call, result, *, exact=False):
+     """Compare the same error envelope FreshSession records, never skip errors."""
+     try:
+         actual = runner.invoke(call['tool'], call['arguments'])
+     except (ValueError, RuntimeError) as exc:
+         actual = {'ok': False, 'error': str(exc)}
+-    if actual != json.loads(result['content']):
++    if (json.dumps(actual) != result['content'] if exact else actual != json.loads(result['content'])):
+         raise ValueError('Tool replay mismatch: '+result['call_id'])
+ 
+ 
++def validate_packet_blobs(packet):
++    blobs = list((packet/'blobs').iterdir())
++    for blob in blobs:
++        if (digest(blob) != blob.name or blob.stat().st_mode & 0o222 or
++                not os.path.samefile(blob, store_root(packet)/blob.name)):
++            raise ValueError('Blob integrity/link failure: '+blob.name)
++    return len(blobs)
++
++
+ def validate_run(run, packet, repo, evidence, position):
+     run, packet = Path(run), Path(packet)
+     validate_bundle(packet, Path(evidence) / f'{position:06d}-eligible.json')
+@@ -255,36 +264,56 @@ def validate_run(run, packet, repo, evidence, position):
+         if digest(ROOT/file) != expected:
+             raise ValueError('Implementation hash mismatch: '+file)
+     coverage = manifest.get('coverage_request')
+-    if bool(coverage) != bool(provenance.get('reviewer_assisted')):
++    is_revision = provenance.get('attempt_kind') == 'revision'
++    if (bool(coverage) or is_revision) != bool(provenance.get('reviewer_assisted')):
+         raise ValueError('Assistance provenance mismatch')
+     if coverage and provenance.get('coverage_request') != {k:coverage[k] for k in ('path','sha256')}:
+         raise ValueError('Coverage provenance mismatch')
+-    blobs = list((packet/'blobs').iterdir())
+-    for blob in blobs:
+-        if (digest(blob) != blob.name or blob.stat().st_mode & 0o222 or
+-                not os.path.samefile(blob, store_root(packet)/blob.name)):
+-            raise ValueError('Blob integrity/link failure: '+blob.name)
++    blob_count = validate_packet_blobs(packet)
+     transcript = read(run/'raw-transcript.json')
++    totals = transcript[0].get('teacher_token_usage')
++    if 'token_usage' in provenance and provenance['token_usage'] != totals:
++        raise ValueError('Token usage provenance mismatch')
++    runner = Runner(packet)
++    revision_summary = {}
++    if is_revision:
++        from .revision import restore
++        revision = restore(run, packet, provenance, transcript)
++        if revision.binding['position'] != position:
++            raise ValueError('Revision position mismatch')
++        prior_counts = Counter()
++        for record in revision.records:
++            replay_result(runner, record, {'call_id': record['id'], 'content': record['result']}, exact=True)
++            prior_counts[record['tool']] += 1
++        source_provenance = read(Path(revision.binding['revision_of_run'])/'provenance.json')
++        revision_summary = dict(revision=provenance['revision'], prior_tool_counts=dict(prior_counts),
++                                prior_identical_replayed_calls=sum(prior_counts.values()),
++                                prior_token_usage=source_provenance.get('token_usage'))
+     calls = {c['id']:c for x in transcript if x.get('role')=='assistant' for c in x.get('calls',[])}
+     counts, replayed = Counter(), 0
+-    runner = Runner(packet)
+     for result in transcript:
+         if result.get('role') != 'tool':
+             continue
+         call = calls[result['call_id']]
+-        replay_result(runner, call, result)
++        replay_result(runner, call, result, exact=is_revision)
+         counts[result['name']] += 1
+         replayed += 1
+     cov = read(run/'coverage.json')
++    if is_revision:
++        revision_summary['revision_reads'] = cov['revision_reads']
++        revision_summary['prior_run_calls'] = [
++            {'id': record['id'], 'arguments': record['arguments']}
++            for record in revision.records if record['tool'] == 'run']
+     from .validation_repair import disclosure, LEGACY_POLICY
+     return dict(status='validated', assessment=decision, validation_repair_details=disclosure(transcript, provenance.get('validation_repair_policy', LEGACY_POLICY)),
+                 packet_implementation_blob_hashes_verified=True,
+                 teacher_model=provenance['model'], reasoning_effort=provenance['reasoning_effort'],
+-                reviewer_assisted=bool(coverage), tool_counts=dict(counts), identical_replayed_calls=replayed,
+-                shared_readonly_blob_links_verified=len(blobs), open_catalog_rows=len(manifest['unreferenced_discussion_catalog']),
++                reviewer_assisted=bool(coverage) or is_revision, tool_counts=dict(counts), identical_replayed_calls=replayed,
++                shared_readonly_blob_links_verified=blob_count, open_catalog_rows=len(manifest['unreferenced_discussion_catalog']),
+                 closed_catalog_rows=len(manifest['closed_discussion_catalog']['rows']),
+                 task_sections_total=cov['task_sections_total'], fully_read_task_sections=cov['fully_read_task_sections'],
+                 ancestor_prose_read_count=cov.get('retrieval_usage',{}).get('ancestor_prose_read_count'),
++                token_usage=totals, **revision_summary,
+                 runtime={k:provenance[k] for k in ('codex_version','python_version','machine_architecture','operating_system')})
+ 
+ 
+@@ -315,6 +344,11 @@ def skeleton(summary, thread):
+     text += f"Task sections fully read: {len(v['fully_read_task_sections'])}/{v['task_sections_total']}; ancestor prose reads (report-only): {v['ancestor_prose_read_count']}.\n"
+     text += f"Tool counts: {json.dumps(v['tool_counts'],sort_keys=True)}. Runtime: {json.dumps(v['runtime'],sort_keys=True)}.\n\n"
+     text += f"Catalog: {v['open_catalog_rows']} open rows; {c['qualified_count']} closed qualify, {c['selected_count']} selected; {c['path_only_qualified_count']} by path alone, {c['path_only_selected_count']} selected by path alone. Cap {c['cap']}; truncated: {c['truncated']}; path rows cut: {len(c['path_qualified_cut'])}.\n\n"
++    if 'revision_disclosure' in summary:
++        text += summary['revision_disclosure'] + '\n\n'
++        text += '## Comparison with rejected attempt\n\n'
++        for label in ('Kept', 'Added', 'Removed', 'Corrected'):
++            text += f'### {label}\n\nAUTHOR MUST cite the corresponding passages and evidence.\n\n'
+     repair=v.get('validation_repair_details',{})
+     text += f"Validation repair: {json.dumps(repair,sort_keys=True)}.\n"
+     if repair.get('validation_repair'):
+diff --git a/teacher/editorial.py b/teacher/editorial.py
+index 2717462..c671075 100644
+--- a/teacher/editorial.py
++++ b/teacher/editorial.py
+@@ -84,33 +84,45 @@ def validate_shape(value, schema, path='annotation'):
+             raise ValueError(path+': invalid format')
+ 
+ 
+-def evidence_ledger(transcript):
++def evidence_ledger(transcript, *, imported=False, complete=False):
+     calls, results = {}, {}
+     for message in transcript:
+         if message['role']=='assistant':
+             for call in message.get('calls',[]):
+                 if call['id'].startswith('ancestor:') or call['id'] in calls:
+                     raise ValueError('Duplicate evidence call ID')
++                if call['id'].startswith('prior:') != imported:
++                    raise ValueError('Reserved prior evidence namespace')
++                if complete and (set(call) != {'id', 'tool', 'arguments'}
++                                 or not call['id'] or not isinstance(call['arguments'], dict)):
++                    raise ValueError('Malformed evidence call')
+                 calls[call['id']] = call
+         elif message['role']=='tool':
+             identity=message['call_id']
+             if identity not in calls or identity in results or message['name']!=calls[identity]['tool']:
+                 raise ValueError('Unmatched evidence result')
+             result=json.loads(message['content'])
++            if complete and (not isinstance(result, dict) or type(result.get('ok')) is not bool
++                             or set(result) != ({'ok', 'result'} if result['ok'] else {'ok', 'error'})):
++                raise ValueError('Malformed evidence result envelope')
+             results[identity]={'tool':message['name'],'arguments':calls[identity]['arguments'],
+                                'result':result,'result_sha256':hashlib.sha256(message['content'].encode()).hexdigest()}
++    if complete and calls.keys() != results.keys():
++        raise ValueError('Evidence call missing result')
+     return results
+ 
+ 
+-def validate_annotation(annotation, manifest, transcript):
++def validate_annotation(annotation, manifest, transcript, *, prior=()):
+     validate_shape(annotation,output_schema(manifest))
+     from .coverage import require_coverage
+-    require_coverage(manifest,transcript)
++    require_coverage(manifest,[*prior, *transcript])
+     task=manifest.get('authoring_task')
+     if task and task['kind']=='chapter':
+         if len(annotation['chapters'])!=1 or annotation['chapters'][0]['id']!=task['id']:
+             raise ValueError('Chapter output does not match assigned subsystem')
+-    ledger=evidence_ledger(transcript)
++    ledger=evidence_ledger(transcript, complete=bool(prior))
++    if prior:
++        ledger.update(evidence_ledger(prior, imported=True, complete=True))
+     for item in ledger.values():
+         if item['tool']=='evidence_index' or (
+             manifest.get('ancestor_context_mode') == 'retrieval_v1'
+@@ -162,7 +174,8 @@ def validate_annotation(annotation, manifest, transcript):
+         if len(refs)!=len(set(refs)):
+             raise ValueError('Duplicate finding evidence')
+         if any(ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only')) for ref in refs):
+-            raise ValueError('Findings require successful current-session evidence')
++            raise ValueError('Findings require successful current-session evidence' if not prior else
++                             'Findings require successful prior or current evidence')
+         return [ledger[ref] for ref in refs]
+     for finding_index, finding in enumerate(annotation.get('findings', [])):
+         if finding['id'] in finding_ids:raise ValueError('Duplicate finding ID')
+@@ -208,8 +221,8 @@ def validate_annotation(annotation, manifest, transcript):
+     return dict(ledger,**context)
+ 
+ 
+-def assemble_draft(annotation, manifest, transcript):
+-    ledger=validate_annotation(annotation,manifest,transcript)
++def assemble_draft(annotation, manifest, transcript, *, prior=()):
++    ledger=validate_annotation(annotation,manifest,transcript,prior=prior)
+     entry={'schema_version':annotation['schema_version'],'sha':manifest['task_sha'],'parent_shas':manifest['task_parents'],
+            'cutoff_date':manifest['cutoff_date'],'annotation':deepcopy(annotation),
+            'evidence':{key:{k:v for k,v in value.items() if k!='result'} for key,value in ledger.items()}}
+diff --git a/teacher/revision.py b/teacher/revision.py
+new file mode 100644
+index 0000000..1f788b3
+--- /dev/null
++++ b/teacher/revision.py
+@@ -0,0 +1,235 @@
++# SPDX-License-Identifier: MIT
++"""Verified inputs to a teacher revision. Admission records stay on the supervisor side."""
++from copy import deepcopy
++from dataclasses import dataclass
++import hashlib
++import json
++from pathlib import Path
++import re
++
++ARTIFACTS = ('draft.json', 'draft.md', 'raw-transcript.json', 'provenance.json')
++REVISION_FILES = ('prior-evidence.json', 'revision-input.json', 'revision.coverage.md')
++ID_MAP_VERSION = 1
++INSTRUCTION = (
++    "You are revising your own previous annotation for this position. The historical packet is unchanged. "
++    "The supplied previous annotation and tool records belong only to the named prior attempt. "
++    "Write a complete replacement annotation using the ordinary editorial schema; do not return a patch. "
++    "Keep the mechanisms and supported findings that the previous annotation established, examine the supplied "
++    "pointer-only coverage request, and correct any claims you find unsupported. Cite every retained or added "
++    "statement using a supplied prior evidence ID or a new tool evidence ID. Previous prose itself is not evidence. "
++    "Prior tool records describe checks performed in the previous attempt, not checks newly executed in this session; "
++    "preserve their source/execution distinctions and limitations. New findings and changes must be supported by "
++    "permitted historical evidence. Nobody else will edit your prose. Do not mark this entry approved, canonical, "
++    "or training eligible."
++)
++# The literal phrasing is fixed. Only exact pointers into the historical task are admitted.
++POINTER = re.compile(
++    r'- What does `(?P<path>[A-Za-z0-9_.+/-]+)`'
++    r'(?: at lines (?P<start>[1-9][0-9]*)(?:–(?P<end>[1-9][0-9]*))?)?'
++    r'(?: in `(?P<symbol>[A-Za-z_][A-Za-z0-9_:.-]*)`)?'
++    r' (?:define|return|check|change)\?'
++)
++
++
++def sha256(raw):
++    return hashlib.sha256(raw).hexdigest()
++
++
++def regular(path):
++    from .ancestor_context import read_regular
++    return read_regular(path)
++
++
++def position_of(run):
++    match = re.fullmatch(r'commit-([0-9]{6})-[0-9]{3}', Path(run).name)
++    if not match:
++        raise ValueError('Revision requires a named commit attempt')
++    return int(match[1])
++
++
++def coverage_bytes(path, expected, manifest):
++    raw = regular(path)
++    if sha256(raw) != expected:
++        raise ValueError('Revision coverage digest mismatch')
++    if len(raw) > 4096:
++        raise ValueError('Revision coverage exceeds 4096 bytes')
++    lines = raw.decode('utf-8').removesuffix('\n').split('\n')
++    if not 1 <= len(lines) <= 12:
++        raise ValueError('Revision coverage must contain 1–12 bounded pointer questions')
++    paths = set(manifest['task_changed_files'])
++    for parent in manifest['task_parents']:
++        paths.update(manifest['commits'][parent]['files'])
++    for line in lines:
++        match = POINTER.fullmatch(line)
++        if (not match or match['path'] not in paths
++                or match['end'] and int(match['end']) < int(match['start'])):
++            raise ValueError('Revision coverage must contain only questions pointing to task or parent paths')
++    return raw
++
++
++def pairs(transcript):
++    """Extract completed call/result pairs without retaining any surrounding messages."""
++    from .editorial import evidence_ledger
++    ledger = evidence_ledger(transcript, complete=True)
++    return [
++        {'id': message['call_id'], 'tool': message['name'],
++         'arguments': ledger[message['call_id']]['arguments'],
++         'result': message['content'], 'result_sha256': ledger[message['call_id']]['result_sha256']}
++        for message in transcript if message['role'] == 'tool'
++    ]
++
++
++def prior_messages(records):
++    messages = []
++    for record in records:
++        identity = record['id']
++        messages.extend((
++            {'role': 'assistant', 'calls': [
++                {'id': identity, 'tool': record['tool'], 'arguments': record['arguments']}]},
++            {'role': 'tool', 'call_id': identity, 'name': record['tool'], 'content': record['result']},
++        ))
++    return messages
++
++
++def selected_annotation(transcript, provenance):
++    """Historic runs lack phase tags; require one structured final in the selected turn."""
++    repair = provenance.get('validation_repair')
++    events = [row for row in transcript if row['role'] == 'validation']
++    if repair:
++        if len(events) != 1:
++            raise ValueError('Missing or ambiguous revision source repair')
++        candidates = range(events[0]['prefix_end'] + 2, len(transcript))
++    else:
++        candidates = range(len(transcript))
++    finals = []
++    last_text = None
++    for index in candidates:
++        message = transcript[index]
++        if message['role'] != 'assistant' or 'content' not in message:
++            continue
++        last_text = index
++        try:
++            value = json.loads(message['content'])
++        except json.JSONDecodeError:
++            continue  # Historical commentary can be plain text.
++        if isinstance(value, dict) and 'schema_version' in value:
++            finals.append((index, value))
++    if (len(finals) != 1 or finals[0][0] != last_text
++            or repair and finals[0][0] != events[0]['selected_final_index']):
++        raise ValueError('Missing or ambiguous final annotation')
++    return finals[0][1]
++
++
++def remap(annotation, identities):
++    result = deepcopy(annotation)
++    claims = [claim for field in ('problem', 'reasoning', 'impact', 'source_notes') for claim in result[field]]
++    claims.extend(claim for chapter in result['chapters'] for claim in chapter['claims'])
++    for claim in claims:
++        claim['evidence'] = [identities.get(ref, ref) for ref in claim['evidence']]
++    for finding in result.get('findings', []):
++        finding['source_evidence'] = [identities[ref] for ref in finding['source_evidence']]
++        for check in finding['verification']:
++            check['evidence'] = [identities[ref] for ref in check['evidence']]
++    return result
++
++
++@dataclass
++class Revision:
++    binding: dict
++    annotation: dict
++    records: list
++    coverage: bytes
++
++    @property
++    def prior(self):
++        return prior_messages(self.records)
++
++    def extend(self, session):
++        session.initial[0]['content'] += '\n\n' + INSTRUCTION
++        task = json.loads(session.initial[1]['content'])
++        task['revision'] = {
++            'prior_annotation': self.annotation,
++            'prior_evidence': self.records,
++            'coverage_questions': self.coverage.decode(),
++        }
++        session.initial[1]['content'] = json.dumps(task, sort_keys=True)
++        session.revision_prior = self.prior
++
++
++def prepare(packet, output, binding):
++    """Read exactly the bound source, project it to data, and revalidate it."""
++    from .codex_adapter import require_approval_model
++    from .editorial import render
++    from .validation_repair import verify_final
++
++    packet, output = Path(packet), Path(output)
++    source = Path(binding['revision_of_run'])
++    position = binding['position']
++    if (position_of(output) != position or position_of(source) != position
++            or output.resolve() == source.resolve()):
++        raise ValueError('Revision source and destination must be distinct attempts at the same position')
++    raw_manifest = regular(packet/'manifest.json')
++    manifest = json.loads(raw_manifest)
++    if (packet.resolve() != Path(binding['packet']).resolve()
++            or sha256(raw_manifest) != binding['packet_manifest_sha256']):
++        raise ValueError('Revision requires the identical original packet')
++    if manifest['task_sha'] != binding['task_sha']:
++        raise ValueError('Revision task SHA mismatch')
++    if 'coverage_request' in manifest:
++        raise ValueError('Original packet has attempt-specific coverage; review required')
++    originals = {name: regular(source/name) for name in ARTIFACTS}
++    if {name: sha256(raw) for name, raw in originals.items()} != binding['prior_artifacts']:
++        raise ValueError('Revision source artifact digest mismatch')
++    provenance = json.loads(originals['provenance.json'])
++    require_approval_model(source, provenance)
++    if (provenance.get('attempt_kind') == 'revision'
++            or provenance.get('packet_manifest_sha256') != binding['packet_manifest_sha256']
++            or provenance.get('input_mode') != 'entry_analysis' or provenance.get('published') is not False):
++        raise ValueError('Revision source must be a fresh historical annotation on the same packet')
++    transcript = json.loads(originals['raw-transcript.json'])
++    annotation = selected_annotation(transcript, provenance)
++    draft, _ = verify_final(annotation, manifest, transcript, provenance)
++    if (draft != json.loads(originals['draft.json'])
++            or render(draft).encode() != originals['draft.md']):
++        raise ValueError('Revision source annotation does not reproduce its draft and rendering')
++
++    if provenance.get('token_usage') != transcript[0].get('teacher_token_usage'):
++        raise ValueError('Prior token usage does not match its transcript')
++    records = pairs(transcript)
++    prefix = 'prior:' + binding['prior_artifacts']['raw-transcript.json'] + ':'
++    identities = {record['id']: prefix + record['id'] for record in records}
++    for record in records:
++        record['id'] = identities[record['id']]
++    coverage = coverage_bytes(Path(binding['coverage_path']), binding['coverage_sha256'], manifest)
++    return Revision(binding, remap(annotation, identities), records, coverage)
++
++
++def initial_input(session):
++    from .codex_adapter import thread_parameters
++    instructions = thread_parameters(session, '.')
++    return {**{key: instructions[key] for key in ('baseInstructions', 'developerInstructions')},
++            'user': session.initial[1]['content']}
++
++
++def restore(run, packet, provenance, transcript):
++    """Rebuild revision context from originals and verify the saved wire input."""
++    from .session import FreshSession
++    if provenance.get('attempt_kind') != 'revision':
++        return None
++    metadata = provenance['revision']
++    if (provenance.get('reviewer_assisted') is not True
++            or provenance.get('guidance_version') != json.loads(regular(Path(packet)/'manifest.json')).get('guidance_version', 1)
++            or metadata['id_map_version'] != ID_MAP_VERSION):
++        raise ValueError('Invalid revision provenance')
++    revision = prepare(packet, run, metadata['source'])
++    artifacts = {name: regular(run/name) for name in REVISION_FILES}
++    if {name: sha256(raw) for name, raw in artifacts.items()} != metadata['artifacts']:
++        raise ValueError('Revision input artifact digest mismatch')
++    session = FreshSession(packet)
++    revision.extend(session)
++    if (json.loads(artifacts['prior-evidence.json']) != revision.records
++            or artifacts['revision.coverage.md'] != revision.coverage
++            or json.loads(artifacts['revision-input.json']) != initial_input(session)
++            or [row['content'] for row in transcript[:2]] != [row['content'] for row in session.initial]):
++        raise ValueError('Revision inputs differ from the verified source')
++    return revision
+diff --git a/teacher/validation_repair.py b/teacher/validation_repair.py
+index 03e3fea..dfa0832 100644
+--- a/teacher/validation_repair.py
++++ b/teacher/validation_repair.py
+@@ -66,7 +66,7 @@ def repair_metadata(transcript, policy=POLICY):
+             'validation_repair_selected_final_index':event['selected_final_index']}
+ 
+ 
+-def verify_final(annotation, manifest, transcript, provenance):
++def verify_final(annotation, manifest, transcript, provenance, *, prior=()):
+     """Historical unmarked runs retain their path; marked repairs fail closed."""
+     events=[(i,m) for i,m in enumerate(transcript) if m.get('role')=='validation']
+     marked='validation_repair_policy' in provenance or 'validation_repair' in provenance
+@@ -81,7 +81,7 @@ def verify_final(annotation, manifest, transcript, provenance):
+                            ('validation_repair_policy', 'validation_repair_enabled')
+                            for k in provenance)):
+             raise ValueError('Unexpected repair provenance on unrepaired run')
+-        return assemble_draft(annotation, manifest, transcript)
++        return assemble_draft(annotation, manifest, transcript, prior=prior)
+     if not marked or type(provenance.get('validation_repair')) is not bool or len(events)!=1:
+         raise ValueError('Missing or ambiguous validation repair provenance')
+     if provenance.get('validation_repair_enabled') is False:
+@@ -122,7 +122,7 @@ def verify_final(annotation, manifest, transcript, provenance):
+         raise ValueError('Validation repair provenance mismatch')
+     # Reproduce the refusal against ONLY evidence available at that first final.
+     try:
+-        assemble_draft(json.loads(original['content']),manifest,transcript[:i])
++        assemble_draft(json.loads(original['content']),manifest,transcript[:i],prior=prior)
+     except ValueError as error:
+         refusal = refusal_fields(error, event['policy'])
+         if not eligible(error) or any(event[key] != value for key, value in refusal.items()):
+@@ -132,7 +132,7 @@ def verify_final(annotation, manifest, transcript, provenance):
+     final=json.loads(selected['content'])
+     if final!=annotation:
+         raise ValueError('Published annotation differs from selected repaired final')
+-    return assemble_draft(final,manifest,transcript)
++    return assemble_draft(final,manifest,transcript,prior=prior)
+ 
+ 
+ def disclosure(transcript, policy=POLICY):
+diff --git a/tests/test_revision.py b/tests/test_revision.py
+new file mode 100644
+index 0000000..282eb82
+--- /dev/null
++++ b/tests/test_revision.py
+@@ -0,0 +1,340 @@
++# SPDX-License-Identifier: MIT
++"""Revision isolation, provenance and replay with an offline transport."""
++from contextlib import ExitStack, nullcontext
++from copy import deepcopy
++import json
++from pathlib import Path
++import shutil
++import threading
++import unittest
++from unittest.mock import patch
++
++from orchestration import run_ahead as queue
++from teacher import cycle
++from teacher.ancestor_context import approve_run, attach_entries
++from teacher.author import author, author_revision, write_json
++from teacher.editorial import validate_annotation
++from teacher.revision import ARTIFACTS, INSTRUCTION, prepare, restore, sha256
++from teacher.runner import Runner
++from teacher.session import FreshSession
++from test_codex_teacher import FakeTransport
++from test_editorial import fixture
++from test_run_ahead import state
++import test_ancestor_context
++import test_teacher_packet
++
++
++class Transport(FakeTransport):
++    def __enter__(self):
++        return self
++
++    def __exit__(self, *_):
++        pass
++
++
++def usage_event(input_tokens, cached, output):
++    return dict(method='thread/tokenUsage/updated', params=dict(
++        threadId='fresh', turnId='turn', tokenUsage={'total': {
++            'inputTokens': input_tokens, 'cachedInputTokens': cached, 'outputTokens': output,
++        }}))
++
++
++class RevisionTests(unittest.TestCase):
++    def setUp(self):
++        test_teacher_packet.PacketTests.setUp(self)
++        root, root_packet = test_ancestor_context.AncestorContextTests.run_fixture(self)
++        approve_run(root, root_packet, 'TEST', 'ROOT')
++        attach_entries(self.packet, [root])
++        manifest = self.packet/'manifest.json'
++        write_json(manifest, dict(cycle.read(manifest), unreferenced_discussion_catalog=[],
++                                  unreferenced_discussion_truncated=False,
++                                  closed_discussion_catalog={'rows': [], 'limit': 20, 'truncated': False}))
++        self.source = self.root/'commit-000002-001'
++        self.target = self.root/'commit-000002-002'
++        self.coverage = self.root/'commit-000002-002.coverage.md'
++        self.coverage.write_text('- What does `a.py` at lines 1 define?\n')
++        transport = self.transport(fixture())
++        transport.events.insert(0, usage_event(5, 0, 1))
++        transport.events.insert(-1, usage_event(12, 6, 4))
++        author(self.packet, self.source, 'unused', transport_factory=lambda _: transport)
++        self.assertEqual(json.loads(transport.requests[2][1]['input'][0]['text']),
++                         json.loads(FreshSession(self.packet).initial[1]['content']))
++        self.assertNotIn(INSTRUCTION, transport.requests[1][1]['baseInstructions'])
++        self.bind()
++
++    tearDown = test_teacher_packet.PacketTests.tearDown
++
++    def bind(self):
++        self.binding = dict(
++            revision_of_run=str(self.source), position=2, task_sha=self.task,
++            packet=str(self.packet), packet_manifest_sha256=queue.digest(self.packet/'manifest.json'),
++            prior_artifacts={name: queue.digest(self.source/name) for name in ARTIFACTS},
++            coverage_path=str(self.coverage), coverage_sha256=queue.digest(self.coverage),
++        )
++
++    def transport(self, annotation, identity='read-1'):
++        transport = Transport()
++        transport.events[0]['params'].update(callId=identity, arguments={'commit': self.task})
++        transport.events[1]['params']['item']['text'] = json.dumps(annotation)
++        return transport
++
++    def test_projection_and_full_mock_revision(self):
++        path = self.source/'raw-transcript.json'
++        transcript = json.loads(path.read_text())
++        transcript[1]['content'] = 'PRIOR PROMPT SECRET'
++        transcript.insert(-1, {'role': 'assistant', 'content': 'PRIOR COMMENTARY SECRET'})
++        transcript.insert(-1, {'role': 'assistant', 'reasoning': 'PRIOR REASONING SECRET'})
++        write_json(path, transcript)
++        for name in ('review.json', 'verdict.md', 'ledger.json'):
++            (self.source/name).write_text(name + ' SECRET')
++        (self.root/'commit-000002-003').mkdir()
++        (self.root/'commit-000002-003'/'draft.json').write_text('OTHER ATTEMPT SECRET')
++        self.bind()
++        before = {p: p.read_bytes() for p in self.source.iterdir()}
++        prepared = prepare(self.packet, self.target, self.binding)
++        identity = prepared.records[0]['id']
++        self.assertEqual(identity, 'prior:' + queue.digest(path) + ':read-1')
++        annotation = fixture()
++        annotation['problem'][0]['text'] = 'Fresh teacher output for the revision.'
++        annotation['problem'][0]['evidence'] = [identity, 'new-read']
++        transport = self.transport(annotation, 'new-read')
++        transport.events.insert(-1, usage_event(30, 20, 8))
++        author_revision(self.packet, self.target, 'unused', revision=self.binding,
++                        transport_factory=lambda _: transport)
++        self.assertEqual(before, {p: p.read_bytes() for p in before})
++        wire = json.dumps(transport.requests)
++        self.assertNotIn('SECRET', wire)
++        self.assertIn(INSTRUCTION, transport.requests[1][1]['baseInstructions'])
++        provenance = cycle.read(self.target/'provenance.json')
++        raw = cycle.read(self.target/'raw-transcript.json')
++        self.assertEqual([m['call_id'] for m in raw if m['role'] == 'tool'], ['new-read'])
++        self.assertEqual(provenance['token_usage'], {'input': 30, 'cached_input': 20, 'output': 8})
++        self.assertTrue(provenance['reviewer_assisted'])
++        self.assertEqual(cycle.read(self.target/'draft.json')['annotation'], annotation)
++        self.assertEqual(cycle.read(self.target/'coverage.json')['revision_reads']['prior']['tool_calls'], 1)
++        with self.assertRaisesRegex(ValueError, 'through the review queue'):
++            approve_run(self.target, self.packet, 'reviewer', 'note')
++        evidence = self.root/'evidence'
++        evidence.mkdir()
++        from teacher.approval_policy import assess
++        self.assertEqual(assess(self.target, self.packet, self.repo)['tier'], 'full_review')
++        with patch.object(cycle, 'validate_bundle'):
++            report = cycle.validate_run(self.target, self.packet, self.repo, evidence, 2)
++        self.assertEqual(report['prior_token_usage'], {'input': 12, 'cached_input': 6, 'output': 4})
++        self.assertEqual((report['prior_identical_replayed_calls'], report['identical_replayed_calls']), (1, 1))
++        review = approve_run(self.target, self.packet, 'reviewer', 'note', revision_validation=report)
++        self.assertTrue(review['ancestor_context_approved'])
++        self.assertFalse(review['training_eligible'] or review['canonical_approved'])
++        (self.target/'prior-evidence.json').write_text('[]')
++        with self.assertRaisesRegex(ValueError, 'artifact digest'):
++            restore(self.target, self.packet, provenance, raw)
++
++    def test_refuses_changed_or_missing_sources(self):
++        for name in ARTIFACTS:
++            with self.subTest(name=name):
++                path = self.source/name
++                original = path.read_bytes()
++                path.unlink()
++                with self.assertRaises(ValueError):
++                    prepare(self.packet, self.target, self.binding)
++                path.write_bytes(original + b' ')
++                with self.assertRaisesRegex(ValueError, 'artifact digest'):
++                    prepare(self.packet, self.target, self.binding)
++                path.write_bytes(original)
++
++    def test_wrong_position_task_manifest_or_packet(self):
++        with self.assertRaisesRegex(ValueError, 'same position'):
++            prepare(self.packet, self.root/'commit-000003-002', self.binding)
++        with self.assertRaisesRegex(ValueError, 'task SHA'):
++            prepare(self.packet, self.target, dict(self.binding, task_sha=self.future))
++        alternate = self.root/'alternate-packet'
++        shutil.copytree(self.packet, alternate)
++        with self.assertRaisesRegex(ValueError, 'identical original packet'):
++            prepare(alternate, self.target, self.binding)
++        manifest = self.packet/'manifest.json'
++        manifest.write_bytes(manifest.read_bytes() + b' ')
++        with self.assertRaisesRegex(ValueError, 'identical original packet'):
++            prepare(self.packet, self.target, self.binding)
++
++    def test_coverage_exact_bytes_and_fact_rejected(self):
++        self.coverage.write_text('- What does `a.py` define?\n- a.py returns 2.\n')
++        with self.assertRaisesRegex(ValueError, 'coverage digest'):
++            prepare(self.packet, self.target, self.binding)
++        self.bind()
++        with self.assertRaisesRegex(ValueError, 'only questions'):
++            prepare(self.packet, self.target, self.binding)
++        manifest = self.packet/'manifest.json'
++        value = cycle.read(manifest)
++        write_json(manifest, dict(value, coverage_request={}))
++        self.bind()
++        with self.assertRaisesRegex(ValueError, 'attempt-specific coverage'):
++            prepare(self.packet, self.target, self.binding)
++
++    def test_ambiguous_finals_and_trial_source_rejected(self):
++        raw = self.source/'raw-transcript.json'
++        original = cycle.read(raw)
++        for transcript in (original[:-1], [*original, original[-1]],
++                           [*original[:-1], {'role': 'assistant', 'content': '{}'}]):
++            write_json(raw, transcript)
++            self.bind()
++            with self.assertRaisesRegex(ValueError, 'final annotation'):
++                prepare(self.packet, self.target, self.binding)
++        write_json(raw, original)
++        provenance = self.source/'provenance.json'
++        write_json(provenance, dict(cycle.read(provenance), trial_only=True))
++        self.bind()
++        with self.assertRaisesRegex(ValueError, 'non-trial'):
++            prepare(self.packet, self.target, self.binding)
++
++    def test_forged_prior_id_and_exact_replay(self):
++        revision = prepare(self.packet, self.target, self.binding)
++        annotation = deepcopy(revision.annotation)
++        prior = revision.prior
++        validate_annotation(annotation, cycle.read(self.packet/'manifest.json'), [], prior=prior)
++        with self.assertRaisesRegex(ValueError, 'Reserved prior'):
++            validate_annotation(annotation, cycle.read(self.packet/'manifest.json'), prior)
++        annotation['problem'][0]['evidence'] = ['prior:' + '0' * 64 + ':read-1']
++        with self.assertRaisesRegex(ValueError, 'Unknown or unsuccessful'):
++            validate_annotation(annotation, cycle.read(self.packet/'manifest.json'), [], prior=prior)
++        call, result = prior[0]['calls'][0], prior[1]
++        runner = Runner(self.packet)
++        cycle.replay_result(runner, call, result, exact=True)
++        for wrong_call, wrong_result in ((call, dict(result, content=result['content'] + ' ')),
++                                        (dict(call, arguments={'commit': self.future}), result)):
++            with self.assertRaisesRegex(ValueError, 'replay mismatch'):
++                cycle.replay_result(runner, wrong_call, wrong_result, exact=True)
++
++    def test_request_discloses_comparison_replays_and_first_three_usage(self):
++        item = {'revision_of_run': str(self.source), 'revision_number': 1,
++                'revision_source': self.binding, 'completed_record': {'validation': 'validation.json'},
++                'revision_admin': {}, 'spec': 'spec.json'}
++        report = dict(status='validated', revision={'source': self.binding},
++                      prior_identical_replayed_calls=12, identical_replayed_calls=2,
++                      prior_token_usage=None, token_usage={'input': 30, 'cached_input': 20, 'output': 8})
++        write_json(self.root/'validation.json', report)
++        write_json(self.root/'spec.json', {})
++        item['spec_sha256'] = queue.digest(self.root/'spec.json')
++        disclosure = queue.revision_disclosure(item, report)
++        for expected in ('First live revision', 'Line-by-line comparison requested', 'Prior calls replayed: 12',
++                         'New calls replayed: 2', 'Fresh attempt tokens: unavailable', '"cached_input": 20'):
++            self.assertIn(expected, disclosure)
++        self.assertIn('Revision tokens:', queue.revision_disclosure(dict(item, revision_number=3), report))
++        self.assertNotIn('Revision tokens:', queue.revision_disclosure(dict(item, revision_number=4), report))
++        text = disclosure + '\n' + '\n'.join(f'### {heading}\n\nObserved change.' for heading in
++                                                ('Kept', 'Added', 'Removed', 'Corrected'))
++        with patch.object(queue, 'ROOT', self.root), patch.object(queue, 'revision_request_files', return_value=[]):
++            queue.validate_revision_request(item, text)
++            with self.assertRaisesRegex(ValueError, 'side-by-side'):
++                queue.validate_revision_request(item, text.replace('### Corrected', '### Other'))
++            with self.assertRaisesRegex(ValueError, 'disclosure'):
++                queue.validate_revision_request(item, text.replace('New calls replayed: 2', 'New calls replayed: 1'))
++            report['revision']['source'] = {}
++            write_json(self.root/'validation.json', report)
++            with self.assertRaisesRegex(ValueError, 'validated reserved source'):
++                queue.validate_revision_request(item, text)
++
++    def test_prepared_revision_requires_explicit_mode_and_reaches_review(self):
++        root = self.root
++        run = '.teacher/runs/commit-000002-002'
++        packet = '.teacher/retrieval/000002-001'
++        (root/run).parent.mkdir(parents=True)
++        (root/packet).parent.mkdir(parents=True)
++        (root/'reviews/verdicts').mkdir(parents=True)
++        (root/'reports').mkdir()
++        self.packet.rename(root/packet)
++        store = root/'.teacher/blob-store'
++        store.mkdir()
++        for blob in (root/packet/'blobs').iterdir():
++            (store/blob.name).hardlink_to(blob)
++        authorization = root/'reviews/verdicts/recovery.md'
++        authorization.write_text('Authorise revision')
++        verdict = root/'reviews/verdicts/previous.md'
++        verdict.write_text('Rejected')
++        catalog = root/'reports/commit-000002-catalog-selection-001.json'
++        write_json(catalog, {})
++        self.coverage = root/'reviews/verdicts/commit-000002-002.coverage.md'
++        self.coverage.write_text('- What does `a.py` define?\n')
++        def relative(path):
++            return str(Path(path).relative_to(root))
++        source = dict(self.binding, coverage_path=str(self.coverage),
++                      coverage_sha256=queue.digest(self.coverage))
++        spec = dict(run=run, packet=packet, position=2, kind='forward',
++                    revision_of_run=self.source.name,
++                    authorization={'path': relative(authorization), 'sha256': queue.digest(authorization)})
++        descriptor = root/'spec.json'
++        write_json(descriptor, spec)
++        journal = root/'journal.json'
++        current = state()
++        current['history_tip'] = self.task
++        current['review_queue'].append(dict(run=self.source.name, status='rejected', position=2,
++                                            verdict=relative(verdict), verdict_sha256=queue.digest(verdict)))
++        current['retry_only'] = {'position': 2, 'kind': 'forward'}
++        write_json(journal, current)
++        report = dict(status='validated', revision={'source': source}, prior_identical_replayed_calls=1,
++                      identical_replayed_calls=2, prior_token_usage=None, token_usage=None)
++        with ExitStack() as stack:
++            stack.enter_context(patch.object(queue, 'ROOT', root))
++            stack.enter_context(patch.object(cycle, 'relative', side_effect=relative))
++            stack.enter_context(patch.object(cycle, 'git', return_value=('root\n'+self.task).encode()))
++            stack.enter_context(patch.object(cycle, 'validate_bundle'))
++            stack.enter_context(patch.object(queue, 'changed_files', return_value=['a.py']))
++            stack.enter_context(patch.object(queue, 'verify_selection', return_value=[]))
++            stack.enter_context(patch.object(queue, 'revision_source', return_value=source))
++            stack.enter_context(patch.object(queue, 'provenance_binding', return_value=nullcontext()))
++            stack.enter_context(patch.object(cycle, 'validate_run', return_value=report))
++            stack.enter_context(patch.object(cycle, 'make_summary', return_value={'hashes': {}}))
++            stack.enter_context(patch.object(cycle, 'skeleton', return_value='request skeleton'))
++            stack.enter_context(patch.object(queue, 'revision_request_files', return_value=[]))
++            mock_teacher = stack.enter_context(patch('teacher.author.author_revision'))
++            with self.assertRaisesRegex(ValueError, 'explicit author_revision'):
++                queue.prepared(journal, 'unused', descriptor)
++            result = queue.prepared(journal, 'unused', descriptor, revision=True)
++            mock_teacher.assert_called_once_with(root/packet, root/run, 'unused', revision=source)
++        self.assertEqual(result['status'], 'awaiting_review_request')
++        recorded = cycle.read(journal)
++        self.assertEqual(recorded['queue_stop'], {'outcome': 'retry_awaiting_verdict', 'run': run})
++        self.assertEqual(recorded['review_queue'][-1]['revision_source'], source)
++
++    def test_revision_failure_leaves_reservation_under_concurrent_attempts(self):
++        path = self.root/'state.json'
++        prior = '.teacher/runs/commit-000002-001'
++        packet = '.teacher/retrieval/000002-001'
++        verdict = self.root/'verdict.md'
++        verdict.write_text('Rejected')
++        spec = dict(self.binding, run='.teacher/runs/commit-000002-002', revision_of_run=prior,
++                    packet=packet, kind='forward', coverage={
++                        'path': 'reviews/verdicts/commit-000002-002.coverage.md',
++                        'sha256': self.binding['coverage_sha256'],
++                    }, authorization={'path': 'verdict.md', 'sha256': queue.digest(verdict)})
++        journal = state()
++        journal['review_queue'].append(dict(
++            run=prior, status='rejected', position=2, kind='forward', packet=packet, token='rejected',
++            verdict='verdict.md', verdict_sha256=queue.digest(verdict),
++            packet_manifest_sha256=spec['packet_manifest_sha256']))
++        journal.update(retry_only=dict(kind='forward', position=2, stopped_token='rejected'),
++                       recovery_log=[dict(stop={'run': prior}, **spec['authorization'])])
++        journal['recovery_log'][0]['authorization'] = journal['recovery_log'][0].pop('path')
++        write_json(path, journal)
++        errors = []
++        ready = threading.Barrier(2)
++        def reserve():
++            ready.wait()
++            try:
++                with queue.transaction(path) as current:
++                    queue.revision_source(current, spec, {'task_sha': self.task})
++                    item = queue.reserve(current, position=2, kind='forward', files=[], run=spec['run'], packet=packet)
++                    current['review_queue'][-1]['revision_of_run'] = prior
++                    queue.finish(current, item['token'], stop={'run': spec['run']})
++            except ValueError as error:
++                errors.append(str(error))
++
++        with patch.object(queue, 'ROOT', self.root), patch.object(queue, 'check_verdict'):
++            threads = [threading.Thread(target=reserve) for _ in range(2)]
++            for thread in threads:
++                thread.start()
++            for thread in threads:
++                thread.join()
++            self.assertEqual(errors, ['A revision is already reserved for this rejection'])
++            final = cycle.read(path)
++            self.assertEqual(final['review_queue'][-1]['status'], 'failed')
++            self.assertEqual(final['review_queue'][-1]['revision_of_run'], prior)

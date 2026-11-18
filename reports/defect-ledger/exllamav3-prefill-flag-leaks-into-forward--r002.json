@@ -1,0 +1,265 @@
+{
+  "defect_id": "exllamav3-prefill-flag-leaks-into-forward",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "fixes": [],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+      "run": ".teacher/runs/commit-000322-002",
+      "local_id": "prefill-flag-can-leak-into-ordinary-forward",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "prefill-flag-can-leak-into-ordinary-forward",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited prefill shortcut still depends on mutable caller parameters that Model.prefill leaves set.",
+        "trigger": "After Model.prefill reaches its last cache-affecting module, reuse the same params dictionary for ordinary Model.forward without removing or resetting prefill, and reach a TransformerBlock with attention.",
+        "expected_behavior": "An ordinary forward should apply the residual and feed-forward computations rather than the last-cache-layer shortcut.",
+        "actual_behavior": "Model.forward does not reset the flag. The sequential block returns immediately after attention with the incoming residual, skipping the attention residual update and MLP. The new FP16 fallback does not change this.",
+        "locations": [
+          {
+            "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.prefill"
+          },
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_22c21761b10042c7a6efae99a82d1b7a",
+          "call_f8108594c73a445fa2f8558a32dcc1c2",
+          "call_a6812e014dd140699d98b8634761887a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the parameter mutation and generic dispatch, searched prefill call sites, and checked that the minimal generation example supplies a fresh dictionary for normal forward.",
+            "evidence": [
+              "call_9e705bab9a8a47c5bbb0c613a36f4500",
+              "call_628ded0ed52841ac976a7a41925d19ee",
+              "call_22c21761b10042c7a6efae99a82d1b7a",
+              "call_7c5cb12f981640c1b7df999e027deb00"
+            ],
+            "limits": "The direct API reuse scenario is conditional; this is not evidence that the bundled generator or example reuses the dictionary."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+      "run": ".teacher/runs/commit-000323-002",
+      "local_id": "reused-prefill-params-skip-residual-updates",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "reused-prefill-params-skip-residual-updates",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited mutable prefill flag still affects the newly registered decoder.",
+        "trigger": "Reuse the same params dictionary for ordinary forward after prefill reaches the last KV block, without clearing prefill, and reach the attention call.",
+        "expected_behavior": "An ordinary forward should apply the attention post-norm and residual update, then run the MLP branch.",
+        "actual_behavior": "Model.prefill leaves prefill true; neither forward nor the new prepare_inputs clears it. TransformerBlock returns after attention without updating the residual or running the MLP.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.prefill"
+          },
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_bdce74478f6a42d9be5f535ede3992bc",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_41802e68da05491d81439bd9482df94e",
+          "call_f1d761c99f2944a0a7610f0e35504e49",
+          "call_9172d703da83492b9a87f74f06244e80"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced dictionary mutation and block dispatch; the inspected generation example uses fresh dictionaries, and Job passes a literal prefill dictionary.",
+            "evidence": [
+              "call_bdce74478f6a42d9be5f535ede3992bc",
+              "call_7cbb1f759b0443c3b7aef777ac4db9b0",
+              "call_c9257d3b590a440fa685118310b136b1",
+              "call_f1d761c99f2944a0a7610f0e35504e49",
+              "call_9172d703da83492b9a87f74f06244e80"
+            ],
+            "limits": "Conditional direct-API reuse, not an observed bundled-generation failure."
+          }
+        ]
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit322-002-draft.json",
+      "sha256": "c700289120f849a21991315725d4769cbfba41eaba7312d68686624eb8f5abdb"
+    },
+    {
+      "file": "evidence/commit322-002-transcript.json",
+      "sha256": "c63cc587d7a8abf4015306d9c267be88e8c8bec45e2a213f3bfc22a0285dd30c"
+    },
+    {
+      "file": "evidence/commit322-002-verdict.md",
+      "sha256": "d26bca2e76bf7960b287f30212cb5a57e7450d0cf4c85b3aa0c1b66d952bf93e"
+    },
+    {
+      "file": "evidence/commit322-002-543c4b27-model.py",
+      "sha256": "05909392f426cb46d609c6a9567cf942ac828f9ddf701996e4f3530ce5183087"
+    },
+    {
+      "file": "evidence/commit322-002-543c4b27-transformer.py",
+      "sha256": "19a8c6fc4599529c134bd7f84663da0c39cf93f2a0779fe32c12b6d5425edeb3"
+    },
+    {
+      "file": "evidence/commit323-002-draft.json",
+      "sha256": "1aceccce56aa7e38674cddcbe32a6784ef418098b738f56fb63f9cf94cad6238"
+    },
+    {
+      "file": "evidence/commit323-002-transcript.json",
+      "sha256": "90eb1a0dbfeecac2c0fb47538f5682e7e453b45ef83d7d965d75a20ed4f22dd9"
+    },
+    {
+      "file": "evidence/commit323-002-verdict.md",
+      "sha256": "619163604ca4c48869edec69726ee5633ab182094886a326930d9bb412f5fe8b"
+    },
+    {
+      "file": "evidence/commit323-002-manifest.json",
+      "sha256": "2db35696090fe99235d38cdaad427e17f210cf017a027e8f14ec4fdf61dd0acd"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+      "available_at": "2025-07-15T20:42:36+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-draft.json",
+      "source_id": "evidence/commit322-002-draft.json",
+      "content_sha256": "c700289120f849a21991315725d4769cbfba41eaba7312d68686624eb8f5abdb",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-transcript.json",
+      "source_id": "evidence/commit322-002-transcript.json",
+      "content_sha256": "c63cc587d7a8abf4015306d9c267be88e8c8bec45e2a213f3bfc22a0285dd30c",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-verdict.md",
+      "source_id": "evidence/commit322-002-verdict.md",
+      "content_sha256": "d26bca2e76bf7960b287f30212cb5a57e7450d0cf4c85b3aa0c1b66d952bf93e",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-543c4b27-model.py",
+      "source_id": "evidence/commit322-002-543c4b27-model.py",
+      "content_sha256": "05909392f426cb46d609c6a9567cf942ac828f9ddf701996e4f3530ce5183087",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-543c4b27-transformer.py",
+      "source_id": "evidence/commit322-002-543c4b27-transformer.py",
+      "content_sha256": "19a8c6fc4599529c134bd7f84663da0c39cf93f2a0779fe32c12b6d5425edeb3",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+      "available_at": "2025-07-15T21:15:47+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+      "available_at": "2025-07-15T21:13:39+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-draft.json",
+      "source_id": "evidence/commit323-002-draft.json",
+      "content_sha256": "1aceccce56aa7e38674cddcbe32a6784ef418098b738f56fb63f9cf94cad6238",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-transcript.json",
+      "source_id": "evidence/commit323-002-transcript.json",
+      "content_sha256": "90eb1a0dbfeecac2c0fb47538f5682e7e453b45ef83d7d965d75a20ed4f22dd9",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-verdict.md",
+      "source_id": "evidence/commit323-002-verdict.md",
+      "content_sha256": "619163604ca4c48869edec69726ee5633ab182094886a326930d9bb412f5fe8b",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-manifest.json",
+      "source_id": "evidence/commit323-002-manifest.json",
+      "content_sha256": "2db35696090fe99235d38cdaad427e17f210cf017a027e8f14ec4fdf61dd0acd",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    }
+  ],
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "paths": [
+        "exllamav3/models/model.py",
+        "exllamav3/modules/transformer.py"
+      ],
+      "status": "source_supported",
+      "rationale": "Initial commit contains both the mutating prefill loop and the forward shortcut through the same caller parameters."
+    }
+  ],
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The inherited mutable prefill flag still affects the newly registered decoder.",
+  "trigger": "Reuse the same params dictionary for ordinary forward after prefill reaches the last KV block, without clearing prefill, and reach the attention call.",
+  "expected_behavior": "An ordinary forward should apply the attention post-norm and residual update, then run the MLP branch.",
+  "actual_behavior": "Model.prefill leaves prefill true; neither forward nor the new prepare_inputs clears it. TransformerBlock returns after attention without updating the residual or running the MLP.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Traced dictionary mutation and block dispatch; the inspected generation example uses fresh dictionaries, and Job passes a literal prefill dictionary.",
+      "evidence": [
+        "call_bdce74478f6a42d9be5f535ede3992bc",
+        "call_7cbb1f759b0443c3b7aef777ac4db9b0",
+        "call_c9257d3b590a440fa685118310b136b1",
+        "call_f1d761c99f2944a0a7610f0e35504e49",
+        "call_9172d703da83492b9a87f74f06244e80"
+      ],
+      "limits": "Conditional direct-API reuse, not an observed bundled-generation failure."
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+      "544ba423bf9c58c940dca6cb36a1aa93f6cda41a"
+    ],
+    "limits": "Prior observation: Conditional on direct reuse of the same params dictionary. No failure established in the bundled generator or example. At 323: Conditional direct-API reuse, not an observed bundled-generation failure."
+  },
+  "recorded_at": "2026-11-18T05:02:08.090321+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

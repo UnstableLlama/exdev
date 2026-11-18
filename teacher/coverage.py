@@ -84,10 +84,12 @@ def require_coverage(manifest, transcript):
     return report
 
 
-def run_coverage(packet, manifest, transcript):
+def run_coverage(packet, manifest, transcript, *, prior=()):
     """Validation coverage plus administrative metrics, never added to model instructions."""
     from pathlib import Path
     from .worker import load_blob
+    new_transcript = transcript
+    transcript = [*prior, *transcript]
     assigned=require_coverage(manifest,transcript)
     reads=observed_reads(transcript)
     ranges=[(start,end) for tool,args,start,end in reads
@@ -105,9 +107,21 @@ def run_coverage(packet, manifest, transcript):
         response=json.loads(m['content'])
         prose.append({'call_id':m['call_id'],'sha':args.get('commit'),'chapter':args.get('chapter',''),
                       'successful':response.get('ok') is True})
-    return {'assigned_coverage':assigned,'task_sections_total':len(sections),
+    report = {'assigned_coverage':assigned,'task_sections_total':len(sections),
             'fully_read_task_sections':complete,'task_read_complete':len(complete)==len(sections),
             'retrieval_usage':{'report_only':True,'index_available':'ancestor_search_blob' in manifest,
                 'task_files_available':'task_changed_files' in manifest,
                 'matching_target_count':len(targets),'matching_targets':[{'sha':s,'chapter':c} for s,c in targets],
                 'ancestor_prose_read_count':len(prose),'ancestor_prose_reads':prose}}
+
+    if prior:
+        report['revision_reads'] = {}
+        for label, records in (('prior', prior), ('new', new_transcript)):
+            ranges = [(start, end) for tool, args, start, end in observed_reads(records)
+                      if tool == 'git_show' and args['commit'] == manifest['task_sha']]
+            report['revision_reads'][label] = {
+                'fully_read_task_sections': [i for i, section in enumerate(sections)
+                                             if covered(ranges, section['offset'], section['offset'] + section['bytes'])],
+                'tool_calls': sum(row['role'] == 'tool' for row in records),
+            }
+    return report

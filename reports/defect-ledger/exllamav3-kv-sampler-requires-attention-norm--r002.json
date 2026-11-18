@@ -1,0 +1,244 @@
+{
+  "defect_id": "exllamav3-kv-sampler-requires-attention-norm",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "fixes": [],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+      "run": ".teacher/runs/commit-000322-002",
+      "local_id": "kv-sampler-still-requires-attention-norm",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "kv-sampler-still-requires-attention-norm",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The KV research sampler reconstructs the pre-attention path directly and does not inherit TransformerBlock.forward's fallback.",
+        "trigger": "Use sample_qkv on a model whose targeted TransformerBlock has active attention but attn_norm=None, and reach that target rather than returning cached samples.",
+        "expected_behavior": "If the sampler is to accept this block shape, it should project from the same FP16 residual input as the block.",
+        "actual_behavior": "It calls module.attn_norm.forward directly and would raise AttributeError before projecting or reaching module.forward.",
+        "locations": [
+          {
+            "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+            "path": "science/kv_quant_exp.py",
+            "symbol": "sample_qkv"
+          }
+        ],
+        "source_evidence": [
+          "call_753685cb3bb44a70aeb5279cce60720c",
+          "call_c2efcac45b744aca835dc2d3df4d13b8",
+          "call_a6812e014dd140699d98b8634761887a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Located the direct norm reader and traced the script's top-level sample_qkv call and target-layer branch.",
+            "evidence": [
+              "call_753685cb3bb44a70aeb5279cce60720c",
+              "call_c2efcac45b744aca835dc2d3df4d13b8"
+            ],
+            "limits": "The script targets a Llama checkpoint by default, and the inspected Llama builder supplies the norm. No failure is established for that default."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+      "run": ".teacher/runs/commit-000323-002",
+      "local_id": "research-sampler-bypasses-normless-fallback",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "research-sampler-bypasses-normless-fallback",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The inherited sampler precondition now excludes the normless EXAONE4 blocks.",
+        "trigger": "Point sample_qkv at an otherwise loadable EXAONE4 model and reach an uncached target layer.",
+        "expected_behavior": "A compatible sampler would use the same FP16 branch input as the block, apply Q/K normalization, and handle the absence of global-layer RoPE.",
+        "actual_behavior": "The sampler dereferences module.attn_norm.forward on None before it can call block.forward. Its later direct RoPE call is also unconditional, so adding only the input cast would not handle a global target.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "science/kv_quant_exp.py",
+            "symbol": "sample_qkv"
+          }
+        ],
+        "source_evidence": [
+          "call_9d330832d9044f5d8db6d47c65c7ff9e",
+          "call_c9257d3b590a440fa685118310b136b1",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_052d48f063e347c8b28dc172ea7250d1",
+          "call_9172d703da83492b9a87f74f06244e80"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the sampler's direct projection setup with the task builder and shared forward; the only literal caller is the research script itself.",
+            "evidence": [
+              "call_9d330832d9044f5d8db6d47c65c7ff9e",
+              "call_c9257d3b590a440fa685118310b136b1",
+              "call_bdce74478f6a42d9be5f535ede3992bc",
+              "call_052d48f063e347c8b28dc172ea7250d1",
+              "call_9172d703da83492b9a87f74f06244e80",
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62"
+            ],
+            "limits": "The script defaults to Llama; this does not affect ordinary EXAONE4 forward or generation."
+          }
+        ]
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit322-002-draft.json",
+      "sha256": "c700289120f849a21991315725d4769cbfba41eaba7312d68686624eb8f5abdb"
+    },
+    {
+      "file": "evidence/commit322-002-transcript.json",
+      "sha256": "c63cc587d7a8abf4015306d9c267be88e8c8bec45e2a213f3bfc22a0285dd30c"
+    },
+    {
+      "file": "evidence/commit322-002-verdict.md",
+      "sha256": "d26bca2e76bf7960b287f30212cb5a57e7450d0cf4c85b3aa0c1b66d952bf93e"
+    },
+    {
+      "file": "evidence/commit322-002-cf848114-kv_quant_exp.py",
+      "sha256": "cc13579e1ca270b35c2c57adce0e15033c9f70402b0fc8bada4a58f3d7c1d9c3"
+    },
+    {
+      "file": "evidence/commit323-002-draft.json",
+      "sha256": "1aceccce56aa7e38674cddcbe32a6784ef418098b738f56fb63f9cf94cad6238"
+    },
+    {
+      "file": "evidence/commit323-002-transcript.json",
+      "sha256": "90eb1a0dbfeecac2c0fb47538f5682e7e453b45ef83d7d965d75a20ed4f22dd9"
+    },
+    {
+      "file": "evidence/commit323-002-verdict.md",
+      "sha256": "619163604ca4c48869edec69726ee5633ab182094886a326930d9bb412f5fe8b"
+    },
+    {
+      "file": "evidence/commit323-002-manifest.json",
+      "sha256": "2db35696090fe99235d38cdaad427e17f210cf017a027e8f14ec4fdf61dd0acd"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "cf848114852240a51fb6b9e77c686051c39302b2",
+      "available_at": "2025-04-22T21:52:33+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+      "available_at": "2025-07-15T20:42:36+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-draft.json",
+      "source_id": "evidence/commit322-002-draft.json",
+      "content_sha256": "c700289120f849a21991315725d4769cbfba41eaba7312d68686624eb8f5abdb",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-transcript.json",
+      "source_id": "evidence/commit322-002-transcript.json",
+      "content_sha256": "c63cc587d7a8abf4015306d9c267be88e8c8bec45e2a213f3bfc22a0285dd30c",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-verdict.md",
+      "source_id": "evidence/commit322-002-verdict.md",
+      "content_sha256": "d26bca2e76bf7960b287f30212cb5a57e7450d0cf4c85b3aa0c1b66d952bf93e",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit322-002-cf848114-kv_quant_exp.py",
+      "source_id": "evidence/commit322-002-cf848114-kv_quant_exp.py",
+      "content_sha256": "cc13579e1ca270b35c2c57adce0e15033c9f70402b0fc8bada4a58f3d7c1d9c3",
+      "available_at": "2026-11-18T03:59:07.916236+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+      "available_at": "2025-07-15T21:15:47+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+      "available_at": "2025-07-15T21:13:39+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-draft.json",
+      "source_id": "evidence/commit323-002-draft.json",
+      "content_sha256": "1aceccce56aa7e38674cddcbe32a6784ef418098b738f56fb63f9cf94cad6238",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-transcript.json",
+      "source_id": "evidence/commit323-002-transcript.json",
+      "content_sha256": "90eb1a0dbfeecac2c0fb47538f5682e7e453b45ef83d7d965d75a20ed4f22dd9",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-verdict.md",
+      "source_id": "evidence/commit323-002-verdict.md",
+      "content_sha256": "619163604ca4c48869edec69726ee5633ab182094886a326930d9bb412f5fe8b",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit323-002-manifest.json",
+      "source_id": "evidence/commit323-002-manifest.json",
+      "content_sha256": "2db35696090fe99235d38cdaad427e17f210cf017a027e8f14ec4fdf61dd0acd",
+      "available_at": "2026-11-18T05:02:08.090321+00:00"
+    }
+  ],
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "cf848114852240a51fb6b9e77c686051c39302b2",
+      "paths": [
+        "science/kv_quant_exp.py"
+      ],
+      "status": "source_supported",
+      "rationale": "Adds the direct attention norm reader. The conditional compatibility gap with ordinary normless sequential forward is evidenced at 322, where forward begins handling that shape."
+    }
+  ],
+  "origin": "authoring_observation",
+  "classification": "external_compatibility",
+  "status": "suspected",
+  "description": "The inherited sampler precondition now excludes the normless EXAONE4 blocks.",
+  "trigger": "Point sample_qkv at an otherwise loadable EXAONE4 model and reach an uncached target layer.",
+  "expected_behavior": "A compatible sampler would use the same FP16 branch input as the block, apply Q/K normalization, and handle the absence of global-layer RoPE.",
+  "actual_behavior": "The sampler dereferences module.attn_norm.forward on None before it can call block.forward. Its later direct RoPE call is also unconditional, so adding only the input cast would not handle a global target.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Compared the sampler's direct projection setup with the task builder and shared forward; the only literal caller is the research script itself.",
+      "evidence": [
+        "call_9d330832d9044f5d8db6d47c65c7ff9e",
+        "call_c9257d3b590a440fa685118310b136b1",
+        "call_bdce74478f6a42d9be5f535ede3992bc",
+        "call_052d48f063e347c8b28dc172ea7250d1",
+        "call_9172d703da83492b9a87f74f06244e80",
+        "call_b97ba25f22a44e04b4cd4215ab5fbd62"
+      ],
+      "limits": "The script defaults to Llama; this does not affect ordinary EXAONE4 forward or generation."
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+      "544ba423bf9c58c940dca6cb36a1aa93f6cda41a"
+    ],
+    "limits": "Prior observation: Conditional on targeting an active normless attention branch and taking the uncached path. The default Llama builder supplies the norm. At 323: The script defaults to Llama; this does not affect ordinary EXAONE4 forward or generation."
+  },
+  "recorded_at": "2026-11-18T05:02:08.090321+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

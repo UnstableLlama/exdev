@@ -24,6 +24,13 @@ def author(packet, output, auth_file, transport_factory=CodexTransport, *, valid
     return _author(packet, output, auth_file, transport_factory, validation_repair=validation_repair)
 
 
+def author_revision(packet, output, auth_file, *, revision, transport_factory=CodexTransport):
+    """Supervisor-only entry point for a separately reserved revision."""
+    from .revision import prepare
+    prepared = prepare(packet, output, revision)
+    return _author(packet, output, auth_file, transport_factory, revision=prepared)
+
+
 def author_trial(packet, output, auth_file, *, model=TRIAL_MODEL, transport_factory=CodexTransport):
     """Supervisor-only unpublished model comparison; no CLI or walk override."""
     base=(ROOT/'.teacher/trials/teacher-model-001').resolve()
@@ -35,7 +42,7 @@ def author_trial(packet, output, auth_file, *, model=TRIAL_MODEL, transport_fact
     return _author(packet,output,auth_file,transport_factory,model=model,trial=True)
 
 
-def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False, validation_repair=True):
+def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False, validation_repair=True, revision=None):
     packet,output=Path(packet).resolve(),Path(output).resolve()
     if output.is_relative_to(packet):
         raise ValueError('Draft output must be outside the immutable packet')
@@ -45,6 +52,8 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
     coverage=json.loads(coverage.read_text()).get('coverage_request')
     if coverage and output.name!=Path(coverage['path']).name.removesuffix('.coverage.md'):
         raise ValueError('Coverage request belongs to another attempt')
+    if revision:
+        revision.extend(session)
     output.mkdir(parents=True,exist_ok=False)
     manifest=(packet/'manifest.json').read_bytes()
     provenance={'model':model,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
@@ -61,13 +70,24 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
     if coverage:
         provenance['coverage_request']={k:coverage[k] for k in ('path','sha256')}
         provenance['reviewer_assisted']=True
+    if revision:
+        from .revision import ID_MAP_VERSION, REVISION_FILES, initial_input
+        write_json(output/'prior-evidence.json', revision.records)
+        write_json(output/'revision-input.json', initial_input(session))
+        (output/'revision.coverage.md').write_bytes(revision.coverage)
+        provenance.update(attempt_kind='revision', reviewer_assisted=True,
+                          guidance_version=json.loads(manifest).get('guidance_version', 1),
+                          revision={'source': revision.binding, 'id_map_version': ID_MAP_VERSION,
+                                    'artifacts': {name: hashlib.sha256((output/name).read_bytes()).hexdigest()
+                                                  for name in REVISION_FILES}})
+    provenance['token_usage'] = None
     provenance['validation_repair_enabled']=validation_repair
     provenance.update(repair_metadata([]))
     write_json(output/'provenance.json',provenance)
     write_json(output/'status.json',{'status':'running','published':False})
     def record(transcript):
         write_json(output/'raw-transcript.json',transcript)
-        provenance.update(repair_metadata(transcript))
+        provenance.update(repair_metadata(transcript), token_usage=transcript[0].get('teacher_token_usage'))
         write_json(output/'provenance.json',provenance)
     try:
         with (transport_factory(auth_file,model=model) if trial else transport_factory(auth_file)) as transport:
@@ -76,10 +96,17 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
         if manifest!=(packet/'manifest.json').read_bytes():
             raise ValueError('Packet changed during authoring')
         write_json(output/'draft.json',result['draft'])
-        if coverage: result['review']['reviewer_assisted']=True
+        if revision:
+            from .revision import restore, selected_annotation
+            restore(output, packet, provenance, result['transcript'])
+            if selected_annotation(result['transcript'], provenance) != result['draft']['annotation']:
+                raise ValueError('Revision final does not match the draft')
+            result['review'].update(attempt_kind='revision', revision_of_run=revision.binding['revision_of_run'])
+        if coverage or revision:
+            result['review']['reviewer_assisted']=True
         write_json(output/'review.json',result['review'])
         from .coverage import run_coverage
-        write_json(output/'coverage.json',run_coverage(packet,json.loads(manifest),result['transcript']))
+        write_json(output/'coverage.json',run_coverage(packet,json.loads(manifest),result['transcript'], prior=revision.prior if revision else ()))
         (output/'draft.md').write_text(render(result['draft']))
         write_json(output/'status.json',{'status':'draft','published':False})
         return output

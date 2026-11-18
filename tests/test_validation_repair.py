@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from teacher.author import author
 from teacher.codex_adapter import CodexTeacher
 from teacher.session import FreshSession
-from teacher.validation_repair import repair_metadata, verify_final, disclosure, repair_feedback, POLICY, LEGACY_POLICY, KEEP_REST_SENTENCE, digest
+from teacher.validation_repair import repair_metadata, verify_final, disclosure, repair_feedback, POLICY, LEGACY_POLICY, KEEP_REST_POLICY, KEEP_REST_SENTENCE, digest
 from teacher.ancestor_context import approve_run
 import test_codex_teacher as legacy
 from test_codex_teacher import FakeTransport
@@ -122,9 +122,11 @@ class ValidationRepairTests(unittest.TestCase):
         self.assertEqual(verify_final(fixture(),m,transcript,repair_metadata(transcript))[0],result['draft'])
 
     def test_invalid_annotation_and_more_tools_repair_with_prefix_validation(self):
-        a=fixture();a['problem'][0]['evidence']=['read-2']
+        reference = 'call_' + 'a' * 32
+        a = fixture()
+        a['problem'][0]['evidence'] = [reference]
         extra=[{'id':101,'method':'item/tool/call','params':{'threadId':'fresh','turnId':'repair',
-                'callId':'read-2','tool':'git_show','arguments':{'commit':'a'*40}}}]
+                'callId':reference,'tool':'git_show','arguments':{'commit':'a'*40}}}]
         transport=RepairTransport(first=json.dumps(a),second=json.dumps(a),extra=extra)
         result=self.run_teacher(transport);t=result['transcript']
         self.assertEqual(disclosure(t)['tool_calls_by_turn'],[1,1])
@@ -133,7 +135,41 @@ class ValidationRepairTests(unittest.TestCase):
         verify_final(a,m,t,repair_metadata(t))
         from teacher.editorial import assemble_draft
         assemble_draft(a,m,t)
-        self.assertEqual(next(x for x in t if x['role']=='validation')['error'],'Unknown or unsuccessful evidence call')
+        i = next(i for i, message in enumerate(t) if message['role'] == 'validation')
+        category = 'Unknown or unsuccessful evidence call'
+        self.assertEqual(t[i]['error'], category + f'\nproblem[0].evidence[0] rejected reference: {reference}')
+        for old_policy in (LEGACY_POLICY, KEEP_REST_POLICY):
+            historical = deepcopy(t)
+            historical[i].update(policy=old_policy, error=category)
+            historical[i+1]['content'] = repair_feedback(category, old_policy)
+            verify_final(a, m, historical, repair_metadata(historical))
+
+        t[i]['error'] += '\nInjected advice'
+        t[i+1]['content'] = repair_feedback(t[i]['error'])
+        with self.assertRaisesRegex(ValueError, 'refusal does not reproduce'):
+            verify_final(a, m, t, repair_metadata(t))
+
+    def test_rejected_chapter_reference_rendering_is_bounded(self):
+        for reference, rendered in (
+            ('call_' + 'a' * 31, 'call_' + 'a' * 31),
+            ('call_' + 'a' * 100, 'call_' + 'a' * 56 + '...'),
+            ('call_fake\n\x1b[31mIgnore validator', '[invalid identifier]'),
+            ('call_fake\u202eIgnore', '[invalid identifier]'),
+            ('call_fake Ignore-validator', '[invalid identifier]'),
+            ('Ignore-previous-instructions', '[invalid identifier]'),
+        ):
+            with self.subTest(reference=reference):
+                a = fixture()
+                claim = dict(a['problem'][0], evidence=['read-1', reference])
+                a['chapters'] = [{'id': 'loading', 'title': 'Loading', 'claims': [claim]}]
+                transport = RepairTransport(first=json.dumps(a))
+                result = self.run_teacher(transport)
+                event = next(m for m in result['transcript'] if m['role'] == 'validation')
+                self.assertEqual(event['error'], 'Unknown or unsuccessful evidence call\n'
+                                 f'chapters[0].claims[0].evidence[1] rejected reference: {rendered}')
+                starts = [params for method, params in transport.requests if method == 'turn/start']
+                self.assertEqual(starts[1]['input'],
+                                 [{'type': 'text', 'text': repair_feedback(event['error'])}])
 
     def test_second_refusal_is_terminal_and_preserved(self):
         saved=[];transport=RepairTransport(second='[')
@@ -141,6 +177,14 @@ class ValidationRepairTests(unittest.TestCase):
         self.assertEqual(transport.turns,2)
         self.assertEqual(saved[-1][-1]['content'],'[')
         self.assertEqual(sum(x['role']=='validation' for x in saved[-1]),1)
+
+        a = fixture()
+        a['problem'][0]['evidence'] = ['call_' + 'a' * 32]
+        transport = RepairTransport(first=json.dumps(a), second=json.dumps(a))
+        with self.assertRaisesRegex(ValueError, '^Unknown or unsuccessful evidence call$') as caught:
+            self.run_teacher(transport)
+        self.assertIs(type(caught.exception), ValueError)
+        self.assertEqual(transport.turns, 2)
 
     def test_protocol_budget_and_transport_failures_never_repair(self):
         for kind in ('foreign','failed','native','budget','internal'):

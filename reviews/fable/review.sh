@@ -36,6 +36,15 @@ for cl in a["c"]:
     if got!=json.loads(a["r"][cl["id"]]): bad+=1
     print(cl["tool"],json.dumps(cl["arguments"])[:170])
 print("replayed",len(a["c"]),"mismatch",bad)
+import os
+pe=f".teacher/runs/commit-{sys.argv[1]}-{sys.argv[2]}/prior-evidence.json"
+if os.path.exists(pe):
+    pbad=0; recs=json.load(open(pe))
+    for rec in recs:
+        try: got=r.invoke(rec["tool"],rec["arguments"])
+        except Exception as e: got={"EXC":str(e)}
+        if json.dumps(got)!=rec["result"]: pbad+=1
+    print("replayed-imported",len(recs),"mismatch",pbad)
 PY
 echo ===HINDSIGHT; grep -rl "reviews/verdicts\|defect-ledger" .teacher/retrieval/$1-$2 2>/dev/null | head -3; echo end
 C=$(git --git-dir=.sources/exllamav3.git show -s --format=%cI $S | xargs -I{} date -u -d {} +%Y-%m-%dT%H:%M:%SZ)

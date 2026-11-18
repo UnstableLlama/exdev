@@ -1,0 +1,455 @@
+{
+  "schema_version": 5,
+  "sha": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+  "parent_shas": [
+    "6171f9af3d4b477ccd43fdf8d7172d40fc770a38"
+  ],
+  "cutoff_date": "2025-07-16T09:49:18+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The AnyPrecision adapter already ignored ModuleNotFoundError, but a different ImportError from either of its two external class imports could abort compare_q.py before argument parsing or backend selection. That also blocked compare_q_logits.py, which imports dataset and tensor-saving helpers from compare_q.py without using AnyPrecision.",
+        "basis": "source",
+        "evidence": [
+          "call_e69fb9538d054ffd8e01a2c231f8c0e6",
+          "call_5b9a58b34c304ce2983dfb93856f661d",
+          "call_5fe84a009b8c44239cc5a717718e4b45"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch adds a silent ImportError handler to the existing try block around both AnyPrecision class imports. It neither retries the imports nor removes the adapter from dispatch. This lets startup continue past an optional backend's import failure, at the cost of losing the original diagnostic if that backend is later selected.",
+        "basis": "source",
+        "evidence": [
+          "call_a3dc81220c1e47058d632aa532313c60",
+          "call_e69fb9538d054ffd8e01a2c231f8c0e6",
+          "call_5b9a58b34c304ce2983dfb93856f661d"
+        ]
+      },
+      {
+        "text": "Turboderp's commit message attributes the problem to a Transformers version mismatch. The diff supports the narrower claim that comparison startup no longer stops on an ImportError from this optional import block. It does not change Transformers or repair a failing AnyPrecision installation.",
+        "basis": "source",
+        "evidence": [
+          "call_c4476a991e0546fbb8f7822f3da26d7b",
+          "call_a3dc81220c1e47058d632aa532313c60"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The only direct importer found in the parent tree was compare_q.py; compare_q_logits.py reaches the adapter indirectly. Both can now get past this specific import failure if their other imports succeed. The exception handler does not cover the adapter's own Torch import or the separate Transformers adapter's imports.",
+        "basis": "source",
+        "evidence": [
+          "call_fbbd0b36f4a64c018f4c9922214ee31c",
+          "call_37038e471dbc4c968e9c0c1919059b0b",
+          "call_5fe84a009b8c44239cc5a717718e4b45",
+          "call_e69fb9538d054ffd8e01a2c231f8c0e6",
+          "call_3d6a4ceb97dd45a6a4968780dae7f5d8",
+          "call_a3dc81220c1e47058d632aa532313c60"
+        ]
+      },
+      {
+        "text": "The six bundled AnyPrecision model specs still select the same loader and forward function. On a cache miss, the loader must construct the model and compute its storage statistics before the evaluation loop can call the forward function. A suppressed import can therefore still prevent all six specs from producing results.",
+        "basis": "source",
+        "evidence": [
+          "call_855aa3f41e7a40feb0b7413c671bc2fe",
+          "call_5b9a58b34c304ce2983dfb93856f661d",
+          "call_e69fb9538d054ffd8e01a2c231f8c0e6",
+          "call_a3dc81220c1e47058d632aa532313c60"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The AnyPrecision introduction entry records the original eager-import requirement. The later optional-import entry records how the ModuleNotFoundError guard deferred that requirement without guarding the loader, and separately records the Transformers storage-accounting failure with None class sentinels.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_71d9163456e143c4b56460f394baccee",
+          "call_c5169552430d45dba120172fe52b9115"
+        ]
+      },
+      {
+        "text": "Parent-tree searches found Transformers evaluation imports, a Transformers integration, and a transformers>=4.50.0 declaration in requirements_eval.txt, but no literal 'version mismatch' match. The only any_precision imports found were the two in the adapter. None of these occurrences identifies the incompatible version pair.",
+        "basis": "source",
+        "evidence": [
+          "call_d231a005476b485ca1baf0cfb95b6314",
+          "call_22e2cd619109467b9ee1592fad6f0ace",
+          "call_c8e2adaf7a4a467ca3f1b1f4eb04c8d5",
+          "call_6d5bfd8a18914df8b619984b5391f415"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d proposes changing EXL3's codebook multiplier and reports perplexity comparisons. Its shared compare_q.py path and evaluation context make it background for the benchmark, not evidence that it motivated the AnyPrecision import fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_f11fa762274345588b97d762afa0f0f1",
+          "call_a5da5d7337614ac7a5f0ecb7908ac874",
+          "call_5b9a58b34c304ce2983dfb93856f661d"
+        ]
+      },
+      {
+        "text": "Issue #58, \u201clinalg.cholesky error converting OpenBuddy (Qwen3) 32B QAT,\u201d reports NaNs and a conversion-time factorization failure that the reporter later could not reproduce. The reporter explicitly mentions eval/compare_q.py for KL-divergence plots, which connects the discussion to the evaluation script, not to the ImportError fixed here.",
+        "basis": "inference",
+        "evidence": [
+          "call_97849b9cf543413983d7836171c43d6e",
+          "call_3522b9f11c734c11817ff377b11e41ac",
+          "call_a3dc81220c1e47058d632aa532313c60"
+        ]
+      }
+    ],
+    "limitations": [
+      "The external AnyPrecision traceback, failing symbol, and incompatible Transformers versions are unestablished. The requirements file's lower bound is not a compatibility matrix.",
+      "The Python check used stub imports, a stub Torch decorator, and a dummy model. It did not load installed backends, run a real comparison CLI, or execute GPU inference.",
+      "Importer and caller reach is based on literal parent-tree searches and inspected call sites; dynamic imports and external callers are not covered. Only excerpts of PR #26 were inspected."
+    ],
+    "links": [
+      "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+      "db65151b07e7085ed47cafe890aa0dadb985eb5a"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Keep comparison startup independent of AnyPrecision import errors",
+        "claims": [
+          {
+            "text": "Both imports share one try block, with AnyPrecisionForCausalLM first. If that import fails, the second is not attempted; if only the second fails, the first binding remains. Neither handler supplies a replacement class, so successful module import does not imply a usable backend.",
+            "basis": "source",
+            "evidence": [
+              "call_a3dc81220c1e47058d632aa532313c60",
+              "call_e69fb9538d054ffd8e01a2c231f8c0e6"
+            ]
+          },
+          {
+            "text": "The bounded Python check injected failures at each import in the parent adapter and in an in-memory copy with the new handler. Plain ImportError moved from module startup to a NameError in the selected loader path: AnyPrecisionForCausalLM when the first import failed, AnyPrecisionLinear during storage accounting when only the second failed. ModuleNotFoundError already followed those deferred paths in the parent.",
+            "basis": "execution",
+            "evidence": [
+              "call_e69fb9538d054ffd8e01a2c231f8c0e6",
+              "call_a3dc81220c1e47058d632aa532313c60",
+              "call_5c048d01bc54452ab3db200669b2b03e"
+            ]
+          },
+          {
+            "text": "An alternative would be to record the import exception and report it only when AnyPrecision is selected, or to import the classes lazily inside its loader. Either would keep unrelated startup working while explaining why the selected backend is unavailable; the patch instead leaves the registries and loader unchanged.",
+            "basis": "inference",
+            "evidence": [
+              "call_a3dc81220c1e47058d632aa532313c60",
+              "call_5b9a58b34c304ce2983dfb93856f661d",
+              "call_e69fb9538d054ffd8e01a2c231f8c0e6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "anyprecision-import-failure-deferred-to-loader",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The optional import guard leaves the AnyPrecision backend registered even when a required class is unbound. The patch carries this behavior over for ModuleNotFoundError and extends it to other ImportErrors.",
+        "trigger": "In a fresh process, either AnyPrecision class import fails with an exception caught by the guard, other startup and dataset setup succeed, and an uncached comparison selects load_fn \"anyprecision\". For the second-import case, model construction must succeed and storage accounting must encounter a module.",
+        "expected_behavior": "Selecting the unavailable backend reports the import problem before attempting model construction or storage accounting.",
+        "actual_behavior": "A failure at the first import leaves AnyPrecisionForCausalLM undefined, so load_anyprecision raises NameError at from_quantized. A failure only at the second import leaves AnyPrecisionLinear undefined, so get_storage_info raises NameError on its first module check. Neither path reports the original import exception.",
+        "locations": [
+          {
+            "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+            "path": "eval/compare_q_anyprecision.py",
+            "symbol": "load_anyprecision"
+          },
+          {
+            "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+            "path": "eval/compare_q_anyprecision.py",
+            "symbol": "get_storage_info"
+          }
+        ],
+        "source_evidence": [
+          "call_a3dc81220c1e47058d632aa532313c60",
+          "call_e69fb9538d054ffd8e01a2c231f8c0e6",
+          "call_7185ac8fa2b04a3c90ba3884c880c636",
+          "call_fdeb4706ce8b4e5e95c6e375fa19ec70",
+          "call_5b9a58b34c304ce2983dfb93856f661d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent search found compare_q.py registering the loader and dispatching it through test_ppl. The adapter's load_anyprecision is the direct caller of its storage helper. compare_q_logits.py imports shared helpers but does not call this loader.",
+            "evidence": [
+              "call_7185ac8fa2b04a3c90ba3884c880c636",
+              "call_fdeb4706ce8b4e5e95c6e375fa19ec70",
+              "call_5b9a58b34c304ce2983dfb93856f661d",
+              "call_5fe84a009b8c44239cc5a717718e4b45"
+            ],
+            "limits": "Literal repository search; no external callers or real installed backend were tested."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "The patched-source harness reproduced both missing-name failures using synthetic import exceptions.",
+            "evidence": [
+              "call_5c048d01bc54452ab3db200669b2b03e"
+            ],
+            "limits": "In-memory diff application with stub dependencies, not an installed AnyPrecision or Transformers test."
+          }
+        ]
+      },
+      {
+        "id": "transformers-storage-none-sentinel-carried-over",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The sibling Transformers adapter still passes optional class sentinels to isinstance. The AnyPrecision-only patch leaves this earlier finding unchanged.",
+        "trigger": "A missing bitsandbytes import sets Linear4bit to None, a Transformers model loads successfully through one of compare_q.py's three Transformers loader selections, and storage accounting reaches a named module.",
+        "expected_behavior": "Skip the unavailable quantized class and continue checking the model's modules.",
+        "actual_behavior": "The first module check evaluates isinstance(module, None) and raises TypeError before returning storage metadata. Other missing optional classes can cause the same failure when their checks are reached.",
+        "locations": [
+          {
+            "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+            "path": "eval/compare_q_transformers.py",
+            "symbol": "get_storage_info"
+          }
+        ],
+        "source_evidence": [
+          "call_3d6a4ceb97dd45a6a4968780dae7f5d8",
+          "call_fdeb4706ce8b4e5e95c6e375fa19ec70",
+          "call_5b9a58b34c304ce2983dfb93856f661d",
+          "call_a3dc81220c1e47058d632aa532313c60"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "load_transformers calls the storage helper directly; the auto and auto-BF16 wrappers delegate to it. The task diff does not modify this path.",
+            "evidence": [
+              "call_3d6a4ceb97dd45a6a4968780dae7f5d8",
+              "call_fdeb4706ce8b4e5e95c6e375fa19ec70",
+              "call_5b9a58b34c304ce2983dfb93856f661d",
+              "call_a3dc81220c1e47058d632aa532313c60"
+            ],
+            "limits": "Requires a successful model load followed by storage accounting; the data-tokenization path does not call this helper."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "The first isinstance generator expression with a None sentinel raised TypeError.",
+            "evidence": [
+              "call_5c048d01bc54452ab3db200669b2b03e"
+            ],
+            "limits": "Tests the Python expression only, not the Transformers adapter or a real model."
+          }
+        ]
+      }
+    ],
+    "summary": "Ignore AnyPrecision ImportError during comparison startup so unrelated evaluations can proceed. Selecting an unavailable AnyPrecision backend still fails later on an unbound class."
+  },
+  "evidence": {
+    "call_a3dc81220c1e47058d632aa532313c60": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "offset": 211,
+        "max_bytes": 542
+      },
+      "result_sha256": "4797f3a291dc8416a2a4e4099ad4daa5fac2dd9c7921e3ad0a49c1ce646e97e1"
+    },
+    "call_fbbd0b36f4a64c018f4c9922214ee31c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "compare_q_anyprecision"
+      },
+      "result_sha256": "ed381b5ef04cd3784c0140d38c67e79b425c4c75ec654a8ca3aa0c5a2f0f437f"
+    },
+    "call_3d1a744e2c0944778df655d13f62908d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "[Tt]ransformers",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_d231a005476b485ca1baf0cfb95b6314": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "Transformers",
+        "limit": 100
+      },
+      "result_sha256": "37b285331011fdf4c7a6eaecbfdf74f6b494a62ae93f2f01995fa9ebb7191298"
+    },
+    "call_22e2cd619109467b9ee1592fad6f0ace": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "transformers",
+        "limit": 100
+      },
+      "result_sha256": "72fa560627ba7e4ee04286328f7d193043b029dcd456130be56b1e1496780179"
+    },
+    "call_7185ac8fa2b04a3c90ba3884c880c636": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "anyprecision",
+        "limit": 100
+      },
+      "result_sha256": "a9f036d3744fff29a8e32161d96f9622139290d89f40d9d16d61f3fe879690cc"
+    },
+    "call_e69fb9538d054ffd8e01a2c231f8c0e6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "path": "eval/compare_q_anyprecision.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "8a8446178565afb3b54b9f343f4d17b63ed4913ba651891f4248369749305c5e"
+    },
+    "call_5b9a58b34c304ce2983dfb93856f661d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "path": "eval/compare_q.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "6514d42c3f183502359ab5d81210ea0bf2b1b87f71c8c1dbe9ec4c0f6c25eddb"
+    },
+    "call_37038e471dbc4c968e9c0c1919059b0b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "compare_q",
+        "limit": 100
+      },
+      "result_sha256": "da3fbb0eef04c65d7bc000bc0668a3c81809c4156488f3039589841b0f3d77a5"
+    },
+    "call_5fe84a009b8c44239cc5a717718e4b45": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "path": "eval/compare_q_logits.py"
+      },
+      "result_sha256": "e08036566d0421b4d1a99c1aed989745f7ce83126c410a5e6301f6dc466beacd"
+    },
+    "call_fdeb4706ce8b4e5e95c6e375fa19ec70": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "get_storage_info(",
+        "limit": 50
+      },
+      "result_sha256": "929a128c7e8905d76c13f8fb3f13d6f9e88675872a0da48924fc8fbcaa4ac6f0"
+    },
+    "call_6d5bfd8a18914df8b619984b5391f415": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "any_precision"
+      },
+      "result_sha256": "5d694d8a1ab5f9f2e6b49f6c8c88b89607c1bcfa218c43d21b8a47761600bcce"
+    },
+    "call_c5169552430d45dba120172fe52b9115": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "db65151b07e7085ed47cafe890aa0dadb985eb5a",
+        "max_bytes": 16384
+      },
+      "result_sha256": "78c3424f5de180ddd0d9047c3dc7ae76a72e2b3b68ff738bc333a017ebae262f"
+    },
+    "call_71d9163456e143c4b56460f394baccee": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+        "max_bytes": 16384
+      },
+      "result_sha256": "78f62937cf14653e3038c8014e3dc54b0396ae0a8b89fc51043e98ee6d299e45"
+    },
+    "call_3d6a4ceb97dd45a6a4968780dae7f5d8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "path": "eval/compare_q_transformers.py"
+      },
+      "result_sha256": "2d1d61d7af7dcd729758c7c12308ac53af9575ec38c36622873d2b992cf76e9b"
+    },
+    "call_97849b9cf543413983d7836171c43d6e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "max_bytes": 14000
+      },
+      "result_sha256": "8f3051219e7df387d1d82e61059a3d17ba0709eaa707b536bbec9bb2a1576443"
+    },
+    "call_3522b9f11c734c11817ff377b11e41ac": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "offset": 14000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "91da4fee90f815212179316bc96c5c293738ab7aa552745c0a150a19428b548d"
+    },
+    "call_f11fa762274345588b97d762afa0f0f1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 6000
+      },
+      "result_sha256": "4ca4bf9c1912c94da19fcc6cc82689833783ced8f76c508084582b72d37bd7bc"
+    },
+    "call_a5da5d7337614ac7a5f0ecb7908ac874": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 117000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "1b1ac5a2594c3cce353eef29b5feed0ebc44ed32df711a0408bbd24535546d8b"
+    },
+    "call_855aa3f41e7a40feb0b7413c671bc2fe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "path": "eval/spec/llama3.1-8b-instruct_anyp.json"
+      },
+      "result_sha256": "39d09894d4da66bf8cd8cdbfbd8fb514f4571fe7bcce6d38e6af634c4fb7750b"
+    },
+    "call_5c048d01bc54452ab3db200669b2b03e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import builtins\nfrom pathlib import Path\nsrc = Path('eval/compare_q_anyprecision.py').read_text()\nnew = src.replace('except ModuleNotFoundError:\\n    pass\\n', 'except ModuleNotFoundError:\\n    pass\\nexcept ImportError:\\n    pass\\n', 1)\nassert new != src\nclass TorchStub:\n    @staticmethod\n    def inference_mode(fn): return fn\nclass ModelStub:\n    @staticmethod\n    def from_quantized(path):\n        return type('DummyModel', (), {'named_modules': lambda self: [('dummy', object())]})()\ndef check(src, stage, exc):\n    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):\n        if name == 'torch': return TorchStub\n        for i, sym in enumerate(('AnyPrecisionForCausalLM', 'AnyPrecisionLinear'), 1):\n            if name.endswith('.' + sym):\n                if i == stage: raise exc('synthetic')\n                return type('ModuleStub', (), {sym: ModelStub if i == 1 else type('LinearStub', (), {})})\n        return builtins.__import__(name, globals, locals, fromlist, level)\n    ns = {'__builtins__': dict(vars(builtins), __import__=fake_import)}\n    try: exec(src, ns)\n    except Exception as e: return ('import', type(e).__name__)\n    assert callable(ns['fwd_anyprecision'])\n    try: ns['load_anyprecision']('dummy')\n    except Exception as e: return ('load', type(e).__name__, getattr(e, 'name', None))\nfor exc in (ImportError, ModuleNotFoundError):\n    for stage in (1, 2):\n        print(exc.__name__, stage, 'parent:', check(src, stage, exc), 'diff applied:', check(new, stage, exc))\ntry: any(isinstance(object(), x) for x in [None])\nexcept TypeError as e: print('Transformers first check with None:', type(e).__name__)"
+        ]
+      },
+      "result_sha256": "5ed065a1cb7722b64475e734ddd7c30e4f5dcfb37756f971863081d5ca3dde3d"
+    },
+    "call_c8e2adaf7a4a467ca3f1b1f4eb04c8d5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "query": "version mismatch"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_a83cf1e2dead474495694728f2e28e5c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "offset": 0,
+        "max_bytes": 211
+      },
+      "result_sha256": "5da61bc005e2cbadab55b92b6aca67baa48dcb529f1279566cdbe588759e350c"
+    },
+    "call_c4476a991e0546fbb8f7822f3da26d7b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "max_bytes": 4096
+      },
+      "result_sha256": "cab893c21167898a7eb94f251d1d9c1f84a121d6c5f764724cdeacb4a6ff45d7"
+    }
+  }
+}

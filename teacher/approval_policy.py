@@ -52,7 +52,12 @@ def assess(run, packet, repo):
     draft=json.loads(read_regular(run/'draft.json'));m=json.loads(read_regular(packet/'manifest.json'))
     transcript=json.loads(read_regular(run/'raw-transcript.json'))
     provenance=json.loads(read_regular(run/'provenance.json'))
-    expected,_=verify_final(draft['annotation'],m,transcript,provenance)
+    from .revision import restore, selected_annotation
+    revision = restore(run, packet, provenance, transcript)
+    prior = revision.prior if revision else ()
+    if revision and selected_annotation(transcript, provenance) != draft['annotation']:
+        raise ValueError('Revision final does not match the draft')
+    expected,_=verify_final(draft['annotation'],m,transcript,provenance,prior=prior)
     if expected!=draft or render(draft)!=read_regular(run/'draft.md').decode():raise ValueError('Replay mismatch')
     parents=git(repo,'show','-s','--format=%P',m['task_sha']).decode().split()
     if parents!=m['task_parents']:raise ValueError('Git parent mismatch')
@@ -60,11 +65,13 @@ def assess(run, packet, repo):
     files=git(repo,'diff','--no-renames','--name-only','-z',base,m['task_sha'],'--').decode().strip('\0').split('\0')
     if files==['']:files=[]
     if files!=m.get('task_changed_files'):raise ValueError('Changed paths disagree with trusted Git diff')
-    coverage=run_coverage(packet,m,transcript)
+    coverage=run_coverage(packet,m,transcript,prior=prior)
     if coverage!=json.loads(read_regular(run/'coverage.json')):raise ValueError('Coverage report mismatch')
     decision=tier(parents,files,draft['annotation'],coverage['task_read_complete'])
     if provenance.get('validation_repair'):
         decision={'tier':'full_review','reasons':[*decision['reasons'],'validation_repair']}
+    if revision:
+        decision = {'tier': 'full_review', 'reasons': [*decision['reasons'], 'reviewer_assisted_revision']}
     return dict(decision,policy=POLICY,version=VERSION,sampled=sampled(m['task_sha']),changed_files=files)
 
 

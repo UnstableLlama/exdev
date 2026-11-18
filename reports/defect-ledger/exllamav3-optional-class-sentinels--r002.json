@@ -1,0 +1,198 @@
+{
+  "origin": "authoring_observation",
+  "status": "suspected",
+  "classification": "defect",
+  "description": "Optional quantization-class imports become None, but storage accounting still passes those values to isinstance.",
+  "trigger": "Load a Transformers model successfully with bitsandbytes unavailable, then enumerate at least one module in get_storage_info. Other missing optional classes can fail when their later branches are reached.",
+  "expected_behavior": "An unused unavailable quantization backend should be skipped while accounting for the selected model.",
+  "actual_behavior": "The first check evaluates isinstance(module, None) when Linear4bit is None and raises TypeError before storage metadata is returned.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Whole-parent-tree caller search and source inspection identify load_transformers as the local direct caller. Both auto wrappers delegate to it; compare_q dispatches all three loaders from test_ppl. The diff adds no sentinel filtering.",
+      "evidence": [
+        "call_43bd75127d534275af2217c9bc5983c3",
+        "call_b88e36ad155041d5b1e0e5f2bb4d2681",
+        "call_55a0345483f7414d85f2ff4314871196",
+        "call_191f6bf70b5546be9364686f4a4c3efa"
+      ],
+      "limits": "Reach requires model loading and storage accounting to occur; cached results or other earlier failures can avoid this path."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Executed the inspected isinstance/any expression with None class sentinels and observed TypeError.",
+      "evidence": [
+        "call_39fb30ef6f8b4136a76e462ab55bc842"
+      ],
+      "limits": "Standard-library reproduction, not repository or GPU execution."
+    },
+    {
+      "method": "source_inspection",
+      "description": "load_transformers calls the storage helper directly; the auto and auto-BF16 wrappers delegate to it. The task diff does not modify this path.",
+      "evidence": [
+        "call_3d6a4ceb97dd45a6a4968780dae7f5d8",
+        "call_fdeb4706ce8b4e5e95c6e375fa19ec70",
+        "call_5b9a58b34c304ce2983dfb93856f661d",
+        "call_a3dc81220c1e47058d632aa532313c60"
+      ],
+      "limits": "Requires a successful model load followed by storage accounting; the data-tokenization path does not call this helper."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "The first isinstance generator expression with a None sentinel raised TypeError.",
+      "evidence": [
+        "call_5c048d01bc54452ab3db200669b2b03e"
+      ],
+      "limits": "Tests the Python expression only, not the Transformers adapter or a real model."
+    }
+  ],
+  "defect_id": "exllamav3-optional-class-sentinels",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "db65151b07e7085ed47cafe890aa0dadb985eb5a",
+      "paths": [
+        "eval/compare_q_transformers.py"
+      ],
+      "status": "source_supported",
+      "rationale": "239 introduces None fallbacks into the unchanged isinstance dispatch."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "db65151b07e7085ed47cafe890aa0dadb985eb5a",
+      "run": ".teacher/runs/commit-000239-001",
+      "finding_id": "optional-class-sentinels",
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+      "run": ".teacher/runs/commit-000325-001",
+      "local_id": "transformers-storage-none-sentinel-carried-over",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "transformers-storage-none-sentinel-carried-over",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The sibling Transformers adapter still passes optional class sentinels to isinstance. The AnyPrecision-only patch leaves this earlier finding unchanged.",
+        "trigger": "A missing bitsandbytes import sets Linear4bit to None, a Transformers model loads successfully through one of compare_q.py's three Transformers loader selections, and storage accounting reaches a named module.",
+        "expected_behavior": "Skip the unavailable quantized class and continue checking the model's modules.",
+        "actual_behavior": "The first module check evaluates isinstance(module, None) and raises TypeError before returning storage metadata. Other missing optional classes can cause the same failure when their checks are reached.",
+        "locations": [
+          {
+            "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+            "path": "eval/compare_q_transformers.py",
+            "symbol": "get_storage_info"
+          }
+        ],
+        "source_evidence": [
+          "call_3d6a4ceb97dd45a6a4968780dae7f5d8",
+          "call_fdeb4706ce8b4e5e95c6e375fa19ec70",
+          "call_5b9a58b34c304ce2983dfb93856f661d",
+          "call_a3dc81220c1e47058d632aa532313c60"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "load_transformers calls the storage helper directly; the auto and auto-BF16 wrappers delegate to it. The task diff does not modify this path.",
+            "evidence": [
+              "call_3d6a4ceb97dd45a6a4968780dae7f5d8",
+              "call_fdeb4706ce8b4e5e95c6e375fa19ec70",
+              "call_5b9a58b34c304ce2983dfb93856f661d",
+              "call_a3dc81220c1e47058d632aa532313c60"
+            ],
+            "limits": "Requires a successful model load followed by storage accounting; the data-tokenization path does not call this helper."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "The first isinstance generator expression with a None sentinel raised TypeError.",
+            "evidence": [
+              "call_5c048d01bc54452ab3db200669b2b03e"
+            ],
+            "limits": "Tests the Python expression only, not the Transformers adapter or a real model."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit239-001-draft.json",
+      "sha256": "4c827262187bec74666ade7ce937478421a46deea11ef34b36e49b178e4d0464"
+    },
+    {
+      "file": "evidence/commit239-001-transcript.json",
+      "sha256": "7bd7db22a1496a52783dd668314cacfb0155a518035e6abe2a96db5a926dcd9c"
+    },
+    {
+      "file": "evidence/commit239-001-verdict.md",
+      "sha256": "acb5d65980c3fad2240012f5af29ab146eabb8ce14917c86ccecbc9aa3624fe1"
+    },
+    {
+      "file": "evidence/commit325-001-draft.json",
+      "sha256": "5750e13d768dff1130dcfbcd4137eb4876b7c9467536006e994df42025d0de80"
+    },
+    {
+      "file": "evidence/commit325-001-transcript.json",
+      "sha256": "71cef5844341c605cbd464f7e3c66c8cfa4efd86bc4fee64786a3c3e06cd449f"
+    },
+    {
+      "file": "evidence/commit325-001-verdict.md",
+      "sha256": "e4e25e4434bf4a22076a1df2bdda7d1549da15caab19c8b2f7734f7fae36aaa3"
+    },
+    {
+      "file": "evidence/commit325-001-manifest.json",
+      "sha256": "374d1d363579861d3b658d42824e90f7a67dca4be6f9cebd212d2635d95e8713"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "db65151b07e7085ed47cafe890aa0dadb985eb5a",
+      "available_at": "2026-11-16T17:50:50.927994+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000239-001/draft.json",
+      "source_id": ".teacher/runs/commit-000239-001/draft.json",
+      "content_sha256": "4c827262187bec74666ade7ce937478421a46deea11ef34b36e49b178e4d0464",
+      "available_at": "2026-11-16T17:50:50.927994+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000239-001/raw-transcript.json",
+      "source_id": ".teacher/runs/commit-000239-001/raw-transcript.json",
+      "content_sha256": "7bd7db22a1496a52783dd668314cacfb0155a518035e6abe2a96db5a926dcd9c",
+      "available_at": "2026-11-16T17:50:50.927994+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000239-001.md",
+      "source_id": "reviews/verdicts/commit-000239-001.md",
+      "content_sha256": "acb5d65980c3fad2240012f5af29ab146eabb8ce14917c86ccecbc9aa3624fe1",
+      "available_at": "2026-11-16T17:50:50.927994+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+      "available_at": "2026-11-18T05:29:00+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-18T05:36:51.539785+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "db65151b07e7085ed47cafe890aa0dadb985eb5a",
+      "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94"
+    ],
+    "limits": "Findings checked at the named revisions. No continuous range or installed adapter run."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "cutoff_note": "Administrative only; never teacher input."
+}

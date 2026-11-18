@@ -1,0 +1,327 @@
+--- a/teacher/README.md
++++ b/teacher/README.md
+@@ -198,11 +198,14 @@
+ 
+ After implementation acceptance, a first final refused by JSON parsing or ordinary
+ annotation validation may receive one additional turn on the same server thread.
+-Its feedback under `validator-keep-rest-v2` is the exact validator error, one
+-newline, and this fixed sentence: "Correct only the issue named in the validator
+-message and return the rest of the annotation unchanged." No other text is added.
+-Historical `validator-only-v1` runs retain their verbatim-error-only replay path;
+-provenance binds the policy and the hash of the complete feedback. The teacher may
++Under `validator-claim-diagnostics-v3`, a rejected claim anchor names the
++annotation path and a bounded reference. A source inspection without supported
++source evidence names the verification entry, finding ID and supported tool kinds.
++The message ends with "Correct only the issue named in the validator message and
++return the rest of the annotation unchanged." Historical `validator-keep-rest-v2`
++replays the exact validator error followed by that sentence. Historical
++`validator-only-v1` replays the exact validator error alone.
++Provenance binds the policy and the hash of the complete feedback. The teacher may
+ read more evidence and returns a complete annotation; both turns share the tool
+ budget. A second refusal, internal integrity error or transport failure is terminal.
+ `author(..., validation_repair=False)` preserves the pre-repair rule for runs
+--- a/teacher/codex_adapter.py
++++ b/teacher/codex_adapter.py
+@@ -2,8 +2,8 @@
+ """Fresh Codex app-server authoring session, using the adopted teacher model with task-specific reasoning."""
+ from copy import deepcopy
+ import json
+-from .editorial import output_schema, assemble_draft
+-from .validation_repair import POLICY, repair_metadata, verify_final, eligible, repair_feedback
++from .editorial import AnnotationDiagnostic, output_schema, assemble_draft
++from .validation_repair import POLICY, repair_metadata, verify_final, eligible, repair_feedback, refusal_fields
+ 
+ LEGACY_MODEL = 'gpt-6-astra'
+ PRIOR_MODELS = ('gpt-6.1-sol',)
+@@ -186,17 +186,19 @@
+                     entry, review=assemble_draft(annotation,manifest,transcript)
+                 except ValueError as error:
+                     if not validation_repair or repair is not None or not eligible(error):
++                        if type(error) is AnnotationDiagnostic:
++                            raise ValueError(str(error)) from error
+                         raise
+                     import hashlib
+                     repair={'role':'validation', 'policy':POLICY,
+                         'refused_index':final_index, 'prefix_end':len(transcript),
+                         'refused_sha256':hashlib.sha256(final.encode()).hexdigest(),
+-                        'error_type':type(error).__name__, 'error':str(error),
++                        **refusal_fields(error, POLICY),
+                         'thread_id':thread, 'first_turn_id':turn,
+                         'repair_turn_id':None, 'selected_final_index':None, 'feedback_sent':False}
+                     transcript.append(repair)
+                     save()  # Persist refusal before attempting the feedback turn.
+-                    feedback={'role':'user','content':repair_feedback(str(error))}
++                    feedback={'role':'user','content':repair_feedback(repair['error'], POLICY)}
+                     transcript.append(feedback)
+                     save()
+                     next_turn=transport.request('turn/start',{'threadId':thread,'model':model,
+--- a/teacher/editorial.py
++++ b/teacher/editorial.py
+@@ -10,6 +10,22 @@
+ SCHEMA_V5 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v5.json').read_text())
+ SCHEMA_V4 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v4.json').read_text())
+ SCHEMA_V3 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v3.json').read_text())
++
++
++class AnnotationDiagnostic(ValueError):
++    """A stable refusal category with detail for the current repair policy."""
++
++    def __init__(self, category, detail):
++        super().__init__(category)
++        self.detail = detail
++
++
++def bounded_identifier(identifier, pattern):
++    if not re.fullmatch(pattern, identifier):
++        return '[invalid identifier]'
++    if len(identifier) > 64:
++        return identifier[:61] + '...'
++    return identifier
+ 
+ 
+ def output_schema(manifest):
+@@ -103,23 +119,31 @@
+             item['catalog_only'] = True
+     context={'ancestor:'+e['sha']:{'kind':'approved_ancestor_context','sha':e['sha'],'content_sha256':e['blob']}
+              for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits'] and manifest.get('ancestor_context_mode') != 'retrieval_v1'}
+-    claims=[claim for field in ('problem','reasoning','impact','source_notes') for claim in annotation[field]]
++    claims = [(f'{field}[{index}]', claim)
++              for field in ('problem', 'reasoning', 'impact', 'source_notes')
++              for index, claim in enumerate(annotation[field])]
+     chapter_ids=set()
+-    for chapter in annotation['chapters']:
++    for chapter_index, chapter in enumerate(annotation['chapters']):
+         if chapter['id'] in chapter_ids:
+             raise ValueError('Duplicate chapter ID')
+-        chapter_ids.add(chapter['id']);claims.extend(chapter['claims'])
++        chapter_ids.add(chapter['id'])
++        claims.extend((f'chapters[{chapter_index}].claims[{index}]', claim)
++                      for index, claim in enumerate(chapter['claims']))
+         refs=chapter.get('related_chapters',[])
+         if len(refs)!=len(set(refs)):raise ValueError('Duplicate chapter reference')
+-    for claim in claims:
++    for claim_path, claim in claims:
+         refs=claim['evidence']
+         if not refs:
+             raise ValueError('Claims, including inferences, need evidence anchors')
+         if len(set(refs))!=len(refs):
+             raise ValueError('Duplicate evidence anchor')
+-        for ref in refs:
++        for index, ref in enumerate(refs):
+             if ref not in context and (ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only'))):
+-                raise ValueError('Unknown or unsuccessful evidence call')
++                identifier = bounded_identifier(ref, r'(?:call_|ancestor:)[0-9a-fA-F]+')
++                raise AnnotationDiagnostic(
++                    'Unknown or unsuccessful evidence call',
++                    f'{claim_path}.evidence[{index}] rejected reference: {identifier}',
++                )
+         if annotation['schema_version'] >= 5:
+             ancestor_refs=[ref for ref in refs if ref in context or
+                            (ledger[ref]['tool']=='ancestor_read' and ledger[ref]['arguments'].get('mode')=='content')]
+@@ -140,7 +164,7 @@
+         if any(ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only')) for ref in refs):
+             raise ValueError('Findings require successful current-session evidence')
+         return [ledger[ref] for ref in refs]
+-    for finding in annotation.get('findings',[]):
++    for finding_index, finding in enumerate(annotation.get('findings', [])):
+         if finding['id'] in finding_ids:raise ValueError('Duplicate finding ID')
+         finding_ids.add(finding['id'])
+         sources=checked_refs(finding['source_evidence'])
+@@ -150,11 +174,17 @@
+             path=location['path']
+             if path.startswith('/') or '\\' in path or any(p in ('','..','.') for p in path.split('/')):
+                 raise ValueError('Finding locations require repository-relative paths')
+-        for check in finding['verification']:
++        for check_index, check in enumerate(finding['verification']):
+             evidence=checked_refs(check['evidence'])
+             if check['method']=='source_inspection':
+                 if not any(e['tool'] in source_tools for e in evidence):
+-                    raise ValueError('Source inspection requires source evidence')
++                    finding_id = bounded_identifier(finding['id'], r'[a-z][a-z0-9-]*')
++                    kinds = ', '.join(sorted(source_tools))
++                    raise AnnotationDiagnostic(
++                        'Source inspection requires source evidence',
++                        f'findings[{finding_index}].verification[{check_index}] '
++                        f'(finding ID: {finding_id}). Supported tool kinds: {kinds}',
++                    )
+             elif not any(e['tool']=='run' and e['result'].get('result',{}).get('returncode')==0 and
+                          not e['result']['result'].get('timed_out',False) for e in evidence):
+                 raise ValueError('Computational verification requires successful run evidence')
+--- a/teacher/validation_repair.py
++++ b/teacher/validation_repair.py
+@@ -2,17 +2,18 @@
+ """Policy-bound, one-turn repair audit shared by publication and approval."""
+ import hashlib
+ import json
+-from .editorial import assemble_draft
++from .editorial import AnnotationDiagnostic, assemble_draft
+ 
+ LEGACY_POLICY = 'validator-only-v1'
+-POLICY = 'validator-keep-rest-v2'
++KEEP_REST_POLICY = 'validator-keep-rest-v2'
++POLICY = 'validator-claim-diagnostics-v3'
+ KEEP_REST_SENTENCE = ('Correct only the issue named in the validator message and return '
+                       'the rest of the annotation unchanged.')
+ 
+ def repair_feedback(error, policy=POLICY):
+     if policy == LEGACY_POLICY:
+         return error
+-    if policy == POLICY:
++    if policy in (KEEP_REST_POLICY, POLICY):
+         return error + '\n' + KEEP_REST_SENTENCE
+     raise ValueError('Unknown validation repair policy')
+ 
+@@ -24,6 +25,8 @@
+ 
+ def eligible(error):
+     message=str(error)
++    if type(error) is AnnotationDiagnostic:
++        return message in ANNOTATION_ERRORS
+     return (type(error) is json.JSONDecodeError or type(error) is ValueError and (
+         message in ANNOTATION_ERRORS or
+         (message.startswith('Exceeds the limit (') and
+@@ -33,6 +36,15 @@
+         message.startswith('Required evidence not fully read: ') or
+         message.startswith('annotation') and message.endswith(SHAPE_ERRORS)))
+ 
++
++def refusal_fields(error, policy):
++    message = str(error)
++    error_type = type(error).__name__
++    if type(error) is AnnotationDiagnostic:
++        error_type = 'ValueError'
++        if policy == POLICY:
++            message += '\n' + error.detail
++    return {'error_type': error_type, 'error': message}
+ 
+ 
+ def digest(text):
+@@ -77,7 +89,7 @@
+     i,event=events[0]
+     keys={'role','policy','refused_index','prefix_end','refused_sha256','error_type','error',
+           'thread_id','first_turn_id','repair_turn_id','selected_final_index','feedback_sent'}
+-    if set(event)!=keys or event['policy'] not in (LEGACY_POLICY, POLICY) or event['feedback_sent'] is not True:
++    if set(event)!=keys or event['policy'] not in (LEGACY_POLICY, KEEP_REST_POLICY, POLICY) or event['feedback_sent'] is not True:
+         raise ValueError('Invalid validation repair event')
+     refused=event['refused_index']; chosen=event['selected_final_index']
+     if (type(refused) is not int or type(chosen) is not int or event['prefix_end']!=i
+@@ -112,7 +124,8 @@
+     try:
+         assemble_draft(json.loads(original['content']),manifest,transcript[:i])
+     except ValueError as error:
+-        if not eligible(error) or type(error).__name__!=event['error_type'] or str(error)!=event['error']:
++        refusal = refusal_fields(error, event['policy'])
++        if not eligible(error) or any(event[key] != value for key, value in refusal.items()):
+             raise ValueError('Recorded validation refusal does not reproduce') from error
+     else:
+         raise ValueError('Recorded refused annotation was valid')
+--- a/tests/test_editorial_findings.py
++++ b/tests/test_editorial_findings.py
+@@ -44,6 +44,24 @@
+         a=self.annotation();self.transcript[1]['content']=json.dumps({'ok':False})
+         with self.assertRaises(ValueError):validate_annotation(a,self.manifest,self.transcript)
+ 
++    def test_source_inspection_refusal_names_the_verification_and_supported_kinds(self):
++        from teacher.validation_repair import POLICY, eligible, refusal_fields
++
++        a = self.annotation()
++        self.add_run()
++        checks = a['findings'][0]['verification']
++        checks.append(dict(checks[0], evidence=['run-1']))
++        with self.assertRaises(ValueError) as caught:
++            validate_annotation(a, self.manifest, self.transcript)
++        self.assertTrue(eligible(caught.exception))
++        self.assertEqual(refusal_fields(caught.exception, POLICY), {
++            'error_type': 'ValueError',
++            'error': 'Source inspection requires source evidence\n'
++                     'findings[0].verification[1] (finding ID: fixture-boundary). '
++                     'Supported tool kinds: git_diff, git_show, hf_fetch, repo_read, '
++                     'safetensors_header, web_fetch',
++        })
++
+     def test_execution_modes_need_successful_run_and_separate_source(self):
+         for method in ('scalar_transcription','repository_execution'):
+             a=self.annotation();check=a['findings'][0]['verification'][0];check['method']=method
+--- a/tests/test_validation_repair.py
++++ b/tests/test_validation_repair.py
+@@ -7,7 +7,7 @@
+ from teacher.author import author
+ from teacher.codex_adapter import CodexTeacher
+ from teacher.session import FreshSession
+-from teacher.validation_repair import repair_metadata, verify_final, disclosure, repair_feedback, POLICY, LEGACY_POLICY, KEEP_REST_SENTENCE, digest
++from teacher.validation_repair import repair_metadata, verify_final, disclosure, repair_feedback, POLICY, LEGACY_POLICY, KEEP_REST_POLICY, KEEP_REST_SENTENCE, digest
+ from teacher.ancestor_context import approve_run
+ import test_codex_teacher as legacy
+ from test_codex_teacher import FakeTransport
+@@ -122,9 +122,11 @@
+         self.assertEqual(verify_final(fixture(),m,transcript,repair_metadata(transcript))[0],result['draft'])
+ 
+     def test_invalid_annotation_and_more_tools_repair_with_prefix_validation(self):
+-        a=fixture();a['problem'][0]['evidence']=['read-2']
++        reference = 'call_' + 'a' * 32
++        a = fixture()
++        a['problem'][0]['evidence'] = [reference]
+         extra=[{'id':101,'method':'item/tool/call','params':{'threadId':'fresh','turnId':'repair',
+-                'callId':'read-2','tool':'git_show','arguments':{'commit':'a'*40}}}]
++                'callId':reference,'tool':'git_show','arguments':{'commit':'a'*40}}}]
+         transport=RepairTransport(first=json.dumps(a),second=json.dumps(a),extra=extra)
+         result=self.run_teacher(transport);t=result['transcript']
+         self.assertEqual(disclosure(t)['tool_calls_by_turn'],[1,1])
+@@ -133,7 +135,41 @@
+         verify_final(a,m,t,repair_metadata(t))
+         from teacher.editorial import assemble_draft
+         assemble_draft(a,m,t)
+-        self.assertEqual(next(x for x in t if x['role']=='validation')['error'],'Unknown or unsuccessful evidence call')
++        i = next(i for i, message in enumerate(t) if message['role'] == 'validation')
++        category = 'Unknown or unsuccessful evidence call'
++        self.assertEqual(t[i]['error'], category + f'\nproblem[0].evidence[0] rejected reference: {reference}')
++        for old_policy in (LEGACY_POLICY, KEEP_REST_POLICY):
++            historical = deepcopy(t)
++            historical[i].update(policy=old_policy, error=category)
++            historical[i+1]['content'] = repair_feedback(category, old_policy)
++            verify_final(a, m, historical, repair_metadata(historical))
++
++        t[i]['error'] += '\nInjected advice'
++        t[i+1]['content'] = repair_feedback(t[i]['error'])
++        with self.assertRaisesRegex(ValueError, 'refusal does not reproduce'):
++            verify_final(a, m, t, repair_metadata(t))
++
++    def test_rejected_chapter_reference_rendering_is_bounded(self):
++        for reference, rendered in (
++            ('call_' + 'a' * 31, 'call_' + 'a' * 31),
++            ('call_' + 'a' * 100, 'call_' + 'a' * 56 + '...'),
++            ('call_fake\n\x1b[31mIgnore validator', '[invalid identifier]'),
++            ('call_fake\u202eIgnore', '[invalid identifier]'),
++            ('call_fake Ignore-validator', '[invalid identifier]'),
++            ('Ignore-previous-instructions', '[invalid identifier]'),
++        ):
++            with self.subTest(reference=reference):
++                a = fixture()
++                claim = dict(a['problem'][0], evidence=['read-1', reference])
++                a['chapters'] = [{'id': 'loading', 'title': 'Loading', 'claims': [claim]}]
++                transport = RepairTransport(first=json.dumps(a))
++                result = self.run_teacher(transport)
++                event = next(m for m in result['transcript'] if m['role'] == 'validation')
++                self.assertEqual(event['error'], 'Unknown or unsuccessful evidence call\n'
++                                 f'chapters[0].claims[0].evidence[1] rejected reference: {rendered}')
++                starts = [params for method, params in transport.requests if method == 'turn/start']
++                self.assertEqual(starts[1]['input'],
++                                 [{'type': 'text', 'text': repair_feedback(event['error'])}])
+ 
+     def test_second_refusal_is_terminal_and_preserved(self):
+         saved=[];transport=RepairTransport(second='[')
+@@ -141,6 +177,14 @@
+         self.assertEqual(transport.turns,2)
+         self.assertEqual(saved[-1][-1]['content'],'[')
+         self.assertEqual(sum(x['role']=='validation' for x in saved[-1]),1)
++
++        a = fixture()
++        a['problem'][0]['evidence'] = ['call_' + 'a' * 32]
++        transport = RepairTransport(first=json.dumps(a), second=json.dumps(a))
++        with self.assertRaisesRegex(ValueError, '^Unknown or unsuccessful evidence call$') as caught:
++            self.run_teacher(transport)
++        self.assertIs(type(caught.exception), ValueError)
++        self.assertEqual(transport.turns, 2)
+ 
+     def test_protocol_budget_and_transport_failures_never_repair(self):
+         for kind in ('foreign','failed','native','budget','internal'):

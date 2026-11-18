@@ -25,7 +25,7 @@ def artifact_hashes(run):
     return {name:hashlib.sha256(read_regular(run/name)).hexdigest() for name in ARTIFACTS}
 
 
-def approve_run(run, packet, reviewer, note):
+def approve_run(run, packet, reviewer, note, *, revision_validation=None):
     """Administrative operation: a named reviewer accepts a specific draft, never a model tool."""
     run,packet=Path(run),Path(packet)
     if not reviewer.strip() or not note.strip():
@@ -47,9 +47,18 @@ def approve_run(run, packet, reviewer, note):
         raise ValueError('Original authoring packet fingerprint mismatch')
     if provenance.get('input_mode')!='entry_analysis' or provenance.get('published') is not False:
         raise ValueError('Run is not an unpublished historical annotation')
-    expected,_=verify_final(draft['annotation'],manifest,transcript,provenance)
+    from .revision import restore, selected_annotation
+    revision = restore(run, packet, provenance, transcript)
+    if revision:
+        if (not revision_validation or revision_validation.get('status') != 'validated'
+                or revision_validation.get('revision') != provenance['revision']):
+            raise ValueError('Revision approval requires validated replay through the review queue')
+        if selected_annotation(transcript, provenance) != draft['annotation']:
+            raise ValueError('Revision final does not match the draft')
+    expected,_=verify_final(draft['annotation'],manifest,transcript,provenance,
+                            prior=revision.prior if revision else ())
     from .editorial import render
-    if provenance.get('validation_repair_policy') and render(draft)!=read_regular(run/'draft.md').decode():
+    if (revision or provenance.get('validation_repair_policy')) and render(draft)!=read_regular(run/'draft.md').decode():
         raise ValueError('Repair-policy draft rendering mismatch')
     if draft!=expected or review.get('sha')!=draft['sha']:
         raise ValueError('Draft identity or evidence differs from its recorded inputs')

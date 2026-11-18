@@ -2,8 +2,8 @@
 """Fresh Codex app-server authoring session, using the adopted teacher model with task-specific reasoning."""
 from copy import deepcopy
 import json
-from .editorial import output_schema, assemble_draft
-from .validation_repair import POLICY, repair_metadata, verify_final, eligible, repair_feedback
+from .editorial import AnnotationDiagnostic, output_schema, assemble_draft
+from .validation_repair import POLICY, repair_metadata, verify_final, eligible, repair_feedback, refusal_fields
 
 LEGACY_MODEL = 'gpt-6-astra'
 PRIOR_MODELS = ('gpt-6.1-sol',)
@@ -98,6 +98,15 @@ def thread_parameters(session, cwd, model=MODEL):
                             for tool in session.tools]}
 
 
+def usage_totals(params):
+    keys = {'input': 'inputTokens', 'cached_input': 'cachedInputTokens', 'output': 'outputTokens'}
+    values = params['tokenUsage']['total']
+    totals = {key: values[name] for key, name in keys.items()}
+    if any(type(value) is not int or value < 0 for value in totals.values()) or totals['cached_input'] > totals['input']:
+        raise ValueError('Invalid server token totals')
+    return totals
+
+
 class CodexTeacher:
     def run(self, session, transport, record=None, max_calls=256, *, model=MODEL, validation_repair=True):
         checked_model(model)
@@ -108,6 +117,7 @@ class CodexTeacher:
         manifest_bytes=(session.runner.packet/'manifest.json').read_bytes()
         manifest=json.loads(manifest_bytes)
         transcript=deepcopy(session.initial)
+        prior = getattr(session, 'revision_prior', ())
         repair = None
         repair_start = None
         def save():
@@ -144,6 +154,8 @@ class CodexTeacher:
                 name=params['tool']; identity=params['callId']
                 if name not in allowed or params.get('namespace') not in (None,''):
                     raise ValueError('Unapproved model tool')
+                if identity.startswith('prior:'):
+                    raise ValueError('Reserved prior tool call ID')
                 if identity in seen or len(seen)>=max_calls:
                     raise ValueError('Duplicate tool call or tool budget exceeded')
                 seen.add(identity)
@@ -169,6 +181,13 @@ class CodexTeacher:
                     if item.get('phase') in (None,'final_answer'):
                         final=item['text']
                         final_index=len(transcript)-1
+            elif method=='thread/tokenUsage/updated':
+                totals = usage_totals(params)
+                previous = transcript[0].get('teacher_token_usage', {})
+                if any(value < previous.get(key, 0) for key, value in totals.items()):
+                    raise ValueError('Server thread token totals decreased')
+                transcript[0]['teacher_token_usage'] = totals
+                save()
             elif method=='turn/completed':
                 if params['turn']['id']!=turn or params['turn']['status']!='completed' or final is None:
                     raise ValueError('Authoring turn did not complete successfully')
@@ -179,24 +198,26 @@ class CodexTeacher:
                 # Check transcript integrity before entering annotation-only feedback.
                 from .editorial import evidence_ledger
                 from .coverage import observed_reads
-                evidence_ledger(transcript)
-                observed_reads(transcript)
+                evidence_ledger(transcript, complete=bool(prior))
+                observed_reads([*prior, *transcript])
                 try:
                     annotation=json.loads(final)
-                    entry, review=assemble_draft(annotation,manifest,transcript)
+                    entry, review=assemble_draft(annotation,manifest,transcript,prior=prior)
                 except ValueError as error:
                     if not validation_repair or repair is not None or not eligible(error):
+                        if type(error) is AnnotationDiagnostic:
+                            raise ValueError(str(error)) from error
                         raise
                     import hashlib
                     repair={'role':'validation', 'policy':POLICY,
                         'refused_index':final_index, 'prefix_end':len(transcript),
                         'refused_sha256':hashlib.sha256(final.encode()).hexdigest(),
-                        'error_type':type(error).__name__, 'error':str(error),
+                        **refusal_fields(error, POLICY),
                         'thread_id':thread, 'first_turn_id':turn,
                         'repair_turn_id':None, 'selected_final_index':None, 'feedback_sent':False}
                     transcript.append(repair)
                     save()  # Persist refusal before attempting the feedback turn.
-                    feedback={'role':'user','content':repair_feedback(str(error))}
+                    feedback={'role':'user','content':repair_feedback(repair['error'], POLICY)}
                     transcript.append(feedback)
                     save()
                     next_turn=transport.request('turn/start',{'threadId':thread,'model':model,
@@ -220,7 +241,7 @@ class CodexTeacher:
             elif method=='error':
                 raise ValueError('Codex reported an authoring error')
         manifest=json.loads((session.runner.packet/'manifest.json').read_text())
-        entry, review=verify_final(annotation,manifest,transcript,repair_metadata(transcript))
+        entry, review=verify_final(annotation,manifest,transcript,repair_metadata(transcript),prior=prior)
         return {'draft':entry,'review':review,'transcript':transcript,'published':False,
                 'model':model,'reasoning_effort':session.reasoning_effort}
 

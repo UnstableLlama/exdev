@@ -1,0 +1,59 @@
+"""Supervise the one authorised 324/002 attempt and notify the author."""
+import json
+import os
+import sys
+import traceback
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from orchestration.run_ahead import prepared, recover
+from teacher.cycle import digest, write_json
+from teacher.cycle_notify import notify
+
+
+def main():
+    thread = os.environ['CODEX_THREAD_ID']
+    state_path = ROOT / 'reports/teacher-walk-001.json'
+    base = ROOT / 'reports/commit-000324-prepared-002'
+    spec_path = base.with_suffix('.spec.json')
+    result_path = base.with_suffix('.result.json')
+    backup = ROOT / 'reports/commit-000324-before-recovery-002.json'
+    with backup.open('xb') as snapshot:
+        state_bytes = state_path.read_bytes()
+        snapshot.write(state_bytes)
+    result = dict(position=324, result_path=str(result_path))
+    try:
+        assert not result_path.exists()
+        state = json.loads(state_bytes)
+        assert state['status'] == 'stopped_failure' and state['next_position'] == 324
+        assert not state['active_session'] and not state.get('advancement_pause')
+        assert state['queue_stop']['position'] == 324 and not state.get('retry_only')
+        spec = json.loads(spec_path.read_text())
+        assert spec['position'] == 324 and spec['kind'] == 'forward'
+        assert spec['run'] == '.teacher/runs/commit-000324-002'
+        assert spec['packet'] == '.teacher/retrieval/000324-002'
+        assert spec['original_packet'] == '.teacher/retrieval/000324-001'
+        assert not (ROOT / spec['run']).exists()
+        decision = ROOT / 'reviews/verdicts/commit-000324-recovery-001.md'
+        assert ROOT / spec['authorization']['path'] == decision
+        assert digest(decision) == spec['authorization']['sha256'] == (
+            '9b66023424c774380ed35688c81cc7ef26f97363f12eb06ed1bf72637b9744c2'
+        )
+        assert digest(ROOT / spec['packet'] / 'manifest.json') == digest(
+            ROOT / spec['original_packet'] / 'manifest.json'
+        )
+        recover(state_path, decision, retry_position=324)
+        result.update(prepared(state_path, Path.home() / '.codex/auth.json', spec_path), returncode=0)
+    except BaseException as error:
+        traceback.print_exc()
+        result.update(status='prepared_failed', returncode=1, error_type=type(error).__name__, detail=str(error))
+    write_json(result_path, result)
+    print(json.dumps(result), flush=True)
+    notify(thread, result, ROOT / 'reports', 324)
+    return result['returncode']
+
+
+if __name__ == '__main__':
+    sys.exit(main())

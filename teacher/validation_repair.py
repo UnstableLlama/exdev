@@ -2,17 +2,18 @@
 """Policy-bound, one-turn repair audit shared by publication and approval."""
 import hashlib
 import json
-from .editorial import assemble_draft
+from .editorial import AnnotationDiagnostic, assemble_draft
 
 LEGACY_POLICY = 'validator-only-v1'
-POLICY = 'validator-keep-rest-v2'
+KEEP_REST_POLICY = 'validator-keep-rest-v2'
+POLICY = 'validator-claim-diagnostics-v3'
 KEEP_REST_SENTENCE = ('Correct only the issue named in the validator message and return '
                       'the rest of the annotation unchanged.')
 
 def repair_feedback(error, policy=POLICY):
     if policy == LEGACY_POLICY:
         return error
-    if policy == POLICY:
+    if policy in (KEEP_REST_POLICY, POLICY):
         return error + '\n' + KEEP_REST_SENTENCE
     raise ValueError('Unknown validation repair policy')
 
@@ -24,6 +25,8 @@ SHAPE_ERRORS = (': wrong type', ': incorrect version', ': unknown value',
 
 def eligible(error):
     message=str(error)
+    if type(error) is AnnotationDiagnostic:
+        return message in ANNOTATION_ERRORS
     return (type(error) is json.JSONDecodeError or type(error) is ValueError and (
         message in ANNOTATION_ERRORS or
         (message.startswith('Exceeds the limit (') and
@@ -33,6 +36,15 @@ def eligible(error):
         message.startswith('Required evidence not fully read: ') or
         message.startswith('annotation') and message.endswith(SHAPE_ERRORS)))
 
+
+def refusal_fields(error, policy):
+    message = str(error)
+    error_type = type(error).__name__
+    if type(error) is AnnotationDiagnostic:
+        error_type = 'ValueError'
+        if policy == POLICY:
+            message += '\n' + error.detail
+    return {'error_type': error_type, 'error': message}
 
 
 def digest(text):
@@ -54,7 +66,7 @@ def repair_metadata(transcript, policy=POLICY):
             'validation_repair_selected_final_index':event['selected_final_index']}
 
 
-def verify_final(annotation, manifest, transcript, provenance):
+def verify_final(annotation, manifest, transcript, provenance, *, prior=()):
     """Historical unmarked runs retain their path; marked repairs fail closed."""
     events=[(i,m) for i,m in enumerate(transcript) if m.get('role')=='validation']
     marked='validation_repair_policy' in provenance or 'validation_repair' in provenance
@@ -69,7 +81,7 @@ def verify_final(annotation, manifest, transcript, provenance):
                            ('validation_repair_policy', 'validation_repair_enabled')
                            for k in provenance)):
             raise ValueError('Unexpected repair provenance on unrepaired run')
-        return assemble_draft(annotation, manifest, transcript)
+        return assemble_draft(annotation, manifest, transcript, prior=prior)
     if not marked or type(provenance.get('validation_repair')) is not bool or len(events)!=1:
         raise ValueError('Missing or ambiguous validation repair provenance')
     if provenance.get('validation_repair_enabled') is False:
@@ -77,7 +89,7 @@ def verify_final(annotation, manifest, transcript, provenance):
     i,event=events[0]
     keys={'role','policy','refused_index','prefix_end','refused_sha256','error_type','error',
           'thread_id','first_turn_id','repair_turn_id','selected_final_index','feedback_sent'}
-    if set(event)!=keys or event['policy'] not in (LEGACY_POLICY, POLICY) or event['feedback_sent'] is not True:
+    if set(event)!=keys or event['policy'] not in (LEGACY_POLICY, KEEP_REST_POLICY, POLICY) or event['feedback_sent'] is not True:
         raise ValueError('Invalid validation repair event')
     refused=event['refused_index']; chosen=event['selected_final_index']
     if (type(refused) is not int or type(chosen) is not int or event['prefix_end']!=i
@@ -110,16 +122,17 @@ def verify_final(annotation, manifest, transcript, provenance):
         raise ValueError('Validation repair provenance mismatch')
     # Reproduce the refusal against ONLY evidence available at that first final.
     try:
-        assemble_draft(json.loads(original['content']),manifest,transcript[:i])
+        assemble_draft(json.loads(original['content']),manifest,transcript[:i],prior=prior)
     except ValueError as error:
-        if not eligible(error) or type(error).__name__!=event['error_type'] or str(error)!=event['error']:
+        refusal = refusal_fields(error, event['policy'])
+        if not eligible(error) or any(event[key] != value for key, value in refusal.items()):
             raise ValueError('Recorded validation refusal does not reproduce') from error
     else:
         raise ValueError('Recorded refused annotation was valid')
     final=json.loads(selected['content'])
     if final!=annotation:
         raise ValueError('Published annotation differs from selected repaired final')
-    return assemble_draft(final,manifest,transcript)
+    return assemble_draft(final,manifest,transcript,prior=prior)
 
 
 def disclosure(transcript, policy=POLICY):

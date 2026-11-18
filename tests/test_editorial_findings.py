@@ -44,6 +44,24 @@ class FindingTests(unittest.TestCase):
         a=self.annotation();self.transcript[1]['content']=json.dumps({'ok':False})
         with self.assertRaises(ValueError):validate_annotation(a,self.manifest,self.transcript)
 
+    def test_source_inspection_refusal_names_the_verification_and_supported_kinds(self):
+        from teacher.validation_repair import POLICY, eligible, refusal_fields
+
+        a = self.annotation()
+        self.add_run()
+        checks = a['findings'][0]['verification']
+        checks.append(dict(checks[0], evidence=['run-1']))
+        with self.assertRaises(ValueError) as caught:
+            validate_annotation(a, self.manifest, self.transcript)
+        self.assertTrue(eligible(caught.exception))
+        self.assertEqual(refusal_fields(caught.exception, POLICY), {
+            'error_type': 'ValueError',
+            'error': 'Source inspection requires source evidence\n'
+                     'findings[0].verification[1] (finding ID: fixture-boundary). '
+                     'Supported tool kinds: git_diff, git_show, hf_fetch, repo_read, '
+                     'safetensors_header, web_fetch',
+        })
+
     def test_execution_modes_need_successful_run_and_separate_source(self):
         for method in ('scalar_transcription','repository_execution'):
             a=self.annotation();check=a['findings'][0]['verification'][0];check['method']=method

@@ -13,6 +13,14 @@ print('manifest==prov',p['packet_manifest_sha256']==sha(P+'/manifest.json'), p['
 bad=[k for k,v in p['implementation_sha256'].items() if sha(k)!=v];print('impl',len(p['implementation_sha256']),'bad',bad)
 res={x['call_id']:hashlib.sha256(x['content'].encode()).hexdigest() for x in t if x['role']=='tool'}
 calls={c['id']:c for x in t if x['role']=='assistant' and 'calls' in x for c in x['calls']}
+# Revision runs: imported evidence lives in prior-evidence.json under prior:<sha>:<id>; fold it into the same check.
+if os.path.exists(R+'/prior-evidence.json'):
+    pe=json.load(open(R+'/prior-evidence.json')); src=p['revision']['source']['revision_of_run']
+    pt=json.load(open(src+'/raw-transcript.json')); pres={x['call_id']:x['content'] for x in pt if x['role']=='tool'}
+    print('REVISION of',src,'imported',len(pe),'prior ids well-formed',all(r['id'].startswith('prior:') for r in pe),
+          'imported==source transcript',all(pres.get(r['id'].split(':',2)[2])==r['result'] for r in pe),'new calls',len(calls))
+    for r in pe:
+        res[r['id']]=r['result_sha256']; calls[r['id']]={'id':r['id'],'tool':r['tool'],'arguments':r['arguments']}
 print('evidence',len(d['evidence']),'calls',len(calls),'bad',[k for k,v in d['evidence'].items() if res.get(k)!=v['result_sha256'] or calls[k]['arguments']!=v['arguments'] or calls[k]['tool']!=v['tool']],'uncited',[k for k in calls if k not in d['evidence']])
 print('final==annotation',json.loads(t[-1]['content'])==d['annotation'],'render',editorial.render(d)==open(R+'/draft.md').read())
 print('assess',approval_policy.assess(Path(R),Path(P),Path('.sources/exllamav3.git')))

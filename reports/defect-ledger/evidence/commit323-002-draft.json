@@ -1,0 +1,1349 @@
+{
+  "schema_version": 5,
+  "sha": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+  "parent_shas": [
+    "ff21ee46edb9ba74d709257f482c809a7bd406d0"
+  ],
+  "cutoff_date": "2025-07-15T21:15:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The parent registry cannot dispatch a checkpoint declaring Exaone4ForCausalLM. The change adds the registry entry and a text-model adapter that maps EXAONE4 configuration and checkpoint keys onto the existing decoder modules.",
+        "basis": "source",
+        "evidence": [
+          "call_6afdbdba6e694e01a1d8bc3e50067bf0",
+          "call_6de0b1550c6247a2b4281f4e0be10b29",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Registration and implementation are complementary. ARCHITECTURES derives the lookup key from Exaone4Model.config_class.arch_string. Config.from_directory selects Exaone4Config from the single architectures entry, not model_type; Model.from_config then constructs the config's text component. The adapter also depends on the immediately preceding TransformerBlock change: both branches are present but neither has an input norm, so each needs the new FP16 input fallback.",
+        "basis": "source",
+        "evidence": [
+          "call_6de0b1550c6247a2b4281f4e0be10b29",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_aac72dc442054204ac0e9630112c1167",
+          "call_bdce74478f6a42d9be5f535ede3992bc"
+        ]
+      },
+      {
+        "text": "The 32B schedule gives three layers per group a bounded attention window and leaves every fourth layer able to attend across the available causal prefix. That combines local and global attention without introducing a new kernel. This is a consequence of the construction, not evidence of the author's rationale or of reduced KV allocation: all layers still advertise KV-cache support.",
+        "basis": "inference",
+        "evidence": [
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_4e8bb0a1e1fc4e47a5c8bd46fa0a7c00",
+          "call_bbd2b851836c4ce590d77a12a0ed281b",
+          "call_720c8597b17943b98e22000de99fc999"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The dense 32B reference supplies the schedule and the inspected decoder tensor layout. All four inspected 1.2B variants reach the same null-pattern construction failure, regardless of their weight format. At the separate storage boundary, the 32B AWQ and GPTQ projections do not match a native Linear loading route, and the 32B FP8 projections use a file dtype the loader rejects. Recognizing the architecture is not the same as supporting every checkpoint that declares it.",
+        "basis": "source",
+        "evidence": [
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_72b903ab3ebe4fdf8090a748c92df662",
+          "call_56cf4816bd824bf3a55a720711523ab3",
+          "call_e2733f47b7f448f09cf8b98304647e54",
+          "call_76199f824572452781745e0f16f88473",
+          "call_20bb0e4442b24154993aa4994378ab81",
+          "call_bdce74478f6a42d9be5f535ede3992bc",
+          "call_b61046349ff442bf8c8db2828c44e0ff"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial models and modules chapters for the shared checkpoint and decoder contracts, Qwen3 for per-head normalization and the tied-head fallback, SmolLM3 for selective RoPE, and language-only Gemma3 for local/global attention and post-norm composition. The immediate parent entry documents the normless sequential fallback and the separate research sampler; the EXAONE chat entry documents the independent example-side formatter; the scaled-FP8 entry documents the ordinary Linear scale hook and its loader preconditions.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_071236595bf04656a9a8ad08a3a84e2c",
+          "call_d2a649469d744e27a7764159ae36ca0a",
+          "call_8ce14bfe96f24b1789ddcac1445c97b3",
+          "call_fd0c2a9213244455adcb77cd26b0ce97",
+          "call_afad1eb5a26248fdb5d1cb634cdbc4b0",
+          "call_d9e583006f9f4c78acd4fb8926a7c777",
+          "call_b0b01ce7b3e74b70ab3d4c7f6e00e3ec",
+          "call_d574acdd54eb4a229aae2425aecb5340"
+        ]
+      },
+      {
+        "text": "The undefined expect_arch diagnostic reported by the Qwen3 entry does not carry over: 'Fix assertion' (04dc5571) replaced it with self.arch_string, and the parent source still uses that expression. The old missing-input-norm failure was removed from sequential forward by the immediate parent, not by this patch. ParallelDecoderBlock still dereferences its components unconditionally, but EXAONE4 does not instantiate it. The plural-projection allocator still assumes .ups/.downs; EXAONE4 supplies GatedMLP, which has those lists, not plain MLP. SmolLM3 Base's missing no_rope_layers is specific to that adapter; EXAONE4 has its own, distinct null-pattern failure.",
+        "basis": "source",
+        "evidence": [
+          "call_47d4e7001e184cea812e024277a2ef86",
+          "call_bdce74478f6a42d9be5f535ede3992bc",
+          "call_bbd2b851836c4ce590d77a12a0ed281b",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_aa2c79f06b3c4f82a9fe2b27eb8c8d20"
+        ]
+      },
+      {
+        "text": "The checked history and current source show no intervening repair of the sampler's direct norm access or the mutable prefill flag. The sampler file history has only its introduction; Model.prefill still leaves the flag set, and the task changes neither model dispatch loop nor block forward. The separate EXAONE chat mode also still passes an exact-token lookup result unchecked to Job; an absent marker ID yields None, which Job rejects even though a literal string stop is supplied. The task's string helper neither calls that mode nor uses its stop list.",
+        "basis": "source",
+        "evidence": [
+          "call_bd9837992742484c96abcba3bcc9fb68",
+          "call_65e6ba18bf93462d894c72b4b1acf2d4",
+          "call_cff13878f330421aa95a40e2c8907dbe",
+          "call_bdce74478f6a42d9be5f535ede3992bc",
+          "call_c9257d3b590a440fa685118310b136b1",
+          "call_720c8597b17943b98e22000de99fc999",
+          "call_7cbb1f759b0443c3b7aef777ac4db9b0",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62"
+        ]
+      },
+      {
+        "text": "The later 'Keep original torch.dtype' edit affects metadata reporting, and the #55 regression fix affects the fused-weight fallback; neither supplies F8_E4M3 decoding or changes the ordinary scale sequence. The parent still scales deferred placeholders before end_deferred_load populates them, and still transposes ordinary weights without transposing the scale grid. Neither secondary issue is the failure reached with the pinned FP8 files: their file dtype is rejected first. The dense BF16 examples do not supply scale grids on the inspected projections.",
+        "basis": "source",
+        "evidence": [
+          "call_fc70f9329f614f28a5305beaf66f7def",
+          "call_0dd2f77c008f4f0c9938a7a30ec6f6f0",
+          "call_b61046349ff442bf8c8db2828c44e0ff",
+          "call_bbd2b851836c4ce590d77a12a0ed281b",
+          "call_e60a185bc7064044a6f29f623b26715d",
+          "call_720c8597b17943b98e22000de99fc999",
+          "call_56cf4816bd824bf3a55a720711523ab3",
+          "call_9e3e95e8f8f847819a07d9bc1a767108"
+        ]
+      },
+      {
+        "text": "The discussion connections are inferred, not upstream links. PR #4, \u201cchore: update config.py,\u201d proposes a spelling correction in the shared config file. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d traces through the same Config/RoPE imports to an extension import failure. Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, discusses the shared RopeSettings mechanism, but EXAONE4's pinned scaling is Llama3-style, not request-dependent YaRN. Issue #33, \u201cError converting model,\u201d reaches the inspected safetensors file-open call during compilation, not the architecture dispatch or dtype checks.",
+        "basis": "inference",
+        "evidence": [
+          "call_0315ecddf5164d3d9c8abad6ec02a0c1",
+          "call_4856997ec3154f0faf53f1e26ca63614",
+          "call_01dd780b9db04753a8b42b0e7559d585",
+          "call_86e98823a42c43ca97dad6aa176d5c3e",
+          "call_e60a185bc7064044a6f29f623b26715d",
+          "call_c9257d3b590a440fa685118310b136b1"
+        ]
+      },
+      {
+        "text": "Other inferred overlaps are through the shared conversion or generation code. PR #26, \u201cSuperior 3INST parameters,\u201d proposes a decoder multiplier, not model registration. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d trace into Linear.convert_exl3 and Cholesky; #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d logs the same projection families during conversion of another model. Issue #53, \u201cCommand A support,\u201d asks about Command A and availability of EXL3 quants, and points to the separate Cohere2 adapter. Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d traces a Gemma logits-width mismatch in Job, not an EXAONE4 failure; the reference EXAONE4 vocabulary width is already 128-aligned. None establishes that this change fixes the reported behavior.",
+        "basis": "inference",
+        "evidence": [
+          "call_56f3018a1f744c9a87e2920c7f11fe89",
+          "call_2862daabce3940b88ea91501bb3173bc",
+          "call_88bc713da28647d98f7634439b1deb8f",
+          "call_3bb3eafdeebf42129037226871cf96ed",
+          "call_ca899816a78b4133a07580c72e357269",
+          "call_a874fc7e03854d80b8ebd1a95fcff058",
+          "call_e60a185bc7064044a6f29f623b26715d",
+          "call_4e8bb0a1e1fc4e47a5c8bd46fa0a7c00"
+        ]
+      }
+    ],
+    "limitations": [
+      "No full configuration or model was instantiated, and no weight payload, native loader, CUDA kernel, generation, EXL3 conversion, or performance or reference-output comparison was exercised. Execution evidence is limited to isolated Python helpers and scalar metadata checks.",
+      "Header checks cover the first-layer tensor families at all eight pins, plus selected final norm and head entries. They are not an exhaustive inventory of all tensors in all shards. Storage metadata does not establish scale values, numerical equivalence, tokenizer behavior, or usable context length.",
+      "The rationale for the forced-global final layer and precision choices is not stated in the inspected change. The pinned 32B pattern already ends in G, so the forced-final rule does not alter that particular schedule."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+      "04dc55717c499539504b9a3d8454d631de84f7c2",
+      "d42d6238d88151eb837bdf709836d8726759fbd7",
+      "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+      "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+      "1be81eed6839845877d192b2ac1fc84f66f569f6",
+      "d860f8e1e106a45536603cd8069fc9ef43105fd9"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "EXAONE4 dispatch, post-norm blocks, and checkpoint compatibility",
+        "claims": [
+          {
+            "text": "The adapter requires hidden width, query-head count, intermediate width, RMS epsilon and layer count. KV heads default to query heads; a missing, null or zero head_dim falls back to hidden_size // num_attention_heads. The optional activation must be SiLU when supplied. Tying defaults false, window width defaults to -1 (unrestricted), and pattern defaults to None. The typed reader treats JSON null as missing. The parent Cohere2 and Gemma3 adapters read the same pattern key as an integer period, while Gemma2 reads sliding_window_size; EXAONE4 reads the exact sliding_window key and its own string pattern. No existing adapter's interpretation changes.",
+            "basis": "source",
+            "evidence": [
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+              "call_ce70fc294b554e0f9d3e1301d34f1ea8",
+              "call_bbd2b851836c4ce590d77a12a0ed281b"
+            ]
+          },
+          {
+            "text": "LGAI-EXAONE/EXAONE-4.0-1.2B, EXAONE-4.0-1.2B-AWQ, EXAONE-4.0-1.2B-FP8 and EXAONE-4.0-1.2B-GPTQ-Int8 each declare the registered architecture and explicitly provide hidden/intermediate widths 2048/4096, 32/8 query/KV heads, head width 64, 30 layers, tied embeddings and a 65,536-position setting. Each supplies null for both window fields. Width resolves to -1, but pattern resolves to None and layer 0 attempts len(None); this source does not produce an all-global, all-rotary, or any other usable 1.2B schedule.",
+            "basis": "source",
+            "evidence": [
+              "call_25e1ba13fc8a4fbf8857c1a7a6860635",
+              "call_4ddd06b28f3643c39df7461bf3865eb6",
+              "call_2eac2e5e8723476b99b2543d9f125a9d",
+              "call_8f05fc237b0643168e38aeb22da597c3",
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+              "call_bbd2b851836c4ce590d77a12a0ed281b"
+            ]
+          },
+          {
+            "text": "LGAI-EXAONE/EXAONE-4.0-32B, EXAONE-4.0-32B-AWQ, EXAONE-4.0-32B-FP8 and EXAONE-4.0-32B-GPTQ each explicitly supply 5120/27392 widths, 40/8 heads, head width 128, 64 layers, untied embeddings, 131,072 positions, window 4096 and pattern LLLG. For each non-final layer the code repeats the string and tests for uppercase L; it forces the final layer global. Local layers receive both the window and NEOX RoPE; global layers receive -1 and no RoPE, but still run attention and Q/K normalization. Both sizes supply vocabulary 102400, SiLU, RMS epsilon 1e-5, theta 1,000,000 and Llama3 scaling with factor 16, original context 8192, and low/high factors 1/4.",
+            "basis": "source",
+            "evidence": [
+              "call_4e8bb0a1e1fc4e47a5c8bd46fa0a7c00",
+              "call_35e93bd0f06a4fde9f23a73a61065793",
+              "call_40908de89a97435ca8d25c73ec02d6d8",
+              "call_8d8d713380ca49c4903d19ebece663e1",
+              "call_25e1ba13fc8a4fbf8857c1a7a6860635",
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+              "call_720c8597b17943b98e22000de99fc999",
+              "call_c9257d3b590a440fa685118310b136b1"
+            ]
+          },
+          {
+            "text": "The block starts from the embedding's default FP32 residual. Attention receives an FP16 copy, reshapes projected Q/K/V by head, and applies per-head RMSNorm to Q and K, not V. The rotary path supplies those weights to RoPE; the nonrotary path calls the norms directly. The O projection defaults to FP16, and its post-norm preserves that dtype before addition to the FP32 residual. The MLP takes a fresh FP16 copy of the updated residual, applies SiLU(gate) times up in FP16, and requests FP32 down output; its post-norm preserves FP32 before the second addition. These are ordinary weight-multiplying RMSNorms, not Gemma's weight-plus-one variant. The final model.norm explicitly emits FP16 into lm_head.",
+            "basis": "source",
+            "evidence": [
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+              "call_bdce74478f6a42d9be5f535ede3992bc",
+              "call_c9257d3b590a440fa685118310b136b1",
+              "call_720c8597b17943b98e22000de99fc999",
+              "call_7cbb1f759b0443c3b7aef777ac4db9b0",
+              "call_edb9c6dcecee4cea9b0e00f1ff709735"
+            ]
+          },
+          {
+            "text": "prepare_inputs saves the original IDs in params and returns prepare_for_attn's result, matching all 16 parent architecture call sites without omitting a caller-side guard. Cache checks and page/position preparation remain in the helper. Cached and uncached FlashAttention receive the window tuple; sdpa_nc rejects a nonnegative window. Model.prefill stops at the last block, after its attention but before its post-norm, residual addition or MLP. The model's separate default_chat_prompt emits a truthy optional system turn, one user turn, and an open assistant prefix, using [|system|], [|user|], [|assistant|] and [|endofturn|] with newlines. It supplies no default system text, explicit BOS, history, or stop handling.",
+            "basis": "source",
+            "evidence": [
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+              "call_5987c806add04822af6cc31423538a3e",
+              "call_aac72dc442054204ac0e9630112c1167",
+              "call_bbd2b851836c4ce590d77a12a0ed281b",
+              "call_c9257d3b590a440fa685118310b136b1",
+              "call_bdce74478f6a42d9be5f535ede3992bc"
+            ]
+          },
+          {
+            "text": "Dense first-layer headers match the requested .weight keys: self_attn.{q,o}_proj are [2048,2048] or [5120,5120]; {k,v}_proj are [512,2048] or [1024,5120]; mlp.{gate,up}_proj are [4096,2048] or [27392,5120]; down_proj reverses those axes. self_attn.{q,k}_norm have width 64 or 128; post_attention_layernorm, post_feedforward_layernorm and model.norm have hidden width. model.embed_tokens.weight is [102400,H]. The 1.2B dense header starts with the embedding, without a separate lm_head at the start of its sorted keys; all four 32B headers inspected contain a separate BF16 lm_head.weight [102400,5120]. The tied branch offers the embedding as an alternate, not forced shared storage: has_tensor('lm_head') is an exact bare-key check and does not detect lm_head.weight, but Linear tries the primary key before the alternate within each format.",
+            "basis": "source",
+            "evidence": [
+              "call_9e3e95e8f8f847819a07d9bc1a767108",
+              "call_84f58840e62c41709be7ae977d115ed4",
+              "call_56cf4816bd824bf3a55a720711523ab3",
+              "call_8fc319b7d03c44b4bb77c868bdda13ec",
+              "call_bc23b38786c345e7b528280a0a9615c0",
+              "call_ff4943f7cc084a37bd9bc1f13375a971",
+              "call_1543b909c3684bfa85cc11d1a6b643a7",
+              "call_eba47e760e884baea208609b778d0e89",
+              "call_bdce74478f6a42d9be5f535ede3992bc",
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62"
+            ]
+          },
+          {
+            "text": "No fused projection or sliced MLP keys are selected: the adapter supplies separate projections and both intermediate widths are below the shared split threshold 55,296. In the checked layer-0 headers no projection bias or EXL3 group is present. Linear probes EXL3 using trellis plus su/suh and sv/svh; without that group it does not read the EXL3 auxiliaries scale, mcg or mul1. Ordinary loads ask for .weight and optional .bias and .weight_scale_inv. AWQ instead stores I32 qweight [in,out/8] and qzeros [in/128,out/8], with F16 scales [in/128,out]. GPTQ stores I32 qweight [in/p,out], qzeros [in/128,out/p], and g_idx [in], plus F16 scales [in/128,out], where p is four at 8 bits or eight at 4 bits. The native Linear loader never reads those packed AWQ/GPTQ tensors. FP8 uses ordinary matrix names with F8_E4M3 and a BF16 weight_scale_inv grid [out/128,in/128]; the dtype rejection happens before reading that grid.",
+            "basis": "source",
+            "evidence": [
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+              "call_4297db15f4594f569934bbfce0663601",
+              "call_bbd2b851836c4ce590d77a12a0ed281b",
+              "call_d76added98b74481bc8fa787c2284f88",
+              "call_a2413d3bc9004d1d96e981d38c926dc4",
+              "call_e2733f47b7f448f09cf8b98304647e54",
+              "call_76199f824572452781745e0f16f88473",
+              "call_f783f82f36a74dcc8e53c2175059de55",
+              "call_20bb0e4442b24154993aa4994378ab81",
+              "call_9fbed0ed7d1e4ab7bfdcbac746b0b8ef",
+              "call_b61046349ff442bf8c8db2828c44e0ff"
+            ]
+          },
+          {
+            "text": "The bounded Python check executed the extracted typed reader and transcribed the layer expression: 1.2B gave -1/None and TypeError; an empty string gave division by zero; 32B gave 48 local layers and 16 global layers at zero-based indices 3,7,\u2026,63. Integer arithmetic reproduced the dense matrix dimensions and four versus five query heads per KV head. It also reproduced the FP8 scale-grid mismatch after default weight transposition (K projection: stored 4\u00d716 or 8\u00d740, required 16\u00d74 or 40\u00d78) and the 2,048/8,192 wavelength boundaries of the Llama3 scaling blend. The extracted dtype switch raised 'Unknown dtype F8_E4M3'.",
+            "basis": "execution",
+            "evidence": [
+              "call_72b903ab3ebe4fdf8090a748c92df662",
+              "call_385eaf17634d4760b708440721aeebb5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "null-window-pattern-blocks-1p2b",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The new adapter cannot construct any of the four inspected 1.2B variants unchanged.",
+        "trigger": "Build a model from any inspected 1.2B configuration, where sliding_window_pattern is null and there is more than one layer. Omitting the key has the same effect; explicitly supplying an empty string instead reaches modulo zero.",
+        "expected_behavior": "Handle the absent schedule explicitly, or reject it with an architecture-specific configuration diagnostic.",
+        "actual_behavior": "The pattern defaults to None and the layer-0 expression calls len(None), before any decoder blocks or the head are built. An empty string reaches idx % 0. Model.from_config is the generic constructor dispatch; conversion's get_base_model is one higher-level caller.",
+        "locations": [
+          {
+            "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+            "path": "exllamav3/models/exaone4.py",
+            "symbol": "Exaone4Model.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_25e1ba13fc8a4fbf8857c1a7a6860635",
+          "call_4ddd06b28f3643c39df7461bf3865eb6",
+          "call_2eac2e5e8723476b99b2543d9f125a9d",
+          "call_8f05fc237b0643168e38aeb22da597c3",
+          "call_e60a185bc7064044a6f29f623b26715d"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Ran the extracted reader and the scalar layer predicate with the pinned values and an empty-pattern case.",
+            "evidence": [
+              "call_72b903ab3ebe4fdf8090a748c92df662"
+            ],
+            "limits": "No model construction or tensor loading was run."
+          }
+        ]
+      },
+      {
+        "id": "packed-awq-gptq-projections-not-loadable",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The registered architecture does not add a loader for the packed AWQ and GPTQ checkpoint variants.",
+        "trigger": "Load a layer-0 packed projection from the pinned 32B AWQ or GPTQ checkpoint. The 1.2B variants have the same storage mismatch but are blocked earlier by the pattern.",
+        "expected_behavior": "Packed-format support would require a matching decoder or an explicit format rejection.",
+        "actual_behavior": "Linear.load finds neither an EXL3 group nor a dense .weight for the projection and raises its generic unsupported-quantization-format ValueError.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load"
+          }
+        ],
+        "source_evidence": [
+          "call_e2733f47b7f448f09cf8b98304647e54",
+          "call_76199f824572452781745e0f16f88473",
+          "call_bdce74478f6a42d9be5f535ede3992bc",
+          "call_c983ddb28daa48d69309051cfc24528e"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the keys requested by the new projection builders and Linear's two storage routes with both header layouts.",
+            "evidence": [
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+              "call_bbd2b851836c4ce590d77a12a0ed281b",
+              "call_e2733f47b7f448f09cf8b98304647e54",
+              "call_76199f824572452781745e0f16f88473",
+              "call_c983ddb28daa48d69309051cfc24528e"
+            ],
+            "limits": "No full load; no claim about external unpackers or converted checkpoint formats."
+          }
+        ]
+      },
+      {
+        "id": "fp8-dtype-rejected-before-scales",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The inherited FP8 dtype restriction remains at the task revision.",
+        "trigger": "Load an F8_E4M3 projection from the pinned 32B FP8 checkpoint. The 1.2B FP8 header has the same dtype, but model construction stops earlier.",
+        "expected_behavior": "Support for the checkpoint would require decoding the file dtype and applying the corresponding scales.",
+        "actual_behavior": "The sole direct load_fp16 caller is Linear.load. Its weight request reaches SafetensorsCollection.get_tensor and convert_dtype raises ValueError before the companion scale lookup.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "convert_dtype"
+          }
+        ],
+        "source_evidence": [
+          "call_f05030d93a0d4683afd49058ecb5605e",
+          "call_e60a185bc7064044a6f29f623b26715d",
+          "call_b61046349ff442bf8c8db2828c44e0ff",
+          "call_20bb0e4442b24154993aa4994378ab81"
+        ],
+        "verification": [
+          {
+            "method": "repository_execution",
+            "description": "Executed the extracted parent dtype switch with the exact header dtype string.",
+            "evidence": [
+              "call_385eaf17634d4760b708440721aeebb5"
+            ],
+            "limits": "Only the string-to-dtype helper ran, not checkpoint loading or PyTorch."
+          }
+        ]
+      },
+      {
+        "id": "sdpa-rejects-local-attention",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The selectable no-cache SDPA route is not equivalent to FlashAttention for the 32B schedule.",
+        "trigger": "Forward a loaded 32B model with attn_mode='sdpa_nc', without a cache, and reach the first local layer.",
+        "expected_behavior": "A compatible alternative would implement the local mask or reject the backend choice before projection.",
+        "actual_behavior": "Attention.forward dispatches to decode_sdpa_nc, which projects Q/K/V and then asserts that sliding_window is negative. Layer 0 supplies 4096.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.decode_sdpa_nc"
+          }
+        ],
+        "source_evidence": [
+          "call_85e8a68e510247f1beb78b51ac8e4512",
+          "call_c9257d3b590a440fa685118310b136b1",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_070cd7809b274c9a9af7bc9a32a255a2"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the explicit mode through shared dispatch to its window assertion.",
+            "evidence": [
+              "call_720c8597b17943b98e22000de99fc999",
+              "call_c9257d3b590a440fa685118310b136b1",
+              "call_070cd7809b274c9a9af7bc9a32a255a2"
+            ],
+            "limits": "This is an explicit backend limit, not a measured failure of the default FlashAttention path."
+          }
+        ]
+      },
+      {
+        "id": "research-sampler-bypasses-normless-fallback",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The inherited sampler precondition now excludes the normless EXAONE4 blocks.",
+        "trigger": "Point sample_qkv at an otherwise loadable EXAONE4 model and reach an uncached target layer.",
+        "expected_behavior": "A compatible sampler would use the same FP16 branch input as the block, apply Q/K normalization, and handle the absence of global-layer RoPE.",
+        "actual_behavior": "The sampler dereferences module.attn_norm.forward on None before it can call block.forward. Its later direct RoPE call is also unconditional, so adding only the input cast would not handle a global target.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "science/kv_quant_exp.py",
+            "symbol": "sample_qkv"
+          }
+        ],
+        "source_evidence": [
+          "call_9d330832d9044f5d8db6d47c65c7ff9e",
+          "call_c9257d3b590a440fa685118310b136b1",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_052d48f063e347c8b28dc172ea7250d1",
+          "call_9172d703da83492b9a87f74f06244e80"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the sampler's direct projection setup with the task builder and shared forward; the only literal caller is the research script itself.",
+            "evidence": [
+              "call_9d330832d9044f5d8db6d47c65c7ff9e",
+              "call_c9257d3b590a440fa685118310b136b1",
+              "call_bdce74478f6a42d9be5f535ede3992bc",
+              "call_052d48f063e347c8b28dc172ea7250d1",
+              "call_9172d703da83492b9a87f74f06244e80",
+              "call_b97ba25f22a44e04b4cd4215ab5fbd62"
+            ],
+            "limits": "The script defaults to Llama; this does not affect ordinary EXAONE4 forward or generation."
+          }
+        ]
+      },
+      {
+        "id": "reused-prefill-params-skip-residual-updates",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited mutable prefill flag still affects the newly registered decoder.",
+        "trigger": "Reuse the same params dictionary for ordinary forward after prefill reaches the last KV block, without clearing prefill, and reach the attention call.",
+        "expected_behavior": "An ordinary forward should apply the attention post-norm and residual update, then run the MLP branch.",
+        "actual_behavior": "Model.prefill leaves prefill true; neither forward nor the new prepare_inputs clears it. TransformerBlock returns after attention without updating the residual or running the MLP.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.prefill"
+          },
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_bdce74478f6a42d9be5f535ede3992bc",
+          "call_b97ba25f22a44e04b4cd4215ab5fbd62",
+          "call_41802e68da05491d81439bd9482df94e",
+          "call_f1d761c99f2944a0a7610f0e35504e49",
+          "call_9172d703da83492b9a87f74f06244e80"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced dictionary mutation and block dispatch; the inspected generation example uses fresh dictionaries, and Job passes a literal prefill dictionary.",
+            "evidence": [
+              "call_bdce74478f6a42d9be5f535ede3992bc",
+              "call_7cbb1f759b0443c3b7aef777ac4db9b0",
+              "call_c9257d3b590a440fa685118310b136b1",
+              "call_f1d761c99f2944a0a7610f0e35504e49",
+              "call_9172d703da83492b9a87f74f06244e80"
+            ],
+            "limits": "Conditional direct-API reuse, not an observed bundled-generation failure."
+          }
+        ]
+      }
+    ],
+    "summary": "Registers EXAONE4 using shared post-norm blocks and selective local RoPE. The dense 32B reference matches the inspected layout; all four pinned 1.2B variants stop at the null window pattern, and registration does not add native AWQ, GPTQ, or FP8 loading."
+  },
+  "evidence": {
+    "call_6de0b1550c6247a2b4281f4e0be10b29": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "offset": 158,
+        "max_bytes": 767
+      },
+      "result_sha256": "e8c515d1b52b916a7a1c081c3ff56279a312d832c96bed32181daf245792531b"
+    },
+    "call_b97ba25f22a44e04b4cd4215ab5fbd62": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "offset": 925,
+        "max_bytes": 6824
+      },
+      "result_sha256": "2e86afe713fc6a5dacd0346fec08bf2e17f72b2014318631ebc8b05ece72727f"
+    },
+    "call_651a65e990da47f08ce87a842bd68abf": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 7600,
+        "max_bytes": 22000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9",
+      "catalog_only": true
+    },
+    "call_00ff93f08e794218a8eec3cb47b06c29": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 7600,
+        "max_bytes": 16384
+      },
+      "result_sha256": "2411b9cbcedb16a1dff8cadc4522d60059484701f9cc871b762f26616b97738f",
+      "catalog_only": true
+    },
+    "call_25e1ba13fc8a4fbf8857c1a7a6860635": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B",
+        "revision": "e1bc152ddee871e02a4b91826a700898686c2012",
+        "path": "config.json"
+      },
+      "result_sha256": "e579a73ffad18a0f1c71cf88c1f5f17c830c8baac27cba4970949db1a3a13845"
+    },
+    "call_4ddd06b28f3643c39df7461bf3865eb6": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B-AWQ",
+        "revision": "b3b1143a3c64a7a7cd6500e8f291c501fb7e81a6",
+        "path": "config.json"
+      },
+      "result_sha256": "205fdee32d21fdc2160397750f978fc64bd4fd97ae9556728411ee38847285dc"
+    },
+    "call_2eac2e5e8723476b99b2543d9f125a9d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B-FP8",
+        "revision": "fdbcbdb6610963c5496a613ef1e162c37361554c",
+        "path": "config.json"
+      },
+      "result_sha256": "7f4bdad72bd737866f9e606d21810f11600b20a7548c7d830ba27fd8d4d5d755"
+    },
+    "call_8f05fc237b0643168e38aeb22da597c3": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B-GPTQ-Int8",
+        "revision": "6c9e2500123b93b0ccf0554974b6a38d4586a9b2",
+        "path": "config.json"
+      },
+      "result_sha256": "057fe056cd8ec284cbc40fd0c65b3982bc9b993232cd576be2273b1a4d3f02f3"
+    },
+    "call_4e8bb0a1e1fc4e47a5c8bd46fa0a7c00": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B",
+        "revision": "90704823f5ab8d367ef2168e0f71b67c10575922",
+        "path": "config.json"
+      },
+      "result_sha256": "237640cde122b793ac18c2eb18cc04bc41df31e14400ba89a87f3af2b97ed495"
+    },
+    "call_35e93bd0f06a4fde9f23a73a61065793": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-AWQ",
+        "revision": "b8c397142e312456bf21a1a2f6c23c71a57e4914",
+        "path": "config.json"
+      },
+      "result_sha256": "e8e87d8fed58aed1a6854e8599ef328797d080603e49d583a0facfeb6beeb42e"
+    },
+    "call_40908de89a97435ca8d25c73ec02d6d8": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-FP8",
+        "revision": "7357333452152feb9236a492e2d43b65a266125c",
+        "path": "config.json"
+      },
+      "result_sha256": "e7b52d7d2f2b448d7a30fa863c50ef6a161f254ecdade091053ae97059f242fa"
+    },
+    "call_8d8d713380ca49c4903d19ebece663e1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-GPTQ",
+        "revision": "6ce4e899c7d0374dac9ca217fa4873bd04172cd7",
+        "path": "config.json"
+      },
+      "result_sha256": "f6f9aeda7ac9dc2069a72f413bd03d72715423d03732dc2ba63743e76147ca8f"
+    },
+    "call_5987c806add04822af6cc31423538a3e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "prepare_for_attn("
+      },
+      "result_sha256": "a4be081d3558d2b821c1a0cf373a06ea3c748e643cad726b5130d7ba82b52813"
+    },
+    "call_aac72dc442054204ac0e9630112c1167": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor p in Path('exllamav3/models').glob('*.py'):\n s=p.read_text().splitlines()\n for i,l in enumerate(s):\n  if any(k in l for k in ('prepare_for_attn(input_ids','attn_post_norm =','head_alt_key = \"model.embed_tokens\"','def from_directory','def read_cfg','def assert_cfg','def read_rope_settings_default','ARCHITECTURES =')): print(p.name,i+1,'\\n'+'\\n'.join(s[max(i-4,0):i+7]))"
+        ]
+      },
+      "result_sha256": "ef95932c8f678eda6670f03a79c663ef4a400cfe78bc427ccd2a3e3f2fe5f8d3"
+    },
+    "call_fd0c2a9213244455adcb77cd26b0ce97": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d42d6238d88151eb837bdf709836d8726759fbd7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "ba2fbc00025ffa702ea6ac3fd80d0e0e2e5c97c7651e5becb1d6850342237917"
+    },
+    "call_d9e583006f9f4c78acd4fb8926a7c777": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0"
+      },
+      "result_sha256": "85af11a66e2025929594f162ea47c7ef8f4b23aaf09047747cb1b8697ddc630f"
+    },
+    "call_071236595bf04656a9a8ad08a3a84e2c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_b0b01ce7b3e74b70ab3d4c7f6e00e3ec": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6"
+      },
+      "result_sha256": "c19854a1e1a34457a7498586632273be4986043a79a92f8d723d02e943c1cf10"
+    },
+    "call_bdce74478f6a42d9be5f535ede3992bc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\njobs={'models/config.py':['def from_directory','def read_rope_settings_default','def __init__'],'models/model.py':['def from_config','def prefill','def forward'],'modules/attn.py':['def prepare_for_attn','def __init__','window_size','self.rope =','self.sm_scale ='],'modules/transformer.py':['class TransformerBlock','def forward','def allocate_q'],'modules/rmsnorm.py':['def __init__','def forward'],'modules/linear.py':['def load(','def load_fp16','q_weight','weight_scale_inv','qweight'],'loader/safetensors.py':['def has_tensor','def get_tensor'],'util/file.py':['def read_dict'],'modules/gated_mlp.py':['def __init__','def forward']}\nfor f,ks in jobs.items():\n p=Path('exllamav3')/f\n if not p.exists():continue\n print(f); s=p.read_text().splitlines()\n for i,l in enumerate(s):\n  if any(k in l for k in ks): print(i+1,'\\n'.join(s[i:i+(38 if 'def ' in l else 4)]))"
+        ]
+      },
+      "result_sha256": "73eeeb2f0ec4c9934ea074f6db8766b5592ef35bd48e5a11677ac793de145935"
+    },
+    "call_bbd2b851836c4ce590d77a12a0ed281b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nr=Path('exllamav3'); ranges={'util/file.py':[(87,120)],'modules/attn.py':[(26,111),(168,220),(359,395),(430,466)],'modules/linear.py':[(48,99),(148,197)],'models/config.py':[(51,109)]}\nfor f,rs in ranges.items():\n s=(r/f).read_text().splitlines();print(f);print('\\n'.join('\\n'.join(s[a-1:b]) for a,b in rs))\nfor p in r.rglob('*.py'):\n if 'class GatedMLP' in p.read_text():\n  s=p.read_text().splitlines(); i=next(i for i,x in enumerate(s) if 'class GatedMLP' in x);print(p,'\\n'.join(s[i:i+122]))"
+        ]
+      },
+      "result_sha256": "7cd8fd6a5c1d39718cd4de6e59eab184dd0f6c808be3325b9d0d8bfc1c575a91"
+    },
+    "call_9e3e95e8f8f847819a07d9bc1a767108": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B",
+        "revision": "e1bc152ddee871e02a4b91826a700898686c2012",
+        "path": "model.safetensors",
+        "limit": 16
+      },
+      "result_sha256": "8d207c68d0f13fbccbbfca1d1ed170209945f57fe5e71121c69a3615e76ddada"
+    },
+    "call_84f58840e62c41709be7ae977d115ed4": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B",
+        "revision": "e1bc152ddee871e02a4b91826a700898686c2012",
+        "path": "model.safetensors",
+        "offset": 325,
+        "limit": 16
+      },
+      "result_sha256": "dece8a9f24b866cdeaa82046891baba92afb8aac68394f906fe1276dbc713393"
+    },
+    "call_56cf4816bd824bf3a55a720711523ab3": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B",
+        "revision": "90704823f5ab8d367ef2168e0f71b67c10575922",
+        "path": "model-00001-of-00014.safetensors",
+        "limit": 16
+      },
+      "result_sha256": "fae17a191484c1e3b518751091246c262412d09199d6ab00c5a84bf715cfa74c"
+    },
+    "call_bc23b38786c345e7b528280a0a9615c0": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B",
+        "revision": "90704823f5ab8d367ef2168e0f71b67c10575922",
+        "path": "model-00014-of-00014.safetensors",
+        "offset": 0,
+        "limit": 4
+      },
+      "result_sha256": "45f21f9188952c3979f091f44502e4067b890d231d8028d9d15a6becf15eba6b"
+    },
+    "call_8fc319b7d03c44b4bb77c868bdda13ec": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B",
+        "revision": "90704823f5ab8d367ef2168e0f71b67c10575922",
+        "path": "model-00013-of-00014.safetensors",
+        "offset": 41,
+        "limit": 16
+      },
+      "result_sha256": "27825da2a4fd301d8a7021c323209a17d2b5d35baa5fbc96a3267200cc52bc64"
+    },
+    "call_d76added98b74481bc8fa787c2284f88": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B-AWQ",
+        "revision": "b3b1143a3c64a7a7cd6500e8f291c501fb7e81a6",
+        "path": "model.safetensors",
+        "limit": 28
+      },
+      "result_sha256": "5f93014cb219ebfd83aaaf792e8b5c72df22236df26c7ba26812f7456704fad0"
+    },
+    "call_f783f82f36a74dcc8e53c2175059de55": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B-FP8",
+        "revision": "fdbcbdb6610963c5496a613ef1e162c37361554c",
+        "path": "model.safetensors",
+        "limit": 20
+      },
+      "result_sha256": "d6602acff49f78466fbf87173a107c3ac9d40744f534456ed690afc4980b7faa"
+    },
+    "call_a2413d3bc9004d1d96e981d38c926dc4": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B-GPTQ-Int8",
+        "revision": "6c9e2500123b93b0ccf0554974b6a38d4586a9b2",
+        "path": "model.safetensors",
+        "limit": 33
+      },
+      "result_sha256": "948ec5078a8acff8251440f2d57e6acf683aa4d8b6ca5e0b9f6e96571f91edf0"
+    },
+    "call_e2733f47b7f448f09cf8b98304647e54": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-AWQ",
+        "revision": "b8c397142e312456bf21a1a2f6c23c71a57e4914",
+        "path": "model-00001-of-00004.safetensors",
+        "limit": 26
+      },
+      "result_sha256": "26f2ae87ef5475d2b83455b2d38ca9ec1cebfa19ba2b2a53b0c6bffc3b51939a"
+    },
+    "call_20bb0e4442b24154993aa4994378ab81": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-FP8",
+        "revision": "7357333452152feb9236a492e2d43b65a266125c",
+        "path": "model-00001-of-00007.safetensors",
+        "limit": 19
+      },
+      "result_sha256": "e4c4de0c32a2a1ec273e9b3ce9967c513b63f164a42fe8e31cc15be54b861c8a"
+    },
+    "call_76199f824572452781745e0f16f88473": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-GPTQ",
+        "revision": "6ce4e899c7d0374dac9ca217fa4873bd04172cd7",
+        "path": "model-00001-of-00005.safetensors",
+        "limit": 33
+      },
+      "result_sha256": "ee10c9af9d8f7d47247a5b05f2e3bbedd6caad85fe763b14864d0c91982eab28"
+    },
+    "call_ce70fc294b554e0f9d3e1301d34f1ea8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "sliding_window"
+      },
+      "result_sha256": "bf9bafa34b99dc62bed4a2c4be5b6fd0c073fc8588d695b8f5894b97b2287e83"
+    },
+    "call_6afdbdba6e694e01a1d8bc3e50067bf0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "Exaone4"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_14dafed7652f49b4962f7e66e118b0d5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "\"sdpa_nc\""
+      },
+      "result_sha256": "7a331b704255b03fdfa494025269a75d5e67c1e4ff15e75851c5c91c2c93c3dd"
+    },
+    "call_9d330832d9044f5d8db6d47c65c7ff9e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "sample_qkv("
+      },
+      "result_sha256": "9587548ffea1b1a6eb337402039b83d44713b35483307b5a0eb435fced62b4e3"
+    },
+    "call_41802e68da05491d81439bd9482df94e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": ".prefill("
+      },
+      "result_sha256": "34cecd126d8106c502a33b3287d51d17d5812e0cf973632be9fa74810e5cd2fd"
+    },
+    "call_ce05c654412a467e822f777c35b5249d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "sample_qkv"
+      },
+      "result_sha256": "b11dcb7b1ad6af3aad977ac10cd293a5cf67c425f60a9899a9f4c5f5d31490ad",
+      "catalog_only": true
+    },
+    "call_37c0854349794c56a5f4a94e2d22459a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "models/model.py",
+        "symbol": "prefill"
+      },
+      "result_sha256": "cf99f541b8ebe314787fae04a3a5b6f450d4b0cc3eb34ba65d700193598785b9",
+      "catalog_only": true
+    },
+    "call_4b11c24c7154412b8e0e685973fab2d6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "modules/transformer.py",
+        "symbol": "allocate_q"
+      },
+      "result_sha256": "0d45607a47714578a3bc836656a6872f2e425e3b8d0a1d70e817ae93dfefb9b6",
+      "catalog_only": true
+    },
+    "call_26479ea2d634475ea7e6b828012ae28d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "models/gemma3.py",
+        "symbol": "Gemma3TextModel"
+      },
+      "result_sha256": "dbc2205cb4bb079b1f204926d2c1bcfb05832da591916e066d90cc508e71a272",
+      "catalog_only": true
+    },
+    "call_afad1eb5a26248fdb5d1cb634cdbc4b0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "42afcd7e6cd361b2be9aef1072f26ffccffb92db",
+        "max_bytes": 16384
+      },
+      "result_sha256": "5808e284d830b4cd5c0aa7918018db646eda98fdf8c79008bca6131fa54bfa12"
+    },
+    "call_72b903ab3ebe4fdf8090a748c92df662": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\np=Path('exllamav3/util/file.py'); fn=next(x for x in ast.parse(p.read_text()).body if isinstance(x,ast.FunctionDef) and x.name=='read_dict'); ns={'no_default':object(),'T':object(),'Any':object,'cast':lambda t,x:x};exec('from __future__ import annotations\\n'+ast.unparse(fn),ns); read=ns['read_dict'];\nfor n,h,d,q,k,i,w,p in [(30,2048,64,32,8,4096,None,None),(64,5120,128,40,8,27392,4096,'LLLG')]:\n cfg={'sliding_window':w,'sliding_window_pattern':p};w=read(cfg,int,'sliding_window',-1);p=read(cfg,str,'sliding_window_pattern',None); print(n,w,p,d,q//k,[(q*d,h),(k*d,h),(h,q*d),(i,h),(h,i)],'expected dense count',n*11+2+(n==64));\n try:\n  v=[idx!=n-1 and p[idx%len(p)]=='L' for idx in range(n)]; print(sum(v),[j for j,b in enumerate(v) if not b]);\n except TypeError as e: print(type(e).__name__,e)\n print('KV FP8 scale', (k*d//128,h//128),'AWQ qweight',(h,k*d//8),'GPTQ qweight',(h//(4 if n==30 else 8),k*d))\ntry: print([j!=2 and ''[j%len('')]=='L' for j in range(3)])\nexcept Exception as e: print(type(e).__name__,e)"
+        ]
+      },
+      "result_sha256": "50d102eba182a58637f7c467bc5c31f9da5713c4e4b1f52aa21164e052fd9712"
+    },
+    "call_c9257d3b590a440fa685118310b136b1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nr=Path('exllamav3'); files=[('modules/attn.py',337,372),('models/gemma3.py',187,274),('modules/mlp.py',1,18),('modules/embedding.py',10,90),('../science/kv_quant_exp.py',10,84),('generator/job.py',855,897),('util/rope.py',1,240)]\nfor f,a,b in files:\n s=(r/f).read_text().splitlines(); print(f,'\\n'.join(s[a-1:b]))"
+        ]
+      },
+      "result_sha256": "afa34f1d9d063678553096a43be80895eebd5c64f5180bb6bb6ad26d8368ac0e"
+    },
+    "call_4297db15f4594f569934bbfce0663601": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "MAX_MLP_INTERMEDIATE"
+      },
+      "result_sha256": "82bef7a66ebe850573d8a382822040579a33f7bb0ebb7e85f04d85c5a5e1755e"
+    },
+    "call_4856997ec3154f0faf53f1e26ca63614": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 3000
+      },
+      "result_sha256": "1de5093ae03279ee64f074a14dfca995a8e8a14e5127d46705d23ff05750cbb5"
+    },
+    "call_01dd780b9db04753a8b42b0e7559d585": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 5500
+      },
+      "result_sha256": "fe934d3510060a2e9fadc89f65aabba75484c8fbb8872a817982e2c9022e88a5"
+    },
+    "call_86e98823a42c43ca97dad6aa176d5c3e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 6500
+      },
+      "result_sha256": "c0b2cc300357d989ce8b4911ab9854256140276ea159e9c4507e259925f870da"
+    },
+    "call_2862daabce3940b88ea91501bb3173bc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 2200
+      },
+      "result_sha256": "50ea9286505cd6d7a78141c58ce4ff9a52885c7cacfc8047fdd577d47ca51fdb"
+    },
+    "call_3bb3eafdeebf42129037226871cf96ed": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 2400
+      },
+      "result_sha256": "6527d116f8b6e7ecdb72fd4ee2d622ab51e560f9c9edfa149482b9c62a54bed4"
+    },
+    "call_88bc713da28647d98f7634439b1deb8f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 4100
+      },
+      "result_sha256": "71c38bd11664c62ed6f0759fd9efe5e3e73a2b12b2b89c0b897b6f63e6c68a54"
+    },
+    "call_ca899816a78b4133a07580c72e357269": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 4200
+      },
+      "result_sha256": "8900ea45cd3e55a403237a534aa6bae950e5bed39863d275bd013e03d66784ae"
+    },
+    "call_0315ecddf5164d3d9c8abad6ec02a0c1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 2500
+      },
+      "result_sha256": "9f8325b6cf805efeca1ff34dfd5adb97940e477245a52fa10c0de709343bd213"
+    },
+    "call_bd9837992742484c96abcba3bcc9fb68": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "science/kv_quant_exp.py",
+        "limit": 5
+      },
+      "result_sha256": "475839eb1709447db7e86fc4b62c757010ca5873017f6d5f0937195d44be70db"
+    },
+    "call_aa2c79f06b3c4f82a9fe2b27eb8c8d20": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/modules/transformer.py",
+        "limit": 5
+      },
+      "result_sha256": "9e038f85efb72ec3543daefe6531d68124311d9ba43ef6b65b58fe3c31fad71b"
+    },
+    "call_cff13878f330421aa95a40e2c8907dbe": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "examples/chat_templates.py",
+        "limit": 3
+      },
+      "result_sha256": "d477a0c83cb7d6436a9bb6ec3e25dcb72fc6a28c00d3c325157fe9e28a75cfab"
+    },
+    "call_65e6ba18bf93462d894c72b4b1acf2d4": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/models/model.py",
+        "limit": 5
+      },
+      "result_sha256": "b757be3d455dcfc7813cb507469c502ffe698ffe4845d36e857d8e54bc19f76e"
+    },
+    "call_fd821c6041294fa1b2ff5f4049d85d0b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "default_chat_prompt("
+      },
+      "result_sha256": "cd1eed1c3520592492e745eaff679ede332308add53dc559d8baec2dd14e9541"
+    },
+    "call_1543b909c3684bfa85cc11d1a6b643a7": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-FP8",
+        "revision": "7357333452152feb9236a492e2d43b65a266125c",
+        "path": "model-00007-of-00007.safetensors",
+        "limit": 3
+      },
+      "result_sha256": "eeb211bc948be87634a6cea99f86afa4d9521fba6eb86c7d4611a6f64f15abe4"
+    },
+    "call_ff4943f7cc084a37bd9bc1f13375a971": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-AWQ",
+        "revision": "b8c397142e312456bf21a1a2f6c23c71a57e4914",
+        "path": "model-00004-of-00004.safetensors",
+        "limit": 1
+      },
+      "result_sha256": "a61aab18e59fb985d930e4f2211c5adf0696cd7bd85b69e8e7a76326ce301244"
+    },
+    "call_eba47e760e884baea208609b778d0e89": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-32B-GPTQ",
+        "revision": "6ce4e899c7d0374dac9ca217fa4873bd04172cd7",
+        "path": "model-00005-of-00005.safetensors",
+        "limit": 1
+      },
+      "result_sha256": "4a52df823d9682eb29298c667d35b257546ad5d035c91551556b41cec0d4cb42"
+    },
+    "call_7cbb1f759b0443c3b7aef777ac4db9b0": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,terms in {'exllamav3/loader/safetensors.py':['F8_E4M3','float2half and','stloader_open_file'],'exllamav3/modules/linear.py':['transposed_load:'],'exllamav3/modules/mlp.py':['def forward','silu_mul'],'exllamav3/modules/linear_fp16.py':['def forward'],'examples/chat_templates.py':['class PromptFormat_exaone'],'examples/chat.py':['stop_conditions'],'exllamav3/tokenizer/tokenizer.py':['def single_id'],'exllamav3/generator/job.py':['Unsupported type'],'exllamav3/models/model.py':['def default_chat_prompt'],'examples/generation_loop.py':['model.forward','model.prefill']}.items():\n p=Path(f)\n if not p.exists():continue\n s=p.read_text().splitlines();print(f)\n for i,l in enumerate(s):\n  if any(t in l for t in terms):print('\\n'.join(s[max(0,i-2):i+(25 if 'def forward' in l else 9)]))"
+        ]
+      },
+      "result_sha256": "56d6c94df8bfd725aac60c746183b2ab6837ff841a1f7f165301776fc940ea3e"
+    },
+    "call_536e2b2ab06243f6a44b9bcd7c344aef": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "float8_e4m3fn"
+      },
+      "result_sha256": "f3ad8b886fec95971460b6f4a7461d01e509cdc59d2ee27417721b7966145a7d"
+    },
+    "call_208ac1e8e67f484496337039f8de5fb0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "F8_E4M3"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_6148d438ed1a4dd58d1bcd84b71a0b11": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "def convert_dtype"
+      },
+      "result_sha256": "814adc5bbf3a4c77021c174666bf35adca10bdf9e06e0b2d1abe18c8951aa0c2"
+    },
+    "call_b61046349ff442bf8c8db2828c44e0ff": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 4100
+      },
+      "result_sha256": "7a761fb0015324f9ce593edefb7513869586c438e6d26f70401f5c13c4d6e7b7"
+    },
+    "call_9fbed0ed7d1e4ab7bfdcbac746b0b8ef": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "qweight"
+      },
+      "result_sha256": "ba5129be74ea881733ee45b7e9ac009c8198c6fb90f031ff731af41897139054"
+    },
+    "call_39f092df77d745d1ab5c0e48ded979ea": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "apply_fp8_scales_"
+      },
+      "result_sha256": "58f4fc57e450ab8909afb17bbc2659f52c6357d978bfd9ada51d902285b3820c",
+      "catalog_only": true
+    },
+    "call_d574acdd54eb4a229aae2425aecb5340": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d860f8e1e106a45536603cd8069fc9ef43105fd9"
+      },
+      "result_sha256": "8df55df1afc188c95218af02098d7485c2d1772f6dc16db8fbfed59b50dc498e"
+    },
+    "call_f05030d93a0d4683afd49058ecb5605e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "load_fp16("
+      },
+      "result_sha256": "b728adaff1b6f798222ef352a674c524a3f1f83f91c48c996f65d1ff52333e13"
+    },
+    "call_2113f34e0c3e49e9b515d4ff5c78404a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "apply_fp8_scales_("
+      },
+      "result_sha256": "a7cec63514824986e3e3fd581e4b0b124c9f1b55408d5f02ffaf1cd04f6f4e90"
+    },
+    "call_5f8e33ac8a3d4bdb8b0dd44a92c82f2f": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/modules/linear.py",
+        "limit": 8
+      },
+      "result_sha256": "eba116b6cadfb4be90286dd90b3bb89d1506fd5e5b560a92ac76adaf6f9862eb"
+    },
+    "call_246be13449bc4df4aa3715bc63f2a42c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "load_fp16"
+      },
+      "result_sha256": "a0231eb00c85b6b18e8d40e81271492757cb423d58f641edafb604497e629d86",
+      "catalog_only": true
+    },
+    "call_0dd2f77c008f4f0c9938a7a30ec6f6f0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1e1e68b3921da92286b2f50958239eec262a13a1",
+        "max_bytes": 5500
+      },
+      "result_sha256": "a50658394282e7454d7e183474cbc891b797d895e2c838f686c1710845ba571d"
+    },
+    "call_edb9c6dcecee4cea9b0e00f1ff709735": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "dtype = out_dtype or self.out_dtype"
+      },
+      "result_sha256": "2326de7f50b9db2c0b7b391a6b34f797923d340d1deb941a6d8189d34e230c42"
+    },
+    "call_e60a185bc7064044a6f29f623b26715d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\np=Path('exllamav3/loader/safetensors.py');s=p.read_text().splitlines(); print('\\n'.join(s[265:335])); print('\\n'.join(s[392:455])); p=Path('exllamav3/conversion/convert_model.py');s=p.read_text().splitlines();\nfor i,l in enumerate(s):\n if any(k in l for k in ('from_config','from_directory','convert_exl3(','allocate_q(')): print('\\n'.join(s[i-2:i+6]))"
+        ]
+      },
+      "result_sha256": "a66f3799a6929873a6112cf373a9d0c9650e6a1b7b0471d378c83e54e06f0037"
+    },
+    "call_56f3018a1f744c9a87e2920c7f11fe89": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 3000
+      },
+      "result_sha256": "d4aa84ffc2947bc8ee5864fe4dbd425dbe4420bd7711172f800f3f4dafda2326"
+    },
+    "call_a874fc7e03854d80b8ebd1a95fcff058": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 2700
+      },
+      "result_sha256": "90ca03324099d92636969953e6b428478b51563bf1f758ea907f0f15f8c27167"
+    },
+    "call_13b99f2b93af4ff5a06f4d536589857a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "loader/safetensors.py",
+        "symbol": "convert_dtype"
+      },
+      "result_sha256": "69a8da7d2f5bc4a252d15316deefd3131920fd975f6a59afbea4e9f0addbed33",
+      "catalog_only": true
+    },
+    "call_385eaf17634d4760b708440721aeebb5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\ns=Path('exllamav3/loader/safetensors.py').read_text(); f=next(x for x in ast.parse(s).body if isinstance(x,ast.FunctionDef) and x.name=='convert_dtype'); ns={};exec(ast.get_source_segment(s,f),ns)\ntry: ns['convert_dtype']('F8_E4M3')\nexcept ValueError as e: print(e)\nfor a,b in [(512,2048),(1024,5120),(4096,2048),(27392,5120),(2048,2048),(5120,5120)]: print((a,b),'stored grid',(a//128,b//128),'post-transpose required',(b//128,a//128),'accepted',a==b)\nprint('RoPE wavelength boundaries',8192/4,8192/1)"
+        ]
+      },
+      "result_sha256": "4218b1eb18cc986849b861a868a0d4cf52d510d059f74a9319e251f984b61fed"
+    },
+    "call_f1261b6cf3e94365905591caeb61f451": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "decode_sdpa("
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_85e8a68e510247f1beb78b51ac8e4512": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "query": "decode_sdpa_nc("
+      },
+      "result_sha256": "490c4e15c210c04ba08abfb348eeea2ce50ba399f5418b6c61809427016f4478"
+    },
+    "call_801c65a9903e4bb9a7041cd6c320ec91": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "examples/chat_templates.py",
+        "symbol": "PromptFormat_exaone"
+      },
+      "result_sha256": "11c063e547e08562ad3a723427528a32b5f95e692261a0229ffcb3b119f06299",
+      "catalog_only": true
+    },
+    "call_720c8597b17943b98e22000de99fc999": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,a,b in [('exllamav3/loader/safetensors.py',450,480),('exllamav3/modules/attn.py',215,286),('examples/chat_templates.py',0,0),('exllamav3/tokenizer/tokenizer.py',0,0)]:\n s=Path(f).read_text().splitlines();\n if not a:\n  a=next(i for i,l in enumerate(s) if ('class PromptFormat_exaone' if f.startswith('examples') else 'def single_id') in l);b=a+(50 if f.startswith('examples') else 17)\n print(f,'\\n'.join(s[a:b]))"
+        ]
+      },
+      "result_sha256": "fbdd8c6a7eb1c640d37fe88817ccca287c813ac7be8175bf28b3a5a6212beb54"
+    },
+    "call_d2a649469d744e27a7764159ae36ca0a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_8ce14bfe96f24b1789ddcac1445c97b3": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "max_bytes": 16384
+      },
+      "result_sha256": "504f945b30b36e58039d8309ea9c127f76916ef6d0a983811721d7c581b142e9"
+    },
+    "call_745564c989494c3da11bff7fa197cb9d": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/models/config.py",
+        "limit": 10
+      },
+      "result_sha256": "77afb822ef578c4888c748dd0d34488cec5a6929bc67feb2cc6cbf341ce5d1da"
+    },
+    "call_47d4e7001e184cea812e024277a2ef86": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "04dc55717c499539504b9a3d8454d631de84f7c2",
+        "max_bytes": 3000
+      },
+      "result_sha256": "9aa5d28eccc2d63fe4893035f32999570c133d122a22da592ac4541fb33a5326"
+    },
+    "call_57717de00dfd46ccaf2aa4613f82b91b": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/loader/safetensors.py",
+        "limit": 8
+      },
+      "result_sha256": "f3cd2d48531c856bc66b8f257920d3ab7fd387faad0952a460757d0a6b3a0c78"
+    },
+    "call_fc70f9329f614f28a5305beaf66f7def": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "dbbeccfb63ee50c8de7feff6e45001b98406958f",
+        "max_bytes": 5200
+      },
+      "result_sha256": "f0ae2241c0dcc70834bd6ebc8ac0657a0d4aa6a08c1a4364c5619781ca31cb5e"
+    },
+    "call_2a1ede8d54f842179ed668c29dae87ea": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "04dc55717c499539504b9a3d8454d631de84f7c2",
+        "max_bytes": 12000
+      },
+      "result_sha256": "330e814a5ee13bef0d2ea2ee141f2f28010ec25d7fdec72ca144ad923945b0f6"
+    },
+    "call_9172d703da83492b9a87f74f06244e80": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "7f36759a288cfed0094f69ebe35574e939c5f645b06926cce3caadbb76b17fe5"
+    },
+    "call_070cd7809b274c9a9af7bc9a32a255a2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "f039e692513034cd605e4a6e6075b9d20cc3909bf5e07798ed3429b15ffbc6b1"
+    },
+    "call_c983ddb28daa48d69309051cfc24528e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 11200
+      },
+      "result_sha256": "cd22bab3fbd5efffe5cf0223ff7c1bb1dddb1800f2f1ceea7b314ce72cfb6721"
+    },
+    "call_052d48f063e347c8b28dc172ea7250d1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 3320
+      },
+      "result_sha256": "db15305148f64f1dac661b93e79c8505afc4240acf125abca5f542af8c0cc67d"
+    },
+    "call_f1d761c99f2944a0a7610f0e35504e49": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 3900
+      },
+      "result_sha256": "613c497d4ca22585623bd741720d9111e94dd1dc995768a4481878320b1aefda"
+    }
+  }
+}

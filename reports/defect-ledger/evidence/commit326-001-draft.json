@@ -1,0 +1,472 @@
+{
+  "schema_version": 5,
+  "sha": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+  "parent_shas": [
+    "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94"
+  ],
+  "cutoff_date": "2025-07-16T19:12:46+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "integration",
+    "problem": [
+      {
+        "text": "Both installation routes required exactly `flash_attn==2.7.4.post1`, excluding higher releases even if a suitable wheel was available for one of them. turboderp's commit message describes the revert as temporary, pending resolution of the \u201cwheel situation,\u201d but names no affected platform or wheel.",
+        "basis": "source",
+        "evidence": [
+          "call_3d2a8e9f281f4986aa03027c9ec46bbf",
+          "call_e1e2b5b7db444ec481557918f10a61d0",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Changing `==` to `>=` in both `requirements.txt` and `setup.py`'s `install_requires` keeps the two installation routes aligned on FlashAttention. It retains `2.7.4.post1` as the minimum and adds no upper bound.",
+        "basis": "source",
+        "evidence": [
+          "call_e1e2b5b7db444ec481557918f10a61d0",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      },
+      {
+        "text": "The likely tradeoff is easier installation when a suitable newer wheel exists, at the cost of allowing FlashAttention versions to vary across environments. The change neither selects a wheel nor ensures that an eligible release has a compatible binary.",
+        "basis": "inference",
+        "evidence": [
+          "call_3d2a8e9f281f4986aa03027c9ec46bbf",
+          "call_e1e2b5b7db444ec481557918f10a61d0",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "FlashAttention remains a required dependency. Attention dispatch is unchanged, and `exllamav3/modules/attn.py` still imports `flash_attn_func` and `flash_attn_with_kvcache` at module load. Choosing the existing Torch SDPA path does not bypass that import. The KV-quantization experiment also retains its direct import of `flash_attn_func`.",
+        "basis": "source",
+        "evidence": [
+          "call_75663378a59b4a4d8ed6de773d7d0401",
+          "call_9289f7ed325e446d9c970ea3167f42a6",
+          "call_4b5d9ba2e7e5411a8fa51a44912e5263",
+          "call_51b007efdc604365a918905e44bd1430",
+          "call_e1e2b5b7db444ec481557918f10a61d0",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial installation entry records the minimum in `requirements.txt` but not in package metadata. \u201cFix requirements\u201d records adding that same minimum to `install_requires`; \u201cPin flash-attn at 2.7.4.post1\u201d records changing both declarations to equality. The current change restores the form documented before the pin.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_67af8c281c1042f59b7035d309acad99",
+          "call_e63008d5409c40eb8a3de8db9eabd6f6",
+          "call_17e40463683941bb96d84626167debf2"
+        ]
+      },
+      {
+        "text": "Issue #17, \u201cModuleNotFoundError: No module named 'torch' when installing requirements.txt,\u201d quotes the restored requirement and reports a Windows FlashAttention build that appeared to hang. A reply by `turboderp` recommends installing PyTorch first and points to a prebuilt `2.7.4.post1` wheel.",
+        "basis": "source",
+        "evidence": [
+          "call_de77a278152841d8b74cfd368f334a3d"
+        ]
+      },
+      {
+        "text": "The quoted requirement and wheel discussion make #17 relevant context, not evidence that the report prompted this revert or that relaxing the pin fixes it. The parent README and CI also mention wheels, but those references concern ExLlamaV3's own installation and wheel builds, not an inventory of FlashAttention wheels.",
+        "basis": "inference",
+        "evidence": [
+          "call_de77a278152841d8b74cfd368f334a3d",
+          "call_cf015b3b2b944633b20f778b9fa6d012",
+          "call_e1e2b5b7db444ec481557918f10a61d0",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      },
+      {
+        "text": "Issue #2, \u201cError: setup script specifies an absolute path,\u201d reports rejection of absolute source paths during a wheel build. Issue #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d reports ExLlamaV3 extension compiler errors and was closed without a reported solution. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports failure loading `exllamav3_ext` after installation and a workaround involving a new Conda environment and toolchain.",
+        "basis": "source",
+        "evidence": [
+          "call_2131bbaa1f594668aeed26cfb216b613",
+          "call_d946182d24d6488ab40c61c800d7156b",
+          "call_325553cc55c54df7a7703ce02338560c"
+        ]
+      },
+      {
+        "text": "Those three reports overlap with the native-extension installation workflow, not with the changed FlashAttention constraint: the parent already constructs relative source paths, and the diff changes neither extension compilation nor loading.",
+        "basis": "inference",
+        "evidence": [
+          "call_2131bbaa1f594668aeed26cfb216b613",
+          "call_d946182d24d6488ab40c61c800d7156b",
+          "call_325553cc55c54df7a7703ce02338560c",
+          "call_6fd7f330441141f6961236ed23da0c02",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d reports a conversion failure during linear Hessian capture, reached through `decode_flash_attn_nc` and `project_qkv`; the discussion identifies tokenizer truncation as the likely cause and reports overriding it. Issue #49, \u201crunning the QTIP inference code,\u201d gives setup instructions for QTIP and describes a `fast-hadamard-transform` installation blocker involving Ninja.",
+        "basis": "source",
+        "evidence": [
+          "call_3cb322c9aa934c25af7875f098c2bebe",
+          "call_2456aa12e502413489c35dbfef24ae1e"
+        ]
+      },
+      {
+        "text": "Issue #16 shares the no-cache decoder, but the matching projection call precedes `flash_attn_func`. Issue #49 mentions `setup.py` and `requirements.txt` for QTIP and its dependencies, not the ExLlamaV3 FlashAttention declaration. Neither match indicates that the revert addresses the report.",
+        "basis": "inference",
+        "evidence": [
+          "call_3cb322c9aa934c25af7875f098c2bebe",
+          "call_2456aa12e502413489c35dbfef24ae1e",
+          "call_4b5d9ba2e7e5411a8fa51a44912e5263",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      },
+      {
+        "text": "Issue #62, \u201cDev branch 15JUL2025 - ModuleNotFoundError: No module named 'exllamav3.generator.filter',\u201d reports that an installed package failed when chat imported `exllamav3`. The reporter says adding `exllamav3.generator.filter` to `setup.py` and rebuilding restored chat.",
+        "basis": "source",
+        "evidence": [
+          "call_54142e72286c41258d7ebf4f98d77f88"
+        ]
+      },
+      {
+        "text": "The earlier Formatron entry records the introduction of public `Filter` and `FormatronFilter` exports and their eager imports through package initializers.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_e02387a34fa340dfa91bbe430653ef6e"
+        ]
+      },
+      {
+        "text": "The concrete match to #62 is the missing filter package in the explicit `setup.py` list and the eager import through the generator. That omission is carried over: the task changes `install_requires`, not `packages`.",
+        "basis": "inference",
+        "evidence": [
+          "call_54142e72286c41258d7ebf4f98d77f88",
+          "call_6fd7f330441141f6961236ed23da0c02",
+          "call_3dc8ac4d54d14fff9d623cca1bb83a34",
+          "call_153257f30e5f4e87b49c80a5dc40e371",
+          "call_3915be451a31405d9f451051e31adb70"
+        ]
+      }
+    ],
+    "limitations": [
+      "The evidence does not identify the specific wheel, release, or environment that prompted the revert, or establish why `2.7.4.post1` remains the minimum.",
+      "The standard-library check compared declarations only. No dependency resolver, wheel build or installation, package import, or GPU attention ran. Candidate selection and compatibility across Python, Torch, CUDA, and GPU combinations remain unverified.",
+      "The import search covers literal `flash_attn` and `flash-attn` spellings in the parent tree, not dynamic imports or downstream code."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+      "ba4304a44b267e88f3c882136302fd1e25c5384e",
+      "08dde73e664b997091370894072065f1f15055bf"
+    ],
+    "chapters": [
+      {
+        "id": "packaging",
+        "title": "Restore the FlashAttention minimum in both installation routes",
+        "claims": [
+          {
+            "text": "`requirements.txt` governs installation from the requirements file; `install_requires` supplies the dependency to setuptools. Each changes one FlashAttention declaration from equality to a lower bound. The Torch requirement stays unchanged, as do `setup.py`'s separate check for an already installed Torch and its `EXLLAMA_NOCOMPILE` switch for the native extension.",
+            "basis": "source",
+            "evidence": [
+              "call_e1e2b5b7db444ec481557918f10a61d0",
+              "call_3915be451a31405d9f451051e31adb70",
+              "call_6fd7f330441141f6961236ed23da0c02"
+            ]
+          },
+          {
+            "text": "The no-cache decoder still supplies projected Q, K and V to `flash_attn_func`. The cached decoder supplies Q, K and V plus cache tensors, block table and sequence lengths to `flash_attn_with_kvcache`, then updates the cache layer. A release satisfying the new declaration must still satisfy these unchanged call interfaces.",
+            "basis": "source",
+            "evidence": [
+              "call_4b5d9ba2e7e5411a8fa51a44912e5263",
+              "call_e1e2b5b7db444ec481557918f10a61d0",
+              "call_3915be451a31405d9f451051e31adb70"
+            ]
+          },
+          {
+            "text": "A standard-library check applied the inspected substitution in memory to the parent files, comparing requirements lines and extracting the `install_requires` list with Python's AST. It found exactly one changed declaration in each file, leaving 12 requirements lines and 11 setup dependencies unchanged.",
+            "basis": "execution",
+            "evidence": [
+              "call_3df2bc066b5f4443b6fabaa8c655e4bd",
+              "call_e1e2b5b7db444ec481557918f10a61d0",
+              "call_3915be451a31405d9f451051e31adb70"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "installed-filter-package-omitted",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The explicit package list still omits the generator filter subpackage that installed code imports eagerly.",
+        "trigger": "Import `exllamav3` from an installation that follows the explicit package list and does not otherwise expose the filter source, for example when starting the chat example outside the checkout.",
+        "expected_behavior": "The installed distribution provides `exllamav3.generator.filter` so that the generator and public filter exports can be imported.",
+        "actual_behavior": "`setup.py` lists `exllamav3.generator` and `exllamav3.generator.sampler` but not `exllamav3.generator.filter`. If the latter is absent from the installation, the eager generator import can raise `ModuleNotFoundError` before chat launches, as #62 reports. The FlashAttention edit does not change that list.",
+        "locations": [
+          {
+            "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+            "path": "setup.py",
+            "symbol": "setup(packages=...)"
+          },
+          {
+            "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "module-level Filter import"
+          }
+        ],
+        "source_evidence": [
+          "call_6fd7f330441141f6961236ed23da0c02",
+          "call_3915be451a31405d9f451051e31adb70",
+          "call_3dc8ac4d54d14fff9d623cca1bb83a34",
+          "call_153257f30e5f4e87b49c80a5dc40e371",
+          "call_54142e72286c41258d7ebf4f98d77f88"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the explicit parent package list with the task diff and followed literal filter imports. `job.py`, `generator.py`, and the generator initializer import the filter subpackage directly; the top-level package initializer reaches them through its generator import. The reported chat traceback shows one entry point affected by that chain.",
+            "evidence": [
+              "call_6fd7f330441141f6961236ed23da0c02",
+              "call_3915be451a31405d9f451051e31adb70",
+              "call_3dc8ac4d54d14fff9d623cca1bb83a34",
+              "call_153257f30e5f4e87b49c80a5dc40e371",
+              "call_54142e72286c41258d7ebf4f98d77f88"
+            ],
+            "limits": "No distribution was built or installed. The observation is conditional on the installed module being absent; it does not establish failure for a source checkout, an editable install, or every packaging workflow."
+          }
+        ]
+      }
+    ],
+    "summary": "Restores `flash_attn>=2.7.4.post1` in both installation declarations so newer releases can qualify without lowering the minimum. Attention dispatch and native build logic are unchanged. The change does not establish wheel availability or resolve the separately reported filter-package omission."
+  },
+  "evidence": {
+    "call_e1e2b5b7db444ec481557918f10a61d0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "offset": 207,
+        "max_bytes": 311
+      },
+      "result_sha256": "a698af676c793f56ba932213404ea1e6316831b1e5cfaa73b0255b342bdd588c"
+    },
+    "call_3915be451a31405d9f451051e31adb70": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "offset": 518,
+        "max_bytes": 403
+      },
+      "result_sha256": "6dde88e3f2b699f6f69e99738f96faade9abc61c7c9c59848205acba2c593a16"
+    },
+    "call_75663378a59b4a4d8ed6de773d7d0401": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "query": "flash_attn",
+        "limit": 70
+      },
+      "result_sha256": "d24e485625ee8ce4c750e213373176aee35c72a1387371f027f7deaca3f1b1d8"
+    },
+    "call_cf015b3b2b944633b20f778b9fa6d012": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "query": "wheel",
+        "limit": 30
+      },
+      "result_sha256": "1f651ca6eab4b7801133ed80a605ef602593efa451c3b36d5f2dd83d66362a60"
+    },
+    "call_6fd7f330441141f6961236ed23da0c02": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "path": "setup.py"
+      },
+      "result_sha256": "671b5e8497cfa762249c4237a0b9a6ab173813dd292d27ae51943b92595b206f"
+    },
+    "call_17e40463683941bb96d84626167debf2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e"
+      },
+      "result_sha256": "16bf5fca4ad842ec5697bc4b4ca97ec4e45e3546803becee5e098f809872ae16"
+    },
+    "call_de77a278152841d8b74cfd368f334a3d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17"
+      },
+      "result_sha256": "28f111f6cfb323a6cebacfda6067dc7785a7d1041790600731f930dbd0f36cef"
+    },
+    "call_2131bbaa1f594668aeed26cfb216b613": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/2"
+      },
+      "result_sha256": "b5cc1e9d513939a46858b8edd65efdb26e7079daefb832e6961eb6764e4c514b"
+    },
+    "call_3cb322c9aa934c25af7875f098c2bebe": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16"
+      },
+      "result_sha256": "101216dd59e0c68bf1c5660f4cb2ca3331619febf09299061d638a973e106bd7"
+    },
+    "call_d946182d24d6488ab40c61c800d7156b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21"
+      },
+      "result_sha256": "fd49189b253e9459116de928b54e56ea3d52d53975b24b2eac7c276b9fadc254"
+    },
+    "call_2456aa12e502413489c35dbfef24ae1e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49"
+      },
+      "result_sha256": "2dd87d080c8130c02ce7f8c52d640b0eb36e680914efdd5c8efe375d5c666710"
+    },
+    "call_54142e72286c41258d7ebf4f98d77f88": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/62",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7964fd407ebc34a9b9135feff93562411753dc720210cba758ffab12d57cfd97"
+    },
+    "call_9289f7ed325e446d9c970ea3167f42a6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 1900
+      },
+      "result_sha256": "294f77ce74d4d26b47ff53a39b485a5dc6a4d3d608f95b759773aff4f259cbe9"
+    },
+    "call_99e2784a28ac43ae972f5de84514cfc5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "query": "flash-attn"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_0fc72fa241ba4c63a8be8a3da92df5c2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "path": "exllamav3/modules/attn.py",
+        "query": "project_qkv"
+      },
+      "result_sha256": "6eb4fcf9137f32b985c7a5c5db9121a745d1cb5fb6dda663db6f90fba69e5c93"
+    },
+    "call_51b007efdc604365a918905e44bd1430": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 3700
+      },
+      "result_sha256": "1357f71869ff944ac39d0a015d809f956b24fe1c858fa4718b564105d5ff06ce"
+    },
+    "call_50f98de40ea14c8d83ad967f9ba39a31": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 2105
+      },
+      "result_sha256": "52097b7b92c9cebd61e05994f8ff357d7c575a796ab04e5388a1ffa30cf8a89b",
+      "catalog_only": true
+    },
+    "call_4b5d9ba2e7e5411a8fa51a44912e5263": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 12500,
+        "max_bytes": 6500
+      },
+      "result_sha256": "c3f9089ba60069552b33de92b8bce60471f0ded8192d3a4d122ae11f1cc944fd"
+    },
+    "call_699747bebadb4e5d964174ff787988ef": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/generator/filter",
+        "limit": 12
+      },
+      "result_sha256": "2a023fb9ee64db23921c04a20e90670f54dfa4ecffbbd4f865295870936a0af4",
+      "catalog_only": true
+    },
+    "call_e02387a34fa340dfa91bbe430653ef6e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "08dde73e664b997091370894072065f1f15055bf"
+      },
+      "result_sha256": "af7537f69b51ce62025e8816d84fbc764ea57edb4bb44df71ab485f475e8e95d"
+    },
+    "call_3dc8ac4d54d14fff9d623cca1bb83a34": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "query": "from .filter import"
+      },
+      "result_sha256": "0101a03ad9074579a7bebc34001adcb29a652c1aaf98f6ab9fc34425b84c811e"
+    },
+    "call_153257f30e5f4e87b49c80a5dc40e371": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1f7f3e94c0e6055ff1aee1121294a1ddb7c79c94",
+        "path": "exllamav3/__init__.py",
+        "query": "generator"
+      },
+      "result_sha256": "3ee3787800c6e1dffe8042bf23dc6608a64a4a4f5ad862ebf7fa9b027f19d9c8"
+    },
+    "call_325553cc55c54df7a7703ce02338560c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "5ce75e775198d130c7b18c47e1fae5a8c5365b4724869d6637a8e02ed0280596"
+    },
+    "call_3df2bc066b5f4443b6fabaa8c655e4bd": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast\nfrom pathlib import Path\nold='flash_attn==2.7.4.post1'; new='flash_attn>=2.7.4.post1'\ndef setup_deps(s):\n    return ast.literal_eval(next(k.value for n in ast.walk(ast.parse(s)) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='setup' for k in n.keywords if k.arg=='install_requires'))\nfor path,read in [('requirements.txt',str.splitlines),('setup.py',setup_deps)]:\n    s=Path(path).read_text(); assert s.count(old)==1\n    a=read(s); b=read(s.replace(old,new,1)); assert len(a)==len(b)\n    d=[(x,y) for x,y in zip(a,b) if x!=y]; assert d==[(old,new)]\n    print(path, d, 'unchanged entries:',len(a)-1)"
+        ]
+      },
+      "result_sha256": "f7d5533d08560ecd753bd04498601bee80b2f0c097dac3b838d781c08aa0a77b"
+    },
+    "call_67af8c281c1042f59b7035d309acad99": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_3d2a8e9f281f4986aa03027c9ec46bbf": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "offset": 0,
+        "max_bytes": 207
+      },
+      "result_sha256": "54adca0872152ea762fe7c892980e460777f45d10cf20e525ca8274928072ac1"
+    },
+    "call_e63008d5409c40eb8a3de8db9eabd6f6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+        "max_bytes": 13000
+      },
+      "result_sha256": "dd01f96f499b1db164a3591664c1e3ec55790ee19ecbe40454dd6ecfaa5bc708"
+    }
+  }
+}

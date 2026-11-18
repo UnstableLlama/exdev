@@ -1,0 +1,529 @@
+{
+  "schema_version": 5,
+  "sha": "db533103b1827e83b55bac4f4531eeef3684a57f",
+  "parent_shas": [
+    "327d1f99d691982c6db0e3d32528e7971560b8f8"
+  ],
+  "cutoff_date": "2025-07-17T20:58:07+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The parent checkout contains `exllamav3/generator/filter` with an initializer, `filter.py`, and `formatron.py`, but `setup.py` does not list it in `packages`. Listing `exllamav3.generator` and its `sampler` sibling does not explicitly select the new subpackage.",
+        "basis": "source",
+        "evidence": [
+          "call_3e2f288bc1d34ae0bd4a9a45a39f3d6d",
+          "call_ff2ae973986546ee9d653e1a9a7c7f1f"
+        ]
+      },
+      {
+        "text": "In issue #62, \u201cDev branch 15JUL2025 - ModuleNotFoundError: No module named 'exllamav3.generator.filter',\u201d mindkrypted reported that `examples/chat.py` failed while importing an installed ExLlamaV3 from `site-packages`. The reporter added the filter package to `setup.py` and said EXAONE 4.0 chat worked after rebuilding. Turboderp's commit explicitly names #62 and applies that same list entry.",
+        "basis": "source",
+        "evidence": [
+          "call_f92b5c4ed9c04b6b839165f2240cc6f5",
+          "call_e5c6b90b779b400f8a955ba3fb0142cc",
+          "call_f3e953c5fef64ac3a9513f4094b88b75"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The traceback matches the parent's eager import chain: `exllamav3/__init__.py` imports from `.generator`; that package initializer imports `Generator`; `generator.py` imports `Job`; and `job.py` imports `.filter` at module scope. The missing package therefore stops startup before `chat.py` selects a prompt format or loads a model. EXAONE was the reporter's test case, not a condition for reaching the failing import.",
+        "basis": "inference",
+        "evidence": [
+          "call_f92b5c4ed9c04b6b839165f2240cc6f5",
+          "call_72507da868534cffa10fe3a09a4c92fb",
+          "call_193d75f5a67c44a49b34cdcb3c56a074",
+          "call_d8fefa98e3a145c99b6bc390bf985f9d",
+          "call_ce194e3e297645afa6d83b1b3cfb544d",
+          "call_f9b7609a3ee9497d863399a5cca71c95"
+        ]
+      },
+      {
+        "text": "Adding one name to the explicit package list preserves the existing packaging and public import design. Deferring the filter imports could reduce the number of callers blocked by a missing subpackage, but would not ship the files needed by callers that actually use filters. Automatic package discovery could reduce omissions of this kind, but would change how the entire distribution's package set is selected.",
+        "basis": "inference",
+        "evidence": [
+          "call_3e2f288bc1d34ae0bd4a9a45a39f3d6d",
+          "call_f3e953c5fef64ac3a9513f4094b88b75",
+          "call_4b4fcb1751eb40f7a05881865cf61210",
+          "call_72507da868534cffa10fe3a09a4c92fb"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The patch selects the existing filter subpackage for distribution. It changes no import statements, dependency declarations, native build flags, chat templates, or generation logic. The filter initializer still imports both `Filter` and `FormatronFilter`, and the adapter still imports `formatron` and `kbnf` at module scope; those dependencies were already declared in `install_requires`.",
+        "basis": "source",
+        "evidence": [
+          "call_f3e953c5fef64ac3a9513f4094b88b75",
+          "call_3e2f288bc1d34ae0bd4a9a45a39f3d6d",
+          "call_76141dd8f13d4a9ab0d0f53fba9451d1",
+          "call_c8c92aed54f34127ad6bc21744452147"
+        ]
+      },
+      {
+        "text": "An installation missing this subpackage can block ordinary `exllamav3` imports even when the caller never requests a filter. The parent search found examples importing `Generator` and `Job`, a constrained-generation example importing the filter classes explicitly, and callers such as `examples/loading.py` that import only model-loading names from the same root initializer.",
+        "basis": "inference",
+        "evidence": [
+          "call_c945fc310e574b53a60fca20a07bf7d0",
+          "call_72507da868534cffa10fe3a09a4c92fb",
+          "call_193d75f5a67c44a49b34cdcb3c56a074",
+          "call_ce194e3e297645afa6d83b1b3cfb544d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial installation chapter and \u201cAdd Formatron support and improved logit masking.\u201d The first describes the existing precompile, JIT-install, and checkout workflows; the second records the introduction of public filter exports and eager adapter imports. It also records runtime filter and sampler concerns, which the packaging-only edit does not address.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_c305606acda546b08f3dd84e7d5ee310",
+          "call_e95d63c6987a4d2ba3d3a53d0eb715f9"
+        ]
+      },
+      {
+        "text": "The earlier Transformers integration entry records two separate concerns: the integration package was not listed in `setup.py`, and its eager root import made Transformers an undeclared startup dependency.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_a5f9155748fb4734ae527e804cedd34c",
+          "call_10341d4aec3e49d28ac303ebab1fa6db"
+        ]
+      },
+      {
+        "text": "In the inspected parent, the integration omission persists and this patch leaves it in place. The earlier eager-import path does not persist: the parent root initializer does not import `integration`, its initializer is empty, and the in-tree example imports the adapter explicitly.",
+        "basis": "source",
+        "evidence": [
+          "call_3e2f288bc1d34ae0bd4a9a45a39f3d6d",
+          "call_f3e953c5fef64ac3a9513f4094b88b75",
+          "call_0037ba18ca734612a7e279dc16e54152",
+          "call_72507da868534cffa10fe3a09a4c92fb",
+          "call_521480bb6056447bb380014289c907ec",
+          "call_a65924473c0e49999517941e3b418462"
+        ]
+      },
+      {
+        "text": "Closed issues #2, \u201cError: setup script specifies an absolute path,\u201d and #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d report wheel-build path validation and unresolved native compilation failures, respectively. The inferred overlap is the use of `setup.py`; this patch does not change its extension source paths or compiler settings.",
+        "basis": "inference",
+        "evidence": [
+          "call_379f2cbcc41745778c77b169f6af86dc",
+          "call_afdbd5a05edd4d6aa9755c7b0a237411",
+          "call_3e2f288bc1d34ae0bd4a9a45a39f3d6d",
+          "call_f3e953c5fef64ac3a9513f4094b88b75"
+        ]
+      },
+      {
+        "text": "Other discussions overlap only by file or entry point: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d traces a native extension load error through `exllamav3/__init__.py`; #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d traces a tensor-size mismatch through `job.py`; #49, \u201crunning the QTIP inference code,\u201d gives QTIP installation advice using setup scripts; and #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d reports a Cholesky failure and mentions `examples/chat.py` in later troubleshooting for different models. Those overlaps are not evidence that this package-list edit addresses any of the four reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_2216c3bd5c764b89a86d9d75270784fe",
+          "call_2d04b67c8739463a8c385a4a110f2338",
+          "call_444e024dd0aa4bde8bd6a91db9c8ed15",
+          "call_06af4563c05046e7ae535db180ba4dca",
+          "call_f3e953c5fef64ac3a9513f4094b88b75"
+        ]
+      }
+    ],
+    "limitations": [
+      "No wheel or source distribution was built or inspected, and no installed import, editable install, or chat run was reproduced. The reported rebuild success comes from mindkrypted.",
+      "The package inventory check compares explicit names with directories containing `__init__.py`; it does not execute setuptools or determine the contents of an installed artifact. The import reach is based on inspected static imports, not a survey of dynamic imports or downstream applications."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "08dde73e664b997091370894072065f1f15055bf",
+      "bcaa636f66973eac4ac071ad25ef31e8586a02dc"
+    ],
+    "chapters": [
+      {
+        "id": "packaging",
+        "title": "Include the generator filter subpackage in distributions",
+        "claims": [
+          {
+            "text": "`setup.py` adds `exllamav3.generator.filter` alongside `exllamav3.generator` and `exllamav3.generator.sampler`. Supplying the existing package is the missing precondition for `Job`'s unchanged relative import in a distribution that previously omitted it.",
+            "basis": "source",
+            "evidence": [
+              "call_f3e953c5fef64ac3a9513f4094b88b75",
+              "call_ff2ae973986546ee9d653e1a9a7c7f1f",
+              "call_ce194e3e297645afa6d83b1b3cfb544d"
+            ]
+          },
+          {
+            "text": "A standard-library check parsed the parent's literal `packages` list and compared it with directories containing `__init__.py`. Before the change it found two unlisted packages, `exllamav3.generator.filter` and `exllamav3.integration`; applying the one-line addition to the list in memory left only `exllamav3.integration` unlisted.",
+            "basis": "execution",
+            "evidence": [
+              "call_dda257ee4aed4fb3a7250e891daf77ed",
+              "call_f3e953c5fef64ac3a9513f4094b88b75"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "integration-remains-unlisted",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The separate Transformers integration package remains absent from the explicit distribution package list.",
+        "trigger": "Install a distribution built from this package list, then explicitly import `exllamav3.integration.transformers` with its dependencies available and no checkout on the import path.",
+        "expected_behavior": "The installed package should provide the adapter imported by `examples/transformers_integration.py`.",
+        "actual_behavior": "`setup.py` selects the newly added filter subpackage but still does not select `exllamav3.integration`. If the artifact omits the adapter, the explicit import fails before `patch_transformers()` can run. Unlike the filter omission, this does not block the ordinary root import through the inspected initializer.",
+        "locations": [
+          {
+            "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+            "path": "setup.py",
+            "symbol": "setup(packages=...)"
+          },
+          {
+            "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+            "path": "examples/transformers_integration.py",
+            "symbol": "module-level adapter import"
+          }
+        ],
+        "source_evidence": [
+          "call_f3e953c5fef64ac3a9513f4094b88b75",
+          "call_3e2f288bc1d34ae0bd4a9a45a39f3d6d",
+          "call_0037ba18ca734612a7e279dc16e54152",
+          "call_a65924473c0e49999517941e3b418462",
+          "call_72507da868534cffa10fe3a09a4c92fb"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the package inventory and diff with the root initializer and the sole literal in-tree `patch_transformers` import and call found by the parent search.",
+            "evidence": [
+              "call_a2ea27ad635a4db5b4ac4fdb9a99c4ea",
+              "call_a65924473c0e49999517941e3b418462",
+              "call_72507da868534cffa10fe3a09a4c92fb",
+              "call_f3e953c5fef64ac3a9513f4094b88b75"
+            ],
+            "limits": "The example appends the checkout to `sys.path`, so running from source can mask the omission. No distribution or installed import was tested; literal search does not cover dynamic or external consumers."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds the existing generator filter subpackage to setup.py's explicit package list, addressing the installed import failure reported in #62. It does not change filter behavior or add the separately unlisted Transformers integration package."
+  },
+  "evidence": {
+    "call_f3e953c5fef64ac3a9513f4094b88b75": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "offset": 176,
+        "max_bytes": 409
+      },
+      "result_sha256": "58fe915f5d24ec2f48255eb6e56673a841a28741ccec997b715ea90890fde18d"
+    },
+    "call_f92b5c4ed9c04b6b839165f2240cc6f5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/62",
+        "source_id": "I_kwDOOU24Gs7A5elq"
+      },
+      "result_sha256": "49c0ea5e84be6003f2782c9cd5ea3c49b1cda626a4ede53305ae36f65edce4e7"
+    },
+    "call_3e2f288bc1d34ae0bd4a9a45a39f3d6d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "setup.py"
+      },
+      "result_sha256": "f68e31fe6352e979ddd20fb592b8d6bc90015f82ea95c0185233c35b7e8cb38c"
+    },
+    "call_4b4fcb1751eb40f7a05881865cf61210": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "query": "import Filter"
+      },
+      "result_sha256": "0101a03ad9074579a7bebc34001adcb29a652c1aaf98f6ab9fc34425b84c811e"
+    },
+    "call_d48d27a66e614c6688bebab5716d1e9a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "query": "exllamav3.generator.filter"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_72507da868534cffa10fe3a09a4c92fb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/__init__.py"
+      },
+      "result_sha256": "cdc98590e0b8321128dc6175bccf67fbcad6a6ed257665151392e1e39fe5cd17"
+    },
+    "call_193d75f5a67c44a49b34cdcb3c56a074": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/generator/__init__.py"
+      },
+      "result_sha256": "ebb0de1094e104d4bb6ab03205ba4252f4437f900290f51a372387ac3cd51dad"
+    },
+    "call_ff2ae973986546ee9d653e1a9a7c7f1f": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/generator/filter"
+      },
+      "result_sha256": "fdee1c762090cea66779a3e391ef442d9434db8af48048a500cad00bede33707"
+    },
+    "call_76141dd8f13d4a9ab0d0f53fba9451d1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/generator/filter/__init__.py"
+      },
+      "result_sha256": "abf269546d731a3133ce0abb28137fd1beaa7d3ea75a858b9d444dd87ddd92d7"
+    },
+    "call_d8fefa98e3a145c99b6bc390bf985f9d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/generator/generator.py",
+        "max_bytes": 1500
+      },
+      "result_sha256": "5f98de0a398a3b930df404e7e71c2e24743a342041d201287ed68cfef807101d"
+    },
+    "call_ce194e3e297645afa6d83b1b3cfb544d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/generator/job.py",
+        "max_bytes": 1400
+      },
+      "result_sha256": "b05264f36f517171665e26b03c4baaa99908f75740c1058aed8b18a1afa00542"
+    },
+    "call_c945fc310e574b53a60fca20a07bf7d0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "query": "from exllamav3 import",
+        "limit": 100
+      },
+      "result_sha256": "439fbf7d975a978010fd5dadae3bc8241c8b6ef7a9da9a56f5a08aa73c22c928"
+    },
+    "call_ef8e6a0eab974e01a5f2176a7d86624e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "query": "ModuleNotFoundError"
+      },
+      "result_sha256": "914d18d3a2885c1acf44f5b77e0478b596f58994ece382c821b939bcc7c32f3a"
+    },
+    "call_641e7966999949b6849f425e0cd2b013": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "query": "#62"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_f9e24687e9484a0b889ea3ac60a2b816": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/generator/filter"
+      },
+      "result_sha256": "2a023fb9ee64db23921c04a20e90670f54dfa4ecffbbd4f865295870936a0af4",
+      "catalog_only": true
+    },
+    "call_e95d63c6987a4d2ba3d3a53d0eb715f9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "max_bytes": 16384
+      },
+      "result_sha256": "af7537f69b51ce62025e8816d84fbc764ea57edb4bb44df71ab485f475e8e95d"
+    },
+    "call_5a6e36ea939a4639a99f9461c02569bd": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "setup.py",
+        "limit": 30
+      },
+      "result_sha256": "cf3c405e3e023671ae1fe97b3544921f37a11b996413a24de19c860c03dd59f5"
+    },
+    "call_03d91adcc57e4edcadc2a51541705a51": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "setup.py",
+        "limit": 25
+      },
+      "result_sha256": "81bf3f8c161d7f27615d46f2b1751430a61c4655e410a5c0ea561fc735cd27f0",
+      "catalog_only": true
+    },
+    "call_a5f9155748fb4734ae527e804cedd34c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "max_bytes": 16384
+      },
+      "result_sha256": "ac7e0084b529fcf746bc7df70010664da13e7e2152f575d5bfc938c278b6fbae"
+    },
+    "call_10341d4aec3e49d28ac303ebab1fa6db": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "offset": 16384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "d3f878eb3f10d9eb0566ea826a46c007ee9a465ffc55301bf750da7141bdabc1"
+    },
+    "call_c305606acda546b08f3dd84e7d5ee310": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_8d631a3d5fb94c1ca9e09fb346b52258": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 936
+      },
+      "result_sha256": "453896c3def455c044572777fa6321f2c12d9b3edfde97a0ac9780c625f459bd",
+      "catalog_only": true
+    },
+    "call_afdbd5a05edd4d6aa9755c7b0a237411": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21"
+      },
+      "result_sha256": "c0934d06f1a1e95cb09a1118574a1782b25fe8b77043b2f06e291456c096fb56"
+    },
+    "call_379f2cbcc41745778c77b169f6af86dc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/2"
+      },
+      "result_sha256": "bb3dff06332ea1677fe89efb6758eb96465ae4e25c4ff0494454220fe0669a88"
+    },
+    "call_444e024dd0aa4bde8bd6a91db9c8ed15": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49"
+      },
+      "result_sha256": "711d481d578b662d4ab7f4d564de67be95442bcd20d1ab62090c606d716e3539"
+    },
+    "call_2216c3bd5c764b89a86d9d75270784fe": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7"
+      },
+      "result_sha256": "a6312be7989b46f6d8b77c90c639e7f90198f1b571deed41d517ce9f91ceca2c"
+    },
+    "call_2d04b67c8739463a8c385a4a110f2338": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48"
+      },
+      "result_sha256": "bc7a2beaecce662eccbb830ee1f17382e13039652a4cbaaa91b1ffc6a7192c1a"
+    },
+    "call_0037ba18ca734612a7e279dc16e54152": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/integration"
+      },
+      "result_sha256": "e63b0f8433340deb485b56938c78ff232a29ecdc93644b740df1df16b2de6e36"
+    },
+    "call_a2ea27ad635a4db5b4ac4fdb9a99c4ea": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "query": "patch_transformers"
+      },
+      "result_sha256": "72578d39e136c95e048e06d04b01cb751f6514c9f24d24644bfe8d1bbbe44d08"
+    },
+    "call_a65924473c0e49999517941e3b418462": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "examples/transformers_integration.py",
+        "max_bytes": 1000
+      },
+      "result_sha256": "293902b593b3ceb30f21e734265537522bddd492c02ea8d9ad38ffddd5af1ffa"
+    },
+    "call_521480bb6056447bb380014289c907ec": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/integration/__init__.py"
+      },
+      "result_sha256": "3e399b8727aa658080406747bf37ab91e8adde68f23edd5e26f30cc97e1e402b"
+    },
+    "call_06af4563c05046e7ae535db180ba4dca": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 16384
+      },
+      "result_sha256": "ff846bf15dbf3aec88f42e0c36625d040ae2c32b33081d0ebe5c99e2cb9724dd"
+    },
+    "call_dda257ee4aed4fb3a7250e891daf77ed": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nroot=pathlib.Path('exllamav3'); tree=ast.parse(pathlib.Path('setup.py').read_text()); call=next(n.value for n in tree.body if isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='setup'); before=set(ast.literal_eval(next(k.value for k in call.keywords if k.arg=='packages'))); after=before|{'exllamav3.generator.filter'}; dirs={'.'.join(p.parent.parts) for p in root.rglob('__init__.py')}; print('Unlisted initialized directories before:',sorted(dirs-before)); print('Unlisted initialized directories after modeled addition:',sorted(dirs-after)); p=root/'generator'/'filter'; print('Python files in filter directory:', sorted(x.name for x in p.glob('*.py')))"
+        ]
+      },
+      "result_sha256": "1f430dee9e8ae5a295a31097df15a9ca0155ed4d62354a654e26612bbf2f5bbf"
+    },
+    "call_c8c92aed54f34127ad6bc21744452147": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "exllamav3/generator/filter/formatron.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "88c2fe3c9b651d75183bd36cbd5584a3e8d9dc47351b92b802226949a4b02dfa"
+    },
+    "call_e5c6b90b779b400f8a955ba3fb0142cc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "offset": 0,
+        "max_bytes": 176
+      },
+      "result_sha256": "5dfade1572841cc7c50cd1760c51a19bf49b57e041b21fc82d1245696c88bcd2"
+    },
+    "call_f9b7609a3ee9497d863399a5cca71c95": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "path": "examples/chat.py",
+        "max_bytes": 700
+      },
+      "result_sha256": "168b8da0e372f27728e28360055459fb4ae6e46b02ca4da06b06cc870b762d8b"
+    },
+    "call_7725821efb304afaafa4172a8ad93d39": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "327d1f99d691982c6db0e3d32528e7971560b8f8",
+        "query": "EXAONE"
+      },
+      "result_sha256": "2be0b960a0328585d6beb7e6bf396ed6066d348cecd7423c4a9f8b2397f32762"
+    },
+    "call_815682fa092f46a5a3ffa5646bd4746a": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "0499236bd16b9d9da30ab52cde6c882411f3c5d4d92307fce1aa575bbd5e69e3"
+      },
+      "result_sha256": "ece749ce10b678999bfebceec2d1d7892ee2e2a1245594e4d7f1ca66683d62d7",
+      "catalog_only": true
+    }
+  }
+}

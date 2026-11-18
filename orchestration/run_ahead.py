@@ -152,6 +152,8 @@ def publish(state, run, request):
     positions = sorted({d['position'] for d in item.get('ran_ahead_of', [])})
     if positions and 'Ran ahead of: '+', '.join(map(str, positions))+'.' not in text:
         raise ValueError('Request must disclose ran-ahead positions')
+    if item.get('revision_of_run'):
+        validate_revision_request(item, text)
     item.update(status='pending_full_review', request=legacy.relative(request), request_sha256=digest(request))
     for row in state['runs'] + state.get('replacement_reviews', []):
         if row.get('run', row.get('candidate_run')) == run: row['status'] = 'pending_full_review'
@@ -293,6 +295,8 @@ def check_verdict(item, verdict, *, outcome='approved'):
     elif not re.search(r'\b'+outcome+r'\b', decision[1], re.I):
         raise ValueError('Verdict does not state requested outcome')
     request = ROOT/item['request']
+    if item.get('revision_of_run'):
+        validate_revision_request(item, request.read_text())
     if digest(request) != item['request_sha256']:
         raise ValueError('Request changed after publication')
     listed = re.findall(r'^- (.+): `([a-f0-9]{64})`$', request.read_text(), re.M)
@@ -329,8 +333,14 @@ def approve(path, run, verdict):
         note = f'Ancestor retrieval only. {legacy.relative(verdict)} sha256 {digest(verdict)}'
         from .ancestor_selection import installed
         with installed():
-            legacy.validate_run(ROOT/run, ROOT/item['packet'], ROOT/'.sources/exllamav3.git', ROOT/'data/evidence/github', item['position'])
-            legacy.approve_run(ROOT/run, ROOT/item['packet'], 'Fable', note)
+            validation = legacy.validate_run(ROOT/run, ROOT/item['packet'], ROOT/'.sources/exllamav3.git', ROOT/'data/evidence/github', item['position'])
+            if item.get('revision_of_run'):
+                if validation.get('revision', {}).get('source') != item['revision_source']:
+                    raise ValueError('Revision provenance disagrees with reservation')
+                legacy.approve_run(ROOT/run, ROOT/item['packet'], 'Fable', note,
+                                   revision_validation=validation)
+            else:
+                legacy.approve_run(ROOT/run, ROOT/item['packet'], 'Fable', note)
         row.update(status='approved_reviewed', verdict=legacy.relative(verdict), verdict_sha256=digest(verdict))
         if item['kind'] == 'replacement':
             state['approved_entries'] = [run if r == old else r for r in state['approved_entries']]
@@ -361,12 +371,12 @@ def recover(path, authorization, *, retry_position=None):
         if stop.get('run') and stop['run'] not in text:
             raise ValueError('Recovery decision must identify stopped run')
         if retry_position is None:
-            if stop.get('outcome') in ('rejected','held','retry_awaiting_verdict'):
+            if stop.get('outcome') in ('rejected','declined','held','retry_awaiting_verdict'):
                 item = next(q for q in state['review_queue'] if q.get('run') == stop['run'])
                 if item['kind'] == 'forward' and not any(r['position'] == item['position'] and r['status'] in ('approved_reviewed','approved_mechanical') for r in state['runs']):
                     raise ValueError('Forward rejection still needs an approved retry')
         else:
-            item = next(q for q in reversed(state['review_queue']) if (q.get('run') == stop.get('run') if stop.get('run') else q.get('position') == stop.get('position')) and q['status'] in ('failed','rejected','held'))
+            item = next(q for q in reversed(state['review_queue']) if (q.get('run') == stop.get('run') if stop.get('run') else q.get('position') == stop.get('position')) and q['status'] in ('failed','rejected','declined','held'))
             if item['position'] != retry_position:
                 raise ValueError('Retry must address the stopped position')
             state['retry_only'] = dict(position=retry_position, kind=item['kind'], stopped_token=item.get('token'))
@@ -376,14 +386,16 @@ def recover(path, authorization, *, retry_position=None):
 
 
 def record_stop(path, run, verdict, outcome):
-    if outcome not in ('rejected','held'):
-        raise ValueError('Explicit rejection/hold required')
+    if outcome not in ('rejected','declined','held'):
+        raise ValueError('Explicit rejection/decline/hold required')
     verdict = Path(verdict)
     if not verdict.is_file(): raise ValueError('Missing verdict')
     with transaction(path) as state:
         require_enabled(state)
         item = next(q for q in state['review_queue'] if q.get('run') == run)
         if item['status'] != 'pending_full_review': raise ValueError('Not pending review')
+        if outcome == 'declined' and item['kind'] != 'replacement':
+            raise ValueError('Only a replacement can be declined')
         check_verdict(item, verdict, outcome=outcome)
         item.update(status=outcome, verdict=legacy.relative(verdict), verdict_sha256=digest(verdict))
         for row in state['runs'] + state.get('replacement_reviews', []):
@@ -478,17 +490,116 @@ def verify_selection(packet, candidates):
     return selected
 
 
-def prepared(path, auth, spec_path):
+def revision_source(state, spec, manifest):
+    """Validate administrative admission while the caller holds the queue lock."""
+    from teacher.revision import ARTIFACTS, position_of
+
+    prior_run = spec['revision_of_run']
+    previous = next((row for row in state['review_queue'] if row.get('run') == prior_run), None)
+    retry = state.get('retry_only', {})
+    if (not previous or previous['status'] not in ('rejected', 'declined')
+            or previous.get('revision_of_run') or not retry.get('stopped_token')
+            or retry['stopped_token'] != previous['token']
+            or previous['kind'] != spec['kind']):
+        raise ValueError('Revision requires explicit recovery of a rejected run or declined replacement')
+    if (previous['position'] != spec['position'] or position_of(prior_run) != spec['position']
+            or previous['packet'] != spec['packet']
+            or previous['packet_manifest_sha256'] != spec['packet_manifest_sha256']):
+        raise ValueError('Revision requires the same prior position and original packet')
+    if spec['task_sha'] != manifest['task_sha']:
+        raise ValueError('Revision task SHA mismatch')
+    if any(row.get('revision_of_run') == prior_run for row in state['review_queue']):
+        raise ValueError('A revision is already reserved for this rejection')
+    recovery = state['recovery_log'][-1]
+    authorization = spec['authorization']
+    if (recovery['authorization'] != authorization['path'] or recovery['sha256'] != authorization['sha256']
+            or recovery['stop']['run'] != prior_run):
+        raise ValueError('Revision authorization must match the recorded recovery')
+    verdict = ROOT/previous['verdict']
+    if digest(verdict) != previous['verdict_sha256']:
+        raise ValueError('Source verdict changed after rejection')
+    check_verdict(previous, verdict, outcome=previous['status'])
+    if not (ROOT/prior_run).resolve().is_relative_to(ROOT/'.teacher/runs'):
+        raise ValueError('Revision source must be a tracked run')
+    coverage = ROOT/spec['coverage']['path']
+    if (coverage.resolve() != ROOT/'reviews/verdicts'/(Path(spec['run']).name+'.coverage.md')
+            or coverage == verdict):
+        raise ValueError('Revision coverage must identify the exact new attempt')
+    if spec['kind'] == 'replacement' and (spec['supersedes_run'] != previous['supersedes_run']
+                                         or spec['supersedes_run'] not in state['approved_entries']):
+        raise ValueError('Declined replacement must retain its active entry')
+    if set(spec['prior_artifacts']) != set(ARTIFACTS):
+        raise ValueError('Revision source needs all four artifact digests')
+    return dict(revision_of_run=str(ROOT/prior_run), position=spec['position'], task_sha=spec['task_sha'],
+                packet=str(ROOT/spec['packet']), packet_manifest_sha256=spec['packet_manifest_sha256'],
+                prior_artifacts=spec['prior_artifacts'], coverage_path=str(coverage),
+                coverage_sha256=spec['coverage']['sha256'])
+
+
+def revision_disclosure(item, validation):
+    text = f"Reviewer-assisted revision of {item['revision_of_run']}."
+    if item.get('supersedes_run'):
+        text += f" Active entry pending verdict: {item['supersedes_run']}."
+    if item['revision_number'] == 1:
+        text += ' First live revision. Line-by-line comparison requested.'
+    text += f" Prior calls replayed: {validation['prior_identical_replayed_calls']}. New calls replayed: {validation['identical_replayed_calls']}."
+    if item['revision_number'] <= 3:
+        def usage(value):
+            return json.dumps(value, sort_keys=True) if value is not None else 'unavailable'
+        text += f" Fresh attempt tokens: {usage(validation['prior_token_usage'])}. Revision tokens: {usage(validation['token_usage'])}."
+    return text
+
+
+def revision_request_files(item):
+    from teacher.revision import ARTIFACTS, REVISION_FILES
+    run, source = ROOT/item['run'], ROOT/item['revision_of_run']
+    return [
+        *(run/name for name in (*ARTIFACTS, *REVISION_FILES, 'coverage.json')),
+        *(source/name for name in ARTIFACTS),
+        ROOT/item['packet']/'manifest.json',
+        ROOT/item['completed_record']['validation'],
+        ROOT/item['spec'],
+        Path(item['revision_source']['coverage_path']),
+        *(ROOT/path for path in item['revision_admin']),
+    ]
+
+
+def validate_revision_request(item, text):
+    report = ROOT/item['completed_record']['validation']
+    validation = json.loads(report.read_text())
+    if (validation.get('status') != 'validated'
+            or validation.get('revision', {}).get('source') != item['revision_source']):
+        raise ValueError('Revision request requires the validated reserved source')
+    if revision_disclosure(item, validation) not in text:
+        raise ValueError('Revision request is missing the exact replay, assistance or usage disclosure')
+    for heading in ('Kept', 'Added', 'Removed', 'Corrected'):
+        section = re.search(rf'(?ms)^### {heading}\s*\n(.*?)(?=^#|\Z)', text)
+        if not section or not section[1].strip() or 'AUTHOR MUST' in section[1]:
+            raise ValueError('Revision request needs a completed side-by-side comparison')
+    hashes = dict(re.findall(r'^- (.+): `([a-f0-9]{64})`$', text, re.M))
+    for file in revision_request_files(item):
+        if hashes.get(legacy.relative(file)) != digest(file):
+            raise ValueError('Missing or changed revision request artifact: '+str(file))
+    for path, expected in item['revision_admin'].items():
+        if digest(ROOT/path) != expected:
+            raise ValueError('Revision decision changed: '+path)
+    if digest(ROOT/item['spec']) != item['spec_sha256']:
+        raise ValueError('Revision reservation descriptor changed')
+
+
+def prepared(path, auth, spec_path, *, revision=False):
     """Execute one administratively prepared replacement/retry with the shared locks.
 
     Spec binds the existing recovery/plan authorization and preflight. It never
     enters a packet, prompt, transcript or teacher provenance.
     """
-    from teacher.author import author
+    from teacher.author import author, author_revision
     from .ancestor_selection import installed
     spec_path = Path(spec_path)
     spec = json.loads(spec_path.read_text())
     packet, output = ROOT/spec['packet'], ROOT/spec['run']
+    if revision != ('revision_of_run' in spec):
+        raise ValueError('Revision descriptor requires explicit author_revision action')
     kind, position = spec['kind'], spec['position']
     with legacy.locked(path):
         with transaction(path) as state:
@@ -503,8 +614,20 @@ def prepared(path, auth, spec_path):
             manifest = json.loads((packet/'manifest.json').read_text())
             repo = ROOT/'.sources/exllamav3.git'
             order = legacy.git(repo,'rev-list','--reverse','--topo-order',state['history_tip']).decode().split()
-            if manifest['task_sha'] != order[position-1]: raise ValueError('Wrong position/task SHA')
-            if kind == 'replacement':
+            if not 1 <= position <= len(order) or manifest['task_sha'] != order[position-1]:
+                raise ValueError('Wrong position/task SHA')
+            source = None
+            if revision:
+                if (output.parent != ROOT/'.teacher/runs' or output.resolve().parent != output.parent
+                        or not packet.resolve().is_relative_to(ROOT/'.teacher/retrieval')):
+                    raise ValueError('Revision requires managed run and packet paths')
+                from teacher.revision import coverage_bytes
+                source = revision_source(state, spec, manifest)
+                coverage_bytes(Path(source['coverage_path']), source['coverage_sha256'], manifest)
+                catalog_path = ROOT/'reports'/f'commit-{position:06d}-catalog-selection-001.json'
+                if not catalog_path.is_file():
+                    raise ValueError('Original catalog report is required for the revision request')
+            elif kind == 'replacement':
                 old = spec['supersedes_run']
                 if old not in state['approved_entries']: raise ValueError('Replacement target is not active')
                 previous = json.loads((ROOT/spec['original_packet']/'manifest.json').read_text())
@@ -525,21 +648,41 @@ def prepared(path, auth, spec_path):
             else: raise ValueError('Unknown prepared work kind')
             # Original replacement packets can retain historical approved prose.
             candidates = list(state['approved_entries'])
-            if kind == 'replacement':
+            if revision or kind == 'replacement':
                 candidates += [r.get('run',r.get('candidate_run')) for r in state['runs']+state.get('replacement_reviews',[]) if r.get('status')=='superseded']
             selected = verify_selection(packet, candidates)
             item = reserve(state,position=position,kind=kind,files=changed_files(repo,manifest['task_sha']),run=spec['run'],packet=spec['packet'])
             live = next(q for q in state['review_queue'] if q.get('token') == item['token'])
             live.update(spec=legacy.relative(spec_path),spec_sha256=digest(spec_path),implementation_sha256=implementation_hashes(), selected_approved_entries=selected,packet_manifest_sha256=digest(packet/'manifest.json'))
             if kind == 'replacement': live['supersedes_run'] = spec['supersedes_run']
+            if revision:
+                previous = next(q for q in state['review_queue'] if q.get('run') == spec['revision_of_run'])
+                admin = {previous['verdict']: previous['verdict_sha256'],
+                         authorization['path']: authorization['sha256']}
+                live.update(revision_of_run=spec['revision_of_run'], revision_source=source, revision_admin=admin,
+                            revision_number=1 + sum(q is not live and 'revision_of_run' in q
+                                                    for q in state['review_queue']))
         try:
             with installed(), provenance_binding(packet,output,candidates,live['implementation_sha256']):
                 legacy.validate_bundle(packet,ROOT/'data/evidence/github'/f'{position:06d}-eligible.json')
-                author(packet,output,auth)
+                if revision:
+                    legacy.validate_packet_blobs(packet)
+                    author_revision(packet,output,auth,revision=source)
+                else:
+                    author(packet,output,auth)
                 validation = legacy.validate_run(output,packet,repo,ROOT/'data/evidence/github',position)
             report = ROOT/'reports'/f'{output.name}-queue-validation.json'
             write_json(report,validation)
             row = dict(position=position,run=spec['run'],packet=spec['packet'],status='awaiting_review_request',validation=legacy.relative(report),spec_sha256=digest(spec_path))
+            if revision:
+                row.update(attempt_kind='revision', revision_of_run=spec['revision_of_run'])
+                files = revision_request_files(dict(live, completed_record=row))
+                summary = legacy.make_summary(output, packet, repo, position, report, catalog_path,
+                                              ROOT/'data/evidence/github')
+                summary['hashes'].update({legacy.relative(file):digest(file) for file in files})
+                summary['revision_disclosure'] = revision_disclosure(live, validation)
+                skeleton = legacy.skeleton(summary, os.environ.get('CODEX_THREAD_ID', 'SET THREAD ID'))
+                (ROOT/'reports'/f'{output.name}.skeleton.md').write_text(skeleton)
             with transaction(path) as state: finish(state,item['token'],row=row)
             return dict(status='awaiting_review_request',run=spec['run'],validation=legacy.relative(report))
         except BaseException as exc:
@@ -550,7 +693,7 @@ def prepared(path, auth, spec_path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('enable','cycle','worker','publish','approve','stop','recover','prepared'))
+    parser.add_argument('action', choices=('enable','cycle','worker','publish','approve','stop','recover','prepared','author_revision'))
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--auth-file', type=Path, default=Path.home()/'.codex/auth.json')
     parser.add_argument('--run'); parser.add_argument('--request', type=Path)
@@ -561,7 +704,8 @@ def main():
     if args.action == 'enable': result = enable(args.state,args.verdict)
     elif args.action == 'worker': result = worker(args.state,args.auth_file)
     elif args.action == 'cycle': result = run(args.state,args.auth_file)
-    elif args.action == 'prepared': result = prepared(args.state,args.auth_file,args.spec)
+    elif args.action in ('prepared','author_revision'):
+        result = prepared(args.state,args.auth_file,args.spec, revision=args.action == 'author_revision')
     elif args.action == 'recover': result = recover(args.state,args.verdict,retry_position=args.retry_position)
     elif args.action == 'publish':
         with transaction(args.state) as state: publish(state,args.run,args.request)

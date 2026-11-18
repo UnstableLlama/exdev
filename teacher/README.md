@@ -198,11 +198,14 @@ Sol adoption preserves historical Astra/medium approvals. Approval requires matc
 
 After implementation acceptance, a first final refused by JSON parsing or ordinary
 annotation validation may receive one additional turn on the same server thread.
-Its feedback under `validator-keep-rest-v2` is the exact validator error, one
-newline, and this fixed sentence: "Correct only the issue named in the validator
-message and return the rest of the annotation unchanged." No other text is added.
-Historical `validator-only-v1` runs retain their verbatim-error-only replay path;
-provenance binds the policy and the hash of the complete feedback. The teacher may
+Under `validator-claim-diagnostics-v3`, a rejected claim anchor names the
+annotation path and a bounded reference. A source inspection without supported
+source evidence names the verification entry, finding ID and supported tool kinds.
+The message ends with "Correct only the issue named in the validator message and
+return the rest of the annotation unchanged." Historical `validator-keep-rest-v2`
+replays the exact validator error followed by that sentence. Historical
+`validator-only-v1` replays the exact validator error alone.
+Provenance binds the policy and the hash of the complete feedback. The teacher may
 read more evidence and returns a complete annotation; both turns share the tool
 budget. A second refusal, internal integrity error or transport failure is terminal.
 `author(..., validation_repair=False)` preserves the pre-repair rule for runs

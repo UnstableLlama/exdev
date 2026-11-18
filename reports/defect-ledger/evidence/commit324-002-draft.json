@@ -1,0 +1,825 @@
+{
+  "schema_version": 5,
+  "sha": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+  "parent_shas": [
+    "544ba423bf9c58c940dca6cb36a1aa93f6cda41a"
+  ],
+  "cutoff_date": "2025-07-15T21:22:18+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "All three model-level `default_chat_prompt` overrides returned ChatML-style `im_start`/`im_end` blocks. The pinned Dots templates instead use dedicated system, user and response markers; the pinned Ernie PT templates use a begin-of-sentence marker and `User: `/`Assistant: ` labels. The mismatch was in the single-request helper, not in the existing interactive chat modes.",
+        "basis": "source",
+        "evidence": [
+          "call_f8823f58596a4cce8c10dc2eb2f9dfb4",
+          "call_27de021cf5f74b859c045d30c9b36b26",
+          "call_a27ff80d77994795bb947f8d94919689",
+          "call_92bea65e507240bba577fc0a08d58628",
+          "call_55b5e30bb3214099b326685cf695f232",
+          "call_d2ce101610b0407dadd092b128e7947d"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The new strings match the existing interactive formatters for a single pending turn given the same system text. That supports reading the fix as alignment with each family's prompt syntax, not as an attempt to reproduce every checkpoint's template policy. The base helper explicitly documents that it does not consult the checkpoint's Jinja template.",
+        "basis": "inference",
+        "evidence": [
+          "call_150f676cc9da49dbad9fbb985e8224ef",
+          "call_f8823f58596a4cce8c10dc2eb2f9dfb4",
+          "call_27de021cf5f74b859c045d30c9b36b26",
+          "call_a27ff80d77994795bb947f8d94919689",
+          "call_d2ce101610b0407dadd092b128e7947d",
+          "call_d9d699e0c4a442abbdbd09310e801ba7"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Direct callers of the three overrides get different prompt strings with the same signature and return type. The only literal call found in the whole parent tree was `examples/imgsearch.py`: it formats an image alias plus a stripped question, then passes the text and image embeddings to the tokenizer. That script first requires a `vision` component; all three affected configurations expose only `text`, so its normal path does not reach these overrides. The literal search does not establish reach for dynamic or external callers.",
+        "basis": "source",
+        "evidence": [
+          "call_b68a7d5e164e4a87bb77bf98e98393f6",
+          "call_405fff31d1304c41b6432f63b5a0d5da",
+          "call_15f7b30aebf9466480746a766f94d2e5",
+          "call_8f611d1d094c42819eea327ec125b261",
+          "call_1f0bebf402584ef593ed84697f341d95",
+          "call_a9eb49be5b7a4f6783dbc93a2f4128c2"
+        ]
+      },
+      {
+        "text": "`examples/chat.py --mode dots` and `--mode ernie` already select separate history-aware formatters. The loop uses their special-token encoding, BOS settings and stop conditions, not the model helper. This patch changes none of those settings, nor model loading, tensor lookup or architecture dispatch.",
+        "basis": "source",
+        "evidence": [
+          "call_767af39fce1a48a6a650d1fd8330d3ca",
+          "call_d2ce101610b0407dadd092b128e7947d",
+          "call_f8823f58596a4cce8c10dc2eb2f9dfb4",
+          "call_27de021cf5f74b859c045d30c9b36b26",
+          "call_a27ff80d77994795bb947f8d94919689"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The Dots and Ernie model introduction entries recorded the ChatML mismatch; the separate Dots and Ernie chat-template entries described the pending-turn convention already in use. The later Ernie routed-expert precision entry concerns forward computation, not prompt construction.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_c76e70b0026542bfbc9696719aeb65e4",
+          "call_0ed0c13bd8244359a5e143e681d8e1db",
+          "call_f214a3d54dd64038ac71d933df61f060",
+          "call_842cf0c1fe2f4b6a9ddbf141ea864fdc",
+          "call_97131878a75f4003a36ce34a4f3666b5"
+        ]
+      },
+      {
+        "text": "Issue #51, \u201cdots.llm1 support,\u201d is louiehelm's architecture-support request; turboderp's reply reports implementation support and a first-layer quantization workaround. The shared Dots model is an inferred connection, not a report of this prompt defect. Closed issue #61, \u201cRun ERNIE-4.5-300B-A47B-PT 2.25bpw with 5x20G 3080 got 'Insufficient VRAM',\u201d is buliaoyin's loading report. The inferred connection is the Ernie MoE family and the explicit `examples/chat.py -mode ernie` command. Its traceback stops at model loading, before prompt formatting, and the reporter says the allocator workaround suggested by turboderp worked.",
+        "basis": "inference",
+        "evidence": [
+          "call_d49c00582dc94bd2906fda0414316366",
+          "call_2007db842d544d8c976a34eea28ce033",
+          "call_767af39fce1a48a6a650d1fd8330d3ca",
+          "call_a9eb49be5b7a4f6783dbc93a2f4128c2"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native-extension import error; the overlap is the `models/model.py` import traceback, not prompt behavior. Issue #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d begins as a conversion failure; a later comment suggests `examples/chat.py -mode chatml` to investigate a separate Qwen generation complaint. The inferred overlap is the same example and its independent template dispatch, not a Dots or Ernie reproduction.",
+        "basis": "inference",
+        "evidence": [
+          "call_8fb2c9b13e0c4f44948edf6cb3a41a97",
+          "call_a1866869807741caba711f5cf806fc72",
+          "call_15f7b30aebf9466480746a766f94d2e5",
+          "call_767af39fce1a48a6a650d1fd8330d3ca"
+        ]
+      }
+    ],
+    "limitations": [
+      "The Python check modeled string construction only. No repository model, tokenizer, Jinja renderer or generation loop was run; token sequences, stopping behavior and generation quality were not measured.",
+      "Checkpoint-template comparison covered the two pinned Dots variants and the three pinned Ernie PT instruction variants named in the chapter. Architecture config matches do not establish equivalent tokenizer templates or weight-format compatibility for other variants. The changed helper does not use checkpoint tensors."
+    ],
+    "links": [
+      "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+      "47d83f567ccc93633d70354f93f153dad6266812",
+      "0cdb4995491bec12f08549a0a9038a2ce5043568",
+      "4d0e5d3d5d10ed73ecde67d587bdc42c26c19cc0",
+      "6f9928b3acee3b52f5064a1ce8ef436b2442ea52"
+    ],
+    "chapters": [
+      {
+        "id": "chat",
+        "title": "Format single-turn Dots and Ernie prompts without ChatML",
+        "claims": [
+          {
+            "text": "`Dots1Model.default_chat_prompt` encloses a truthy system prompt in `<|system|>\u2026<|endofsystem|>`, wraps the user text in `<|userprompt|>\u2026<|endofuserprompt|>`, and ends at `<|response|>`. It inserts no whitespace. Both pinned Dots tokenizer templates use these delimiters, but the helper still omits the system block for a missing or empty system prompt. The base checkpoint emits an empty block when no system message is supplied; the instruction checkpoint inserts \u201cYou are a helpful assistant.\u201d",
+            "basis": "source",
+            "evidence": [
+              "call_f8823f58596a4cce8c10dc2eb2f9dfb4",
+              "call_2f49bfd69a574d46875feba6f395b6be",
+              "call_92bea65e507240bba577fc0a08d58628"
+            ]
+          },
+          {
+            "text": "`Ernie4_5Model.default_chat_prompt` and `Ernie4_5MoEModel.default_chat_prompt` now build identical strings: `<|begin_of_sentence|>`, then truthy system text followed by a newline, then `User: ` plus the user text and a newline, then `Assistant: ` with its trailing space. That is the pending-turn form in the ERNIE-4.5-0.3B-PT, ERNIE-4.5-21B-A3B-PT and ERNIE-4.5-300B-A47B-PT templates with no system message or a nonempty one. An explicitly empty system message contributes a newline in those templates but not in the helper. The tokenizer metadata distinguishes the begin-of-sentence marker (`cls_token`) from BOS (`<s>`); the helper emits the former as text and does not add the latter as a token.",
+            "basis": "source",
+            "evidence": [
+              "call_27de021cf5f74b859c045d30c9b36b26",
+              "call_a27ff80d77994795bb947f8d94919689",
+              "call_55b5e30bb3214099b326685cf695f232",
+              "call_3e98517d655d4746ba12d61829225135",
+              "call_91214fed24d84b02b9babdb9a0e79fed"
+            ]
+          },
+          {
+            "text": "A standard-library transcription compared the new strings against the corresponding single-turn template branches. With nonempty system text both families matched. With no system message, Ernie matched and Dots instruction did not. With an explicitly empty system message both differed. This checked text and whitespace, not token IDs.",
+            "basis": "execution",
+            "evidence": [
+              "call_db5fe0011c994f5f9fbc4fec1cba107f"
+            ]
+          },
+          {
+            "text": "The pinned configs for `dots-studio/dots.llm1.base` and `dots-studio/dots.llm1.inst` each map to the same Dots text class: both specify width 4096, 32 query and KV heads, and 62 layers. Both use the head-width fallback and override the dense-prefix, shared-expert and selected-expert defaults. The formatter does not branch on these dimensions or on their different configured EOS IDs.",
+            "basis": "source",
+            "evidence": [
+              "call_1951b5e458f9497f9ba007860d66e851",
+              "call_82215676ce714faa8766ac8dc26d65ff",
+              "call_8f611d1d094c42819eea327ec125b261",
+              "call_f8823f58596a4cce8c10dc2eb2f9dfb4"
+            ]
+          },
+          {
+            "text": "The pinned `baidu/ERNIE-4.5-0.3B-Base-PT`, `-Base-Paddle`, `-PT` and `-Paddle` configs each map to the dense class: width 1024, 16 query/two KV heads, 18 layers, explicit head width 128 rather than the fallback, and tied embeddings. None of those values is read by the formatter.",
+            "basis": "source",
+            "evidence": [
+              "call_2c9741df2da24384b892dc9f9355efbe",
+              "call_26cb37df6c244f1397eb5ed1974900b2",
+              "call_283f7f7b786d423ab4b78b35b9e24cf6",
+              "call_e2afabdb4f794c3bad24ecd7c85ac185",
+              "call_1f0bebf402584ef593ed84697f341d95",
+              "call_27de021cf5f74b859c045d30c9b36b26"
+            ]
+          },
+          {
+            "text": "The pinned `baidu/ERNIE-4.5-21B-A3B-Base-PT`, `-Base-Paddle`, `-PT` and `-Paddle` configs each map to the MoE class with width 2560, 20 query/four KV heads, 28 layers, one dense-prefix layer and two shared experts. The pinned `baidu/ERNIE-4.5-300B-A47B-2Bits-Paddle`, `-Base-PT`, `-Base-Paddle`, `-FP8-Paddle`, `-PT`, `-Paddle` and `-W4A8C8-TP4-Paddle` configs each map to that class with width 8192, 64 query/eight KV heads, 54 layers, three dense-prefix layers and the zero shared-expert default. All omit `head_dim` and use the same fallback rule. The MoE helper is independent of these values and does not add support for any format declared by the quantized configs.",
+            "basis": "source",
+            "evidence": [
+              "call_6b2ef8db0b504f7d82a137e691b8409f",
+              "call_81483394e0654956bf7fa520dc7076b2",
+              "call_caab878a2e004968bf701e3672c04afa",
+              "call_c3fe9248411f49b5899fe5eb5f488be4",
+              "call_5a5e7ed2c8534a7a886f8442bc352cdc",
+              "call_a107007159ee4c10b4e5ea432b1c19db",
+              "call_bd121c23ec4b4ddd869470832a61481a",
+              "call_05457700e1024574a939ba7c28650007",
+              "call_e12f8b569a474b35abcadc6e302a0e96",
+              "call_601a5515f73c433fbde6be3e62b414db",
+              "call_9a6d94eecd164bfb9a6989ceb4e03644",
+              "call_a9eb49be5b7a4f6783dbc93a2f4128c2",
+              "call_a27ff80d77994795bb947f8d94919689"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "dots-system-default-still-differs",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The Dots fix removes the ChatML marker mismatch but does not reproduce either pinned checkpoint's system block when no system prompt is supplied.",
+        "trigger": "Call `Dots1Model.default_chat_prompt(\"U\")` and compare with the pinned Dots single-user-message template with generation prompting enabled.",
+        "expected_behavior": "For checkpoint-template parity, the base variant would prefix `<|system|><|endofsystem|>` and the instruction variant would prefix `<|system|>You are a helpful assistant.<|endofsystem|>`.",
+        "actual_behavior": "The helper begins directly with `<|userprompt|>`. This is reachable through a direct call to the helper, but the only repository caller found by literal search requires a vision component that Dots does not provide. The interactive Dots formatter does not use the helper.",
+        "locations": [
+          {
+            "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+            "path": "exllamav3/models/dots1.py",
+            "symbol": "Dots1Model.default_chat_prompt"
+          }
+        ],
+        "source_evidence": [
+          "call_f8823f58596a4cce8c10dc2eb2f9dfb4",
+          "call_2f49bfd69a574d46875feba6f395b6be",
+          "call_92bea65e507240bba577fc0a08d58628",
+          "call_b68a7d5e164e4a87bb77bf98e98393f6",
+          "call_405fff31d1304c41b6432f63b5a0d5da",
+          "call_8f611d1d094c42819eea327ec125b261",
+          "call_15f7b30aebf9466480746a766f94d2e5",
+          "call_767af39fce1a48a6a650d1fd8330d3ca"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unchanged truthiness guard with both checkpoint template branches and inspected the direct caller and interactive formatter path.",
+            "evidence": [
+              "call_f8823f58596a4cce8c10dc2eb2f9dfb4",
+              "call_2f49bfd69a574d46875feba6f395b6be",
+              "call_92bea65e507240bba577fc0a08d58628",
+              "call_d9d699e0c4a442abbdbd09310e801ba7"
+            ],
+            "limits": "The base API does not promise Jinja parity. This observation is a concrete output difference, not an observed generation failure."
+          }
+        ]
+      }
+    ],
+    "summary": "Replaces ChatML in the Dots, dense Ernie and MoE Ernie single-turn helpers with each family's prompt format. Interactive chat modes are unchanged, and the Dots helper still omits the system block supplied by the pinned checkpoint templates."
+  },
+  "evidence": {
+    "call_f8823f58596a4cce8c10dc2eb2f9dfb4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "offset": 177,
+        "max_bytes": 801
+      },
+      "result_sha256": "597324a09b42768e862a85f7d41f573ed7a2948afb059825f97ea1d334d95e1a"
+    },
+    "call_27de021cf5f74b859c045d30c9b36b26": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "offset": 978,
+        "max_bytes": 822
+      },
+      "result_sha256": "c51ec88b65d7f183ae493ef600c3ccab274bcf4689b26087692ba17ecdd3d1d1"
+    },
+    "call_a27ff80d77994795bb947f8d94919689": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "offset": 1800,
+        "max_bytes": 841
+      },
+      "result_sha256": "e042d07f930a23cd5b154b211dd3d09807ff1fe4546bcec69b2011f1cc141d47"
+    },
+    "call_b68a7d5e164e4a87bb77bf98e98393f6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "default_chat_prompt",
+        "limit": 100
+      },
+      "result_sha256": "a95f67595675b10bdf08a773dc2d92892520379b1781730b24310c9e9766d6fc"
+    },
+    "call_6048a5125ad94f469e49742210dd3d09": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "Ernie",
+        "limit": 100
+      },
+      "result_sha256": "95b68b3c4b1bad2d3024002aa3900ff7bca6d40cbfaf86f9e81ba086b4981a5e"
+    },
+    "call_70c8c05f1bd6487b998517699a483347": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "Dots",
+        "limit": 100
+      },
+      "result_sha256": "394cb92d938be2b4a838d1b671d9feda8b7241912252cdea11b9c2a9869b10e0"
+    },
+    "call_767af39fce1a48a6a650d1fd8330d3ca": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "examples/chat.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "b538f3055c34129fb8bf0f0c773cec180910fbb63c066c8c501813bc4e3eafd2"
+    },
+    "call_684bc51a848b4d78bede09c51a290218": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "class PromptFormat_dots",
+        "limit": 10
+      },
+      "result_sha256": "4cdd02924d8b3ed183fc8b9e260b9df7861600d8eb854e3fa90e23b43e1893c0"
+    },
+    "call_d2ce101610b0407dadd092b128e7947d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "examples/chat_templates.py",
+        "offset": 8800,
+        "max_bytes": 12500
+      },
+      "result_sha256": "f4a7b078184999c51b689374fe50cc6a6545987e50415d433b9ca35649dd557c"
+    },
+    "call_405fff31d1304c41b6432f63b5a0d5da": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "examples/imgsearch.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "a7494d85557b4ad1e55ffa4a40e8262ddba127cbb920af89fe394aa4c272072a"
+    },
+    "call_a1d81891916e419aaf034d69c5876206": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "exllamav3/models/model.py",
+        "query": "component"
+      },
+      "result_sha256": "27569fe77c0d812588a3694389a00da6eae000ccdf220768fc73ccc63952954e"
+    },
+    "call_59f4ef2fa52244678be73dd6ba34d002": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "PromptFormat_dots",
+        "limit": 10
+      },
+      "result_sha256": "f42a9bd98ab4e1542e412a31229b3af32a048eacac0709e6aac8f4f6a0dca125",
+      "catalog_only": true
+    },
+    "call_f961bfc67b68449c82d3ecf69ae1be70": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "PromptFormat_ernie",
+        "limit": 10
+      },
+      "result_sha256": "fb1097250345b417c43e00450b9ec5de1b2d0483c953a1ab05442e27c6c0942a",
+      "catalog_only": true
+    },
+    "call_f214a3d54dd64038ac71d933df61f060": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "0cdb4995491bec12f08549a0a9038a2ce5043568",
+        "max_bytes": 16384
+      },
+      "result_sha256": "667aad95362c5a80f0e3eda462189080b5520c01318726b4189672281d25251c"
+    },
+    "call_842cf0c1fe2f4b6a9ddbf141ea864fdc": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4d0e5d3d5d10ed73ecde67d587bdc42c26c19cc0",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b7af36c99fdd6af850d25cd1273a58778e79748f7c965831246014498414ddd7"
+    },
+    "call_97131878a75f4003a36ce34a4f3666b5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52"
+      },
+      "result_sha256": "7bce67f2f143f6ba3316627fee26f3b8838e54a513b02d2ee1269a4f4fae39eb"
+    },
+    "call_0ed0c13bd8244359a5e143e681d8e1db": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812"
+      },
+      "result_sha256": "60fa3251e27fd024a322aa52310f9ec7e85d4fc9b01d7dc267ccaf00d21ae290"
+    },
+    "call_1e85d245ce7e4208b4cee2c9062e9fce": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "offset": 16384
+      },
+      "result_sha256": "3c61149d9aec83009387c033a66716871cc5f9486a82a91a4b1a48748cf614fe"
+    },
+    "call_c76e70b0026542bfbc9696719aeb65e4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da"
+      },
+      "result_sha256": "586c8b5d8e4a2d7316814544ef2702ae35fb1c6dbd1decf2ac07dd3ba351728f"
+    },
+    "call_2007db842d544d8c976a34eea28ce033": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/61",
+        "max_bytes": 18000
+      },
+      "result_sha256": "1ff58a1e1f9956688f160d9e6c00a65685f425c33808c4971faf5f989b5e7e61"
+    },
+    "call_d49c00582dc94bd2906fda0414316366": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/51",
+        "max_bytes": 16000
+      },
+      "result_sha256": "bc7a53c83169a00cfacb8a6eb66e455311edf1f7fb76200ac1371409e5630fa6"
+    },
+    "call_8fb2c9b13e0c4f44948edf6cb3a41a97": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 18000
+      },
+      "result_sha256": "285038f1af1b448cc7dfbb36c443c72ab563500b331c0fab41e268cb45733833"
+    },
+    "call_a1866869807741caba711f5cf806fc72": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 22000
+      },
+      "result_sha256": "c19374571ac221a700c5c5343146f466e53d411b416665aa1474370825c935e9"
+    },
+    "call_0ec6751b5c8d4ba3889c0d368ed05a06": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions"
+      },
+      "result_sha256": "a6b4e1334e3f7dfc413064eda91c6f367ea702979228d1b372a9be7d7fcd425a",
+      "catalog_only": true
+    },
+    "call_3ae539e18d8d49599d833cce007ab6e4": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16000
+      },
+      "result_sha256": "9543a09d4c0494bd0ffe2bf9b36ed38899d5e5de62fa8b23f5683fb4a05f8251",
+      "catalog_only": true
+    },
+    "call_e36686a794d140a2b6de01f7e61cfab3": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24192,
+        "max_bytes": 16000
+      },
+      "result_sha256": "d1db31942a42cee96ccc061953e2784252f97df6d520af39632571d0227f9426",
+      "catalog_only": true
+    },
+    "call_49b11402f377465a9353c09ed0e17fbc": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 40192,
+        "max_bytes": 3100
+      },
+      "result_sha256": "fd0b4bc5b209aa5b581489d3020717837931f720e7de70c53da24e4d40a0df80",
+      "catalog_only": true
+    },
+    "call_92bea65e507240bba577fc0a08d58628": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "dots-studio/dots.llm1.inst",
+        "revision": "9fd724b876dd2f42b4447f65c4070e9cb55c4c53",
+        "path": "tokenizer_config.json",
+        "max_bytes": 22000
+      },
+      "result_sha256": "db6e777f20cd809fccf89c77de51f84c62c5f1cd489f3490537ffcbd0f523bc4"
+    },
+    "call_f0d3fb8ad8eb413ab11a6e54e459b143": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-0.3B-PT",
+        "revision": "50f620af62e77797fc297d1512628e861537e1de",
+        "path": "chat_template.jinja",
+        "max_bytes": 12000
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_55b5e30bb3214099b326685cf695f232": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-0.3B-PT",
+        "revision": "50f620af62e77797fc297d1512628e861537e1de",
+        "path": "tokenizer_config.json",
+        "max_bytes": 18000
+      },
+      "result_sha256": "71872bb7e11ca626605dc49e7cbeac777f06cd9614cce0891a5f84f2e6a34e04"
+    },
+    "call_3e98517d655d4746ba12d61829225135": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-PT",
+        "revision": "3b57ea628d6a8b6fa100c9d204358982031d868c",
+        "path": "tokenizer_config.json",
+        "max_bytes": 18000
+      },
+      "result_sha256": "4419a8e80cc59935de71d5a2114be471582c6007a0e62800beac5d719ee5864e"
+    },
+    "call_91214fed24d84b02b9babdb9a0e79fed": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-PT",
+        "revision": "a952c9a500ffaff4e0264accc13fadd7d1460b06",
+        "path": "tokenizer_config.json"
+      },
+      "result_sha256": "5afa17b7573c3d2fd20037a9cd5678200ecf742bc63a5b09467317cb2944ec5c"
+    },
+    "call_db5fe0011c994f5f9fbc4fec1cba107f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def dots(p,s=None):\n r=''\n if s: r+=f'<|system|>{s}<|endofsystem|>'\n r+=f'<|userprompt|>{p}<|endofuserprompt|>'\n r+='<|response|>'\n return r\ndef ernie(p,s=None):\n r='<|begin_of_sentence|>'\n if s: r+=f'{s}\\n'\n r+=f'User: {p}\\n'\n r+='Assistant: '\n return r\ndef dots_ref(s, u): return '<|system|>'+('You are a helpful assistant.' if s is None else s)+'<|endofsystem|><|userprompt|>'+u+'<|endofuserprompt|><|response|>'\ndef ernie_ref(s,u): return '<|begin_of_sentence|>'+('' if s is None else s+'\\n')+'User: '+u+'\\nAssistant: '\nfor s in (None,'','S'):\n d,e=dots('U',s),ernie('U',s)\n print(repr(s),repr(d),repr(e),'matches templates:',d==dots_ref(s,'U'),e==ernie_ref(s,'U'))\nassert dots('U','S')==dots_ref('S','U')\nassert dots('U')!=dots_ref(None,'U')\nassert ernie('U')==ernie_ref(None,'U') and ernie('U','S')==ernie_ref('S','U') and ernie('U','')!=ernie_ref('','U')"
+        ]
+      },
+      "result_sha256": "e6b90ac88cec25f0ecbfdb5eccece105f844a4c4ebe285892e98b05cf8dda647"
+    },
+    "call_1951b5e458f9497f9ba007860d66e851": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "dots-studio/dots.llm1.base",
+        "revision": "37802f86127ccf904b5d7bf413fc029daf13b4a3",
+        "path": "config.json"
+      },
+      "result_sha256": "b29ef198f44660197b161bd0b22507de3a081917c0302511ff921d911f5862d0"
+    },
+    "call_82215676ce714faa8766ac8dc26d65ff": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "dots-studio/dots.llm1.inst",
+        "revision": "9fd724b876dd2f42b4447f65c4070e9cb55c4c53",
+        "path": "config.json"
+      },
+      "result_sha256": "c03d2450e25a1b0cd4a019e4461c9e71ae06c798145c94f89761cf1abaa74103"
+    },
+    "call_2c9741df2da24384b892dc9f9355efbe": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-0.3B-Base-PT",
+        "revision": "5a782fbfd6e0b7192323af875fbdaf0df73c2048",
+        "path": "config.json"
+      },
+      "result_sha256": "f7956b0200c2bf5c1218f6c26e623c327125c7976a410799069d163972b584ed"
+    },
+    "call_26cb37df6c244f1397eb5ed1974900b2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-0.3B-Base-Paddle",
+        "revision": "e9e3f7e13c78cb2ccd3d5a3daea4588105c3130a",
+        "path": "config.json"
+      },
+      "result_sha256": "07bbb524da94ce011c98b95e6fbddc3c33ea24404d7822d3526348161046aee8"
+    },
+    "call_283f7f7b786d423ab4b78b35b9e24cf6": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-0.3B-PT",
+        "revision": "50f620af62e77797fc297d1512628e861537e1de",
+        "path": "config.json"
+      },
+      "result_sha256": "f51db5a73e5c4339ac9731779874be68e5246972806b2d3ca5cd26d3931823c8"
+    },
+    "call_e2afabdb4f794c3bad24ecd7c85ac185": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-0.3B-Paddle",
+        "revision": "0fed0df1d2ae0c2fc75009b877bc2fcec44cc618",
+        "path": "config.json"
+      },
+      "result_sha256": "f691ab5720c78f63b5ca2e693433a25eda07af401dfb2c49f98decc26a2ebb13"
+    },
+    "call_6b2ef8db0b504f7d82a137e691b8409f": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-Base-PT",
+        "revision": "c85eddf33fb5d11fbdf9c533fd7e17e378a6e646",
+        "path": "config.json"
+      },
+      "result_sha256": "613ecc169c116ec40430ef550ded9006d76b7591de567938dfa8d35c8487bd95"
+    },
+    "call_81483394e0654956bf7fa520dc7076b2": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-Base-Paddle",
+        "revision": "0a2f190323c56ad7022ce4f1731d2f7d62eec22f",
+        "path": "config.json"
+      },
+      "result_sha256": "c487337d5749621ad9791f8c11b28ab4a5f1e74367cbbc3aad888bc869de573a"
+    },
+    "call_caab878a2e004968bf701e3672c04afa": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-PT",
+        "revision": "3b57ea628d6a8b6fa100c9d204358982031d868c",
+        "path": "config.json"
+      },
+      "result_sha256": "7d17e73b13004a6d9064605d574c1656b5974ab57a71105e7db1152d8dc5a6c7"
+    },
+    "call_c3fe9248411f49b5899fe5eb5f488be4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-Paddle",
+        "revision": "09cbbd872d7fbb351a2055681e3863a57299328b",
+        "path": "config.json"
+      },
+      "result_sha256": "b49b2e9e52e715a96c41c7169a0cf3fbb7aa85a1dce9b834fd76a63821a2196d"
+    },
+    "call_5a5e7ed2c8534a7a886f8442bc352cdc": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-2Bits-Paddle",
+        "revision": "509d573bf9a89848d005a40e68fe6b98dbbf63d5",
+        "path": "config.json"
+      },
+      "result_sha256": "8565d032e6e17f0ddfc7ccd985da05c5862d74396a13a565a1624ed7d9dfe251"
+    },
+    "call_a107007159ee4c10b4e5ea432b1c19db": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-Base-PT",
+        "revision": "99adb973b44536504e784ba016bad0dfcb4fb3dc",
+        "path": "config.json"
+      },
+      "result_sha256": "1c12b6ea1002df0c5fac3145d19b799ba13609a74a4b772a4fbd0bb4ff05d698"
+    },
+    "call_bd121c23ec4b4ddd869470832a61481a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-Base-Paddle",
+        "revision": "08d74b417f497ff2db75fd813445535c5304598b",
+        "path": "config.json"
+      },
+      "result_sha256": "b0ffe22371e5be6ab5893f52191f73b81184e483fc3b562b4236add95d79fe54"
+    },
+    "call_ff9c9baa83804a2b9593889c15d9a775": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-FP8-Paddle",
+        "revision": "b9e3a0cd5964c8cafa45fb8ccb98dbff68ad3a0ef",
+        "path": "config.json"
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_13c85b4def2040bbb6ee4bfffb5e130f": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-FP8-Paddle",
+        "revision": "b9e3a0cd5964c8cafa45fb8ccb98dbff68ad3a0ef",
+        "path": "config.json",
+        "source_id": "reference:11:hf:Ernie4_5_MoeForCausalLM:config.json"
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_8dd9e95330cf4a43b43c4fea02e938cd": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-FP8-Paddle",
+        "revision": "b9e3a0cd5964c8cafa45fb8ccb98dbff68ad3a0ef",
+        "path": "config.json",
+        "max_bytes": 20000
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_e12f8b569a474b35abcadc6e302a0e96": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-PT",
+        "revision": "a952c9a500ffaff4e0264accc13fadd7d1460b06",
+        "path": "config.json"
+      },
+      "result_sha256": "3e680f932e0e1dc49990079ddf7c5cc3a05ebe323f1729677fe23f6c8888aff7"
+    },
+    "call_601a5515f73c433fbde6be3e62b414db": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-Paddle",
+        "revision": "77b3a7f3c44d9ee9bd7f5edfed4900b3368586c5",
+        "path": "config.json"
+      },
+      "result_sha256": "593598be1a53ceb2466f7dacf94d4b1c0a1587fd8fe13a238184dcccfa0ffe8d"
+    },
+    "call_9a6d94eecd164bfb9a6989ceb4e03644": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-W4A8C8-TP4-Paddle",
+        "revision": "4c2e1ee47a23a47693f5f50ddfac8a45e9fc09b6",
+        "path": "config.json"
+      },
+      "result_sha256": "b7240562764a8de6c8b0fbd597da08fd4c34d2bbf0b7a16907938351c065b9f5"
+    },
+    "call_028c4b2b374a4082bc0f8c3b69c99f4d": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "b99079136f6ff2fd49449ffcc69f5184047e99dae650b2bccf23b1cb0b854d3f",
+        "max_bytes": 3600
+      },
+      "result_sha256": "ebc4e9eb8da3d1c26af8cfca23bd27eaa385cf74636f630fcf0c4c0fea96db25",
+      "catalog_only": true
+    },
+    "call_05457700e1024574a939ba7c28650007": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-FP8-Paddle",
+        "revision": "b9e3a0cd5964c8afa45fb8ccb98dbff68ad3a0ef",
+        "path": "config.json"
+      },
+      "result_sha256": "41ceaa155665489d2240d45f594f1e4c88e5b57748de793396f236be2b85c9de"
+    },
+    "call_15f7b30aebf9466480746a766f94d2e5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 3300
+      },
+      "result_sha256": "a02d8b6ec56d6aefac77eeba7fe809bdc1cb885eaf2e2a4af5a858c337d66441"
+    },
+    "call_e9aab27e37a3455baa989932f5e5f87b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "encode_special_tokens:",
+        "limit": 30
+      },
+      "result_sha256": "00bca0de513e04ab217aa442a177f0c30b78fb9515c494e7b7bf4274e51226ba"
+    },
+    "call_dad5dd1fec8b4390bbcf80fc2fec8c10": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "<|begin_of_sentence|>"
+      },
+      "result_sha256": "4b80814ed6f3c1538f25ce06ed5f174db643656196b89e232ade568feca1b999"
+    },
+    "call_0f6b19a6060349dc887c813aab242f03": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "<|userprompt|>"
+      },
+      "result_sha256": "3e12870f4c3b26143a674b932c6766f0121298b8c7707bd6734a243638ad7222"
+    },
+    "call_40b7c335abbb4a5087cbc9faad4a1899": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "Dots1Model"
+      },
+      "result_sha256": "3272fe5c360b2eeea171272fa6ffa6dd25916f50754c9cd5eecc81ea343cc782"
+    },
+    "call_3f9fc6c5ab404759a41c916c21975a46": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "query": "def default_chat_prompt",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "eb0b0720fecd9b5be7ab55344f17a8c131b48ee6c6343d87c5cad65088f061f2"
+    },
+    "call_d9d699e0c4a442abbdbd09310e801ba7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "exllamav3/models/model.py",
+        "offset": 16700,
+        "max_bytes": 5700
+      },
+      "result_sha256": "8afeffce43fd19d8f12ceeaa4fdbafb56e68776f55ed7794c57db72153c9156f"
+    },
+    "call_2f49bfd69a574d46875feba6f395b6be": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "dots-studio/dots.llm1.base",
+        "revision": "37802f86127ccf904b5d7bf413fc029daf13b4a3",
+        "path": "tokenizer_config.json"
+      },
+      "result_sha256": "9817e97b4b8692d9ebc70a9486faea21025514e48c302b825e6134e316a60a2c"
+    },
+    "call_8f611d1d094c42819eea327ec125b261": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "exllamav3/models/dots1.py",
+        "max_bytes": 2700
+      },
+      "result_sha256": "ca08e48901078291831c85e5e37d46a10021d197d3b2b82c9e86a64459e3e042"
+    },
+    "call_1f0bebf402584ef593ed84697f341d95": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "exllamav3/models/ernie4_5.py",
+        "max_bytes": 2400
+      },
+      "result_sha256": "2da64ecd0554d5caa6336923abe1d7345ac0b9f94a3607238f6d489d61875089"
+    },
+    "call_a9eb49be5b7a4f6783dbc93a2f4128c2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "path": "exllamav3/models/ernie4_5_moe.py",
+        "max_bytes": 2800
+      },
+      "result_sha256": "5334b0569f53d8be59452dc0eaafb7934ca7c44a26b26d80e1f1a5e0a0bcfe39"
+    },
+    "call_150f676cc9da49dbad9fbb985e8224ef": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6171f9af3d4b477ccd43fdf8d7172d40fc770a38",
+        "offset": 0,
+        "max_bytes": 177
+      },
+      "result_sha256": "fe5ebacd51188dca764c221957674c00f6350a78b648247f9dd329bcfacbdee9"
+    }
+  }
+}

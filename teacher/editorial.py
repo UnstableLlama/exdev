@@ -12,6 +12,22 @@ SCHEMA_V4 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-an
 SCHEMA_V3 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v3.json').read_text())
 
 
+class AnnotationDiagnostic(ValueError):
+    """A stable refusal category with detail for the current repair policy."""
+
+    def __init__(self, category, detail):
+        super().__init__(category)
+        self.detail = detail
+
+
+def bounded_identifier(identifier, pattern):
+    if not re.fullmatch(pattern, identifier):
+        return '[invalid identifier]'
+    if len(identifier) > 64:
+        return identifier[:61] + '...'
+    return identifier
+
+
 def output_schema(manifest):
     """Constrain generation as well as post-validation to the actual supplied prose."""
     version=manifest.get('editorial_schema_version',2)
@@ -68,33 +84,45 @@ def validate_shape(value, schema, path='annotation'):
             raise ValueError(path+': invalid format')
 
 
-def evidence_ledger(transcript):
+def evidence_ledger(transcript, *, imported=False, complete=False):
     calls, results = {}, {}
     for message in transcript:
         if message['role']=='assistant':
             for call in message.get('calls',[]):
                 if call['id'].startswith('ancestor:') or call['id'] in calls:
                     raise ValueError('Duplicate evidence call ID')
+                if call['id'].startswith('prior:') != imported:
+                    raise ValueError('Reserved prior evidence namespace')
+                if complete and (set(call) != {'id', 'tool', 'arguments'}
+                                 or not call['id'] or not isinstance(call['arguments'], dict)):
+                    raise ValueError('Malformed evidence call')
                 calls[call['id']] = call
         elif message['role']=='tool':
             identity=message['call_id']
             if identity not in calls or identity in results or message['name']!=calls[identity]['tool']:
                 raise ValueError('Unmatched evidence result')
             result=json.loads(message['content'])
+            if complete and (not isinstance(result, dict) or type(result.get('ok')) is not bool
+                             or set(result) != ({'ok', 'result'} if result['ok'] else {'ok', 'error'})):
+                raise ValueError('Malformed evidence result envelope')
             results[identity]={'tool':message['name'],'arguments':calls[identity]['arguments'],
                                'result':result,'result_sha256':hashlib.sha256(message['content'].encode()).hexdigest()}
+    if complete and calls.keys() != results.keys():
+        raise ValueError('Evidence call missing result')
     return results
 
 
-def validate_annotation(annotation, manifest, transcript):
+def validate_annotation(annotation, manifest, transcript, *, prior=()):
     validate_shape(annotation,output_schema(manifest))
     from .coverage import require_coverage
-    require_coverage(manifest,transcript)
+    require_coverage(manifest,[*prior, *transcript])
     task=manifest.get('authoring_task')
     if task and task['kind']=='chapter':
         if len(annotation['chapters'])!=1 or annotation['chapters'][0]['id']!=task['id']:
             raise ValueError('Chapter output does not match assigned subsystem')
-    ledger=evidence_ledger(transcript)
+    ledger=evidence_ledger(transcript, complete=bool(prior))
+    if prior:
+        ledger.update(evidence_ledger(prior, imported=True, complete=True))
     for item in ledger.values():
         if item['tool']=='evidence_index' or (
             manifest.get('ancestor_context_mode') == 'retrieval_v1'
@@ -103,23 +131,31 @@ def validate_annotation(annotation, manifest, transcript):
             item['catalog_only'] = True
     context={'ancestor:'+e['sha']:{'kind':'approved_ancestor_context','sha':e['sha'],'content_sha256':e['blob']}
              for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits'] and manifest.get('ancestor_context_mode') != 'retrieval_v1'}
-    claims=[claim for field in ('problem','reasoning','impact','source_notes') for claim in annotation[field]]
+    claims = [(f'{field}[{index}]', claim)
+              for field in ('problem', 'reasoning', 'impact', 'source_notes')
+              for index, claim in enumerate(annotation[field])]
     chapter_ids=set()
-    for chapter in annotation['chapters']:
+    for chapter_index, chapter in enumerate(annotation['chapters']):
         if chapter['id'] in chapter_ids:
             raise ValueError('Duplicate chapter ID')
-        chapter_ids.add(chapter['id']);claims.extend(chapter['claims'])
+        chapter_ids.add(chapter['id'])
+        claims.extend((f'chapters[{chapter_index}].claims[{index}]', claim)
+                      for index, claim in enumerate(chapter['claims']))
         refs=chapter.get('related_chapters',[])
         if len(refs)!=len(set(refs)):raise ValueError('Duplicate chapter reference')
-    for claim in claims:
+    for claim_path, claim in claims:
         refs=claim['evidence']
         if not refs:
             raise ValueError('Claims, including inferences, need evidence anchors')
         if len(set(refs))!=len(refs):
             raise ValueError('Duplicate evidence anchor')
-        for ref in refs:
+        for index, ref in enumerate(refs):
             if ref not in context and (ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only'))):
-                raise ValueError('Unknown or unsuccessful evidence call')
+                identifier = bounded_identifier(ref, r'(?:call_|ancestor:)[0-9a-fA-F]+')
+                raise AnnotationDiagnostic(
+                    'Unknown or unsuccessful evidence call',
+                    f'{claim_path}.evidence[{index}] rejected reference: {identifier}',
+                )
         if annotation['schema_version'] >= 5:
             ancestor_refs=[ref for ref in refs if ref in context or
                            (ledger[ref]['tool']=='ancestor_read' and ledger[ref]['arguments'].get('mode')=='content')]
@@ -138,9 +174,10 @@ def validate_annotation(annotation, manifest, transcript):
         if len(refs)!=len(set(refs)):
             raise ValueError('Duplicate finding evidence')
         if any(ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only')) for ref in refs):
-            raise ValueError('Findings require successful current-session evidence')
+            raise ValueError('Findings require successful current-session evidence' if not prior else
+                             'Findings require successful prior or current evidence')
         return [ledger[ref] for ref in refs]
-    for finding in annotation.get('findings',[]):
+    for finding_index, finding in enumerate(annotation.get('findings', [])):
         if finding['id'] in finding_ids:raise ValueError('Duplicate finding ID')
         finding_ids.add(finding['id'])
         sources=checked_refs(finding['source_evidence'])
@@ -150,11 +187,17 @@ def validate_annotation(annotation, manifest, transcript):
             path=location['path']
             if path.startswith('/') or '\\' in path or any(p in ('','..','.') for p in path.split('/')):
                 raise ValueError('Finding locations require repository-relative paths')
-        for check in finding['verification']:
+        for check_index, check in enumerate(finding['verification']):
             evidence=checked_refs(check['evidence'])
             if check['method']=='source_inspection':
                 if not any(e['tool'] in source_tools for e in evidence):
-                    raise ValueError('Source inspection requires source evidence')
+                    finding_id = bounded_identifier(finding['id'], r'[a-z][a-z0-9-]*')
+                    kinds = ', '.join(sorted(source_tools))
+                    raise AnnotationDiagnostic(
+                        'Source inspection requires source evidence',
+                        f'findings[{finding_index}].verification[{check_index}] '
+                        f'(finding ID: {finding_id}). Supported tool kinds: {kinds}',
+                    )
             elif not any(e['tool']=='run' and e['result'].get('result',{}).get('returncode')==0 and
                          not e['result']['result'].get('timed_out',False) for e in evidence):
                 raise ValueError('Computational verification requires successful run evidence')
@@ -178,8 +221,8 @@ def validate_annotation(annotation, manifest, transcript):
     return dict(ledger,**context)
 
 
-def assemble_draft(annotation, manifest, transcript):
-    ledger=validate_annotation(annotation,manifest,transcript)
+def assemble_draft(annotation, manifest, transcript, *, prior=()):
+    ledger=validate_annotation(annotation,manifest,transcript,prior=prior)
     entry={'schema_version':annotation['schema_version'],'sha':manifest['task_sha'],'parent_shas':manifest['task_parents'],
            'cutoff_date':manifest['cutoff_date'],'annotation':deepcopy(annotation),
            'evidence':{key:{k:v for k,v in value.items() if k!='result'} for key,value in ledger.items()}}

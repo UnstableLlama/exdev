@@ -232,14 +232,23 @@ def prepare_packet(repo, sha, position, packet, evidence, store, sources, *, anc
     return read(Path(packet) / 'manifest.json')
 
 
-def replay_result(runner, call, result):
+def replay_result(runner, call, result, *, exact=False):
     """Compare the same error envelope FreshSession records, never skip errors."""
     try:
         actual = runner.invoke(call['tool'], call['arguments'])
     except (ValueError, RuntimeError) as exc:
         actual = {'ok': False, 'error': str(exc)}
-    if actual != json.loads(result['content']):
+    if (json.dumps(actual) != result['content'] if exact else actual != json.loads(result['content'])):
         raise ValueError('Tool replay mismatch: '+result['call_id'])
+
+
+def validate_packet_blobs(packet):
+    blobs = list((packet/'blobs').iterdir())
+    for blob in blobs:
+        if (digest(blob) != blob.name or blob.stat().st_mode & 0o222 or
+                not os.path.samefile(blob, store_root(packet)/blob.name)):
+            raise ValueError('Blob integrity/link failure: '+blob.name)
+    return len(blobs)
 
 
 def validate_run(run, packet, repo, evidence, position):
@@ -255,36 +264,56 @@ def validate_run(run, packet, repo, evidence, position):
         if digest(ROOT/file) != expected:
             raise ValueError('Implementation hash mismatch: '+file)
     coverage = manifest.get('coverage_request')
-    if bool(coverage) != bool(provenance.get('reviewer_assisted')):
+    is_revision = provenance.get('attempt_kind') == 'revision'
+    if (bool(coverage) or is_revision) != bool(provenance.get('reviewer_assisted')):
         raise ValueError('Assistance provenance mismatch')
     if coverage and provenance.get('coverage_request') != {k:coverage[k] for k in ('path','sha256')}:
         raise ValueError('Coverage provenance mismatch')
-    blobs = list((packet/'blobs').iterdir())
-    for blob in blobs:
-        if (digest(blob) != blob.name or blob.stat().st_mode & 0o222 or
-                not os.path.samefile(blob, store_root(packet)/blob.name)):
-            raise ValueError('Blob integrity/link failure: '+blob.name)
+    blob_count = validate_packet_blobs(packet)
     transcript = read(run/'raw-transcript.json')
+    totals = transcript[0].get('teacher_token_usage')
+    if 'token_usage' in provenance and provenance['token_usage'] != totals:
+        raise ValueError('Token usage provenance mismatch')
+    runner = Runner(packet)
+    revision_summary = {}
+    if is_revision:
+        from .revision import restore
+        revision = restore(run, packet, provenance, transcript)
+        if revision.binding['position'] != position:
+            raise ValueError('Revision position mismatch')
+        prior_counts = Counter()
+        for record in revision.records:
+            replay_result(runner, record, {'call_id': record['id'], 'content': record['result']}, exact=True)
+            prior_counts[record['tool']] += 1
+        source_provenance = read(Path(revision.binding['revision_of_run'])/'provenance.json')
+        revision_summary = dict(revision=provenance['revision'], prior_tool_counts=dict(prior_counts),
+                                prior_identical_replayed_calls=sum(prior_counts.values()),
+                                prior_token_usage=source_provenance.get('token_usage'))
     calls = {c['id']:c for x in transcript if x.get('role')=='assistant' for c in x.get('calls',[])}
     counts, replayed = Counter(), 0
-    runner = Runner(packet)
     for result in transcript:
         if result.get('role') != 'tool':
             continue
         call = calls[result['call_id']]
-        replay_result(runner, call, result)
+        replay_result(runner, call, result, exact=is_revision)
         counts[result['name']] += 1
         replayed += 1
     cov = read(run/'coverage.json')
+    if is_revision:
+        revision_summary['revision_reads'] = cov['revision_reads']
+        revision_summary['prior_run_calls'] = [
+            {'id': record['id'], 'arguments': record['arguments']}
+            for record in revision.records if record['tool'] == 'run']
     from .validation_repair import disclosure, LEGACY_POLICY
     return dict(status='validated', assessment=decision, validation_repair_details=disclosure(transcript, provenance.get('validation_repair_policy', LEGACY_POLICY)),
                 packet_implementation_blob_hashes_verified=True,
                 teacher_model=provenance['model'], reasoning_effort=provenance['reasoning_effort'],
-                reviewer_assisted=bool(coverage), tool_counts=dict(counts), identical_replayed_calls=replayed,
-                shared_readonly_blob_links_verified=len(blobs), open_catalog_rows=len(manifest['unreferenced_discussion_catalog']),
+                reviewer_assisted=bool(coverage) or is_revision, tool_counts=dict(counts), identical_replayed_calls=replayed,
+                shared_readonly_blob_links_verified=blob_count, open_catalog_rows=len(manifest['unreferenced_discussion_catalog']),
                 closed_catalog_rows=len(manifest['closed_discussion_catalog']['rows']),
                 task_sections_total=cov['task_sections_total'], fully_read_task_sections=cov['fully_read_task_sections'],
                 ancestor_prose_read_count=cov.get('retrieval_usage',{}).get('ancestor_prose_read_count'),
+                token_usage=totals, **revision_summary,
                 runtime={k:provenance[k] for k in ('codex_version','python_version','machine_architecture','operating_system')})
 
 
@@ -315,6 +344,11 @@ def skeleton(summary, thread):
     text += f"Task sections fully read: {len(v['fully_read_task_sections'])}/{v['task_sections_total']}; ancestor prose reads (report-only): {v['ancestor_prose_read_count']}.\n"
     text += f"Tool counts: {json.dumps(v['tool_counts'],sort_keys=True)}. Runtime: {json.dumps(v['runtime'],sort_keys=True)}.\n\n"
     text += f"Catalog: {v['open_catalog_rows']} open rows; {c['qualified_count']} closed qualify, {c['selected_count']} selected; {c['path_only_qualified_count']} by path alone, {c['path_only_selected_count']} selected by path alone. Cap {c['cap']}; truncated: {c['truncated']}; path rows cut: {len(c['path_qualified_cut'])}.\n\n"
+    if 'revision_disclosure' in summary:
+        text += summary['revision_disclosure'] + '\n\n'
+        text += '## Comparison with rejected attempt\n\n'
+        for label in ('Kept', 'Added', 'Removed', 'Corrected'):
+            text += f'### {label}\n\nAUTHOR MUST cite the corresponding passages and evidence.\n\n'
     repair=v.get('validation_repair_details',{})
     text += f"Validation repair: {json.dumps(repair,sort_keys=True)}.\n"
     if repair.get('validation_repair'):

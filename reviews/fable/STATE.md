@@ -1532,7 +1532,7 @@ training stay false; never approve those. Journal at handoff: `ready 309 .teache
 **308 was running** (teacher session in flight, no request yet). Quota: "used_percent":90.0 at 20:37 UTC, resets
 2026-11-23 00:16 UTC; about 1% per hour, roughly 0.25% per commit. No watch survives this session.
 
-**Committed and pushed:** through 235 as `9eaf68e`. Everything since is uncommitted. Do not commit or push
+**Committed and pushed:** through 322 as `a81e1c8` (04:10 UTC 11-18). Everything since is uncommitted. Do not commit or push
 unless the user asks; check for files over 100 MB first.
 
 **Only one reviewer session may run.** Check `list_sessions` first. Then start the watch
@@ -1603,6 +1603,44 @@ minutes per commit including reruns. Keep it there and report the real pace.
 
 - **323 architecture recovery accepted** 04:06 UTC 11-18: Exaone4; eight LGAI-EXAONE EXAONE-4.0 repositories, all pins equal my own API queries; GGUF, 4.0.1 and 4.5 rightly excluded. 322 ledger (5 records) accepted. **At the 323 review: read configs and safetensors headers from packet 000323-001 myself first** (1.2B against 32B, base against AWQ/FP8/GPTQ).
 
+- **323 reviewer-only facts (my pass, packet 000323-001; hold the entry to these):** builder has no pre-norms
+  (post-norm block; relies on 322's `x.half()` fallback), per-head q_norm/k_norm (header shape [head_dim]: 64 / 128),
+  RoPE and sliding window only on local layers, last layer forced global. **1.2B family (4 repos):** 30 layers,
+  `sliding_window` and `sliding_window_pattern` both null, tied, no `lm_head` (alt key path used), head_dim 64, kv 8.
+  With a null pattern the `is_local` list does `len(None)`: the 1.2B cannot be built at this commit (central check;
+  also say what `read_cfg(int, "sliding_window", -1)` does with JSON null). **32B family:** 64 layers, `LLLG`, window
+  4096, untied, `lm_head.weight` present, head_dim 128, intermediate 27392. Base repos all BF16. AWQ and GPTQ carry
+  `qweight/qzeros/scales` (GPTQ also `g_idx`) and no `.weight` for projections; FP8 carries F8_E4M3 `.weight` plus
+  `weight_scale_inv`: none of the six quantized repos matches the plain Linear loader. No `layer_types` key at the pins.
+
+- **323/001 REJECTED** 04:32 UTC 11-18 (not thin: matched my whole header pass, found the 1.2B `len(None)` crash itself). One false finding: `inherited-architecture-mismatch-diagnostic` claims the assertion still raises NameError on `expect_arch`; fixed by `04dc5571` (2025-05-01), ledger r003 records the fix, and the run's own config.py read shows `self.arch_string`. Stale ancestor claim repeated without re-check: **new 6.2 weak spot, watch for inherited findings**. Coverage `commit-000323-002.coverage.md` filed (questions only); one assisted attempt 323/002. At its review: that finding must be gone or stated as fixed.
+
+- **323/002 approved** 04:47 UTC 11-18 (Exaone4 architecture, assisted retry; stale diagnostic now correctly excluded with the fixing commit; repair added evidence ids only). Next 324. Pace: 322 15 min; 323 about 50 min with reference check, rejection and retry. Quota check due.
+
+- **324/001 failed validation** (05:01 UTC 11-18; chat-prompt fix for Dots and Ernie): cited a call id with one digit dropped, repair repeated it. Recovery verdict `commit-000324-recovery-001.md`: fresh unassisted 324/002 authorised. Asked the author what the refusal message tells the teacher and to propose naming the bad id (second unrepaired refusal in three commits, with 322/001).
+
+- **validation-repair-diagnostics-proposal-001 accepted** (05:07 UTC 11-18): refusal message will name the claim location and the rejected reference (and, my addition, the finding/check and accepted tool kinds for the source-inspection class); bounded rendering. Implementation owed; must not delay commits. Today the teacher gets only the bare category line.
+
+- **324/002 approved** 05:16 UTC 11-18 (Dots and Ernie default chat prompt fix; one real parity finding; 323 ledger of six accepted). Next 325. Helper: `bash reviews/fable/next.sh` prints request, checks, diff and draft in one go.
+
+- **validation-repair-diagnostics-implementation-001 accepted** (05:20 UTC 11-18): policy `validator-claim-diagnostics-v3`, six files, apply at a queue boundary only; expected impl hash set changes (check.py 'impl 45 bad []' must be re-pointed at the new accepted hashes file if it lists bad after application). First v3 repair is the live test.
+
+- **User reminder (05:25 UTC 11-18): rejections should be small revisions, not full rewrites.** Decided 11-17 (`revision-attempts-001.decision.md`), design accepted, implementation still owed. Told the author it is now the first owed item, to be built alongside the walk. Until it is accepted and live, a rejection still means a fresh assisted attempt; once live, use the revision route for one-sentence faults like 323/001.
+
+- **325/001 approved** 05:29 UTC 11-18 (anyprecision ImportError guard in eval; v2 repair fixed two ids, prose unchanged; inherited finding correctly re-checked; 324 ledger r002 accepted). Next 326; validator v3 to be applied at this boundary. **I am writing revision-attempts-implementation-002 myself (user's word, 05:27 UTC) in scratch worktree `~/exdev-rev` (branch detached, v3 patch applied as base); author told not to build it and will review my patch.**
+
+- **revision-attempts-implementation-002 written by me and submitted to the author for review** (05:40 UTC 11-18): `reviews/verdicts/revision-attempts-implementation-002-submission.md`, patch in `reports/`, scratch worktree `~/exdev-rev` (remove with `git worktree remove ~/exdev-rev` once applied). Author replies in `reviews/requests/revision-attempts-implementation-002-review.md`; my verdict on that reply is just an acknowledgement. **Owed by me before the first revision request: teach `reviews/fable/check.py` about `prior-evidence.json`** (pass `prior_view(run)` to verify/assemble, replay imported records). Once live: a one-sentence fault gets a revision, spec = forward retry with a `revision` object.
+
+- **326/001 approved** 05:41 UTC 11-18 (flash_attn pin relaxed to a minimum; first run under validator v3, no repair needed; filter-package omission finding true; 325 ledger two revisions accepted). Next 327.
+
+- **Revision route accepted (05:48 UTC 11-18): the author's corrected candidate, not my patch** (mine withdrawn; scratch worktree removed). Author applies at an empty-queue boundary; entry point `python3 -m orchestration.run_ahead author_revision --state STATE --spec SPEC`. **Coverage for a revision must be 1 to 12 lines of the form** ``- What does `path` [at lines N–M] [in `symbol`] define|return|check|change?`` on task or direct-parent paths, in `reviews/verdicts/<new run>.coverage.md`; anything I cannot phrase so goes to a fresh assisted attempt. Imported evidence ids are `prior:<64 hex>:<id>`. **Done 06:02 UTC: check.py and review.sh now fold in and replay `prior-evidence.json` (untested until the first revision; record shape assumed from the author's code: list of {id,tool,arguments,result,result_sha256}).** ~~Still owed by me: `reviews/fable/check.py` must load `teacher.revision.restore(run, packet, provenance, transcript).prior` and pass `prior=` to verify_final/run_coverage, and replay imported records, before the first revision review.** First live revision: line-by-line comparison and token totals for both attempts.
+
+- **327/001 approved** 05:52 UTC 11-18 (adds the filter subpackage to setup.py, fixes issue 62 and the 326 finding; 326 ledger r001 accepted). **Open question to the author: the 327 packet lacked 326's entry although the request said 327 ran after 326 was recorded (no 'Ran ahead of' line).** Check its answer in the 328 request; if selection dropped an approved entry it is a defect to chase. Next 328.
+
+- **328/001 approved** 06:04 UTC 11-18 (version bump 0.0.5; first run on the 50-file set, expect 'impl 46 bad []'; 327 ran-ahead disclosure corrected and accepted, no selection defect; ledger filter r002 accepted). Teacher token totals now reported: 328 used 1.28M input (1.20M cached), 3.5K output. Quota 93%. Next 329.
+
+- **329/001 approved** 06:15 UTC 11-18 (CI matrix adds Torch 2.8 rows; ran ahead of 328, did not matter; one finding: duplicate non-CUDA row can overwrite the same release wheel). Next 330.
+
 ## HANDOFF 2026-11-18 00:53 UTC: read this section first; it supersedes every "pending"/"Next"/"awaiting" line above
 
 **Where the walk is.** Approved and recorded for ancestor retrieval only: commits **2 to 321** (check the
@@ -1611,7 +1649,7 @@ Canonical and training stay false; never approve those. **322 was the last run o
 "322 at stop" line at the end of this section for whether it was reviewed). The user ordered a stop at about
 00:45 UTC; the author was told to submit 322 only and start nothing after it. No watch survives this session.
 
-**Committed and pushed:** through 235 as `9eaf68e`. Everything since is uncommitted. Do not commit or push
+**Committed and pushed:** through 322 as `a81e1c8` (04:10 UTC 11-18). Everything since is uncommitted. Do not commit or push
 unless the user asks; check for files over 100 MB first.
 
 **Only one reviewer session may run.** Check `list_sessions` first. Then start the watch

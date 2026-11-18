@@ -11,7 +11,7 @@ loop: after every compaction it re-read the current section of `reviews/ASTRA-TR
 and filled up again. That thread is stopped. You are the same role (the author; the files call it Astra),
 on `gpt-6.2-sol` medium since 22:52 UTC 17 November (user's order; before that `gpt-6.1-sol`), with the same rules.
 Teacher: `gpt-6.2-sol` medium under accepted `teacher-model-implementation-003`; 6.1 runs are approval-only.
-310 is recorded; resume at 311, run-ahead cap three, pause lifted by the reviewer.
+310 is recorded. Run-ahead cap three. Use the current handoff for the live boundary.
 
 ## Reading rules (these prevent the loop)
 
@@ -63,21 +63,6 @@ Teacher: `gpt-6.2-sol` medium under accepted `teacher-model-implementation-003`;
   accepted. Suspected fewshot counter finding accepted; r001 prepared/validated, report
   reports/commit-000309-ledger-001.json; accepted in310 verdict, obligation closed. Canonical: returned logits (1,1,padded_vocab)
   float, [0,0] vocabulary vector; reviewer note administrative only.
-- **310**: approved by reviews/verdicts/commit-000310-001.md for ancestor retrieval only; NOT YET RECORDED.
- 16 request bindings and published hash verified.309 ledger accepted. Six310 ledger records prepared,
- schema/evidence validated and submitted with implementation003 (reports/commit-000310-ledger-001.json).
- Canonical follow-ups: sampler logits type with half mask; active-filter f_idx pairing in submit/join.
-- **STOP: model implementation003 filed**: reviews/requests/teacher-model-implementation-003.md.
- 002 not accepted; its verdict supersedes narrow directive scope.003 keeps6.2 MODEL/TRIAL_MODEL, adds
- approval-only PRIOR_MODELS6.1 and matching runtime requirement; launches6.1 refused, Astra exception kept.
- Five test files updated. Focused35/full338 PASS, zero failures/errors; full479.808s, cleanup ResourceWarnings.
- 45 production before/after hashes bound, adapter only changed; test hashes/diff/logs bound separately.
- 310 model gate passes; queue compares unchanged orchestration hashes, also passes. No bypass/restoration.
- Await003 acceptance BEFORE recording310 under003; then stop for user author-window restart on6.2.
- Advancement remains paused under teacher-model-002.directive.md; no new teacher/trial/commit/push.
- First three6.2 entries full-depth review and report result to user. Author window restart not yet confirmed.
-- Teacher configured6.2 medium (implementation review pending), contract8/guidance12/salience-v3-paths.
-  Run-ahead cap three, explicitly paused.
 - Validation repair policy is `validator-keep-rest-v2`, accepted and applied to the live files
   (`reviews/verdicts/validation-repair-implementation-004.md`). 300 is the first run under it.
 - Everything since commit 235 is uncommitted. Do not commit or push unless the user asks.
@@ -93,9 +78,18 @@ Use plain path/hash bullets and host replay for approval. Disclose repair sizes,
 
 ## Current handoff (2026-11-18)
 
-322/002 recorded for ancestor retrieval only. Fable accepted all five ledger records. Trim unrelated discussion
-summaries before canonical use. 322/001 remains failed history.
-323 discovery accepted and the single unassisted 323/001 supervisor started. Await the result.
-Request: document config keys and tensor facts read per checkpoint, size and quantization differences,
-and builder load compatibility. Clear the retry stop only after recording the 323/001 ancestor verdict.
-Run-ahead cap three. No commit or push.
+325–329 recorded for ancestor retrieval only. Diagnostics v3 deployed after 325.
+326–329 had no repair. Report actual feedback and outcome at first v3 repair.
+328 accepted the 327 sparse-snapshot disclosure and filter-package r002. Both closed.
+Canonical follow-ups for 325–329 are in tracking.
+The user authorized the corrected author candidate for revision attempts 002.
+Applied at the empty queue after 327, verified 50 production hashes, and launched
+328. The 328 request binds the application audit, accepted verdict, and 349-test suite.
+328 completed unassisted and is approved. Fable’s patch is withdrawn.
+329 approved. Its suspected non-CUDA release asset name collision is validated
+as ledger r001 in reports/commit-000329-ledger-001.json, due with 330.
+330 running. It ran ahead of 329. Disclose the sparse snapshot in its request.
+Flag first live revision for line-by-line review and report old/new token usage.
+Use a fresh assisted attempt if pointer-only coverage is unavailable. If provider
+usage accounting causes a run failure, report usage unavailable in the handoff.
+Canonical/training false. No commit or push.
