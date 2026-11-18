@@ -28,12 +28,15 @@
 - `h.py finish` derives the outcome from the tested commits unless the meta file sets `outcome`. Attempts are never overwritten; a failed fixture or driver is committed as `inconclusive` and retried under the next number.
 
 - Default environment is now Python 3.12: later commits import `typing.override` (exllamav3/models/mimo.py), which 3.11 lacks.
-- `eval/compare_q*.py` import about a dozen heavy third-party packages at module level. `lib/stubmods.py` and `lib/cq.py` stub them, which caps those results at `inconclusive` under the worker rules. Installing the real packages could upgrade them; that has not been tried.
+- `eval/compare_q*.py` findings: use `envs/py312-compareq-torch26cu126` with `lib/cqcli.py` (real dependencies, no stubs; pass `--env`, and `--timeout 1100`). By the user's decision the real packages are installed, resolved as of 2025-06-01. `lib/stubmods.py` and `lib/cq.py` are obsolete.
+- `bin/cleanenv` sets `CUDA_DEVICE_ORDER=PCI_BUS_ID`, because gptqmodel sets it on import; an allocation was confirmed on physical GPU 1.
+- wikitext-2-raw-v1 is cached under `hf/` at b08601e04326c79dfdd32d625aee71d232d685c3.
 
 - pydantic is pinned to 2.11.7 in both environments: formatron 0.5.0 fails to import with the newest pydantic, and exllamav3 imports formatron at later commits.
 
 ## Progress
 Results are the directories under `gpu-tests/results/`. Nothing is in flight.
 - Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers.
+- The three compare-q findings were rerun with real dependencies and are `fix_confirmed` at their highest attempt.
 - Skipped for now, no result yet: conversion-handle-accumulation (needs a conversion run under a lowered open-file limit).
 - Next: empty-block-conversion, then the rest of priority 1.
