@@ -1,0 +1,321 @@
+{
+  "schema_version": 5,
+  "sha": "ddf260767d5e31b04d1e0cd660ef4188071d809a",
+  "parent_shas": [
+    "d90e706a406d15b57a72fca39ea908d6ea12e541"
+  ],
+  "cutoff_date": "2025-06-14T15:15:36+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The conversion strategy assertion reported a missing allocation without identifying the affected linear module.",
+        "basis": "source",
+        "evidence": [
+          "call_7adb223c506d43948e11a430441e459a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Replacing all(...) with individual assertions makes the first failing linear available to the error message while retaining the membership requirement.",
+        "basis": "source",
+        "evidence": [
+          "call_7adb223c506d43948e11a430441e459a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This improves diagnostics rather than repairing missing strategy entries: conversion still stops, now naming linear.key.",
+        "basis": "source",
+        "evidence": [
+          "call_7adb223c506d43948e11a430441e459a"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root conversion ancestor entry was read for the workflow this assertion belongs to. It describes allocation followed by per-linear conversion and records an earlier double-work-directory save-path hazard.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_aa370b823b014294a69bc5f7d2c4c200"
+        ]
+      },
+      {
+        "text": "That recorded save-path hazard is already removed in the inspected parent: main passes qtensors/<module-key>.safetensors and save_tensor adds work_dir once. The task leaves this code unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_e01b669082f04dbb8867ab72261c84c2",
+          "call_7adb223c506d43948e11a430441e459a"
+        ]
+      },
+      {
+        "text": "Read discussions include #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800\u201d; #11, \u201cAssertionError: bias is wrong datatype\u201d; #16, \u201cRuntimeError: CUDA error: invalid configuration argument\u201d; #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1\u201d; and #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated.\u201d Their reports concern padding, bias dtype, calibration/tokenization, sliced loading, and invalid calibration states respectively\u2014not the missing-strategy diagnostic.",
+        "basis": "source",
+        "evidence": [
+          "call_b7a291323f8a4bb79125f5a7b5ac5205",
+          "call_39aa7651e0364dcfb9d0630020531e44",
+          "call_db2469c719af4803bde73b7e49f859cc",
+          "call_173f2c51a8684c7087896726d7186449",
+          "call_edbf4c92d059483d8c8bd7ba5818cec5"
+        ]
+      },
+      {
+        "text": "Also read PR #13, \u201cFix a tokenizer issue while converting models without a bos_token_id defined\u201d; PR #26, \u201cSuperior 3INST parameters\u201d; #33, \u201cError converting model\u201d; #34, \u201ctorch._C._LinAlgError on last layer of quant\u201d; and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values.\u201d They discuss tokenizer handling, decoder experiments, file-opening/inference failures, and factorization failures.",
+        "basis": "source",
+        "evidence": [
+          "call_83423ef4de764f8a8ddc3a916fc7da72",
+          "call_a6735d2f5d4f4f349b600c2db1c02e0f",
+          "call_d138de1b9e7a4c4fa1ff06dad3219f4c",
+          "call_a9d01aae02b844cba5b649cc83ebc1bd",
+          "call_29fc98dff6664e8c99635b2ee72ff5f1",
+          "call_d5ca0ec1e45b4764a457a9065113effd",
+          "call_491c4d5cc5d646e78b0c30cc5aa05ef4"
+        ]
+      },
+      {
+        "text": "These discussions are contextual matches by convert_model.py paths and conversion call sites; associating them with this task is inference, not an established upstream linkage. None establishes the particular missing strategy that motivated this edit.",
+        "basis": "inference",
+        "evidence": [
+          "call_7adb223c506d43948e11a430441e459a",
+          "call_39aa7651e0364dcfb9d0630020531e44",
+          "call_d138de1b9e7a4c4fa1ff06dad3219f4c",
+          "call_491c4d5cc5d646e78b0c30cc5aa05ef4"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository conversion or GPU execution was performed. The bounded Python check transcribes only assertion control flow.",
+      "The evidence does not identify a concrete model or allocation failure motivating the diagnostic change."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "conversion",
+        "title": "Identify the linear missing a quantization strategy",
+        "claims": [
+          {
+            "text": "main obtains a strategy from module.allocate_q, applies mod_strategy, then processes each module slice. Its target list includes only Linear instances with a truthy qmap and a non-None device; the diagnostic therefore concerns loaded quantization targets, not every model submodule.",
+            "basis": "source",
+            "evidence": [
+              "call_e01b669082f04dbb8867ab72261c84c2"
+            ]
+          },
+          {
+            "text": "The new loop checks each target's key against strategy and includes that key in the AssertionError. It preserves the subsequent LinearFP16 assertion and runs before image dumping, CPU weight staging, and construction of quant_args, where strategy[linear.key] supplies K.",
+            "basis": "source",
+            "evidence": [
+              "call_7adb223c506d43948e11a430441e459a",
+              "call_e01b669082f04dbb8867ab72261c84c2"
+            ]
+          },
+          {
+            "text": "Both forms accept an empty target list and stop on the first missing key. A standard-library transcription checked 968 combinations of target sequences and strategy key sets: pass/fail outcomes matched throughout, and the new message identified the first absent key.",
+            "basis": "execution",
+            "evidence": [
+              "call_1509726074be495fbca51cf8965188a2"
+            ]
+          },
+          {
+            "text": "The inspected CLI entry point imports this main and calls it after successful prepare. A whole-parent search for conversion.convert_model found this import in convert.py; this establishes the direct CLI route, not exhaustive coverage of external callers.",
+            "basis": "source",
+            "evidence": [
+              "call_620988e6e91c4d839b41169c9c01d75c",
+              "call_105e99e225ea4e6ca721081d01ce7adb"
+            ]
+          },
+          {
+            "text": "The practical tradeoff is a more actionable first-failure message rather than an aggregate list of all missing allocations. Neither strategy contents nor quantization settings change.",
+            "basis": "inference",
+            "evidence": [
+              "call_7adb223c506d43948e11a430441e459a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Makes conversion's missing-strategy assertion name the first affected linear module without changing its acceptance condition or repairing allocation."
+  },
+  "evidence": {
+    "call_7adb223c506d43948e11a430441e459a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ddf260767d5e31b04d1e0cd660ef4188071d809a",
+        "offset": 156,
+        "max_bytes": 906
+      },
+      "result_sha256": "45a7f0ff8428b8c4209bad7b6bb618f2f7a99bd075bb1acb982b5143ed76bc43"
+    },
+    "call_e01b669082f04dbb8867ab72261c84c2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d90e706a406d15b57a72fca39ea908d6ea12e541",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "e9ec4a958f40b025daad7ba51b441a97b75c14612ff3e3274a53a4edefd8efa4"
+    },
+    "call_19de78373c0e475c94b1a6c35a0d0480": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/conversion/convert_model.py",
+        "limit": 30,
+        "max_bytes": 12000
+      },
+      "result_sha256": "6af526ac086a77463daccdad2e805c57eefc7022ef3ea0c73dabb76f8b1fa094",
+      "catalog_only": true
+    },
+    "call_aa370b823b014294a69bc5f7d2c4c200": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "conversion",
+        "max_bytes": 16384
+      },
+      "result_sha256": "edbf5d62a8d51728040b0c6b2c3e7d4ad552cc5a8e56385f194f283883691541"
+    },
+    "call_b7a291323f8a4bb79125f5a7b5ac5205": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 20000
+      },
+      "result_sha256": "4323b3e12b4dde96fdfac656789935cd68abd0344e6c6e900e4e1851729e68ad"
+    },
+    "call_39aa7651e0364dcfb9d0630020531e44": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 18000
+      },
+      "result_sha256": "d4a4232eef56dcdb4e44e0081608332298deb91d4d61b2d8e7186042266c38a7"
+    },
+    "call_db2469c719af4803bde73b7e49f859cc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 20000
+      },
+      "result_sha256": "7ee6ab4f44bb2d852c091cf32ab8187ff76a9f0c0d5c2af23e0885b4504a312f"
+    },
+    "call_173f2c51a8684c7087896726d7186449": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 20000
+      },
+      "result_sha256": "7d4f12bd3aa76b28fd9adec25c5a43c980da3ed1d1bcf8340b1ec7063f1096db"
+    },
+    "call_edbf4c92d059483d8c8bd7ba5818cec5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 20000
+      },
+      "result_sha256": "408744790230910cd65b9b4b4cd76cab8841b2e48b1bb77d2609d21a8ca2e864"
+    },
+    "call_83423ef4de764f8a8ddc3a916fc7da72": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "022e71e206a1c7aa563a7c765b56681f20de3c14328d9f0359be1525613c1cc9"
+    },
+    "call_a6735d2f5d4f4f349b600c2db1c02e0f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 24000
+      },
+      "result_sha256": "1cf19596ee4ddf978b968b91457b3dfe87de2762b771ae48d46dbc31c057721a"
+    },
+    "call_5124f9153f5e4076861cf8637bd3625e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 24000,
+        "max_bytes": 110000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_d138de1b9e7a4c4fa1ff06dad3219f4c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 24000,
+        "max_bytes": 65536
+      },
+      "result_sha256": "cdf1537950546a3bee47d5f145afb2877335bc82f5ab8f46f6d23e27e1813932"
+    },
+    "call_a9d01aae02b844cba5b649cc83ebc1bd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 89536,
+        "max_bytes": 40000
+      },
+      "result_sha256": "14534b3732262a4f5c58a13508eee264ceae1e01d8af4588b43f4dc30b043b21"
+    },
+    "call_29fc98dff6664e8c99635b2ee72ff5f1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 65536
+      },
+      "result_sha256": "3380034d12a293b6eb0b187a3b2cabcc6aeefa0a26bab91c3d59e10a20fcbccf"
+    },
+    "call_d5ca0ec1e45b4764a457a9065113effd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 20000
+      },
+      "result_sha256": "ff5be16d588a2800c4ee9d70dcbba1520a58d9b4e5d2eedbfad993f4001ab8f0"
+    },
+    "call_491c4d5cc5d646e78b0c30cc5aa05ef4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 20000
+      },
+      "result_sha256": "bb9fdced58b7bb2b9ba9f5874c1082deb9c360793e835ec4507be5209297e976"
+    },
+    "call_620988e6e91c4d839b41169c9c01d75c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d90e706a406d15b57a72fca39ea908d6ea12e541",
+        "query": "conversion.convert_model",
+        "limit": 100
+      },
+      "result_sha256": "0bafe1b5e24422c6f6843b875e3f51d62c44ae81dc5cb40c8d6dde5a4ee70dfc"
+    },
+    "call_105e99e225ea4e6ca721081d01ce7adb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d90e706a406d15b57a72fca39ea908d6ea12e541",
+        "path": "convert.py",
+        "max_bytes": 2000
+      },
+      "result_sha256": "005aa3bf1d4e254f82c7c5985334dbfb69de9a398326c807fea79b6970168e52"
+    },
+    "call_1509726074be495fbca51cf8965188a2": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import itertools\nn=0\nfor size in range(5):\n for keys in itertools.product('abc', repeat=size):\n  for mask in range(8):\n   strategy={k:4 for i,k in enumerate('abc') if mask>>i&1}\n   def old():\n    assert all(k in strategy for k in keys), ' ## Logic error, no quantization strategy for module'\n   def new():\n    for k in keys:\n     assert k in strategy, f' ## Logic error, no quantization strategy for module {k}'\n   results=[]\n   for f in (old,new):\n    try: f(); results.append((True,''))\n    except AssertionError as e: results.append((False,str(e)))\n   assert results[0][0]==results[1][0]\n   if not results[1][0]: assert results[1][1].endswith(next(k for k in keys if k not in strategy))\n   n+=1\nprint(f'{n} cases: identical pass/fail; new message identifies first missing key; includes empty sequences.')"
+        ]
+      },
+      "result_sha256": "b0e1ab23d3f615eaf89e8db6106c42794cb0384903a4a6102345b71fe6f82032"
+    }
+  }
+}

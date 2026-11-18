@@ -1,0 +1,452 @@
+{
+  "schema_version": 5,
+  "sha": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+  "parent_shas": [
+    "a6d79e5d0dd016764b228f7a4d4d709dc15dd374"
+  ],
+  "cutoff_date": "2025-07-13T11:13:01+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Before this change, the shared progress bar displayed elapsed and remaining time but left the speed-estimation period to Rich's default. The commit describes a settings tweak, not a fix for a reported error.",
+        "basis": "source",
+        "evidence": [
+          "call_e95e14cf3e194e13a69d74517f60b560",
+          "call_768ee54a9fa947a394937cb77bad5788",
+          "call_ad76a0c1a06d479e92c2514b4493643f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Setting the period once in the wrapper gives every enabled bar the same policy without changing callers. A ten-minute speed-estimation window can make the ETA less sensitive to brief bursts or stalls, at the cost of reacting more slowly to a lasting change in throughput. That is a likely rationale, not a measured effect. The setting targets speed estimation, not the display refresh rate.",
+        "basis": "inference",
+        "evidence": [
+          "call_ad76a0c1a06d479e92c2514b4493643f",
+          "call_e95e14cf3e194e13a69d74517f60b560",
+          "call_cefc995e2de540f584a7b5622547cd99"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Direct users include model loading, conversion capture and forward passes, EXL3 quantization, and several evaluation and example scripts. The keyword is passed only when the bar is enabled: single-device loading and autosplit both pass None when progress display is disabled. The patch does not change work counts, model placement, quantization arithmetic, or the converter's separate printed module-level ETA.",
+        "basis": "source",
+        "evidence": [
+          "call_aae8978cea244c938725ecb794264375",
+          "call_411859c7305b4cdda3ee663f5ac0c1eb",
+          "call_057e58134c93476e8c9ecd827b86a2a1",
+          "call_ad76a0c1a06d479e92c2514b4493643f"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial commit's runtime chapter describes ProgressBar as a Rich wrapper that is inactive for empty text and marks non-transient bars complete on exit. The later \u201cMore feedback from conversion\u201d entry describes reusing one progress task across conversion phases and distinguishes the separately printed module-level ETA.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_764881dc09874ec8a777d510ffbc9959",
+          "call_db5f624f0bed4936b9fba746b5395be2"
+        ]
+      },
+      {
+        "text": "The older conversion entry recorded a negative-minute formatter defect. The parent source already uses floor division after rounding seconds, so that specific defect is not carried into this patch. The formatter and its conversion caller are separate from the Rich constructor change.",
+        "basis": "source",
+        "evidence": [
+          "call_db5f624f0bed4936b9fba746b5395be2",
+          "call_a8fbc724bf214077b90a30229b97921b",
+          "call_438870f7328a4ea589e7aab1ec7fce30",
+          "call_ad76a0c1a06d479e92c2514b4493643f"
+        ]
+      },
+      {
+        "text": "Running the parent repository's human_time function in isolation returned \u201c29 minutes\u201d, \u201c30 minutes\u201d, and \u201c1 hour, 30 minutes\u201d for 1,770, 1,800, and 5,400 seconds, respectively. This checks the old formatter examples, not conversion execution.",
+        "basis": "execution",
+        "evidence": [
+          "call_d976fa85a85d4045b6bbb335ab4224cc"
+        ]
+      },
+      {
+        "text": "Issue #61, \u201cRun ERNIE-4.5-300B-A47B-PT 2.25bpw with 5x20G 3080 got 'Insufficient VRAM'\u201d, shows a traceback through the autosplit loader that uses this wrapper. Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI)\u201d, reports the same error text raised by that loader. The overlap is the loading path, not the cause: the patch changes Rich construction, not the out-of-memory branch. In #61 the reporter credited an allocator change with getting the model to load.",
+        "basis": "inference",
+        "evidence": [
+          "call_e1b250add2474a71a89ed85296c33b48",
+          "call_4802e2826d9e4fb78509d425ff7472b2",
+          "call_411859c7305b4cdda3ee663f5ac0c1eb",
+          "call_ad76a0c1a06d479e92c2514b4493643f"
+        ]
+      },
+      {
+        "text": "Issue #19, \u201cAny chance of a single model file?\u201d, discusses tweaking model configuration in the context of keeping the Hugging Face directory format. The wording overlaps the commit title, but the subject is checkpoint packaging, not progress estimation.",
+        "basis": "inference",
+        "evidence": [
+          "call_64dcd6e27dca43dfba6a52cfa1662b50",
+          "call_ad76a0c1a06d479e92c2514b4493643f"
+        ]
+      },
+      {
+        "text": "Other discussion matches do not explain the Rich setting. Issue #7 (\u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d) names model.py in an import traceback; #33 (\u201cError converting model\u201d) shows the separate printed ETA before a file-opening failure; #34 (\u201ctorch._C._LinAlgError on last layer of quant\u201d), #42 (\u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values\u201d), and #52 (\u201cError converting moonshotai/Kimi-Dev-72B\u201d) trace failures through quantize_exl3 into factorization. PR #26 (\u201cSuperior 3INST parameters\u201d) concerns decoder parameters, and #53 (\u201cCommand A support\u201d) asks about model and quantized checkpoint availability. Issue #48 (\u201c`RuntimeError` when requesting logprobs with Gemma 3 models\u201d) reports a tensor-size mismatch, not the loader failure or an ETA problem.",
+        "basis": "inference",
+        "evidence": [
+          "call_97ccc679af6f478fb213a79265f5f07c",
+          "call_bbe6a9ba61864eecbd156c15aec29567",
+          "call_b73f44d2aac64881996d09c4117f7b2f",
+          "call_057e58134c93476e8c9ecd827b86a2a1",
+          "call_7537620e4dd9440fb2e723b7bdc63388",
+          "call_e25952c4895a4b50908dddfde089ff58",
+          "call_993ac5e4b6ca4123b1bd002eb97b824a",
+          "call_dc4d539b65e24f8b956b03a91997018d",
+          "call_9f5d61da6bba4458a629f433d29c2a0c",
+          "call_3471fc9ae1b54d06a29358baaaabb4c3",
+          "call_5387eaf1c54b4c2c8f68ab07c8b80a72",
+          "call_ad76a0c1a06d479e92c2514b4493643f"
+        ]
+      }
+    ],
+    "limitations": [
+      "Rich itself was not run. The inspected requirements list Rich without a version pin, and no approved Rich reference was retrieved. The previous numerical default, version compatibility, exact sample retention and reset behavior, and observed ETA stability remain unverified.",
+      "The commit does not explain why 600 seconds was chosen over a shorter or longer period."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "e0f26ed129ca94cc9ea8b810849d3c68885ef51b"
+    ],
+    "chapters": [
+      {
+        "id": "runtime",
+        "title": "Set a shared speed-estimation period for progress bars",
+        "claims": [
+          {
+            "text": "ProgressBar.__init__ now passes speed_estimate_period=600.0 to rich.progress.Progress when the label is truthy. It still creates one task with the caller's total, retains the description, bar, percentage, elapsed-time and remaining-time columns, and forwards the transient flag. Updates still report an absolute completed count rather than an increment.",
+            "basis": "source",
+            "evidence": [
+              "call_ad76a0c1a06d479e92c2514b4493643f",
+              "call_e95e14cf3e194e13a69d74517f60b560"
+            ]
+          },
+          {
+            "text": "EXL3 quantization keeps one wrapper instance: it starts with a total of 100 for preparation, sets completion back to zero, then changes the existing task's label and total to the number of input tiles. The new constructor setting belongs to that same Rich instance in both phases; the patch adds no explicit speed-history reset at the transition.",
+            "basis": "source",
+            "evidence": [
+              "call_5387eaf1c54b4c2c8f68ab07c8b80a72",
+              "call_72de20d610ec422daf9f7b5851da6eed",
+              "call_e95e14cf3e194e13a69d74517f60b560",
+              "call_ad76a0c1a06d479e92c2514b4493643f"
+            ]
+          },
+          {
+            "text": "A standard-library check ran the parent wrapper and the wrapper with the one-line patch against a recording stand-in for Rich. Both transient settings forwarded 600.0 only in the patched wrapper, and a None label constructed no bar in either version. The check also converted 600 seconds to ten minutes. It did not run Rich's estimator or render a terminal bar.",
+            "basis": "execution",
+            "evidence": [
+              "call_cefc995e2de540f584a7b5622547cd99"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "The shared ProgressBar now asks Rich to use a ten-minute speed-estimation period for enabled bars. The patch changes the ETA setting, not the work being counted or the converter's separate module-level estimate."
+  },
+  "evidence": {
+    "call_ad76a0c1a06d479e92c2514b4493643f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "offset": 167,
+        "max_bytes": 523
+      },
+      "result_sha256": "94d623eeb944b8692523e8e7b056abf72e7ec46d9d9785e2268c61a30d198667"
+    },
+    "call_e95e14cf3e194e13a69d74517f60b560": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "path": "exllamav3/util/progress.py"
+      },
+      "result_sha256": "75b82471ff9e022bed8490f7349aff057f5b2708715bbcc9996e1578e77a9dd8"
+    },
+    "call_aae8978cea244c938725ecb794264375": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": "ProgressBar",
+        "limit": 100
+      },
+      "result_sha256": "906e0a45d3a9e843802266ef43b31161f401ca88334e6377fdc79869c0e35f0f"
+    },
+    "call_bcd75c7f11814364beb963629d02c1ef": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": "rich",
+        "limit": 70
+      },
+      "result_sha256": "47c3bc80229b012767d62abad09dd1a7fd3f82b1cef92b612a1a600d02624e6d"
+    },
+    "call_a62cdeadd2cd48769b32918295332283": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "path": "requirements.txt"
+      },
+      "result_sha256": "34e8af070b9aaa0acdb1eb9d7ba85335fd53b7d1427ae9c6194583508fbe84ca"
+    },
+    "call_4ce5143c2c5544269a5eddb7d9d15894": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/util/progress.py",
+        "limit": 20
+      },
+      "result_sha256": "60622a2706289ac2a7a29f551d6a76aad64e2fb29c4d93f5bf414d9234b1fc39"
+    },
+    "call_764881dc09874ec8a777d510ffbc9959": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "runtime",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de1b97ae94bf13488b4bad98c6eb3de8b285753d46b56295711c375be802464"
+    },
+    "call_db5f624f0bed4936b9fba746b5395be2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "e0f26ed129ca94cc9ea8b810849d3c68885ef51b",
+        "max_bytes": 16384
+      },
+      "result_sha256": "69ea6f1ce6abb97332046be22b20cf186e4a1abdb3144609a6e688b775bdbd13"
+    },
+    "call_710d9110b03b482e833339dfa52f7a7f": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions"
+      },
+      "result_sha256": "5192c0e07ccef01bf8e90a696a2de917654bc1bdea600cb485517ded39028a88",
+      "catalog_only": true
+    },
+    "call_64dcd6e27dca43dfba6a52cfa1662b50": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/19"
+      },
+      "result_sha256": "3a0596c973d2e45eaed1057e25e289db5e7eb7c3fa15810b09c9438c5e42f913"
+    },
+    "call_e1b250add2474a71a89ed85296c33b48": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/61"
+      },
+      "result_sha256": "d6bd1812aed75635011782e7b65a846186a3d69107821f69efb5325ec030ac5c"
+    },
+    "call_411859c7305b4cdda3ee663f5ac0c1eb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 11000
+      },
+      "result_sha256": "d29846e3ac42c946bb41b67e86e5b23a3c68252b4d95b74e6ee8b43c22fa5a7e"
+    },
+    "call_438870f7328a4ea589e7aab1ec7fce30": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": "human_time"
+      },
+      "result_sha256": "97ecad6feb0fb7041f2d7c0280399d83feae2b2a7ca2917c126f88f7cb72bffc"
+    },
+    "call_a8fbc724bf214077b90a30229b97921b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "path": "exllamav3/util/misc.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "097bd3f57c949313fd06424ce4076b3858330b0178e4dafb03f819496829175e"
+    },
+    "call_052f6323392a44dcab33a113e32f28b9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": ".new_task("
+      },
+      "result_sha256": "2142e8ae9fd2f451bef18e028387ee2079de871dcadd664a7a9bad40bc26583e"
+    },
+    "call_1d6270bd35e5445c80da83b2cab14d5f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": "speed_estimate_period"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c5b4493efe82400aaa5f310050f8bedf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": "estimate_period"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_78d0b10d90314175a33b4f38e01fc714": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": "rich.progress"
+      },
+      "result_sha256": "6fc7525ed76312be539003862ceeba45917c8f4c698fede153d35fdc906e4a53"
+    },
+    "call_72de20d610ec422daf9f7b5851da6eed": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 27800,
+        "max_bytes": 7500
+      },
+      "result_sha256": "5f718c574ca903e993d63dbaa701479bfdc96a0902425dfd621df6ce36b4e080"
+    },
+    "call_5387eaf1c54b4c2c8f68ab07c8b80a72": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "offset": 25100,
+        "max_bytes": 2700
+      },
+      "result_sha256": "a3580abfde7be83da02f1ac240ae8f719a0211e8ba6940259f3d58ac7aaf1aeb"
+    },
+    "call_057e58134c93476e8c9ecd827b86a2a1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a6d79e5d0dd016764b228f7a4d4d709dc15dd374",
+        "query": "est_remaining"
+      },
+      "result_sha256": "06b65d027d7bf10792495e57bc0a9dadb90c86b92915f1b374ceebed97b44d08"
+    },
+    "call_97ccc679af6f478fb213a79265f5f07c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 9500
+      },
+      "result_sha256": "96a9a4d90965d50c99ce57377f6689278dfe6484824132a41c570c2229ccd4e8"
+    },
+    "call_dc4d539b65e24f8b956b03a91997018d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "522bc3d3a5d06ecb3cfd71bf700d1c3d82d67dc5b95ed06faa11c9fe3e856f8d"
+    },
+    "call_bbe6a9ba61864eecbd156c15aec29567": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 1500
+      },
+      "result_sha256": "450ade3bbb543bfcc7d4b9d9f24d4cc6216ebcb9209d2d909b488aa368a87143"
+    },
+    "call_b73f44d2aac64881996d09c4117f7b2f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 1500,
+        "max_bytes": 1800
+      },
+      "result_sha256": "dcf287975fbb0c0afc5c151e99bb349aa7a491702143598bae47ef66445e7eea"
+    },
+    "call_7537620e4dd9440fb2e723b7bdc63388": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 3200
+      },
+      "result_sha256": "5411003ebee23dfe8253b65a412a3ed7911ee46511ead8730f5511feedecda05"
+    },
+    "call_e25952c4895a4b50908dddfde089ff58": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 4500
+      },
+      "result_sha256": "1499549ac2ea6ded9ce624acf82fb551084b0e6ec6546269de6accdfa206955e"
+    },
+    "call_993ac5e4b6ca4123b1bd002eb97b824a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 4700
+      },
+      "result_sha256": "c1cdf93f01ffeeab1f2b3ba6169c30512490a60df3e114d0f3136e595ce359f8"
+    },
+    "call_9f5d61da6bba4458a629f433d29c2a0c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 6500
+      },
+      "result_sha256": "496d4dd0ff47ec01b059b255bbb96aa6215d0c8e3f6b83f51c84a3418c9dd464"
+    },
+    "call_c4d46448a6bc4d49b52a46851a7452b4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://rich.readthedocs.io/en/stable/reference/progress.html",
+        "max_bytes": 1000
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_cefc995e2de540f584a7b5622547cd99": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport types,sys\nrich=types.ModuleType('rich'); p=types.ModuleType('rich.progress'); sys.modules.update({'rich':rich,'rich.progress':p}); seen=[]\nclass Recorder:\n def __init__(self,*columns,**kw): seen.append(kw)\n def add_task(self,*a,**kw): return 7\np.Progress=Recorder\nfor n in ('BarColumn','TextColumn','TimeElapsedColumn','TimeRemainingColumn'): setattr(p,n,lambda *a,**kw: None)\ns=Path('exllamav3/util/progress.py').read_text(); line='                transient = transient,\\n'; assert s.count(line)==1\nfor label,code in [('parent',s),('one-line patch',s.replace(line,line+'                speed_estimate_period = 600.0,\\n'))]:\n ns={}; exec(compile(code,'exllamav3/util/progress.py','exec'),ns); seen.clear(); bar=ns['ProgressBar']; bar(None,3); assert not seen; bar('work',3); bar('work',3,False); print(label,seen)\nprint('600 seconds expressed in minutes:',600/60)"
+        ]
+      },
+      "result_sha256": "e82a2d70ff85de772f66ac24071ce6be4c234546608814ebd9274391c46f3690"
+    },
+    "call_4802e2826d9e4fb78509d425ff7472b2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 6500
+      },
+      "result_sha256": "e9af5383b36213f1b4a74b0c660653d4266a3e585a2b23bcabf7fa917b874832"
+    },
+    "call_3471fc9ae1b54d06a29358baaaabb4c3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 4200
+      },
+      "result_sha256": "64eec1e172a1d9ea677fff55c984241f458cdac8a5e2863d1c5dc01700098cdb"
+    },
+    "call_768ee54a9fa947a394937cb77bad5788": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "offset": 0,
+        "max_bytes": 167
+      },
+      "result_sha256": "a6bdc57786445a006f2c3e8f75d84ea43ef3f146ba578a778b151847a304f9c0"
+    },
+    "call_d976fa85a85d4045b6bbb335ab4224cc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast\nfrom pathlib import Path\nm=ast.parse(Path('exllamav3/util/misc.py').read_text()); m.body=[n for n in m.body if isinstance(n,ast.FunctionDef) and n.name=='human_time']; assert len(m.body)==1\nns={}; exec(compile(m,'exllamav3/util/misc.py','exec'),ns)\nfor s in (1770,1800,5400): print(s,ns['human_time'](s))"
+        ]
+      },
+      "result_sha256": "9e976efd005b63f99f5ec594277384a1de6293a4697c3a586cbc0665f930c48c"
+    }
+  }
+}

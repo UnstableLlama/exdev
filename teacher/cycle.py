@@ -247,6 +247,8 @@ def validate_run(run, packet, repo, evidence, position):
     validate_bundle(packet, Path(evidence) / f'{position:06d}-eligible.json')
     decision = assess(run, packet, repo)
     provenance, manifest = read(run/'provenance.json'), read(packet/'manifest.json')
+    from .codex_adapter import require_approval_model
+    require_approval_model(run,provenance)
     if provenance['packet_manifest_sha256'] != digest(packet/'manifest.json'):
         raise ValueError('Manifest fingerprint mismatch')
     for file, expected in provenance['implementation_sha256'].items():
@@ -274,7 +276,10 @@ def validate_run(run, packet, repo, evidence, position):
         counts[result['name']] += 1
         replayed += 1
     cov = read(run/'coverage.json')
-    return dict(status='validated', assessment=decision, packet_implementation_blob_hashes_verified=True,
+    from .validation_repair import disclosure, LEGACY_POLICY
+    return dict(status='validated', assessment=decision, validation_repair_details=disclosure(transcript, provenance.get('validation_repair_policy', LEGACY_POLICY)),
+                packet_implementation_blob_hashes_verified=True,
+                teacher_model=provenance['model'], reasoning_effort=provenance['reasoning_effort'],
                 reviewer_assisted=bool(coverage), tool_counts=dict(counts), identical_replayed_calls=replayed,
                 shared_readonly_blob_links_verified=len(blobs), open_catalog_rows=len(manifest['unreferenced_discussion_catalog']),
                 closed_catalog_rows=len(manifest['closed_discussion_catalog']['rows']),
@@ -305,10 +310,15 @@ def skeleton(summary, thread):
     text = f"# Review request: {Path(summary['run']).name}\n\nReply-to thread: {thread}\n\n"
     text += f"Run: `{summary['run']}`\nPacket: `{summary['packet']}`\nUpstream: `{summary['sha']}` — \"{summary['title']}\" (copied from Git).\n"
     text += 'Requested scope: ancestor retrieval only. Canonical and training remain false.\n\n'
+    text += f"Teacher: {v['teacher_model']} / {v['reasoning_effort']}.\n\n"
     text += f"Reviewer-assisted: {v['reviewer_assisted']}. {v['identical_replayed_calls']} calls replay identically; {v['shared_readonly_blob_links_verified']} read-only shared-store blobs verified.\n"
     text += f"Task sections fully read: {len(v['fully_read_task_sections'])}/{v['task_sections_total']}; ancestor prose reads (report-only): {v['ancestor_prose_read_count']}.\n"
     text += f"Tool counts: {json.dumps(v['tool_counts'],sort_keys=True)}. Runtime: {json.dumps(v['runtime'],sort_keys=True)}.\n\n"
     text += f"Catalog: {v['open_catalog_rows']} open rows; {c['qualified_count']} closed qualify, {c['selected_count']} selected; {c['path_only_qualified_count']} by path alone, {c['path_only_selected_count']} selected by path alone. Cap {c['cap']}; truncated: {c['truncated']}; path rows cut: {len(c['path_qualified_cut'])}.\n\n"
+    repair=v.get('validation_repair_details',{})
+    text += f"Validation repair: {json.dumps(repair,sort_keys=True)}.\n"
+    if repair.get('validation_repair'):
+        text += 'AUTHOR MUST FLAG whether this is the first live repaired run; compare refused and final annotations for review.\n'
     text += 'AUTHOR JUDGEMENT REQUIRED: explain the draft/findings, execution scope and run file reads, ledger candidates, implementation changes/tests, unusual evidence or coverage limits, and sampled mechanical handover. This skeleton is not a filed request.\n\n## SHA256\n\n'
     return text + ''.join(f'- {p}: `{h}`\n' for p,h in summary['hashes'].items())
 

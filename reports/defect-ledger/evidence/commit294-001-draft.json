@@ -1,0 +1,676 @@
+{
+  "schema_version": 5,
+  "sha": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+  "parent_shas": [
+    "b2b0980972f07a2117d805aa37afbdaa6899ff42"
+  ],
+  "cutoff_date": "2025-07-08T15:57:24+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Ernie 4.5 routed experts previously requested FP16 gate/up outputs. The change widens these intermediates to FP32, without widening the activation output supplied to the down projection.",
+        "basis": "source",
+        "evidence": [
+          "call_26c9e703f630491183d18710c92d0226",
+          "call_9bb5901c23cf4d2cbcf2fa17cd590959"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The likely numerical purpose is to avoid premature overflow or precision loss before SiLU multiplication. This is an interpretation of the dtype change and existing kernels, not a demonstrated Ernie failure or measured accuracy improvement.",
+        "basis": "inference",
+        "evidence": [
+          "call_26c9e703f630491183d18710c92d0226",
+          "call_cb38fd2160a1487abdcebcebd57246f1",
+          "call_2c2fe27dfc0141e58ae6e1fd1eb8346c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Only routed-expert intermediates change. Dense-prefix and shared-expert GatedMLPs retain FP16 intermediates; routed down-projection outputs remain FP32. Routing and ordinary-versus-fused expert selection are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_26c9e703f630491183d18710c92d0226",
+          "call_e30418cfab4a4e4eb44dc412f544c414",
+          "call_9bb5901c23cf4d2cbcf2fa17cd590959"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the Ernie introduction entry. It establishes the reused dense-prefix/routed/shared assembly and records conditional fused-path limitations; the current source and one-line diff retain those forward-path limitations.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_aba8f749bdc248e0a26735f6fcf0bb97",
+          "call_f8644eef60684af2adb507cb3debf820"
+        ]
+      },
+      {
+        "text": "The inspected discussions are background, not established motivation. #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d concerns Command-A conversion; #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concerns Midnight-Miqu and Command-R+; #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d discusses widening down outputs; #53, \u201cCommand A support,\u201d begins as a support request and later reports conversion failures; #58, \u201clinalg.cholesky error converting OpenBuddy (Qwen3) 32B QAT,\u201d reports another model's NaNs. Their inferred connection is the shared Linear conversion traceback and numerical-overflow theme, not evidence that this Ernie intermediate change fixes them.",
+        "basis": "inference",
+        "evidence": [
+          "call_5f4381eb1f8b4b4da300b59d742eb6b1",
+          "call_534b040efc4942d29bfec70bfb1873bc",
+          "call_1a4cfb12869647b6bf9ae74660a9aa3c",
+          "call_1dbb82cd7dea4a7e9956d54452f8213b",
+          "call_d2c522edab494833a719821032befa1f",
+          "call_cb38b10d7b4b4b93a0785e3eb6dfb060",
+          "call_ee238510cafb4ee0940f4e751840a1c7"
+        ]
+      },
+      {
+        "text": "#55, \u201cPossible GLM4 32B regression,\u201d reports a loading TypeError rather than numerical overflow. Its inferred association is the matching LinearFP16 constructor and Linear.load_fp16 source, not an Ernie-specific relationship.",
+        "basis": "inference",
+        "evidence": [
+          "call_f97baf59d6ab489594b0238bf2f5bed6",
+          "call_de2c0a906467402b970f52be4f073eba",
+          "call_ee238510cafb4ee0940f4e751840a1c7"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository implementation, checkpoint load, conversion, generation or CUDA kernel was executed. Numerical benefit, latency and actual peak-memory changes remain unmeasured.",
+      "The scalar illustration uses Python math and explicit storage rounding, not CUDA's approximate exponential or cuBLAS accumulation. It demonstrates a possible precision mechanism, not observed checkpoint activations.",
+      "Matching reference configuration dimensions does not establish direct compatibility with Paddle checkpoint formats or their declared quantization schemes.",
+      "Caller searches establish the inspected decoder call sites, not every possible external use of BlockSparseMLP."
+    ],
+    "links": [
+      "47d83f567ccc93633d70354f93f153dad6266812"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Widen routed-expert gate/up intermediates",
+        "claims": [
+          {
+            "text": "Ernie4_5MoEModel.__init__ changes the BlockSparseMLP interm_dtype argument from torch.half to torch.float. The dense-prefix boundary remains idx < first_k_dense_replace; optional shared experts are separately constructed GatedMLPs and are not widened.",
+            "basis": "source",
+            "evidence": [
+              "call_26c9e703f630491183d18710c92d0226",
+              "call_e30418cfab4a4e4eb44dc412f544c414"
+            ]
+          },
+          {
+            "text": "BlockSparseMLP passes interm_dtype to every routed gate/up Linear as out_dtype. Linear forwards that setting into its loaded backend. For ordinary FP16 weights, LinearFP16 allocates the requested output dtype; half input with float output selects ext.hgemm, whose float-output branch uses half operands, FP32 output and CUBLAS_COMPUTE_32F. This changes intermediate/output arithmetic, not checkpoint weight storage.",
+            "basis": "source",
+            "evidence": [
+              "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+              "call_ee238510cafb4ee0940f4e751840a1c7",
+              "call_de2c0a906467402b970f52be4f073eba",
+              "call_2c2fe27dfc0141e58ae6e1fd1eb8346c"
+            ]
+          },
+          {
+            "text": "The existing non-half path supplies the necessary activation destination: ordinary expert evaluation allocates a separate half tensor, and load allocates half interm_a separately from float interm_g/interm_u. silu_mul requires float gate/up inputs together and always requires a half destination. Its float kernel computes SiLU and multiplication in float, then converts the product to half. Thus 'FP32 intermediate' does not mean the entire expert MLP becomes FP32.",
+            "basis": "source",
+            "evidence": [
+              "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+              "call_cb38fd2160a1487abdcebcebd57246f1"
+            ]
+          },
+          {
+            "text": "For one flattened token with fully EXL3 experts, the fused calls write gate/up results into the widened workspaces. exl3_mgemm accepts half input with either half or float output and selects its FP32-output kernel table when C is float. Kernel availability remains shape-dependent, and the selector rejects unsupported shapes; this edit does not relax those preconditions.",
+            "basis": "source",
+            "evidence": [
+              "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+              "call_c6b09d65d1e342159ef136fe6984fcac",
+              "call_b142536e9118465f9666c85c00bc348b",
+              "call_5cb6f41c842d4a63b98670a75c2f254c",
+              "call_8fa4962e69cf488ebc4cf6527ad8043b"
+            ]
+          },
+          {
+            "text": "All four baidu/ERNIE-4.5-21B-A3B configurations were read individually: Base-PT, Base-Paddle, PT and Paddle. Each names the changed architecture and specifies 28 layers, one dense-prefix layer, expert width 1536, 64 experts, six selected experts and two shared experts. Each therefore maps to 27 widened routed blocks while retaining half shared intermediates. None of these configurations supplies the new runtime intermediate dtype; the builder chooses it.",
+            "basis": "source",
+            "evidence": [
+              "call_96b2d50f7bd440be9df573238fc8d83c",
+              "call_78109e98fdb74bdf9eceb1be6e8a849f",
+              "call_b8aae398b1414b199260141ab5c3b84e",
+              "call_9c8bb3ccd33140cf971a2f22a8be1f46",
+              "call_e30418cfab4a4e4eb44dc412f544c414",
+              "call_26c9e703f630491183d18710c92d0226"
+            ]
+          },
+          {
+            "text": "All seven baidu/ERNIE-4.5-300B-A47B configurations were read individually: Base-PT, Base-Paddle, PT, Paddle, 2Bits-Paddle, FP8-Paddle and W4A8C8-TP4-Paddle. Each names the changed architecture and specifies 54 layers, a three-layer dense prefix, expert width 3584, 64 experts and eight selected experts. Each omits shared-expert count, selecting the builder's zero default, and maps structurally to 51 widened routed blocks. The three quantized Paddle configurations additionally declare distinct quantization schemes; the dtype edit does not implement those formats.",
+            "basis": "source",
+            "evidence": [
+              "call_cb18de47b20e4745b80d5436ec9234a1",
+              "call_61ae3ba7c1d64afba890e44c9767621a",
+              "call_3f76f98954634b4fa5e512ea90d8cf33",
+              "call_795792562e844bd3a69ba8e24eca4bd5",
+              "call_04d9c505d9ed48c48c46fd1d25f08761",
+              "call_0dc04bc5bd834b90972344c4a666cd40",
+              "call_ae95f05320d0430d87b710f3d7ec374d",
+              "call_e30418cfab4a4e4eb44dc412f544c414",
+              "call_26c9e703f630491183d18710c92d0226"
+            ]
+          },
+          {
+            "text": "A bounded scalar illustration used gate=70000 and a half-rounded up value near 0.001. Rounding the gate to half first overflowed; retaining it through float SiLU multiplication produced a half output of 70.0. Workspace arithmetic also gave gate/up/activation storage of 36,864 \u2192 92,160 bytes for six experts of width 1536, and 114,688 \u2192 286,720 bytes for eight experts of width 3584. These count only those three buffers: the old activation aliases up, whereas the new activation is separate.",
+            "basis": "execution",
+            "evidence": [
+              "call_6ad39a974bdc4fdbbc9d4110788d919e"
+            ]
+          },
+          {
+            "text": "Wider intermediates trade extra workspace and float computation for avoiding premature half rounding. The final activation still narrows to half, so the change cannot guarantee finite results when the actual SiLU product exceeds half range. The inspected TransformerBlock immediately adds the sparse result to its residual and supplies no per-call dtype override.",
+            "basis": "inference",
+            "evidence": [
+              "call_cb38fd2160a1487abdcebcebd57246f1",
+              "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+              "call_525b13d730af439e9477d68a158cef78"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-all-expert-fused-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited all-expert/fused-buffer mismatch persists; widening the buffers does not increase their expert-plane count.",
+        "trigger": "Run one flattened token through fully EXL3 routed experts with activate_all_experts=True and num_experts greater than num_experts_per_tok.",
+        "expected_behavior": "Evaluate all requested experts using compatible buffers or choose the ordinary path.",
+        "actual_behavior": "routing_std returns num_experts indices, but load allocates num_experts_per_tok output planes. Dispatch still selects fusion, and exl3_mgemm checks index count against output planes. TransformerBlock forwards params directly. This establishes a conditional module-level path, not failure of every conversion or generation workflow.",
+        "locations": [
+          {
+            "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+          "call_b142536e9118465f9666c85c00bc348b",
+          "call_aeabbd1ff9a14290a843e748aaba1c4b",
+          "call_525b13d730af439e9477d68a158cef78",
+          "call_26c9e703f630491183d18710c92d0226"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared routing index counts, workspace allocation, dispatch and the native shape check; inspected the located decoder callers.",
+            "evidence": [
+              "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+              "call_b142536e9118465f9666c85c00bc348b",
+              "call_525b13d730af439e9477d68a158cef78"
+            ],
+            "limits": "No extension or GPU execution; external caller reach is unknown."
+          }
+        ]
+      },
+      {
+        "id": "inherited-fused-return-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused return remains workspace-backed and does not honor the ordinary path's per-call dtype conversion.",
+        "trigger": "Retain a fused result across another fused call, or request an out_dtype different from the allocated output dtype.",
+        "expected_behavior": "An independent result honoring the override, consistent with the ordinary path.",
+        "actual_behavior": "The fused branch returns a view of cfg.out_d without to2 conversion, and later calls reuse that workspace. The inspected TransformerBlock immediately adds the result and supplies no override, so it does not demonstrate either incompatibility. The task's intermediate dtype edit leaves this inherited contract unchanged.",
+        "locations": [
+          {
+            "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+          "call_aeabbd1ff9a14290a843e748aaba1c4b",
+          "call_525b13d730af439e9477d68a158cef78",
+          "call_26c9e703f630491183d18710c92d0226"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both return paths and inspected the located decoder consumers.",
+            "evidence": [
+              "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+              "call_525b13d730af439e9477d68a158cef78"
+            ],
+            "limits": "No tensor-lifetime or dtype execution test; no inspected decoder caller exercises the problematic usage."
+          }
+        ]
+      }
+    ],
+    "summary": "Widens Ernie 4.5 routed-expert gate/up intermediates to FP32 while preserving half activation outputs and FP32 down outputs. Existing kernels support the precision boundary, at additional workspace cost; numerical benefit remains unmeasured."
+  },
+  "evidence": {
+    "call_26c9e703f630491183d18710c92d0226": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+        "offset": 182,
+        "max_bytes": 733
+      },
+      "result_sha256": "f22e3a6ca73be15f54b27303ac555b2a7ad523758e0513e2d5266a7f087ceadd"
+    },
+    "call_e30418cfab4a4e4eb44dc412f544c414": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/models/ernie4_5_moe.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "ffa68550d7f23e69cda80b4945709dcd3e3f30d7bc080e8e3a4fa34ee8a56234"
+    },
+    "call_aba8f749bdc248e0a26735f6fcf0bb97": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "max_bytes": 16384
+      },
+      "result_sha256": "60fa3251e27fd024a322aa52310f9ec7e85d4fc9b01d7dc267ccaf00d21ae290"
+    },
+    "call_f8644eef60684af2adb507cb3debf820": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "offset": 16384,
+        "max_bytes": 1024
+      },
+      "result_sha256": "3c61149d9aec83009387c033a66716871cc5f9486a82a91a4b1a48748cf614fe"
+    },
+    "call_9bb5901c23cf4d2cbcf2fa17cd590959": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 40000
+      },
+      "result_sha256": "3a8d53c88c1c2cd8b6c2e705f9adbb5e282ebb30f817672bea87ac2c074b0aac"
+    },
+    "call_a176933854084ede9220d74383a6cafb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "interm_dtype",
+        "limit": 150
+      },
+      "result_sha256": "9db8f4762c7ee82454bbbdc4fbca225dc50b7163a2f9d21c959b1427f1d14913"
+    },
+    "call_67a2a5aca2274ed5acfdf15ab78b3e93": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "Ernie",
+        "limit": 50
+      },
+      "result_sha256": "6523b41d7d9f2d3ca4c91e1aa0f2983deb64c6a968e6026f482918982f959b6b"
+    },
+    "call_e801c36153e9472e871bb4f40e45fc72": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "silu_mul",
+        "limit": 40
+      },
+      "result_sha256": "280d811dcc24c1ab752fc335dbb9ae6383775a88694772eb08d8e50ca937978f"
+    },
+    "call_cb38fd2160a1487abdcebcebd57246f1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/exllamav3_ext/activation.cu",
+        "max_bytes": 14000
+      },
+      "result_sha256": "de87cdd5347e4fc6ea39a38ccdf482965956b845099372ef418b6fcb5230a435"
+    },
+    "call_aeabbd1ff9a14290a843e748aaba1c4b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": ".mlp.forward",
+        "limit": 40
+      },
+      "result_sha256": "52ca53719eb591be6958501de002ab104ad42a603871e21ff182f4f579493b69"
+    },
+    "call_525b13d730af439e9477d68a158cef78": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "467875d2c491348086b1928519621b7a30b94feb8e1f40188301a5a52f15f798"
+    },
+    "call_8eab0977924344eebcf5162c00cc2d3e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2a43d94df209576cbc7e93ff9ba543337b993f297f25726bf663d86be73aed95"
+    },
+    "call_ee238510cafb4ee0940f4e751840a1c7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "281730f75995b2e75e810ae969dc0a7ee900a98de49f112c56c3ed1bd3ef4890"
+    },
+    "call_de2c0a906467402b970f52be4f073eba": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "808a29d5ede82c644e75f52b94480009d9fc878a311b75798053e77664405ea1"
+    },
+    "call_a78f3916fe074d2ba70170a7c3ac1a4c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "void hgemm",
+        "limit": 10
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_2c2fe27dfc0141e58ae6e1fd1eb8346c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu",
+        "max_bytes": 7000
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_5f4381eb1f8b4b4da300b59d742eb6b1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8eea07870dcd89ca0be3869254fc527e789ab6d3c480b375014fd8c79eadac9e"
+    },
+    "call_534b040efc4942d29bfec70bfb1873bc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 20000
+      },
+      "result_sha256": "9368e105c67ecce9588d07b705daffdd41cb30a4ea0cf8baea534b60cbe205cc"
+    },
+    "call_1a4cfb12869647b6bf9ae74660a9aa3c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 20000
+      },
+      "result_sha256": "7e3d5e804b8642d9caa7bf2034cac1739ca5d82e21eed8d342ad4b286fd562b9"
+    },
+    "call_1dbb82cd7dea4a7e9956d54452f8213b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 10000
+      },
+      "result_sha256": "1d72324a725c51c68700cf93b763cb1485cc92f5f4c649bb8ae7ae144e35aa92"
+    },
+    "call_d2c522edab494833a719821032befa1f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "offset": 10000,
+        "max_bytes": 20000
+      },
+      "result_sha256": "fbf7e926bd6b38d2bad1a45602d0ae79190f6c3c1177dd57afe150b2553ecd8f"
+    },
+    "call_f97baf59d6ab489594b0238bf2f5bed6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/55",
+        "max_bytes": 20000
+      },
+      "result_sha256": "b016c11aa78d64a7cf67671c188369e7abe4568e30adf5016820a3d8a880ddcf"
+    },
+    "call_cb38b10d7b4b4b93a0785e3eb6dfb060": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "max_bytes": 20000
+      },
+      "result_sha256": "0c02809c6784d29c667553553277fee098599190f3b4691f595aec893bb1c56c"
+    },
+    "call_c968e5c54168452a997273a150f20283": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "03c3c20bb0d484bb9b2aec86300797cd6c85ea8eb733a322da8c5d489937e43d",
+      "catalog_only": true
+    },
+    "call_cea6874af65e431c88ac82554b6eefd5": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "1f1df6c852fd037c324bab2fcfdc92b0cad649377d14f576373295895a63daf8",
+      "catalog_only": true
+    },
+    "call_96b2d50f7bd440be9df573238fc8d83c": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-Base-PT",
+        "revision": "c85eddf33fb5d11fbdf9c533fd7e17e378a6e646",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "613ecc169c116ec40430ef550ded9006d76b7591de567938dfa8d35c8487bd95"
+    },
+    "call_78109e98fdb74bdf9eceb1be6e8a849f": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-Base-Paddle",
+        "revision": "0a2f190323c56ad7022ce4f1731d2f7d62eec22f",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "c487337d5749621ad9791f8c11b28ab4a5f1e74367cbbc3aad888bc869de573a"
+    },
+    "call_b8aae398b1414b199260141ab5c3b84e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-PT",
+        "revision": "3b57ea628d6a8b6fa100c9d204358982031d868c",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "7d17e73b13004a6d9064605d574c1656b5974ab57a71105e7db1152d8dc5a6c7"
+    },
+    "call_9c8bb3ccd33140cf971a2f22a8be1f46": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-21B-A3B-Paddle",
+        "revision": "09cbbd872d7fbb351a2055681e3863a57299328b",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "b49b2e9e52e715a96c41c7169a0cf3fbb7aa85a1dce9b834fd76a63821a2196d"
+    },
+    "call_cb18de47b20e4745b80d5436ec9234a1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-Base-PT",
+        "revision": "99adb973b44536504e784ba016bad0dfcb4fb3dc",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "1c12b6ea1002df0c5fac3145d19b799ba13609a74a4b772a4fbd0bb4ff05d698"
+    },
+    "call_61ae3ba7c1d64afba890e44c9767621a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-Base-Paddle",
+        "revision": "08d74b417f497ff2db75fd813445535c5304598b",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "b0ffe22371e5be6ab5893f52191f73b81184e483fc3b562b4236add95d79fe54"
+    },
+    "call_3f76f98954634b4fa5e512ea90d8cf33": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-PT",
+        "revision": "a952c9a500ffaff4e0264accc13fadd7d1460b06",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "3e680f932e0e1dc49990079ddf7c5cc3a05ebe323f1729677fe23f6c8888aff7"
+    },
+    "call_795792562e844bd3a69ba8e24eca4bd5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-Paddle",
+        "revision": "77b3a7f3c44d9ee9bd7f5edfed4900b3368586c5",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "593598be1a53ceb2466f7dacf94d4b1c0a1587fd8fe13a238184dcccfa0ffe8d"
+    },
+    "call_04d9c505d9ed48c48c46fd1d25f08761": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-2Bits-Paddle",
+        "revision": "509d573bf9a89848d005a40e68fe6b98dbbf63d5",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "8565d032e6e17f0ddfc7ccd985da05c5862d74396a13a565a1624ed7d9dfe251"
+    },
+    "call_0dc04bc5bd834b90972344c4a666cd40": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-FP8-Paddle",
+        "revision": "b9e3a0cd5964c8afa45fb8ccb98dbff68ad3a0ef",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "41ceaa155665489d2240d45f594f1e4c88e5b57748de793396f236be2b85c9de"
+    },
+    "call_ae95f05320d0430d87b710f3d7ec374d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "baidu/ERNIE-4.5-300B-A47B-W4A8C8-TP4-Paddle",
+        "revision": "4c2e1ee47a23a47693f5f50ddfac8a45e9fc09b6",
+        "path": "config.json",
+        "max_bytes": 5000
+      },
+      "result_sha256": "b7240562764a8de6c8b0fbd597da08fd4c34d2bbf0b7a16907938351c065b9f5"
+    },
+    "call_6ad39a974bdc4fdbbc9d4110788d919e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,struct,json\nh=lambda v:struct.unpack('e',struct.pack('e',v))[0]\nf=lambda v:struct.unpack('f',struct.pack('f',v))[0]\ndef hc(v):\n try:return h(v)\n except OverflowError:return math.copysign(math.inf,v)\ng=70000.;u=h(.001)\nold=hc(hc(g)*u) # positive large SiLU limit\nnew=hc(f(f(g/(1+math.exp(-g)))*f(u)))\nprint(json.dumps({'illustration':{'gate':g,'up':u,'old_half_gate_is_inf':math.isinf(hc(g)),'old_output_is_inf':math.isinf(old),'float_intermediate_half_output':new},'fused_intermediate_bytes':{str((k,i)):{'old':2*k*i*2,'new':(4+4+2)*k*i,'increase':6*k*i} for k,i in [(6,1536),(8,3584)]}}))"
+        ]
+      },
+      "result_sha256": "ca1877b4795f1fc752ddf98080483b35544721b30431f6417882426b9420a61a"
+    },
+    "call_ab33c754d11e4de4a9c38e852c564b27": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "selected_experts",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 35
+      },
+      "result_sha256": "acf589f6b81a7e5513f4c00cff7795e57f462ac774c77b5600c3fcd3353d16c3"
+    },
+    "call_e8ebe2d7e9d944eeb5ac5b84d9b469a0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "void exl3_mgemm",
+        "limit": 10
+      },
+      "result_sha256": "0923cd2d263e211cc5fb02f2b8471de34d04ed55a7101c73fab33bc3f8b21e16"
+    },
+    "call_8ffeccac061e4019aad0d8f0c9e6f7a5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "exl3_mgemm(",
+        "limit": 30
+      },
+      "result_sha256": "a263c4ce5f6f238bf3a5cdecee0289afe311d7756aa4664a033dbe2bed79d52c"
+    },
+    "call_86f11237abd8470d8ba977c45609965b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "exl3_mgemm",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 25
+      },
+      "result_sha256": "cdaf689be7d5fef0e1e944d9cdb60752f55f128dc3ce18a0466675d74e77a016"
+    },
+    "call_b142536e9118465f9666c85c00bc348b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 5400,
+        "max_bytes": 13000
+      },
+      "result_sha256": "a53d08ebe6d007f798dc2d456af4f80b44b86d34d4a91ca79686e04e443e3987"
+    },
+    "call_c6b09d65d1e342159ef136fe6984fcac": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4500,
+        "max_bytes": 1000
+      },
+      "result_sha256": "4d760f579709f857ecef9da7b8a2ae8ba958f37b3e8653c474f099bbf5807ef6"
+    },
+    "call_6462a1773671436cb0ba35aee0581497": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "query": "activate_all_experts",
+        "limit": 50
+      },
+      "result_sha256": "36c5d1c560692ac92551a104b9a56e2ef287eaceee575f10b7bd3fbf77db3def"
+    },
+    "call_8fa4962e69cf488ebc4cf6527ad8043b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "offset": 6500,
+        "max_bytes": 7000
+      },
+      "result_sha256": "54c19fa6b6383c49274c789b1035f19910a8737cbdb174b148895706785bcb7a"
+    },
+    "call_5cb6f41c842d4a63b98670a75c2f254c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "offset": 4820,
+        "max_bytes": 1900
+      },
+      "result_sha256": "170a4a751cd1528759b86c51f46be9e4ef952c5f5d1d130346b271a17f4ab7de"
+    }
+  }
+}

@@ -1,0 +1,373 @@
+{
+  "schema_version": 5,
+  "sha": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+  "parent_shas": [
+    "47d83f567ccc93633d70354f93f153dad6266812"
+  ],
+  "cutoff_date": "2025-07-07T12:55:03+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Chat's statistics overwrote the uncached context-token count with the generated-token count before printing Context, pairing the wrong count with correctly computed prompt throughput.",
+        "basis": "source",
+        "evidence": [
+          "call_e868ae1a4f864cb9928df10dd924a585",
+          "call_dc9d138634544eb99544a5413bca2746"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Keeping uncached prompt work in new_ctx_tokens separates it from new_tokens, which continues to represent generated output. Both the prompt-rate numerator and Context display now use the same value.",
+        "basis": "source",
+        "evidence": [
+          "call_dc9d138634544eb99544a5413bca2746"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Corrects the displayed Context count when statistics are enabled; neither throughput formula, cached count nor generation count changes.",
+        "basis": "source",
+        "evidence": [
+          "call_dc9d138634544eb99544a5413bca2746"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the earlier optional-statistics entry ea4ef8d. It establishes the introduction of this block and records both the overwritten Context count and the separate /tps state-toggle problem.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_fa6d16e018c1440592cf5a2b369d2f34"
+        ]
+      },
+      {
+        "text": "Closed discussions have distinct framing: #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr'\u201d, reports startup failure; #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions\u201d, concerns prompt mode; #39, \u201cGemma 3 architecture not in list?\u201d, concerns branch availability and frontend behavior; #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated\u201d, concerns conversion; PR #22, \u201cOpenAI compatible API example\u201d, proposes an endpoint. Their connection to this change is inference from their references to chat.py, not evidence that they motivated this display fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_02ac09cd4e3c431eb86bb237b091f879",
+          "call_d639f5b9dcff456e9fdc54fba90cfbd5",
+          "call_db850ba9801345589b7f83cb32c1e1cf",
+          "call_328c3a6e438c455c8ad216d699d996d5",
+          "call_e2c9de87193f4fd684a00acf2c3caad5",
+          "call_e75baeb0cf8a42bbb7027971a6285607",
+          "call_9fca9ad1e9fb4b7187705ad0b7349761",
+          "call_45587a12bbfa4f47bb3bf438437dba72",
+          "call_0e50684b14534df49efa532a8537aab1"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model generation or interactive terminal session was executed. The bounded Python check transcribed statistics arithmetic with synthetic metadata, not measured inference performance.",
+      "Throughput divisions remain unguarded against zero durations; whether real executions produce such durations was not established.",
+      "Literal caller searches establish the script entry point and local helper caller, not external or dynamically resolved callers."
+    ],
+    "links": [
+      "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Separate context and generation counts in chat statistics",
+        "claims": [
+          {
+            "text": "main reports statistics after its single queued job drains, gated by show_tps initialized from the opt-in -tps/--show_tps argument. The shared post-stream block serves both console-output modes.",
+            "basis": "source",
+            "evidence": [
+              "call_e868ae1a4f864cb9928df10dd924a585"
+            ]
+          },
+          {
+            "text": "The context count is the formatted, trimmed input length ids.shape[-1] minus r['cached_tokens']. Job's EOS metadata supplies cached tokens, generated tokens, prefill duration from first prefill to first token, and generation duration from first token to completion. These are application timing intervals, not isolated kernel timings.",
+            "basis": "source",
+            "evidence": [
+              "call_e868ae1a4f864cb9928df10dd924a585",
+              "call_1b045f27cf3f48f6888700b64d716b47"
+            ]
+          },
+          {
+            "text": "The rename and formatting substitution are complementary: merely renaming the prompt numerator would leave Context displaying generated tokens. Together they preserve the prompt count until formatting without altering generation accounting. Existing .3f formatting means three decimal places, not guaranteed measurement accuracy.",
+            "basis": "source",
+            "evidence": [
+              "call_dc9d138634544eb99544a5413bca2746"
+            ]
+          },
+          {
+            "text": "A scalar transcription using 100 prompt tokens, 40 cached tokens, ten generated tokens, two seconds of prefill and half a second of generation changed Context from 10 to 60 while retaining prompt throughput 30.000 t/s and generation throughput 20.000 t/s.",
+            "basis": "execution",
+            "evidence": [
+              "call_19cac2e63d97454abe27caa7733020b7"
+            ]
+          },
+          {
+            "text": "Source comparison shows the earlier Context-count observation is removed by this diff. The separately recorded /tps toggle and unchecked negative code-block index remain unchanged; the display correction does not repair those paths.",
+            "basis": "source",
+            "evidence": [
+              "call_dc9d138634544eb99544a5413bca2746",
+              "call_e868ae1a4f864cb9928df10dd924a585",
+              "call_feb7be7aa01b453abbe8166e1fa2103d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-tps-toggle",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited /tps command still toggles multiline input rather than statistics visibility.",
+        "trigger": "Enter /tps during an active chat session.",
+        "expected_behavior": "Toggle throughput reporting without changing input mode.",
+        "actual_behavior": "The branch flips multiline and bases its confirmation on multiline; show_tps remains unchanged. The script entry point reaches this shared branch in either console-output mode.",
+        "locations": [
+          {
+            "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+            "path": "examples/chat.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_e868ae1a4f864cb9928df10dd924a585",
+          "call_dc9d138634544eb99544a5413bca2746",
+          "call_a8a4d2ea68714a8583d19ea55ffcb5d4",
+          "call_44ec1c06450e44e8a102c95a1100b74d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the command's assignment with the reporting gate and the complete task diff.",
+            "evidence": [
+              "call_e868ae1a4f864cb9928df10dd924a585",
+              "call_dc9d138634544eb99544a5413bca2746"
+            ],
+            "limits": "No interactive execution; literal caller searches do not establish external invocation."
+          }
+        ]
+      },
+      {
+        "id": "inherited-negative-codeblock-index",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited code-block helper still accepts an unchecked negative block number.",
+        "trigger": "Enter /cc -2 after a response containing exactly two matched fenced code blocks.",
+        "expected_behavior": "Reject or normalize the invalid block number without terminating chat.",
+        "actual_behavior": "main passes -2 to copy_last_codeblock, whose upper-bound-only check leaves it unchanged; matches[-num] becomes matches[2] and raises IndexError before copying. The sole literal helper caller is main's /cc branch, which catches parsing failures but not this indexing failure.",
+        "locations": [
+          {
+            "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+            "path": "examples/chat_util.py",
+            "symbol": "copy_last_codeblock"
+          }
+        ],
+        "source_evidence": [
+          "call_d3d2503e77674c528c78def081feb8ed",
+          "call_feb7be7aa01b453abbe8166e1fa2103d",
+          "call_e868ae1a4f864cb9928df10dd924a585",
+          "call_dc9d138634544eb99544a5413bca2746"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the helper, its whole-tree literal caller search, the caller's exception handling and the unchanged path in the task diff.",
+            "evidence": [
+              "call_d3d2503e77674c528c78def081feb8ed",
+              "call_feb7be7aa01b453abbe8166e1fa2103d",
+              "call_e868ae1a4f864cb9928df10dd924a585",
+              "call_dc9d138634544eb99544a5413bca2746"
+            ],
+            "limits": "No clipboard or interactive application execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Fixes chat's Context token count by retaining uncached prompt tokens separately from generated tokens; throughput calculations remain unchanged."
+  },
+  "evidence": {
+    "call_dc9d138634544eb99544a5413bca2746": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "b2b0980972f07a2117d805aa37afbdaa6899ff42",
+        "offset": 158,
+        "max_bytes": 1179
+      },
+      "result_sha256": "cb450621613ba686234a22da29de2812c67b0a7f02545436dac1e70bd72f9956"
+    },
+    "call_e868ae1a4f864cb9928df10dd924a585": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "path": "examples/chat.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "3b96c307aad796540d5a427f52e629a5d9ad503c3e02eff648f839247fd7f4a1"
+    },
+    "call_17ec1d32c73244afb6802ea8f817fcf4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "examples/chat.py",
+        "limit": 20,
+        "max_bytes": 16000
+      },
+      "result_sha256": "166ac17ac6228a4207510b5a6316397bae9a69113b27b2d48e2616525514e019",
+      "catalog_only": true
+    },
+    "call_fa6d16e018c1440592cf5a2b369d2f34": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3e689b610a98b02a6b08e74493d773b4620524cea9ca3bfaa12c47eef5db692c"
+    },
+    "call_052ed2e7e33a4f09b231c447e10e6639": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "query": "\"time_prefill\"",
+        "limit": 50
+      },
+      "result_sha256": "d7613330978318c1cc44320a6b5728e05f2c1961a878203624699f240f14c0e7"
+    },
+    "call_1b045f27cf3f48f6888700b64d716b47": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "path": "exllamav3/generator/job.py",
+        "offset": 18000,
+        "max_bytes": 6000
+      },
+      "result_sha256": "bade3eee1f8c749ab9be05d625da09cd8af99f643e28a2f27e120328af9d0469"
+    },
+    "call_02ac09cd4e3c431eb86bb237b091f879": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ec8c72eb5913d777eaecb57b2cd83f1f9e0e2622ff1a154c8b8ced5124157d4a"
+    },
+    "call_d639f5b9dcff456e9fdc54fba90cfbd5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a281512bd1edcdbabec2ef4a8e6f41ce843f45c85267437d1ecbe76b5c188c14"
+    },
+    "call_db850ba9801345589b7f83cb32c1e1cf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "e15678c31138368c7691a40cf62158de35b6c5fc7321a1250ddfd609f5b6c53a"
+    },
+    "call_328c3a6e438c455c8ad216d699d996d5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/39",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a313a1e2b50c352a87f0e781624fb31b3e744cf3d13d51f179f0b2f1b3b2870c"
+    },
+    "call_e2c9de87193f4fd684a00acf2c3caad5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fe7f457fc2fa9d52d13fc7316cffa9c8fdaa9d011f5a89928da854d3901c1060"
+    },
+    "call_e75baeb0cf8a42bbb7027971a6285607": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "offset": 16000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "21694c389ef4eb8239fab459334eb023f56023d32d0bcc4339db143ec7013646"
+    },
+    "call_9fca9ad1e9fb4b7187705ad0b7349761": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7791ffaba7dd4329c6aee4dc480f8cb1a8f7f9c70a3244cd1d7472e48791d040"
+    },
+    "call_45587a12bbfa4f47bb3bf438437dba72": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "8d7e4e8d29a3f0a0721093239eeec3026d852951d1f23a28ee46783c7840f441"
+    },
+    "call_0e50684b14534df49efa532a8537aab1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 32000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "1007ef3a3e0fe0ec171cc965cf333e9f5563ad0dc8ab73e7947e078f17a59e98"
+    },
+    "call_d3d2503e77674c528c78def081feb8ed": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "query": "copy_last_codeblock",
+        "limit": 50
+      },
+      "result_sha256": "d080ed0d9d7d689f97c0211ddd3a85e572675b69a765267fd2cc586343f1b031"
+    },
+    "call_feb7be7aa01b453abbe8166e1fa2103d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "path": "examples/chat_util.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "3eae14494f558c569fa2416b74f458de230df6e75fd84b616c719ef3e710771d"
+    },
+    "call_a8a4d2ea68714a8583d19ea55ffcb5d4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "query": "main(_args)",
+        "limit": 100
+      },
+      "result_sha256": "315486cf15ea308ab6318b4e54d92f4a8c48d8b63aac753552331ad6ddd6d8ca"
+    },
+    "call_44ec1c06450e44e8a102c95a1100b74d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "47d83f567ccc93633d70354f93f153dad6266812",
+        "query": "chat.main",
+        "limit": 50
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_19cac2e63d97454abe27caa7733020b7": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "prompt,cached,generated,prefill,generate=100,40,10,2.0,0.5\nold_new=prompt-cached\nold_rate=old_new/prefill\nold_new=generated\nnew_ctx=prompt-cached\nnew_rate=new_ctx/prefill\nprint(f'old: Context: {old_new:,} new tokens at {old_rate:.3f} t/s; Generate: {generated:,} tokens at {generated/generate:.3f} t/s')\nprint(f'new: Context: {new_ctx:,} new tokens at {new_rate:.3f} t/s; Generate: {generated:,} tokens at {generated/generate:.3f} t/s')\nassert old_rate==new_rate==30 and new_ctx==60\n"
+        ]
+      },
+      "result_sha256": "2e2e91f4df7c644debbca956280997cf903c973c49c937e6e64f2a501d69f733"
+    }
+  }
+}

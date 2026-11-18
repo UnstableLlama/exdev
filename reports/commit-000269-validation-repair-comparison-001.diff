@@ -1,0 +1,238 @@
+--- refused-index-68
++++ selected-index-71
+@@ -3,7 +3,7 @@
+   "type": "bugfix",
+   "problem": [
+     {
+-      "text": "Expert down projections hard-coded FP16 output despite BlockSparseMLP accepting out_dtype. The ordinary expert path also passed FP32 intermediates as the activation destination, although the native activation requires FP16 output.",
++      "text": "Expert down projections hard-coded half output despite BlockSparseMLP accepting out_dtype. The ordinary expert path also reused FP32 intermediates as the activation destination, although the native activation requires a half destination.",
+       "basis": "source",
+       "evidence": [
+         "call_3d66b702a6ee480bbd95944ec4cd6e93",
+@@ -14,7 +14,7 @@
+   ],
+   "reasoning": [
+     {
+-      "text": "The two edits establish separate precision boundaries: gate/up results may remain FP32, their activated product must become FP16 for the down projection, and the down projection may then produce the configured output dtype. Merely changing the down output would not repair the incompatible activation destination.",
++      "text": "The edits establish separate precision boundaries: gate/up results may be FP32, the activated product must be FP16 for the down projection, and the down projection may produce the configured output dtype. Changing down output alone would not repair the incompatible activation destination.",
+       "basis": "source",
+       "evidence": [
+         "call_3d66b702a6ee480bbd95944ec4cd6e93",
+@@ -28,14 +28,13 @@
+       "text": "Mixtral explicitly requests half intermediates and half output, so its configured precision remains unchanged. Qwen3Moe requests half intermediates and float output; its ordinary down projections now honor that float setting. Neither constructor supplies shared experts.",
+       "basis": "source",
+       "evidence": [
+-        "call_ec5710b96f4846298a6e0379a264b767",
+         "call_acea9b63efe545bcbaa9fc51dd8662b6",
+         "call_350694fd7450481fbb844b87a49e055c",
+         "call_3d66b702a6ee480bbd95944ec4cd6e93"
+       ]
+     },
+     {
+-      "text": "The ordinary path still accumulates into zeros_like(input), without adapting that buffer to the newly configurable down-output dtype. Consequently the change does not by itself establish successful FP32-output execution through that path.",
++      "text": "The ordinary path still accumulates into zeros_like(input), without adapting that buffer to the down-output dtype. Successful FP32-output execution through that path is therefore not established by this change.",
+       "basis": "source",
+       "evidence": [
+         "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+@@ -45,7 +44,7 @@
+   ],
+   "source_notes": [
+     {
+-      "text": "Read the original BlockSparseMLP entry, the shared-expert entry and the mixed-mode activation entry. They establish the fused-buffer precondition, record the unreachable fused shared contribution, and identify the incompatible FP32 in-place activation caller respectively.",
++      "text": "The original BlockSparseMLP entry records the all-expert fused-buffer mismatch. The shared-expert entry records an unreachable fused shared contribution. The mixed-mode activation entry records the incompatible FP32 in-place activation caller.",
+       "basis": "ancestor",
+       "evidence": [
+         "call_3419605fe6ee4d05a28c1c5cf0400aae",
+@@ -54,7 +53,7 @@
+       ]
+     },
+     {
+-      "text": "Issue #43, “Error converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,” reports invalid calibration states and Cholesky failure; discussion frames successful inference as a prerequisite for conversion. Its association here is inference from the Qwen3 sparse model and BlockSparseMLP log, not evidence that this commit addresses that report.",
++      "text": "Issue #43, “Error converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,” reports invalid calibration states and Cholesky failure. Its association here is inference from the Qwen3 sparse model and BlockSparseMLP log, not evidence that this commit addresses that report.",
+       "basis": "inference",
+       "evidence": [
+         "call_2d412db67dc94eb89f013032fc771e46",
+@@ -73,9 +72,9 @@
+     }
+   ],
+   "limitations": [
+-    "No repository tensor operation, extension build, CUDA kernel, model inference, numerical-accuracy test or benchmark was executed.",
+-    "The Python check reconstructed the changed statements and modeled branch, allocation and cardinality arithmetic; it does not establish GPU behavior or index_add_ runtime acceptance.",
+-    "Whole-tree literal searches establish the inspected built-in constructors and consumers, not dynamic or external callers."
++    "No repository tensor operation, extension build, CUDA kernel, model inference, accuracy test or benchmark was executed.",
++    "The standard-library check reconstructed changed statements and modeled allocation and cardinality arithmetic; it does not establish GPU behavior or index_add_ runtime acceptance.",
++    "Literal whole-tree searches establish the inspected built-in constructors and consumers, not dynamic or external callers."
+   ],
+   "links": [
+     "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+@@ -88,7 +87,7 @@
+       "title": "Separate intermediate, activation and down-output precision",
+       "claims": [
+         {
+-          "text": "Each expert's down Linear now stores self.out_dtype rather than torch.half. Linear passes that setting into both LinearFP16 and LinearEXL3. Their forward methods prioritize a per-call override, then the stored dtype, then half; the changed expert call supplies no override.",
++          "text": "Each expert's down Linear now stores self.out_dtype rather than torch.half. Linear passes that setting into LinearFP16 and LinearEXL3. Both forward methods prioritize a per-call override, then the stored dtype, then half; the expert call supplies no override.",
+           "basis": "source",
+           "evidence": [
+             "call_3d66b702a6ee480bbd95944ec4cd6e93",
+@@ -98,7 +97,7 @@
+           ]
+         },
+         {
+-          "text": "For FP16 gate/up intermediates, the ordinary expert helper continues overwriting u in place. Otherwise it allocates an FP16 tensor a, calls activation(g,u,a), then feeds a to down. Both native activations accept matching half or float inputs but require a half destination; the float kernel computes the activation-product in float before converting each pair to half.",
++          "text": "For half gate/up intermediates, the ordinary expert helper continues overwriting u. Otherwise it allocates a half tensor a, calls activation(g,u,a), then feeds a to down. Both native activations accept matching half or float inputs but require half output. Their float kernel computes the activation-product in float before converting each pair to half.",
+           "basis": "source",
+           "evidence": [
+             "call_3d66b702a6ee480bbd95944ec4cd6e93",
+@@ -106,17 +105,16 @@
+           ]
+         },
+         {
+-          "text": "This follows the existing fused path's preparation: load already creates a separate half interm_a when intermediates are not half. GatedMLP's other located activation caller remains activation(g,u,u), so this repair is local to BlockSparseMLP rather than a general repair of FP32 gated intermediates.",
+-          "basis": "source",
+-          "evidence": [
+-            "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+-            "call_955a76c84b494ddda7fc32647e019491",
++          "text": "The new preparation follows the existing fused path, whose load method already creates a separate half interm_a for non-half intermediates. GatedMLP's other located activation caller remains activation(g,u,u), so this repair is local to BlockSparseMLP.",
++          "basis": "source",
++          "evidence": [
++            "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+             "call_4b93f3b0ce17435bb4d1e82a2d4fb75d",
+             "call_3d66b702a6ee480bbd95944ec4cd6e93"
+           ]
+         },
+         {
+-          "text": "For unquantized down projections, half input plus float output selects ext.hgemm rather than torch.matmul. That native callee requires half operands and supports float output through cublasGemmEx with FP32 compute. This is float output from half operands, not preservation of FP32 activations through the entire expert.",
++          "text": "For unquantized down projections, half input with float output selects ext.hgemm rather than torch.matmul. The native callee requires half operands and supports float output through cublasGemmEx with FP32 compute. This does not preserve FP32 activations through the entire expert.",
+           "basis": "source",
+           "evidence": [
+             "call_1190cdadead44f5da8348d3ef9125100",
+@@ -125,27 +123,26 @@
+           ]
+         },
+         {
+-          "text": "Dispatch is unchanged: bsz counts flattened tokens; more than one token or any non-EXL3 expert projection selects ordinary execution. One token with fully EXL3 projections selects fusion. MultiLinear consumes projection dimensions and tensor pointers, not their stored out_dtype; fused output already uses cfg.out_d allocated with self.out_dtype or half.",
++          "text": "Dispatch is unchanged: bsz counts flattened tokens; more than one token or any non-EXL3 expert projection selects ordinary execution. One token with fully EXL3 projections selects fusion. MultiLinear reads dimensions and tensor pointers, not stored out_dtype; fused output already uses cfg.out_d allocated with self.out_dtype or half.",
+           "basis": "source",
+           "evidence": [
+             "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+             "call_f22d9367a9c24eba8edb6bb45ccd749c",
+-            "call_978239725b5542f89bb1611d01d5ace8"
+-          ]
+-        },
+-        {
+-          "text": "The inspected external readers agree structurally with unchanged projection lists: TransformerBlock allocation consumes gates/ups/downs, and its forward method calls the supplied MLP before residual addition. However it explicitly requests half input from mlp_norm, while Qwen3Moe now requests float down output. The ordinary path's input-typed accumulation buffer is therefore a concrete compatibility boundary, not merely an external API possibility.",
+-          "basis": "source",
+-          "evidence": [
+-            "call_6e174d2c562744e389dc5e28bf5dad2f",
+-            "call_e0ea9a80ad0146e0807b75933ec561dd",
++            "call_3d66b702a6ee480bbd95944ec4cd6e93"
++          ]
++        },
++        {
++          "text": "TransformerBlock allocation continues consuming the unchanged projection lists. Its forward method requests half output from mlp_norm and passes that tensor to the MLP. Combined with Qwen3Moe's float down-output setting, this exposes the ordinary path's input-typed accumulator to differently typed expert results.",
++          "basis": "source",
++          "evidence": [
++            "call_6e174d2c562744e389dc5e28bf5dad2f",
+             "call_350694fd7450481fbb844b87a49e055c",
+             "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+             "call_3d66b702a6ee480bbd95944ec4cd6e93"
+           ]
+         },
+         {
+-          "text": "A bounded standard-library reconstruction confirmed that the fused tail still returns before its shared-expert addition. The scalar model also showed that the new half activation destination aliases u only for half intermediates; for float intermediates it requires two additional destination bytes per element, excluding allocator overhead.",
++          "text": "A standard-library reconstruction confirmed that the fused tail's first return still precedes the shared-expert addition. The scalar allocation model reports no extra activation destination for half intermediates and two additional destination bytes per element for float intermediates, excluding allocator overhead.",
+           "basis": "execution",
+           "evidence": [
+             "call_df5478919f644df8bf59a332f372151e"
+@@ -160,10 +157,10 @@
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "defect",
+-      "description": "FP32 expert outputs reach an input-typed accumulation buffer without conversion.",
+-      "trigger": "Use half input, out_dtype=torch.float, and the ordinary branch. Qwen3Moe supplies this output setting and TransformerBlock supplies half normalized input; multiple flattened tokens select this branch.",
+-      "expected_behavior": "Accumulate routed FP32 down results into a compatible buffer and return the requested output dtype.",
+-      "actual_behavior": "The changed down projection produces float current_state, while final_hidden_states remains zeros_like(y), hence half for this caller. The code passes these directly to index_add_ without reconciling dtypes. A runtime dtype rejection is suspected but was not executed.",
++      "description": "FP32 expert results reach an input-typed accumulation buffer without conversion.",
++      "trigger": "Use half input, out_dtype=torch.float, and ordinary execution. Qwen3Moe supplies that output setting, TransformerBlock supplies half normalized input, and multiple flattened tokens select ordinary execution.",
++      "expected_behavior": "Accumulate routed float results into a compatible buffer and return the requested output dtype.",
++      "actual_behavior": "The changed down projection produces float current_state, while zeros_like(y) leaves final_hidden_states half for this caller. These are passed directly to index_add_ without reconciling dtypes. Runtime rejection is suspected but was not executed.",
+       "locations": [
+         {
+           "commit": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+@@ -181,10 +178,14 @@
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Compared the new down dtype with the unchanged accumulator and inspected both located sparse-model constructors and decoder dispatch.",
+-          "evidence": [
+-            "call_ec5710b96f4846298a6e0379a264b767",
+-            "call_e0ea9a80ad0146e0807b75933ec561dd"
++          "description": "Compared the task's down-output change with the unchanged accumulator, inspected both sparse-model constructors, and traced TransformerBlock's normalized input into the MLP.",
++          "evidence": [
++            "call_3d66b702a6ee480bbd95944ec4cd6e93",
++            "call_f441f743f32d49d6b3d6bcbf6dc94e70",
++            "call_acea9b63efe545bcbaa9fc51dd8662b6",
++            "call_350694fd7450481fbb844b87a49e055c",
++            "call_6e174d2c562744e389dc5e28bf5dad2f",
++            "call_1190cdadead44f5da8348d3ef9125100"
+           ],
+           "limits": "No PyTorch execution or eligible library documentation establishes the exact runtime diagnostic."
+         }
+@@ -198,7 +199,7 @@
+       "description": "The ancestor-recorded unreachable fused shared-expert addition persists unchanged.",
+       "trigger": "Supply shared_experts and forward one flattened token with fully EXL3 routed projections.",
+       "expected_behavior": "Include the shared contribution as ordinary execution does.",
+-      "actual_behavior": "The fused branch returns final_hidden_states.view(x.shape) before reaching the shared call. The inspected built-in constructors do not supply shared experts, so demonstrated reach is conditional API use.",
++      "actual_behavior": "The fused branch returns final_hidden_states.view(x.shape) before its shared call. Neither inspected built-in constructor supplies shared experts, so demonstrated reach is conditional API use through the generic decoder dispatch.",
+       "locations": [
+         {
+           "commit": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+@@ -210,9 +211,22 @@
+         "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+         "call_3d66b702a6ee480bbd95944ec4cd6e93",
+         "call_acea9b63efe545bcbaa9fc51dd8662b6",
+-        "call_350694fd7450481fbb844b87a49e055c"
++        "call_350694fd7450481fbb844b87a49e055c",
++        "call_6e174d2c562744e389dc5e28bf5dad2f"
+       ],
+       "verification": [
++        {
++          "method": "source_inspection",
++          "description": "Inspected the early return, subsequent shared call, branch condition, decoder dispatch and both built-in construction sites; the task diff changes none of those statements.",
++          "evidence": [
++            "call_f441f743f32d49d6b3d6bcbf6dc94e70",
++            "call_3d66b702a6ee480bbd95944ec4cd6e93",
++            "call_6e174d2c562744e389dc5e28bf5dad2f",
++            "call_acea9b63efe545bcbaa9fc51dd8662b6",
++            "call_350694fd7450481fbb844b87a49e055c"
++          ],
++          "limits": "No tensor or CUDA execution."
++        },
+         {
+           "method": "scalar_transcription",
+           "description": "Reconstructed the changed source and checked fused-tail AST statement order.",
+@@ -231,7 +245,7 @@
+       "description": "The inherited all-expert routing versus fused-buffer cardinality mismatch remains.",
+       "trigger": "One flattened token, fully EXL3 projections, activate_all_experts=True, and num_experts different from num_experts_per_tok.",
+       "expected_behavior": "Allocate compatible all-expert buffers or choose ordinary execution.",
+-      "actual_behavior": "Native routing returns num_experts indices, but fused outputs retain num_experts_per_tok entries. exl3_mgemm checks these dimensions for equality. Decoder forwarding permits the parameter; default end-to-end conversion reaching this combination was not established.",
++      "actual_behavior": "Native routing returns num_experts indices, but fused outputs retain num_experts_per_tok entries. exl3_mgemm checks these dimensions for equality. Decoder forwarding permits the parameter; default conversion reaching this combination was not established.",
+       "locations": [
+         {
+           "commit": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+@@ -249,10 +263,13 @@
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Compared routing cardinality, buffer allocation, dispatch and native validation against the task diff.",
++          "description": "Compared native routing cardinality with Python buffer allocation and dispatch, native multi-GEMM shape validation, and decoder parameter forwarding; checked that the task diff leaves these unchanged.",
+           "evidence": [
+             "call_a758e23a9d8b45218f1d41294271a427",
+-            "call_894137de06164d2d90b7cab6f19f3cfd"
++            "call_f441f743f32d49d6b3d6bcbf6dc94e70",
++            "call_894137de06164d2d90b7cab6f19f3cfd",
++            "call_6e174d2c562744e389dc5e28bf5dad2f",
++            "call_3d66b702a6ee480bbd95944ec4cd6e93"
+           ],
+           "limits": "Conditional source failure path; no CUDA reproduction."
+         }

@@ -1,0 +1,57 @@
+--- a/orchestration/run_ahead.py
++++ b/orchestration/run_ahead.py
+@@ -161,16 +161,20 @@
+     if item['status'] != 'pending_full_review':
+         raise ValueError('Run is not awaiting a verdict')
+     if item['kind'] == 'forward':
+-        approved = {r['position'] for r in state['runs'] if r.get('status') in ('approved_reviewed','approved_mechanical')}
++        approved = {r['position'] for r in state['runs'] + state.get('replacement_reviews', [])
++                    if r.get('status') in ('approved_reviewed','approved_mechanical')}
+         if any(q['kind'] == 'forward' and q['position'] < item['position'] and
+                q['status'] != 'approved_reviewed' and q['position'] not in approved for q in state['review_queue']):
+             raise ValueError('Earlier forward position has not been approved')
+         for row in state['runs']:
+             if row['position'] < item['position'] and row.get('status') not in (
+-                    'approved_reviewed', 'approved_mechanical', 'superseded', 'rejected', 'failed'):
++                    'approved_reviewed', 'approved_mechanical', 'superseded',
++                    'superseded_missing_inputs', 'superseded_for_future_retrieval',
++                    'rejected', 'failed'):
+                 raise ValueError('Earlier forward position unresolved')
+         # Rejected historical attempts are allowed only when that position has an approved attempt.
+-        approved = {r['position'] for r in state['runs'] if r.get('status') in ('approved_reviewed','approved_mechanical')}
++        approved = {r['position'] for r in state['runs'] + state.get('replacement_reviews', [])
++                    if r.get('status') in ('approved_reviewed','approved_mechanical')}
+         if any(r['position'] < item['position'] and r['position'] not in approved for r in state['runs']):
+             raise ValueError('Earlier failed/rejected position still unresolved')
+ 
+--- a/tests/test_run_ahead.py
++++ b/tests/test_run_ahead.py
+@@ -147,6 +147,28 @@
+         s['runs'][0]['status']='failed'
+         with self.assertRaises(ValueError):q.approval_guard(s,b)
+ 
++    def test_legacy_superseded_attempts_require_an_approved_successor(self):
++        for status in ('superseded_missing_inputs', 'superseded_for_future_retrieval'):
++            with self.subTest(status=status):
++                s=state();a=complete(s);a['status']='approved_reviewed'
++                s['runs'][0]['status']='approved_reviewed'
++                s['runs'].append(dict(position=2,run='legacy-attempt',status=status))
++                b=complete(s,3);b['status']='pending_full_review'
++                q.approval_guard(s,b)
++                s['runs'][0]['status']='failed'
++                with self.assertRaisesRegex(ValueError,'Earlier failed/rejected position still unresolved'):
++                    q.approval_guard(s,b)
++
++    def test_legacy_position_approved_only_in_replacement_reviews(self):
++        s=state();a=complete(s);a['status']='approved_reviewed'
++        s['runs'][0]['status']='superseded_for_future_retrieval'
++        s['replacement_reviews']=[dict(position=2,candidate_run='replacement',status='approved_reviewed')]
++        b=complete(s,3);b['status']='pending_full_review'
++        q.approval_guard(s,b)
++        s['replacement_reviews'][0]['status']='rejected'
++        with self.assertRaisesRegex(ValueError,'Earlier failed/rejected position still unresolved'):
++            q.approval_guard(s,b)
++
+     def test_transaction_serializes_updates_and_rolls_back_exception(self):
+         with tempfile.TemporaryDirectory() as d:
+             path=Path(d)/'state.json';write_json(path,dict(counter=0,status='running',active_session='teacher'))

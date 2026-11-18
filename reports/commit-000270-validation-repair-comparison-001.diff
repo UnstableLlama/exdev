@@ -1,0 +1,363 @@
+--- refused
++++ final
+@@ -3,7 +3,7 @@
+   "type": "feature",
+   "problem": [
+     {
+-      "text": "The change introduces correction-biased sigmoid routing alongside the existing softmax router, but only the single-group Dots route is enabled in forward; grouped DS3 dispatch remains commented out.",
++      "text": "The change adds correction-biased sigmoid routing, but enables only the single-group Dots route in forward; grouped DS3 dispatch remains commented out.",
+       "basis": "source",
+       "evidence": [
+         "call_e2521972ad6047289b91ea7f082e2254"
+@@ -12,7 +12,7 @@
+   ],
+   "reasoning": [
+     {
+-      "text": "Routing and expert evaluation remain separate: the new routers return expert indices and weights consumed by the existing ordinary or fused expert paths. Bias loading and export accompany routing so the additional checkpoint state can survive tensor extraction.",
++      "text": "The new routers supply expert indices and weights to the existing expert-evaluation paths. Loading and exporting correction bias preserves the additional routing state.",
+       "basis": "source",
+       "evidence": [
+         "call_e2521972ad6047289b91ea7f082e2254",
+@@ -22,7 +22,7 @@
+   ],
+   "impact": [
+     {
+-      "text": "MixtralModel and Qwen3MoeModel construct BlockSparseMLP with keyword arguments and leave the new routing flag false, so their constructor calls remain compatible. Their forward calls nevertheless encounter the changed native-router argument mismatch recorded in findings.",
++      "text": "MixtralModel and Qwen3MoeModel use compatible keyword constructor calls and leave the new routing flag false. Their default routing path nevertheless encounters the native-call signature mismatch recorded in findings.",
+       "basis": "source",
+       "evidence": [
+         "call_c6cc662d6aac46f6b46631251636dba9",
+@@ -34,7 +34,7 @@
+   ],
+   "source_notes": [
+     {
+-      "text": "Read the BlockSparseMLP introduction entry and the shared-expert entry. They establish the earlier routing/fusion design and record shared-output, shared-allocation and all-expert buffer observations.",
++      "text": "Read the BlockSparseMLP introduction and shared-expert entries. They establish the earlier fusion design and record shared-output, shared-allocation and all-expert buffer observations.",
+       "basis": "ancestor",
+       "evidence": [
+         "call_f08d14ccb0cd4dc49b31b4e3bc7b0119",
+@@ -42,7 +42,7 @@
+       ]
+     },
+     {
+-      "text": "Issue #51, \u201cdots.llm1 support,\u201d is louiehelm's architecture-support request. Its connection to this task is inferred from the Dots name and its discussion of Deepseek-style MoE routing; it does not establish that turboderp linked the issue to this change.",
++      "text": "Issue #51, \u201cdots.llm1 support,\u201d is louiehelm's architecture-support request. Its connection to this task is inferred from the Dots name and discussion of Deepseek-style MoE modules, not an established upstream link.",
+       "basis": "inference",
+       "evidence": [
+         "call_74c18aed9b8f4001ba3f6333378e99c4",
+@@ -50,7 +50,7 @@
+       ]
+     },
+     {
+-      "text": "Issue #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,\u201d reports NaN states and Cholesky failure. Its inferred association is only the BlockSparseMLP conversion-log occurrence and Qwen3-MoE context, not evidence of a routing defect or motivation for this task.",
++      "text": "Issue #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,\u201d reports NaN states and Cholesky failure. Its inferred association is the BlockSparseMLP conversion-log occurrence and Qwen3-MoE context; it does not establish motivation for this routing change.",
+       "basis": "inference",
+       "evidence": [
+         "call_caa359dc66bd4b45b69b096ed41a36d8",
+@@ -61,8 +61,8 @@
+   ],
+   "limitations": [
+     "No repository inference, extension invocation, CUDA test or performance measurement was run.",
+-    "The scalar computation uses Python double precision and a deterministic tie ordering; it does not establish PyTorch FP16 rounding, top-k tie ordering or whether the 1e-20 stabilizer survives the actual tensor dtype.",
+-    "No eligible DS3/Dots reference checkpoint configuration or tensor header was listed in the inspected evidence index. Checkpoint-specific correction-bias names, shapes and dtypes were not validated."
++    "The scalar transcription uses Python double precision and deterministic tie ordering; it does not establish PyTorch FP16 rounding, top-k tie ordering or preservation of the 1e-20 stabilizer.",
++    "No DS3/Dots reference checkpoint configuration or tensor header was listed in the inspected evidence index. Checkpoint-specific correction-bias names, shapes and dtypes were not validated."
+   ],
+   "links": [
+     "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+@@ -74,25 +74,25 @@
+       "title": "Correction-biased routing and expert-output integration",
+       "claims": [
+         {
+-          "text": "BlockSparseMLP adds deepseekv3_routing=False and optional routed_scaling_factor, n_group and topk_group constructor values. load copies these into RoutingCFG together with an optional tensor loaded under <module key>.gate.e_score_correction_bias. unload clears the bias reference; get_tensors exports a present bias contiguously under that same name. The bias name is hard-coded rather than derived from key_routing_gate.",
+-          "basis": "source",
+-          "evidence": [
+-            "call_e2521972ad6047289b91ea7f082e2254"
+-          ]
+-        },
+-        {
+-          "text": "Whole-parent searches locate only one RoutingCFG builder, updated by the diff, and two BlockSparseMLP construction sites: MixtralModel and Qwen3MoeModel. Both use keyword arguments and omit the new options. TransformerBlock.forward dispatches to its supplied MLP with params unchanged; ParallelDecoderBlock has another generic dispatch, although its declared MLP types exclude BlockSparseMLP.",
++          "text": "BlockSparseMLP adds deepseekv3_routing=False and optional routed_scaling_factor, n_group and topk_group values. load places these in RoutingCFG alongside an optional tensor named <module key>.gate.e_score_correction_bias. unload clears the bias reference; get_tensors exports a present bias contiguously under the same name. This name is hard-coded rather than derived from key_routing_gate.",
++          "basis": "source",
++          "evidence": [
++            "call_e2521972ad6047289b91ea7f082e2254"
++          ]
++        },
++        {
++          "text": "Whole-parent searches locate one RoutingCFG builder, updated by the diff, and two BlockSparseMLP construction sites: MixtralModel and Qwen3MoeModel. Both use keyword arguments and omit the new options. TransformerBlock.forward passes params unchanged to its MLP. ParallelDecoderBlock has another generic MLP dispatch, although its declared constructor types exclude BlockSparseMLP.",
+           "basis": "source",
+           "evidence": [
+             "call_e635eb141cd64aabaadc58b683091e2e",
+             "call_2f37efdc4fd9498e91f69f0db2606261",
+             "call_c6cc662d6aac46f6b46631251636dba9",
+             "call_be277a7f41e049c08bfd291fcf9b5b47",
+-            "call_906756f948c94cf6b452df64598ee17c"
+-          ]
+-        },
+-        {
+-          "text": "routing_dots projects flattened token rows through gate_tensor, adds correction bias to the logits, selects top-k experts, applies sigmoid to those selected biased logits, then normalizes and multiplies by routed_scaling_factor. With activate_all_experts it selects num_experts instead. Exactly one flattened token without that flag uses preallocated output buffers; the other branch allocates its results.",
++            "call_e7ea57d517c44d6aa8978a4cd3e67c41"
++          ]
++        },
++        {
++          "text": "routing_dots projects flattened token rows through gate_tensor, adds correction bias to logits, selects top-k experts, applies sigmoid to the selected biased logits, then normalizes and scales their weights. activate_all_experts selects every expert. Exactly one flattened token without that flag uses preallocated outputs; the general branch allocates results.",
+           "basis": "source",
+           "evidence": [
+             "call_e2521972ad6047289b91ea7f082e2254",
+@@ -100,28 +100,28 @@
+           ]
+         },
+         {
+-          "text": "routing_ds3 implements a different formula: sigmoid scores are computed before adding correction bias for selection. Experts are divided into n_group equal-sized groups; each group's score sums its best two corrected scores. topk_group groups survive a mask, and expert top-k selection follows. Returned weights gather the original, uncorrected sigmoid scores before normalization and scaling. The reshape requires divisible group sizes, and the top-two operation requires at least two experts per group.",
+-          "basis": "source",
+-          "evidence": [
+-            "call_e2521972ad6047289b91ea7f082e2254"
+-          ]
+-        },
+-        {
+-          "text": "The constant 2 in grouped routing is the number of expert scores summed per group, not the number of selected groups. The 1e-20 terms are additive denominator stabilizers. routed_scaling_factor sets the normalized weight scale; the formulas approach a weight sum equal to that factor when the stabilizer is negligible.",
+-          "basis": "source",
+-          "evidence": [
+-            "call_e2521972ad6047289b91ea7f082e2254"
+-          ]
+-        },
+-        {
+-          "text": "A standard-library scalar transcription used logits [0,1,2], bias [2,0,0], two selected experts and scaling factor 2. For the selected set {0,2}, Dots produced weights [1,1], whereas gathering uncorrected sigmoid scores produced approximately [0.724219,1.275781]. This illustrates that bias affects Dots mixture weights, not only expert choice.",
++          "text": "routing_ds3 instead computes sigmoid before adding correction bias for selection. It divides experts into n_group equal-sized groups, scores each group by its best two corrected scores, retains topk_group groups and then selects experts. Weights gather the original uncorrected sigmoid scores. The reshape requires divisible group sizes, and topk(2) requires at least two experts per group. This helper is not enabled by forward.",
++          "basis": "source",
++          "evidence": [
++            "call_e2521972ad6047289b91ea7f082e2254"
++          ]
++        },
++        {
++          "text": "Both new helpers add 1e-20 to the selected-weight sum before normalization and multiply by routed_scaling_factor. The constant is a denominator stabilizer, not an expert-selection threshold; its effective behavior depends on tensor precision.",
++          "basis": "source",
++          "evidence": [
++            "call_e2521972ad6047289b91ea7f082e2254"
++          ]
++        },
++        {
++          "text": "A scalar transcription using logits [0,1,2], bias [2,0,0], two selected experts and scale 2 produced Dots weights [1,1] for selected experts {0,2}. Gathering uncorrected sigmoid scores for that same set produced approximately [0.724219,1.275781]. Thus the modeled Dots bias affects mixture weights as well as selection.",
+           "basis": "execution",
+           "evidence": [
+             "call_156933a76c9f42ffb49e4d1d95071e20"
+           ]
+         },
+         {
+-          "text": "The existing native router computes top-k logits followed by softmax. Its single-token route reuses buffers and its general route can select all experts. The task retains that selection for deepseekv3_routing=False, but adds a fifth positional argument without changing the four-argument declaration, definition or binding.",
++          "text": "The existing native router selects top-k logits and applies softmax, reusing buffers for one token and allowing all-expert selection in its general branch. The task keeps it for deepseekv3_routing=False but adds a fifth argument without updating its four-argument declaration, definition or binding.",
+           "basis": "source",
+           "evidence": [
+             "call_cba2aa43d7d244858167faf2b3c97340",
+@@ -131,7 +131,7 @@
+           ]
+         },
+         {
+-          "text": "The ordinary expert accumulator now uses self.out_dtype rather than necessarily inheriting y.dtype. This agrees with Qwen3MoeModel's FP32 down-projection outputs while Mixtral requests FP16. The fused tail also removes the early return that previously bypassed shared experts, making shared_experts.forward(x, params) reachable before returning.",
++          "text": "The ordinary accumulator now uses self.out_dtype rather than necessarily inheriting the input dtype. This agrees with Qwen3MoeModel's FP32 down-projection outputs; Mixtral requests FP16. The fused tail removes the early return that previously bypassed shared experts, making their addition reachable.",
+           "basis": "source",
+           "evidence": [
+             "call_e2521972ad6047289b91ea7f082e2254",
+@@ -141,11 +141,11 @@
+           ]
+         },
+         {
+-          "text": "The shared-output repair removes the ancestor-recorded unreachable addition, but it does not repair the plain-MLP allocation interface or resize fused buffers for all-expert routing. Those inherited conditions remain in the inspected parent code plus task diff.",
+-          "basis": "source",
+-          "evidence": [
+-            "call_e2521972ad6047289b91ea7f082e2254",
+-            "call_906756f948c94cf6b452df64598ee17c",
++          "text": "The shared-output observation is removed by the task, but the inherited plain-MLP allocation mismatch and all-expert fused-buffer mismatch remain. Neither buffer allocation nor TransformerBlock's shared-projection attribute accesses is repaired.",
++          "basis": "source",
++          "evidence": [
++            "call_e2521972ad6047289b91ea7f082e2254",
++            "call_e7ea57d517c44d6aa8978a4cd3e67c41",
+             "call_11b8b2eb33d147798cc1f552f480df05",
+             "call_e07f37d372fd4e54aa9ba7e6e54b1162",
+             "call_1788690c627249e8877bcac204f5bf1a"
+@@ -160,10 +160,10 @@
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "defect",
+-      "description": "The default route supplies five arguments to a native binding that accepts four.",
++      "description": "The default route passes five arguments to a four-argument native binding.",
+       "trigger": "Call BlockSparseMLP.forward with deepseekv3_routing=False, its default.",
+-      "expected_behavior": "Obtain selected experts and softmax routing weights.",
+-      "actual_behavior": "The call appends False, but the unchanged native signature has only bsz, cfg, y and params, implying argument rejection before expert evaluation. Both inspected built-in sparse-model constructors retain this default; TransformerBlock.forward directly dispatches to their MLP.",
++      "expected_behavior": "Obtain expert indices and softmax routing weights.",
++      "actual_behavior": "The appended False has no matching native parameter, implying argument rejection before expert evaluation. Both inspected built-in sparse-model constructors retain this default, and TransformerBlock.forward dispatches to their MLP.",
+       "locations": [
+         {
+           "commit": "b8c830c17f53cf0d4caf7b774fe458b2f31cb85c",
+@@ -176,12 +176,12 @@
+         "call_cba2aa43d7d244858167faf2b3c97340",
+         "call_aea22adac183443eaa6e50796068406d",
+         "call_b4b3378b98754090a9337dcd556211f3",
+-        "call_906756f948c94cf6b452df64598ee17c"
+-      ],
+-      "verification": [
+-        {
+-          "method": "source_inspection",
+-          "description": "Compared the changed call with the declaration, implementation, binding and located model construction sites.",
++        "call_e7ea57d517c44d6aa8978a4cd3e67c41"
++      ],
++      "verification": [
++        {
++          "method": "source_inspection",
++          "description": "Compared the changed call with the declaration, implementation, binding and both located constructors.",
+           "evidence": [
+             "call_a060fc950eb94072a1861c26e22a1ba4",
+             "call_c6cc662d6aac46f6b46631251636dba9",
+@@ -196,10 +196,10 @@
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "defect",
+-      "description": "The DS3-enabled branch does not assign routing results except for the single-group configuration.",
+-      "trigger": "Set deepseekv3_routing=True with n_group or topk_group different from 1, including their default None values.",
+-      "expected_behavior": "Run grouped routing or explicitly reject an unsupported configuration.",
+-      "actual_behavior": "The routing_ds3 call is commented out. selected_experts remains unbound and is subsequently consumed by either ordinary expert-mask construction or fused GEMM. The inspected built-in constructors do not enable this flag, so demonstrated reach is through the new constructor API.",
++      "description": "DS3-enabled dispatch leaves routing results unassigned outside the single-group configuration.",
++      "trigger": "Set deepseekv3_routing=True with n_group or topk_group different from 1, including default None values.",
++      "expected_behavior": "Perform grouped routing or explicitly reject the unsupported configuration.",
++      "actual_behavior": "The routing_ds3 call is commented out. selected_experts remains unbound when consumed by either expert-mask construction or fused GEMM. Built-in constructors do not enable this flag, limiting established reach to the new API.",
+       "locations": [
+         {
+           "commit": "b8c830c17f53cf0d4caf7b774fe458b2f31cb85c",
+@@ -215,8 +215,9 @@
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Traced dispatch assignments through both expert branches and inspected both located constructors.",
+-          "evidence": [
++          "description": "Traced dispatch assignments and inspected both located constructors.",
++          "evidence": [
++            "call_e2521972ad6047289b91ea7f082e2254",
+             "call_c6cc662d6aac46f6b46631251636dba9",
+             "call_be277a7f41e049c08bfd291fcf9b5b47"
+           ],
+@@ -225,14 +226,14 @@
+       ]
+     },
+     {
+-      "id": "optional-bias-required-by-dots",
++      "id": "optional-inputs-required-by-dots",
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "new_requirement",
+-      "description": "Enabled Dots routing requires bias and scaling values that loading and construction permit to be absent.",
+-      "trigger": "Enable deepseekv3_routing with n_group=topk_group=1, but omit a usable correction-bias tensor or leave routed_scaling_factor=None.",
+-      "expected_behavior": "Validate the required routing inputs or provide supported defaults.",
+-      "actual_behavior": "routing_dots unconditionally adds the bias and divides the scaling factor by a tensor. No validation or fallback is added. The failure is conditional on callers using the new API; neither inspected built-in constructor selects it.",
++      "description": "Dots routing requires bias and scaling values that construction permits to be absent.",
++      "trigger": "Enable deepseekv3_routing with n_group=topk_group=1 but leave correction bias or routed_scaling_factor as None.",
++      "expected_behavior": "Validate required inputs or provide supported defaults.",
++      "actual_behavior": "routing_dots unconditionally adds the bias and uses the scaling factor in tensor arithmetic, without a guard or fallback. Neither inspected built-in constructor enables this route.",
+       "locations": [
+         {
+           "commit": "b8c830c17f53cf0d4caf7b774fe458b2f31cb85c",
+@@ -248,23 +249,23 @@
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Compared optional constructor/loading inputs with unconditional router operations and its new forward call site.",
+-          "evidence": [
+-            "call_e2521972ad6047289b91ea7f082e2254"
+-          ],
+-          "limits": "No missing-checkpoint or tensor-operation execution."
+-        }
+-      ]
+-    },
+-    {
+-      "id": "inherited-all-expert-buffer-count",
++          "description": "Compared optional constructor values with unconditional router operations and the new forward call site.",
++          "evidence": [
++            "call_e2521972ad6047289b91ea7f082e2254"
++          ],
++          "limits": "No tensor-operation execution."
++        }
++      ]
++    },
++    {
++      "id": "inherited-all-expert-fusion-cardinality",
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "defect",
+-      "description": "All-expert selection remains incompatible with fixed selected-expert fused buffers.",
++      "description": "All-expert routing still conflicts with fixed selected-expert fused buffers.",
+       "trigger": "Use valid Dots routing inputs, one flattened token, fully EXL3 experts, activate_all_experts=True and num_experts different from num_experts_per_tok.",
+-      "expected_behavior": "Evaluate every expert with appropriately sized buffers or choose the ordinary path.",
+-      "actual_behavior": "Dots returns num_experts indices, while load allocates fused buffers for num_experts_per_tok. The first exl3_mgemm checks index dimension 1 against output dimension 0. The mismatch persists; the default native route has the earlier argument failure before it could reach this condition.",
++      "expected_behavior": "Evaluate every expert with compatible buffers or choose the ordinary path.",
++      "actual_behavior": "Routing returns num_experts indices, but fused buffers have num_experts_per_tok entries. The first exl3_mgemm checks index dimension 1 against output dimension 0. This inherited mismatch persists; default native routing encounters the separate argument mismatch first.",
+       "locations": [
+         {
+           "commit": "b8c830c17f53cf0d4caf7b774fe458b2f31cb85c",
+@@ -275,12 +276,13 @@
+       "source_evidence": [
+         "call_e2521972ad6047289b91ea7f082e2254",
+         "call_e07f37d372fd4e54aa9ba7e6e54b1162",
+-        "call_1788690c627249e8877bcac204f5bf1a"
+-      ],
+-      "verification": [
+-        {
+-          "method": "source_inspection",
+-          "description": "Compared router cardinality, fused allocation, branch selection and native shape validation.",
++        "call_1788690c627249e8877bcac204f5bf1a",
++        "call_e7ea57d517c44d6aa8978a4cd3e67c41"
++      ],
++      "verification": [
++        {
++          "method": "source_inspection",
++          "description": "Compared routing cardinality, fused allocation, dispatch and native shape validation.",
+           "evidence": [
+             "call_e2521972ad6047289b91ea7f082e2254",
+             "call_1788690c627249e8877bcac204f5bf1a"
+@@ -294,10 +296,10 @@
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "defect",
+-      "description": "The inherited shared-expert allocation code still rejects the plain MLP type admitted by the constructor.",
+-      "trigger": "Supply an MLP as shared_experts and invoke TransformerBlock.allocate_q on the containing block.",
++      "description": "Shared-expert allocation still assumes GatedMLP attributes despite admitting plain MLP.",
++      "trigger": "Supply an MLP as shared_experts and invoke TransformerBlock.allocate_q.",
+       "expected_behavior": "Allocate the shared up and down projections.",
+-      "actual_behavior": "Allocation accesses shared_experts.gates, ups and downs; plain MLP stores singular up and down and has no gates. GatedMLP supplies the list interface. The task repairs shared forward reachability but leaves this allocation code unchanged; neither inspected built-in constructor supplies shared experts.",
++      "actual_behavior": "Allocation accesses gates, ups and downs; plain MLP stores singular up and down and has no gates. GatedMLP supplies the list interface. The task leaves allocation unchanged, and neither inspected built-in sparse constructor supplies shared experts.",
+       "locations": [
+         {
+           "commit": "b8c830c17f53cf0d4caf7b774fe458b2f31cb85c",
+@@ -306,16 +308,18 @@
+         }
+       ],
+       "source_evidence": [
+-        "call_906756f948c94cf6b452df64598ee17c",
++        "call_e7ea57d517c44d6aa8978a4cd3e67c41",
+         "call_11b8b2eb33d147798cc1f552f480df05",
+-        "call_e2521972ad6047289b91ea7f082e2254"
+-      ],
+-      "verification": [
+-        {
+-          "method": "source_inspection",
+-          "description": "Rechecked the ancestor observation against both accepted shared-module implementations and unchanged allocation accesses.",
+-          "evidence": [
+-            "call_906756f948c94cf6b452df64598ee17c",
++        "call_e2521972ad6047289b91ea7f082e2254",
++        "call_c6cc662d6aac46f6b46631251636dba9",
++        "call_be277a7f41e049c08bfd291fcf9b5b47"
++      ],
++      "verification": [
++        {
++          "method": "source_inspection",
++          "description": "Rechecked both admitted shared-module implementations against unchanged allocation accesses.",
++          "evidence": [
++            "call_e7ea57d517c44d6aa8978a4cd3e67c41",
+             "call_11b8b2eb33d147798cc1f552f480df05"
+           ],
+           "limits": "No allocation execution."
+@@ -323,5 +327,5 @@
+       ]
+     }
+   ],
+-  "summary": "Adds Dots sigmoid routing and a disabled grouped DS3 implementation, preserves correction bias on export, aligns ordinary accumulation dtype and restores fused shared-expert addition. Source inspection also identifies incomplete routing dispatch and a default native-call signature mismatch."
++  "summary": "Adds Dots routing and a disabled grouped DS3 helper, exports correction bias, aligns ordinary accumulation dtype and restores fused shared-expert addition. Routing dispatch remains incomplete, and the default native call has a signature mismatch."
+ }

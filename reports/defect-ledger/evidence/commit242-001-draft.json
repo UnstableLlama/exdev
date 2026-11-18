@@ -1,0 +1,181 @@
+{
+  "schema_version": 5,
+  "sha": "17f1ab5e59ead2e410854ef53539b2915b304460",
+  "parent_shas": [
+    "93cb21ca9b23d22164f38c1d91d968a3c25538b7"
+  ],
+  "cutoff_date": "2025-06-05T02:26:00+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Ceiling a floating-point scaled dimension could exceed the bounding box by one pixel; subsequent patch alignment amplified that error.",
+        "basis": "source",
+        "evidence": [
+          "call_389baef6ab3247e1ba4793e674a9e1d1",
+          "call_2163d0f8c54e419e8a280e73cc53a0ef"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change floors scaled dimensions before upward patch alignment. Its new minimum of one prevents a thin dimension from becoming zero after flooring; these two edits therefore work together.",
+        "basis": "source",
+        "evidence": [
+          "call_2163d0f8c54e419e8a280e73cc53a0ef"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The sole direct caller found is Mistral3 vision preprocessing. It uses the returned dimensions to resize the image; embedding construction subsequently derives patch-grid dimensions and position IDs from that resized size.",
+        "basis": "source",
+        "evidence": [
+          "call_a4b9cf447c4848f89b92c2cfcf756874",
+          "call_365065fa0e884d8095bf6619f5c9bbbc"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The helper's introduction entry was read. It records the divisibility precondition and a suspected floating-point overflow. Inspection of the parent and task diff shows that this change replaces the offending ceiling operation rather than carrying it over.",
+        "basis": "source",
+        "evidence": [
+          "call_389baef6ab3247e1ba4793e674a9e1d1",
+          "call_2163d0f8c54e419e8a280e73cc53a0ef"
+        ]
+      },
+      {
+        "text": "The earlier entry describes the helper as a standalone sizing primitive, initially without model integration.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_88619e797601455497be26dfe12ff51f"
+        ]
+      }
+    ],
+    "limitations": [
+      "Validation used a standard-library scalar transcription, not the repository's NumPy implementation, PIL resizing, or GPU inference.",
+      "The bounded numerical sweep does not establish correctness for every dimension or invalid input. Literal caller search does not exclude external or dynamic callers."
+    ],
+    "links": [
+      "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628"
+    ],
+    "chapters": [
+      {
+        "id": "vision",
+        "title": "Keeping Pixtral resize dimensions within the patch-aligned bound",
+        "claims": [
+          {
+            "text": "The helper retains its assertion that each maximum dimension is divisible by its patch dimension. It scales only when the larger input-to-maximum ratio exceeds one, then rounds each dimension upward using ((d + p - 1) // p) * p. The p - 1 implements integer ceiling division.",
+            "basis": "source",
+            "evidence": [
+              "call_389baef6ab3247e1ba4793e674a9e1d1",
+              "call_2163d0f8c54e419e8a280e73cc53a0ef"
+            ]
+          },
+          {
+            "text": "Mistral3 supplies a square longest-edge bound and a grid spacing equal to patch size times spatial merge size. Alignment therefore makes the resized image divisible into merged feature tiles. The unchanged no-downscaling branch still permits upward grid rounding, and grid alignment only approximately preserves aspect ratio.",
+            "basis": "source",
+            "evidence": [
+              "call_365065fa0e884d8095bf6619f5c9bbbc",
+              "call_389baef6ab3247e1ba4793e674a9e1d1"
+            ]
+          },
+          {
+            "text": "A scalar comparison over 90,000 positive input pairs, using maximum (224,192) and patches (16,32), found 2,497 old bounding-box overflows and none with the revised formula. Input (230,1) changed from (240,32) to (224,32). These are synthetic dimensions, not asserted checkpoint defaults.",
+            "basis": "execution",
+            "evidence": [
+              "call_647771a5d5104a828788f273a01cdbe4"
+            ]
+          },
+          {
+            "text": "The correction is broader than clipping overflowing outputs: flooring can also reduce a nonlimiting dimension across a patch boundary. In the same scalar sweep, 4,467 output pairs changed. The tradeoff favors staying within the bound over retaining the old upward-rounded resize dimensions.",
+            "basis": "inference",
+            "evidence": [
+              "call_2163d0f8c54e419e8a280e73cc53a0ef",
+              "call_647771a5d5104a828788f273a01cdbe4"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Fixes Pixtral sizing by flooring scaled dimensions before patch alignment and keeping them positive; scalar checks reproduce removal of the inherited bounding-box overflow."
+  },
+  "evidence": {
+    "call_2163d0f8c54e419e8a280e73cc53a0ef": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "offset": 182,
+        "max_bytes": 819
+      },
+      "result_sha256": "183788ed6dac422a732450b4076ff680f5839c9494cfc3dc1968632163101120"
+    },
+    "call_389baef6ab3247e1ba4793e674a9e1d1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "path": "exllamav3/util/vision.py"
+      },
+      "result_sha256": "4173954a5967d2cac534ad8a8d514ac6a843f2273808231c889dd07f511bbec4"
+    },
+    "call_a4b9cf447c4848f89b92c2cfcf756874": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "query": "size_to_longest_edge_and_patch_size"
+      },
+      "result_sha256": "3699d477b744f619c9f6c896510071d741ad9e3add37960d9a01be7cc01747c7"
+    },
+    "call_498cd40428404a5386b514239eec1f8d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "query": "Pixtral"
+      },
+      "result_sha256": "9e92ab3b4fe0cf59b0946b42c74bbf13dea61421a4d4d35b1b3cb00fa0ed7877"
+    },
+    "call_8a74d427a2284761aa6e9badda7bb506": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/util/vision.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "4e7efb95312c33af629c4b6727399f0855f5e77339790ac0a34e22846cbf3593",
+      "catalog_only": true
+    },
+    "call_88619e797601455497be26dfe12ff51f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+        "max_bytes": 12000
+      },
+      "result_sha256": "a68854dc5f9415e93f756d3c703495aebc24ba399b9183365e1a7ad135605bfb"
+    },
+    "call_365065fa0e884d8095bf6619f5c9bbbc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 14500,
+        "max_bytes": 10000
+      },
+      "result_sha256": "32700876c324a7abd30253f06dc93220b9f3adf172b3ebdf6975fd7f1f115707"
+    },
+    "call_647771a5d5104a828788f273a01cdbe4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math,json\nm=(224,192); p=(16,32)\ndef calc(s,new):\n r=max(s[0]/m[0],s[1]/m[1]); d=tuple(max(1,math.floor(x/r)) if new else math.ceil(x/r) for x in s) if r>1 else s\n return tuple((x+y-1)//y*y for x,y in zip(d,p))\ncounts=[0,0]; changed=0\nfor a in range(1,301):\n for b in range(1,301):\n  s=(a,b); old=calc(s,False); new=calc(s,True)\n  counts[0]+=any(x>y for x,y in zip(old,m)); counts[1]+=any(x>y for x,y in zip(new,m)); changed+=old!=new\nprint(json.dumps({'input_pairs':90000,'overflow_old_new':counts,'changed_outputs':changed,'example':{'input':[230,1],'old':calc((230,1),False),'new':calc((230,1),True)},'thin':{'input':[10000,1],'new':calc((10000,1),True)}}))"
+        ]
+      },
+      "result_sha256": "2c71f90039e55aa9b7cc2a8e029ae9fc7d9fbacb9b22606574ad0dcaa0cda8d4"
+    }
+  }
+}

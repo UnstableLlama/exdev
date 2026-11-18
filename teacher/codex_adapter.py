@@ -1,11 +1,34 @@
 # SPDX-License-Identifier: MIT
-"""Fresh Codex app-server authoring session, pinned to Astra with task-specific reasoning."""
+"""Fresh Codex app-server authoring session, using the adopted teacher model with task-specific reasoning."""
 from copy import deepcopy
 import json
 from .editorial import output_schema, assemble_draft
+from .validation_repair import POLICY, repair_metadata, verify_final, eligible, repair_feedback
 
-MODEL = 'gpt-6-astra'
+LEGACY_MODEL = 'gpt-6-astra'
+PRIOR_MODELS = ('gpt-6.1-sol',)
+MODEL = 'gpt-6.2-sol'
 EFFORT = 'medium'
+TRIAL_MODEL = 'gpt-6.2-sol'
+
+def checked_model(model):
+    if model not in (MODEL, LEGACY_MODEL):
+        raise ValueError('Unsupported teacher model')
+    return model
+
+def require_approval_model(run, provenance):
+    model = provenance.get('model')
+    if (model not in (MODEL, *PRIOR_MODELS, LEGACY_MODEL) or provenance.get('reasoning_effort') != EFFORT
+            or provenance.get('trial_only') or '.teacher/trials' in str(run.resolve())):
+        raise ValueError('Only non-trial current or prior Sol (gpt-6.2-sol, gpt-6.1-sol) or historical Astra (gpt-6-astra) medium runs may be offered for approval')
+    transcript = json.loads((run/'raw-transcript.json').read_text())
+    runtime = transcript[0].get('teacher_runtime') if transcript else None
+    # Early Astra transcripts predate runtime recording; retain their approvals.
+    if runtime is None and model == LEGACY_MODEL:
+        return
+    if runtime != {'model': model, 'reasoning_effort': EFFORT}:
+        raise ValueError('Approval requires matching server-confirmed teacher runtime')
+
 DISABLED_FEATURES = (
     'apps','plugins','hooks','shell_tool','unified_exec','shell_snapshot','shell_snapshot_v2',
     'browser_use','browser_use_external','computer_use','in_app_browser','view_image',
@@ -59,8 +82,9 @@ For a root commit links must be []. Chapters are local sections linked by the re
 ancestor entries or mark an annotation reviewed or training eligible.'''
 
 
-def thread_parameters(session, cwd):
-    return {'model':MODEL,'modelProvider':'openai','allowProviderModelFallback':False,
+def thread_parameters(session, cwd, model=MODEL):
+    checked_model(model)
+    return {'model':model,'modelProvider':'openai','allowProviderModelFallback':False,
             'ephemeral':True,'cwd':str(cwd),'runtimeWorkspaceRoots':[],
             'environments':[],'selectedCapabilityRoots':[], 'approvalPolicy':'never',
             'sandbox':'read-only','baseInstructions':session.initial[0]['content'],
@@ -75,30 +99,38 @@ def thread_parameters(session, cwd):
 
 
 class CodexTeacher:
-    def run(self, session, transport, record=None, max_calls=256):
+    def run(self, session, transport, record=None, max_calls=256, *, model=MODEL, validation_repair=True):
+        checked_model(model)
         session.require_authoring_context()
         if session.used:
             raise ValueError('A fresh authoring session cannot be reused')
         session.used=True
-        manifest=json.loads((session.runner.packet/'manifest.json').read_text())
+        manifest_bytes=(session.runner.packet/'manifest.json').read_bytes()
+        manifest=json.loads(manifest_bytes)
         transcript=deepcopy(session.initial)
+        repair = None
+        repair_start = None
         def save():
+            if repair_start is not None:
+                for message in transcript[repair_start:]:
+                    message['turn_id'] = turn
             if record is not None:
                 record(deepcopy(transcript))
         transport.request('initialize',{'clientInfo':{'name':'exdev_teacher','version':'0.1.0'},
                                        'capabilities':{'experimentalApi':True}})
         transport.notify('initialized',{})
-        started=transport.request('thread/start',thread_parameters(session,transport.cwd))
-        if started['model']!=MODEL or started.get('reasoningEffort')!=session.reasoning_effort:
+        started=transport.request('thread/start',thread_parameters(session,transport.cwd,model))
+        if started['model']!=model or started.get('reasoningEffort')!=session.reasoning_effort:
             raise ValueError('Codex changed the selected model or reasoning effort')
         if started.get('instructionSources'):
             raise ValueError('Unexpected inherited instruction sources')
+        transcript[0]['teacher_runtime']={'model':started['model'], 'reasoning_effort':started['reasoningEffort']}
         thread=started['thread']['id']
-        turn=transport.request('turn/start',{'threadId':thread,'model':MODEL,'effort':session.reasoning_effort,
+        turn=transport.request('turn/start',{'threadId':thread,'model':model,'effort':session.reasoning_effort,
             'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
             'input':[{'type':'text','text':session.initial[1]['content']}]})['turn']['id']
         allowed={tool['name'] for tool in session.tools}
-        seen=set(); final=None
+        seen=set(); final=None; final_index=None
         save()
         while True:
             event=transport.receive()
@@ -136,17 +168,61 @@ class CodexTeacher:
                     save()  # Preserve raw model text even if JSON/schema validation later fails.
                     if item.get('phase') in (None,'final_answer'):
                         final=item['text']
+                        final_index=len(transcript)-1
             elif method=='turn/completed':
                 if params['turn']['id']!=turn or params['turn']['status']!='completed' or final is None:
                     raise ValueError('Authoring turn did not complete successfully')
+                # Only completed final JSON/annotation refusals enter the repair path.
+                # Protocol, runtime, transport and tool-budget failures never reach it.
+                if manifest_bytes!=(session.runner.packet/'manifest.json').read_bytes():
+                    raise ValueError('Packet changed during authoring')
+                # Check transcript integrity before entering annotation-only feedback.
+                from .editorial import evidence_ledger
+                from .coverage import observed_reads
+                evidence_ledger(transcript)
+                observed_reads(transcript)
+                try:
+                    annotation=json.loads(final)
+                    entry, review=assemble_draft(annotation,manifest,transcript)
+                except ValueError as error:
+                    if not validation_repair or repair is not None or not eligible(error):
+                        raise
+                    import hashlib
+                    repair={'role':'validation', 'policy':POLICY,
+                        'refused_index':final_index, 'prefix_end':len(transcript),
+                        'refused_sha256':hashlib.sha256(final.encode()).hexdigest(),
+                        'error_type':type(error).__name__, 'error':str(error),
+                        'thread_id':thread, 'first_turn_id':turn,
+                        'repair_turn_id':None, 'selected_final_index':None, 'feedback_sent':False}
+                    transcript.append(repair)
+                    save()  # Persist refusal before attempting the feedback turn.
+                    feedback={'role':'user','content':repair_feedback(str(error))}
+                    transcript.append(feedback)
+                    save()
+                    next_turn=transport.request('turn/start',{'threadId':thread,'model':model,
+                        'effort':session.reasoning_effort, 'environments':[],
+                        'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
+                        'input':[{'type':'text','text':feedback['content']}]})['turn']['id']
+                    repair['feedback_sent']=True
+                    save()
+                    if not next_turn or next_turn == turn:
+                        raise ValueError('Repair requires a distinct turn on the same thread')
+                    turn=next_turn
+                    repair['repair_turn_id']=turn
+                    repair_start=len(transcript)
+                    final=None; final_index=None
+                    save()
+                    continue
+                if repair is not None:
+                    repair['selected_final_index']=final_index
+                    save()
                 break
             elif method=='error':
                 raise ValueError('Codex reported an authoring error')
         manifest=json.loads((session.runner.packet/'manifest.json').read_text())
-        annotation=json.loads(final)
-        entry, review=assemble_draft(annotation,manifest,transcript)
+        entry, review=verify_final(annotation,manifest,transcript,repair_metadata(transcript))
         return {'draft':entry,'review':review,'transcript':transcript,'published':False,
-                'model':MODEL,'reasoning_effort':session.reasoning_effort}
+                'model':model,'reasoning_effort':session.reasoning_effort}
 
 # Retrieval instructions are appended without changing historical saved prompts.
 RETRIEVAL_INSTRUCTIONS = "\nWhen ancestor_read is available, the initial ancestor catalog is navigation only. Page it with mode=catalog and next_offset (byte offsets). Use mode=search with file and/or symbol substrings to find entry and chapter targets; search offsets count grouped entry/chapter targets, newest first. Each target gives match_count and up to three examples. Search results are navigation only. Empty search results do not prove absence of discussion; graph coverage is reported. Read relevant entries or chapters with mode=content; cite that current tool call ID. Old session evidence IDs and catalog pages are not evidence. Follow truncated/next_offset for complete reads. The links field may name only ancestors whose prose you successfully read in this session. For schema 4 include a concise entry-level summary.\n"

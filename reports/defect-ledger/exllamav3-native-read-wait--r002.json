@@ -1,0 +1,343 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The existing native disk fallback can leave its GPU copy worker waiting after a read failure.",
+  "trigger": "A GPU-target mt_fread load has a copy worker waiting on an empty queue when a reader fails, with no subsequent successful enqueue.",
+  "expected_behavior": "The failure should wake the copy worker and allow the loader to report its I/O error.",
+  "actual_behavior": "The reader only sets load_failed; the wait predicate checks only queue nonemptiness and receives no failure notification, so thread joining may not complete.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Whole-parent search located the binding and get_tensor's native call. The task leaves this fallback unchanged while bypassing it on memory hits.",
+      "evidence": [
+        "call_9a1a495170904d0abe32364e6e581284",
+        "call_425fe7c0994d4fc484d68d12a6bd699d",
+        "call_4185fc103e5045a7934fd05e36521c1f"
+      ],
+      "limits": "No concurrent execution or injected I/O failure; CPU and python-loader paths do not use this copy-worker wait."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Reinspected the worker and its sole Python caller in get_tensor. Padding-only instances can now request target-device loading, reaching this eager branch when deferral is inactive.",
+      "evidence": [
+        "call_022d872dec544c3287c880e88aca2839",
+        "call_6f3da642e21c497fbd598fac540b3aec",
+        "call_b9d4afc9689c4633b37006de277945dc",
+        "call_e28e2c50c5ca47769d915d746fc9e7e0"
+      ],
+      "limits": "No injected read failure or concurrent execution."
+    }
+  ],
+  "defect_id": "exllamav3-native-read-wait",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "status": "source_supported",
+      "rationale": "Root-tree inspection"
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+      "run": ".teacher/runs/commit-000052-001",
+      "local_id": "inherited-native-read-wait",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-native-read-wait",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The existing native disk fallback can leave its GPU copy worker waiting after a read failure.",
+        "trigger": "A GPU-target mt_fread load has a copy worker waiting on an empty queue when a reader fails, with no subsequent successful enqueue.",
+        "expected_behavior": "The failure should wake the copy worker and allow the loader to report its I/O error.",
+        "actual_behavior": "The reader only sets load_failed; the wait predicate checks only queue nonemptiness and receives no failure notification, so thread joining may not complete.",
+        "locations": [
+          {
+            "commit": "d908052e96929a4f92e90256838f9cad9b72226d",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_read"
+          }
+        ],
+        "source_evidence": [
+          "call_425fe7c0994d4fc484d68d12a6bd699d",
+          "call_9a1a495170904d0abe32364e6e581284",
+          "call_1fd902f43176455fa3c932c1a7e4e4a5",
+          "call_4185fc103e5045a7934fd05e36521c1f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search located the binding and get_tensor's native call. The task leaves this fallback unchanged while bypassing it on memory hits.",
+            "evidence": [
+              "call_9a1a495170904d0abe32364e6e581284",
+              "call_425fe7c0994d4fc484d68d12a6bd699d",
+              "call_4185fc103e5045a7934fd05e36521c1f"
+            ],
+            "limits": "No concurrent execution or injected I/O failure; CPU and python-loader paths do not use this copy-worker wait."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+      "run": ".teacher/runs/commit-000053-001",
+      "local_id": "inherited-native-read-wait",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-native-read-wait",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited GPU disk-read failure synchronization risk is unchanged, although CPU-staged weights bypass its copy worker.",
+        "trigger": "A GPU-target mt_fread read fails while the copy worker waits on an empty queue, with no later enqueue.",
+        "expected_behavior": "Wake the worker and report the I/O failure.",
+        "actual_behavior": "The reader sets load_failed without notifying the condition variable; the wait predicate checks only queue nonemptiness, so joining the worker may not complete.",
+        "locations": [
+          {
+            "commit": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_read"
+          }
+        ],
+        "source_evidence": [
+          "call_70c40bedc6814f099d37680de0761581",
+          "call_fdda44a20da6404bb6e96f0e36b2e69b",
+          "call_4cb6eee5545044a3a1d378759e9a0dc4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the inherited implementation and its get_tensor caller after reading the ancestor observation. The task leaves native loading unchanged. CPU-staged ordinary weights avoid the copy worker; GPU-loaded biases and other direct GPU disk reads can still reach it.",
+            "evidence": [
+              "call_2cc7cd3dbdc847e08d74d21c6dc95ea7",
+              "call_70c40bedc6814f099d37680de0761581",
+              "call_fdda44a20da6404bb6e96f0e36b2e69b",
+              "call_4cb6eee5545044a3a1d378759e9a0dc4"
+            ],
+            "limits": "No concurrent execution or injected read failure."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "d6124d70584f83440fc8ad551f8f82bdf8479c64",
+      "run": ".teacher/runs/commit-000055-002",
+      "local_id": "inherited-native-read-wait",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-native-read-wait",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The native disk loader's failure-wakeup risk persists outside successful memory hits.",
+        "trigger": "A GPU-target native read fails while its copy worker waits on an empty queue, with no subsequent enqueue.",
+        "expected_behavior": "Wake the worker and report the I/O error.",
+        "actual_behavior": "The reader sets load_failed without notification; the wait predicate checks only queue nonemptiness, so joining the worker may not complete.",
+        "locations": [
+          {
+            "commit": "8e0634b6a595bc4aa6f5fbc24a1e59ffd7eaf7f6",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_read"
+          }
+        ],
+        "source_evidence": [
+          "call_6bd0ecc985094a4ba8b6439034615008"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent search locates the binding and SafetensorsCollection.get_tensor caller. Initial GPU disk loads and fallback reads remain exposed; CPU-staged weights and memory-hit reloads bypass the copy worker.",
+            "evidence": [
+              "call_5136d3cb035749c1ae40417a0b05bf39",
+              "call_66122601d0a74aeaba135e7ea2196762",
+              "call_a9f64886943e4d3bbd310920725078a5"
+            ],
+            "limits": "No injected I/O failure or concurrent execution."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+      "run": ".teacher/runs/commit-000266-001",
+      "local_id": "inherited-native-read-wait",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-native-read-wait",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The earlier slicing entry's native GPU read-failure synchronization concern remains unchanged.",
+        "trigger": "An eager GPU mt_fread read fails while the copy worker waits on an empty queue, without a later enqueue.",
+        "expected_behavior": "Wake the worker and report the failure.",
+        "actual_behavior": "Failure sets load_failed without notifying the condition variable, whose predicate tests only queue nonemptiness. Joining the worker may not complete.",
+        "locations": [
+          {
+            "commit": "ddf260767d5e31b04d1e0cd660ef4188071d809a",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_read"
+          }
+        ],
+        "source_evidence": [
+          "call_6f3da642e21c497fbd598fac540b3aec"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Reinspected the worker and its sole Python caller in get_tensor. Padding-only instances can now request target-device loading, reaching this eager branch when deferral is inactive.",
+            "evidence": [
+              "call_022d872dec544c3287c880e88aca2839",
+              "call_6f3da642e21c497fbd598fac540b3aec",
+              "call_b9d4afc9689c4633b37006de277945dc",
+              "call_e28e2c50c5ca47769d915d746fc9e7e0"
+            ],
+            "limits": "No injected read failure or concurrent execution."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000052-001__draft.json",
+      "sha256": "4cd98d09c70e8cb47850a4efb8868f17d62ad55bcea144eaead74d1504df9af3"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000052-001.md",
+      "sha256": "ec66afcf99abf7a42a1cb130af96c085270f4f5198c9cb47f4d9ed2e91ed9642"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000053-001__draft.json",
+      "sha256": "a4466e24a63ee3e5a76265c6d84ed99e2f327b46c7254622626ba48c397476d5"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000053-001.md",
+      "sha256": "ff3f96f491da995fe8888a05853ca038cb941a2fd481acd1962845073c9a0110"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000055-002__draft.json",
+      "sha256": "690929c0cad38c113ee2b4116d7c048f7010d9f1ac2134f4a52470b0bd73626e"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000055-002.md",
+      "sha256": "b25a2ab46c220f7c20e4d1ba1446e0e26e1e9c9b13185f031b255bc42da37f50"
+    },
+    {
+      "file": "evidence/commit266-001-draft.json",
+      "sha256": "fb9fd3e0767d97eeb1b521be857fb5b0ef2eabfdad144e679422360491120578"
+    },
+    {
+      "file": "evidence/commit266-001-transcript.json",
+      "sha256": "77d5993a682d49f456ede27d7c01ddece7d5b473198fc1e7713a1eecf3b0b4eb"
+    },
+    {
+      "file": "evidence/commit266-001-verdict.md",
+      "sha256": "6efb39fd685d32dccae7cd353f3e68ea4e5cb121f1a308d31d3cab3c0dbd375b"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000052-001/draft.json",
+      "source_id": ".teacher/runs/commit-000052-001/draft.json",
+      "content_sha256": "4cd98d09c70e8cb47850a4efb8868f17d62ad55bcea144eaead74d1504df9af3",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000052-001.md",
+      "source_id": "reviews/verdicts/commit-000052-001.md",
+      "content_sha256": "ec66afcf99abf7a42a1cb130af96c085270f4f5198c9cb47f4d9ed2e91ed9642",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000053-001/draft.json",
+      "source_id": ".teacher/runs/commit-000053-001/draft.json",
+      "content_sha256": "a4466e24a63ee3e5a76265c6d84ed99e2f327b46c7254622626ba48c397476d5",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000053-001.md",
+      "source_id": "reviews/verdicts/commit-000053-001.md",
+      "content_sha256": "ff3f96f491da995fe8888a05853ca038cb941a2fd481acd1962845073c9a0110",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000055-002/draft.json",
+      "source_id": ".teacher/runs/commit-000055-002/draft.json",
+      "content_sha256": "690929c0cad38c113ee2b4116d7c048f7010d9f1ac2134f4a52470b0bd73626e",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000055-002.md",
+      "source_id": "reviews/verdicts/commit-000055-002.md",
+      "content_sha256": "b25a2ab46c220f7c20e4d1ba1446e0e26e1e9c9b13185f031b255bc42da37f50",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "70e79cc880a40aa0aa7a41cc80c574622a658197",
+      "available_at": "2025-04-13T14:24:35+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+      "available_at": "2025-04-13T15:36:20+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "d6124d70584f83440fc8ad551f8f82bdf8479c64",
+      "available_at": "2025-04-13T15:36:44+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+      "available_at": "2025-06-14T15:21:35+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit266-001-draft.json",
+      "source_id": "evidence/commit266-001-draft.json",
+      "content_sha256": "fb9fd3e0767d97eeb1b521be857fb5b0ef2eabfdad144e679422360491120578",
+      "available_at": "2026-11-17T07:35:15.412660+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit266-001-transcript.json",
+      "source_id": "evidence/commit266-001-transcript.json",
+      "content_sha256": "77d5993a682d49f456ede27d7c01ddece7d5b473198fc1e7713a1eecf3b0b4eb",
+      "available_at": "2026-11-17T07:35:15.412660+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit266-001-verdict.md",
+      "source_id": "evidence/commit266-001-verdict.md",
+      "content_sha256": "6efb39fd685d32dccae7cd353f3e68ea4e5cb121f1a308d31d3cab3c0dbd375b",
+      "available_at": "2026-11-17T07:35:15.412660+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "70e79cc880a40aa0aa7a41cc80c574622a658197",
+      "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+      "d6124d70584f83440fc8ad551f8f82bdf8479c64",
+      "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-17T07:35:15.412660+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

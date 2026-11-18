@@ -52,7 +52,7 @@ The real-packet audit checks all five graph tools for entries 9 and 10, plus mut
 
 ## Codex Astra with task-specific reasoning
 
-The provider is pinned to `gpt-6-astra` and Codex CLI 0.167.0. Root and chapter sessions use high reasoning; ordinary commit sessions retain medium reasoning. The [restricted model profile](../schema/codex-teacher-model.json) keeps that model identity but disables native patching, multi-agent and experimental tools, and uses direct dynamic tools instead of Code Mode. Do not remove that profile and rely only on feature flags. The local wire test caught the extra native tools that would otherwise be exposed.
+The walk provider is pinned to `gpt-6.1-sol` (medium) and Codex CLI 0.167.0. Root and chapter sessions use high reasoning; ordinary commit sessions retain medium reasoning. The [restricted model profile](../schema/codex-teacher-model.json) is cloned with the selected model identity and disables native patching, multi-agent and experimental tools, and uses direct dynamic tools instead of Code Mode. Do not remove that profile and rely only on feature flags. The local wire test caught the extra native tools that would otherwise be exposed.
 
 `codex_transport.py` launches a fresh Bubblewrap-isolated app-server with temporary state. It copies the selected Codex auth file into a private temporary directory and removes the copy on exit. It does not modify the original login or user configuration. The provider process has network access for inference; it has no repository, packet, old thread, review or credential directory mounted. Only the copied auth file is available to the trusted provider. The historical tool workers have separate networkless namespaces and no credentials.
 
@@ -191,3 +191,27 @@ approval, preserves any advancement pause and appends follow-ups to
 replacement selection still belong to the author. Rejections are not processed
 by this approval command. Neither command changes teacher instructions, evidence
 rules or the session model. Discussion-history caching is a separate future change.
+
+Sol adoption preserves historical Astra/medium approvals. Approval requires matching server-confirmed model/effort when recorded; legacy Astra transcripts predating runtime recording remain valid. Sol requires recorded runtime. Trial-only runs and paths under `.teacher/trials` cannot be approved. The original Astra catalog is copied byte-for-byte for Astra; Sol uses the trialled clone with only slug/display name changed.
+
+### One validator repair
+
+After implementation acceptance, a first final refused by JSON parsing or ordinary
+annotation validation may receive one additional turn on the same server thread.
+Its feedback under `validator-keep-rest-v2` is the exact validator error, one
+newline, and this fixed sentence: "Correct only the issue named in the validator
+message and return the rest of the annotation unchanged." No other text is added.
+Historical `validator-only-v1` runs retain their verbatim-error-only replay path;
+provenance binds the policy and the hash of the complete feedback. The teacher may
+read more evidence and returns a complete annotation; both turns share the tool
+budget. A second refusal, internal integrity error or transport failure is terminal.
+`author(..., validation_repair=False)` preserves the pre-repair rule for runs
+authorized under that rule, including 255/004.
+
+The refused final, error, transcript prefix and selected final remain bound in the
+transcript and provenance. Approval reproduces the first refusal against its
+original evidence prefix, then validates the selected final against all evidence
+and checks the rendered draft. Repaired runs require full review and requests
+disclose `validation_repair: true`, the exact error, hashes and tool counts by turn.
+Flag the first live repaired request explicitly for reviewer comparison. This is
+validator feedback, not reviewer assistance; ancestor-only scope is unchanged.

@@ -103,6 +103,20 @@ in the inspected code still prevents or guarantees it. If nothing does and the s
 that reaches the unguarded case, report it under findings as suspected, with its limits; do not leave it only
 under uncertainty. If you could not establish a path that reaches it, say what you searched.'''
 
+GUIDANCE_11_ADDITION = '''When the task adds or changes a model architecture, or code that names checkpoint tensors or depends on their
+shapes or orientation, and tensor headers for reference checkpoints are listed in the evidence index, read the
+headers of at least one reference checkpoint for each distinct configuration. Say which tensor names and shapes
+the changed code relies on and whether each exists with that shape, and name any stored tensors the code never
+reads. Do not describe tensor layout as unestablished while headers are available and unread.'''
+
+GUIDANCE_12_ADDITION = '''When the task adds or changes a model architecture, or code that names checkpoint tensors or depends on their
+shapes or orientation, and tensor headers for reference checkpoints are listed in the evidence index, read the
+headers of at least one reference checkpoint for each distinct configuration. Say which tensor names and shapes
+the changed code relies on and whether each exists with that shape, and name any stored tensors the code never
+reads. Check every tensor name the code requests, including alternate and optional names, against the names in
+the header, and say which are absent and which path the code then takes. Do not describe tensor layout as
+unestablished while headers are available and unread.'''
+
 class FreshSession:
     def __init__(self, packet):
         self.runner = Runner(packet)
@@ -158,7 +172,11 @@ class FreshSession:
         additional_guidance = GUIDANCE_7 if manifest.get('guidance_version',1)>=7 else GUIDANCE_6 if manifest.get('guidance_version',1)==6 else ''
         if manifest.get('guidance_version',1)>=8:
             additional_guidance += '\n\n'+GUIDANCE_8_ADDITION
-        if manifest.get('guidance_version',1)>=10:
+        if manifest.get('guidance_version',1)==12:
+            additional_guidance += '\n\n'+GUIDANCE_9_ADDITION+'\n\n'+GUIDANCE_12_ADDITION
+        elif manifest.get('guidance_version',1)==11:
+            additional_guidance += '\n\n'+GUIDANCE_9_ADDITION+'\n\n'+GUIDANCE_11_ADDITION
+        elif manifest.get('guidance_version',1)>=10:
             additional_guidance += '\n\n'+GUIDANCE_10_ADDITION
         elif manifest.get('guidance_version',1)>=9:
             additional_guidance += '\n\n'+GUIDANCE_9_ADDITION

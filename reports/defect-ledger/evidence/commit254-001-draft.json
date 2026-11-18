@@ -1,0 +1,311 @@
+{
+  "schema_version": 5,
+  "sha": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+  "parent_shas": [
+    "4ab2b253533b19e461a01ce7b74957ae9834d557"
+  ],
+  "cutoff_date": "2025-06-07T05:49:15+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Adds a standalone utility to reconstruct model.safetensors.index.json from existing weight files, addressing the missing-index use case named in the commit message.",
+        "basis": "source",
+        "evidence": [
+          "call_d3c10d6af7c447b9ac8476d67277a752"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Reusing SafetensorsCollection avoids loading tensor payloads: its constructor scans headers and supplies the tensor-to-file map and byte offsets needed by the exporter.",
+        "basis": "source",
+        "evidence": [
+          "call_d3c10d6af7c447b9ac8476d67277a752",
+          "call_515426ffe3764d6f8bb7bf80b6798da0"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The utility creates or overwrites the index without rewriting weights. Existing ExLlamaV3 loading still scans safetensors files directly rather than reading this index.",
+        "basis": "source",
+        "evidence": [
+          "call_d3c10d6af7c447b9ac8476d67277a752",
+          "call_515426ffe3764d6f8bb7bf80b6798da0",
+          "call_f946a6ebbf2343aa8022f817fafd9de8",
+          "call_dba10fe2bc22446dbfbac38808c18216"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root loading-tokenization entry was read. It establishes the inherited direct-header scanning design and notes limited header validation. The task leaves that parser unchanged and does not add payload-bound or overlapping-offset validation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_470a66c0fdfb45fa998bfaaa2d9e8314"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d concerns native file-opening failures and subsequently GLM4 inference; issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension import failure. Their relationship here is only inferred from shared loader/configuration paths; neither establishes missing indexes as its cause or this utility as its fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_6c041fb37a174e948464c606e0f0bb74",
+          "call_331d1123b3384e70a5226072bbdf533a",
+          "call_ff19b0bb20d746d58702e432ef0135c7",
+          "call_d3c10d6af7c447b9ac8476d67277a752"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository utility execution, real checkpoint export or external index-consumer test was performed. The successful Python check transcribes dictionary and offset arithmetic only.",
+      "Header parsing inherits limited validation; successful index generation does not establish that tensor payloads are readable or valid.",
+      "External consumer compatibility, filesystem failure recovery and atomicity were not tested."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "safetensors-index",
+        "title": "Reconstructing an index from existing weight headers",
+        "claims": [
+          {
+            "text": "Run util/add_safetensors_index.py with required -m/--model_dir. With zero files it returns without writing; with one file it also returns unless -f/--force is supplied. Force overrides only the single-file skip, not the zero-file case.",
+            "basis": "source",
+            "evidence": [
+              "call_d3c10d6af7c447b9ac8476d67277a752"
+            ]
+          },
+          {
+            "text": "SafetensorsCollection scans only the directory\u2019s *.safetensors matches. It excludes __metadata__ and its synthetic _header_offset from tensor_file_map, and later scanned files replace duplicate tensor names. The exporter therefore indexes the collection\u2019s selected tensor entries, not every occurrence of a duplicate.",
+            "basis": "source",
+            "evidence": [
+              "call_515426ffe3764d6f8bb7bf80b6798da0",
+              "call_d3c10d6af7c447b9ac8476d67277a752"
+            ]
+          },
+          {
+            "text": "For each selected tensor, main records the shard basename in weight_map and adds data_offsets[1] minus data_offsets[0] to metadata.total_size. This is selected tensor payload bytes, excluding header bytes, rather than total filesystem size. The JSON is indented by four spaces and written directly into the supplied model directory; an existing index is overwritten without requiring force.",
+            "basis": "source",
+            "evidence": [
+              "call_d3c10d6af7c447b9ac8476d67277a752",
+              "call_515426ffe3764d6f8bb7bf80b6798da0"
+            ]
+          },
+          {
+            "text": "The output schema and single-shard default follow compile_model\u2019s existing index writer. Unlike compilation, the utility reconstructs metadata from existing headers rather than materializing and saving tensors. Existing collection callers in compile_model, Config.__init__ and VariantSafetensorsCollection prepare directory paths without a mandatory pre-scan existence guard; the utility similarly relies on scanning, then handles an empty collection explicitly. It never calls get_tensor, so compile_model\u2019s explicit close after payload reads is unnecessary for this header-only path.",
+            "basis": "source",
+            "evidence": [
+              "call_bfe3eb0d99a645a19c09e99ef3ede881",
+              "call_db8ba62abb934aafaea0147e18cf0c81",
+              "call_515426ffe3764d6f8bb7bf80b6798da0",
+              "call_59ad8b53ceb6432fa07df43eb4c8efe8",
+              "call_d3c10d6af7c447b9ac8476d67277a752"
+            ]
+          },
+          {
+            "text": "A bounded standard-library transcription mapped two synthetic tensors to shard basenames and summed 8 and 12 payload bytes to 20. It also demonstrated that the loader\u2019s normalized projector name can be absent from the original header. This checks the exporter\u2019s arithmetic and naming consequence, not repository execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_384d500650b343df9d345a6e10144f6e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "normalized-index-key",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The exporter can publish a normalized tensor name that does not exist in the unchanged shard header.",
+        "trigger": "A scanned shard contains multi_modal_projector.mm_input_projection_weight, and export proceeds with multiple shards or --force.",
+        "expected_behavior": "An index intended to identify stored tensors should preserve the name present in the referenced shard.",
+        "actual_behavior": "read_header renames that key to multi_modal_projector.mm_input_projection.weight in memory; main exports the renamed key without rewriting the shard. A consumer requiring exact stored names would not find it. No external consumer failure was executed.",
+        "locations": [
+          {
+            "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+            "path": "util/add_safetensors_index.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "read_header"
+          }
+        ],
+        "source_evidence": [
+          "call_d3c10d6af7c447b9ac8476d67277a752",
+          "call_515426ffe3764d6f8bb7bf80b6798da0",
+          "call_fb359c8f4c7648c091cdf69d3c19923b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced normalization through collection construction into the new exporter. Whole-parent search found no existing references to add_safetensors_index; the task supplies its direct CLI call to main. The observation applies to exports containing the alias, not every model or existing loading workflow.",
+            "evidence": [
+              "call_d3c10d6af7c447b9ac8476d67277a752",
+              "call_515426ffe3764d6f8bb7bf80b6798da0",
+              "call_fb359c8f4c7648c091cdf69d3c19923b"
+            ],
+            "limits": "External reader behavior was not executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the inspected rename and checked that the exported name is absent from a synthetic raw header.",
+            "evidence": [
+              "call_384d500650b343df9d345a6e10144f6e"
+            ],
+            "limits": "Synthetic dictionary check, not a real checkpoint or loader run."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a header-only CLI utility for rebuilding safetensors indexes, with single-file opt-in and overwrite behavior; inherited tensor-name normalization creates a potential external compatibility mismatch."
+  },
+  "evidence": {
+    "call_d3c10d6af7c447b9ac8476d67277a752": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "offset": 235,
+        "max_bytes": 2007
+      },
+      "result_sha256": "3ebe6f065a9f79b919d2ecd32881bd24d55dc224b9bcea03a097d78ebcf552f1"
+    },
+    "call_515426ffe3764d6f8bb7bf80b6798da0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "f1bdf9c9e1e2206ea1d10b041e4088bb0f702249599e3f449d6b6cc589d3ca7d"
+    },
+    "call_59ad8b53ceb6432fa07df43eb4c8efe8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "query": "SafetensorsCollection(",
+        "limit": 100
+      },
+      "result_sha256": "9e074450a5762d87709478d3d2577a3450bd96717ff1c1c5c32c7a8e388edf39"
+    },
+    "call_bfe3eb0d99a645a19c09e99ef3ede881": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "881cbc5859b7e835e6f47a900b4319bb17bd528d06753e59a61094e1af2f39e6"
+    },
+    "call_db8ba62abb934aafaea0147e18cf0c81": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 4800
+      },
+      "result_sha256": "c81ceac48b3dee174dc8a5d8dbb7fbd668f6904d82234d228cef1db6e58d3be6"
+    },
+    "call_bec55fa05b524277887d57f5dcde5224": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/loader/safetensors.py",
+        "limit": 6,
+        "max_bytes": 6000
+      },
+      "result_sha256": "e14e4709c38db0bc0d0df92034e0d708402bab368f5f55e385fd1225f5e07e2b",
+      "catalog_only": true
+    },
+    "call_a26b5d263c5a43ca8a41e644e9f27185": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/conversion/compile.py",
+        "limit": 3,
+        "max_bytes": 4000
+      },
+      "result_sha256": "9a53a62b92f55c93dc3a8edcdc72d224580ca92f499d7d6ef9864a9c6702c698",
+      "catalog_only": true
+    },
+    "call_470a66c0fdfb45fa998bfaaa2d9e8314": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    },
+    "call_dba10fe2bc22446dbfbac38808c18216": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "query": "weight_map",
+        "limit": 40
+      },
+      "result_sha256": "a42ef749719c6887dfedc7b06200dfed8c488949b9a5ce46f33116a5ac8fa382"
+    },
+    "call_6c041fb37a174e948464c606e0f0bb74": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "751591787c5740224346ca1b158f19fe66cb50b888c88e18fb9f8cf27fc7d144"
+    },
+    "call_331d1123b3384e70a5226072bbdf533a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 32000
+      },
+      "result_sha256": "f0e4b9469ebd574e48c3e17474adc02f505b28b0056ca4b432c612295d4eae89"
+    },
+    "call_ff19b0bb20d746d58702e432ef0135c7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 20000
+      },
+      "result_sha256": "b4326f2f0a8baabcd83545eb76da890bd63a46322ad389ee164ddbeb037eac92"
+    },
+    "call_fb359c8f4c7648c091cdf69d3c19923b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "query": "add_safetensors_index",
+        "limit": 20
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_f946a6ebbf2343aa8022f817fafd9de8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "query": "model.safetensors.index.json",
+        "limit": 30
+      },
+      "result_sha256": "a82b34143444979257cbc433121b5dce7a5865e51a6154d35a51c76a5d409733"
+    },
+    "call_384d500650b343df9d345a6e10144f6e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import os,json\nheaders={'/m/a.safetensors':{'x':{'data_offsets':[0,8]}},'/m/b.safetensors':{'y':{'data_offsets':[0,12]}}}\nm={'x':'/m/a.safetensors','y':'/m/b.safetensors'}\nout={'metadata':{'total_size':sum(headers[v][k]['data_offsets'][1]-headers[v][k]['data_offsets'][0] for k,v in m.items())},'weight_map':{k:os.path.basename(v) for k,v in m.items()}}\nassert out['metadata']['total_size']==20\nprint(json.dumps(out))\nold='multi_modal_projector.mm_input_projection_weight'; new='multi_modal_projector.mm_input_projection.weight'\nraw={old:{'data_offsets':[0,8]}}\nnormalized={new:raw[old]}\nprint(json.dumps({'raw_key':old,'exported_key':next(iter(normalized)),'exported_key_exists_in_raw_header':new in raw}))"
+        ]
+      },
+      "result_sha256": "98b5bf7bf7fa336ead178579b51d2734efb893acc47a889c13c026385240606b"
+    }
+  }
+}

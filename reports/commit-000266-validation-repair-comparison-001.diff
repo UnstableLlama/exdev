@@ -1,0 +1,376 @@
+--- refused-transcript-index-74
++++ selected-transcript-index-79
+@@ -3,38 +3,39 @@
+   "type": "bugfix",
+   "problem": [
+     {
+-      "text": "The parent treats any difference between local and full feature counts as slicing, including local dimensions enlarged by padding. That classification controls loading device, padding and deferred-load eligibility.",
++      "text": "Dimension inequality classified both reductions and padding-only enlargement as slicing, selecting CPU staging and disabling deferred loading for both.",
+       "basis": "source",
+       "evidence": [
++        "call_e28e2c50c5ca47769d915d746fc9e7e0",
+         "call_b9d4afc9689c4633b37006de277945dc"
+       ]
+     }
+   ],
+   "reasoning": [
+     {
+-      "text": "Replacing inequality with local < full distinguishes reduction from enlargement. However, LinearFP16's axis-selection conditions instead become stored < requested, disabling selection when the stored full axis is larger than the requested slice.",
+-      "basis": "source",
+-      "evidence": [
+-        "call_e28e2c50c5ca47769d915d746fc9e7e0",
+-        "call_5173440a24814bf58e41c1556bfdf3cf"
+-      ]
+-    }
+-  ],
+-  "impact": [
+-    {
+-      "text": "Padding-only Linear instances can now use target-device loading with loader-side padding rather than CPU-staged slicing. Genuine slices remain CPU-staged, but the changed inner predicates no longer crop their full weights. Fused-weight loading also encounters a newly invalid comparison against omitted full dimensions.",
+-      "basis": "source",
+-      "evidence": [
+-        "call_b9d4afc9689c4633b37006de277945dc",
++      "text": "The apparent goal is to reserve slicing and independent storage for reductions while leaving enlargement to loader-side padding. However, the inner cropping comparisons change in the opposite direction from that required for reductions.",
++      "basis": "inference",
++      "evidence": [
+         "call_e28e2c50c5ca47769d915d746fc9e7e0",
+         "call_5173440a24814bf58e41c1556bfdf3cf",
+         "call_4dd28603dbf245bca3c1438dec06d487"
+       ]
+     }
+   ],
++  "impact": [
++    {
++      "text": "Padding-only instances can use target-device padded loading and become eligible for deferred loading. Genuine slices retain full matrices, and the existing fused-weight caller encounters an integer-versus-None comparison.",
++      "basis": "source",
++      "evidence": [
++        "call_b9d4afc9689c4633b37006de277945dc",
++        "call_e28e2c50c5ca47769d915d746fc9e7e0",
++        "call_5173440a24814bf58e41c1556bfdf3cf"
++      ]
++    }
++  ],
+   "source_notes": [
+     {
+-      "text": "Read the original quantized-inference chapter, the FP16-slicing entry and the deferred-loader entry. They establish the dense backend, CPU staging with independent slice storage, and the requirement that deferred constructors not consume unfinished tensors.",
++      "text": "Read the initial quantized-inference chapter, the FP16-slicing entry and the deferred-loader entry. They establish the dense backend, CPU-staged slicing with independent storage, and the requirement not to consume unfinished deferred tensors.",
+       "basis": "ancestor",
+       "evidence": [
+         "call_c6dec29e78dc403092636be72e04d9c2",
+@@ -43,7 +44,7 @@
+       ]
+     },
+     {
+-      "text": "The slicing entry's default-None staging problem is already removed in the parent: Linear normalizes omitted full dimensions to padded dimensions. Its padding-before-slicing problem is also changed: the current sliced branch requests no loader padding. Neither historical observation establishes that the task's new inner comparisons work.",
++      "text": "The slicing entry's default-None staging issue is already removed in the parent: Linear normalizes full dimensions. Its padding-before-slicing issue has also changed: the current sliced branch requests no loader padding. These historical observations do not establish that the task's new inner comparisons work.",
+       "basis": "source",
+       "evidence": [
+         "call_b9d4afc9689c4633b37006de277945dc",
+@@ -51,7 +52,7 @@
+       ]
+     },
+     {
+-      "text": "Issue #38, “Error converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,” reports loader padding conflicting with split wide layers; #8, “RuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,” reports vocabulary padding trouble. Their relevance here is inferred from the concrete padding/slicing overlap and linear.py traceback paths, not an explicit link to this task or validation of it.",
++      "text": "Issue #38, “Error converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,” reports padding conflicting with split wide layers. Issue #8, “RuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,” concerns vocabulary padding. Their relevance is inferred from padding/slicing overlap and linear.py traceback paths; neither explicitly links to or validates this task.",
+       "basis": "inference",
+       "evidence": [
+         "call_df53e85fa3d5420d8bd8669880d58812",
+@@ -60,7 +61,7 @@
+       ]
+     },
+     {
+-      "text": "Other discussions overlap inspected files without establishing this change's motivation: #11, “AssertionError: bias is wrong datatype,” concerns bias conversion; #16, “RuntimeError: CUDA error: invalid configuration argument,” is ultimately framed as tokenizer truncation; #34, “torch._C._LinAlgError on last layer of quant,” and #42, “converting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,” discuss invalid numerical states. These task relationships are inference from shared linear.py paths, not evidence that the comparison edits address those failures.",
++      "text": "Other discussions share inspected paths but do not establish this task's motivation: #11, “AssertionError: bias is wrong datatype,” concerns bias conversion; #16, “RuntimeError: CUDA error: invalid configuration argument,” is ultimately framed as tokenizer truncation; #34, “torch._C._LinAlgError on last layer of quant,” and #42, “converting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,” discuss invalid numerical states. Their task relationships are inference from shared linear.py paths.",
+       "basis": "inference",
+       "evidence": [
+         "call_abe1a687845c4d3faf51b1a57b34fcd1",
+@@ -71,7 +72,7 @@
+       ]
+     },
+     {
+-      "text": "Issue #43, “Error converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,” is framed as invalid forward states preventing calibration. Issue #33, “Error converting model,” first establishes an open-file-limit failure and later tracks GLM4 repeated-token output. Their relationships to this task are only inferred file overlaps with linear.py and the inspected loader, respectively.",
++      "text": "Issue #43, “Error converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,” is framed as invalid forward states preventing calibration. Issue #33, “Error converting model,” initially establishes an open-file-limit failure and later tracks GLM4 repeated-token output. Connections to this task are inferred file overlaps with linear.py and the inspected loader, not established causes.",
+       "basis": "inference",
+       "evidence": [
+         "call_56c36deca1704a2d9c1b8c53f63ef0b5",
+@@ -82,9 +83,9 @@
+     }
+   ],
+   "limitations": [
+-    "No repository tensor operation, model loading, native extension or GPU kernel was executed. The Python check transcribes predicates and one-dimensional slicing only.",
+-    "Loading speed, memory savings and checkpoint-level compatibility were not measured.",
+-    "Caller coverage combines whole-parent literal searches and AST inspection of direct named calls; dynamic or external callers are not excluded."
++    "No repository constructor, PyTorch operation, native loader or GPU kernel was executed. The scalar check models comparisons, indexing and alignment only.",
++    "Loading speed, memory savings and end-to-end checkpoint compatibility were not measured.",
++    "Caller searches cover the parent repository; dynamic construction and external callers remain unestablished."
+   ],
+   "links": [
+     "543c4b27714c6a677a6e714c452d62532f634cff",
+@@ -97,7 +98,7 @@
+       "title": "Distinguishing feature slicing from padding",
+       "claims": [
+         {
+-          "text": "Linear rounds each requested axis upward to a pad_to multiple, default 128, and retains the unpadded counts. Omitted full dimensions become those padded counts; omitted starting offsets become zero. Thus the changed predicate compares prepared local storage dimensions, not the original unpadded requests.",
++          "text": "Linear rounds requested axes upward to a pad_to multiple, default 128, while retaining unpadded counts. Omitted full dimensions become the padded dimensions and omitted offsets become zero. The changed is_sliced predicate therefore compares prepared storage dimensions, not original unpadded requests.",
+           "basis": "source",
+           "evidence": [
+             "call_b9d4afc9689c4633b37006de277945dc",
+@@ -105,7 +106,7 @@
+           ]
+         },
+         {
+-          "text": "The is_sliced readers are confined to Linear. A true value loads ordinary weights and bias on CPU without padding, then transfers the inner tensors through unswap_cpu; it also rejects deferred loading. A false value requests padded weights and bias on the target device and permits the superclass's deferral decision. These are coupled consequences of the classification change, not independent optimizations.",
++          "text": "All parent-tree is_sliced readers are in Linear. True selects CPU loading without padding, followed by unswap_cpu, and rejects deferred loading. False requests padded weight and bias on the target device and permits the superclass's deferral decision. These are coupled consequences of one classification change.",
+           "basis": "source",
+           "evidence": [
+             "call_ccb92c321fb54402934a395891df748b",
+@@ -113,17 +114,16 @@
+           ]
+         },
+         {
+-          "text": "SafetensorsCollection's file-backed paths transpose weights when requested and copy them into zero-filled padded destinations. Deferred loading returns destination storage before populating it. Restricting LinearFP16's extra copy to local < full avoids that copy for padding-only enlargement; this matters because copying an unfinished deferred tensor would consume values prematurely.",
++          "text": "File-backed SafetensorsCollection paths transpose when requested and populate zero-filled padded destinations. Deferred loading returns destinations before populating them. Restricting LinearFP16's independent-storage copy to reductions avoids copying unfinished values for padding-only enlargement.",
+           "basis": "source",
+           "evidence": [
+             "call_4dd28603dbf245bca3c1438dec06d487",
+-            "call_5173440a24814bf58e41c1556bfdf3cf",
+-            "call_0237d2a1be5f479792b457ccce219ebf",
+-            "call_b9d4afc9689c4633b37006de277945dc"
+-          ]
+-        },
+-        {
+-          "text": "The inner backend stores input-by-output weights. Output-axis selection also selects bias; input-axis selection does not. Forward allocates an output with out_features columns and multiplies by the stored weight, while export transposes that weight back. Consequently, retaining a full matrix is not repaired by downstream reshaping or export.",
++            "call_b9d4afc9689c4633b37006de277945dc",
++            "call_5173440a24814bf58e41c1556bfdf3cf"
++          ]
++        },
++        {
++          "text": "LinearFP16 stores input-by-output weights. Output slicing also slices bias; input slicing leaves bias unchanged. Forward allocates out_features columns and multiplies by the stored matrix; export transposes that matrix back. Neither consumer repairs an omitted crop.",
+           "basis": "source",
+           "evidence": [
+             "call_4dd28603dbf245bca3c1438dec06d487",
+@@ -131,41 +131,38 @@
+           ]
+         },
+         {
+-          "text": "Whole-parent searches find two direct LinearFP16 constructions, both in Linear.load_fp16. The ordinary branch supplies numeric full sizes and offsets; the fused frange branch supplies neither. GatedMLP explicitly supplies full dimensions for gate, up and down projections, selecting output slices for gate/up and input slices for down. Those constructions remain unchanged.",
++          "text": "Whole-parent searches find two direct LinearFP16 constructions, both in Linear.load_fp16. The ordinary branch supplies numeric full sizes and offsets. The fused frange branch supplies neither full sizes nor offsets, leaving the constructor's None defaults unchanged.",
+           "basis": "source",
+           "evidence": [
+             "call_76def9ce6afc45548d35e176e9c03c15",
+-            "call_5167fa655e5b4654a3e1c6750598e318",
+-            "call_352e311fc9554f0cb67612f85da2d9b6",
+-            "call_2b879a2aaa8b4066a8174130349f2214",
+-            "call_b9d4afc9689c4633b37006de277945dc"
+-          ]
+-        },
+-        {
+-          "text": "Inspection of every direct named Linear construction found default full dimensions in attention, ordinary MLP, sparse-MLP routing/experts, model output heads and the Gemma3/Mistral3 projection layers. Those retain equal local/full metadata. GatedMLP is the explicit-full-size exception: padding-only dimensions benefit from the new classification, while genuinely reduced dimensions reach the broken inner slicing conditions. Attention's fused QKV and GatedMLP's fused gate/up can instead reach the unchanged frange caller that omits full sizes.",
++            "call_b9d4afc9689c4633b37006de277945dc",
++            "call_4dd28603dbf245bca3c1438dec06d487"
++          ]
++        },
++        {
++          "text": "Inspected direct Linear constructions in attention, ordinary MLP, sparse-MLP routing/experts, model output heads and Gemma3/Mistral3 projections omit full dimensions and retain equal local/full metadata. GatedMLP explicitly supplies full dimensions: padding-only instances benefit from the classification change, but reduced slices reach the broken crop conditions. Attention prepares fused QKV ranges; GatedMLP prepares fused gate/up ranges, providing conditional routes to the caller that omits full sizes.",
+           "basis": "source",
+           "evidence": [
+             "call_a2f10b131f2247ac97e1731458864921",
+-            "call_35c86491a0924eb99a1e8453a181c1be",
++            "call_a45c8463207e448ba11277f310b54d56",
+             "call_c28c7b1161134732aae1fdb94ac7fd31",
+             "call_2b879a2aaa8b4066a8174130349f2214"
+           ]
+         },
+         {
+-          "text": "A scalar transcription checked equal, reduced and enlarged axes. For full=512, requested=256 and offset=128, the parent crop retains 256 indices while the task predicate retains all 512. For full=510 and local=512, is_sliced changes from true to false. The same check confirms 510 rounds to 512 at alignment 128 and that integer < None raises TypeError.",
++          "text": "A scalar transcription checked equal, reduced and enlarged axes. With full=512, local=256 and offset=128, the parent selects 256 indices while the task retains all 512. With full=510 and local=512, is_sliced changes from true to false. It also confirmed that alignment 128 rounds 510 to 512 and integer < None raises TypeError.",
+           "basis": "execution",
+           "evidence": [
+             "call_0d847360d8e24a99930d953d19d45767"
+           ]
+         },
+         {
+-          "text": "The apparent design goal is to reserve CPU slicing and independent storage for reductions while delegating enlargement to the loader. A compatible axis-selection condition would recognize stored full axes larger than the requested local axes, and retain handling for omitted full dimensions; the task's conditions do not do so.",
++          "text": "A compatible crop condition would recognize stored full axes larger than requested local axes and preserve handling of omitted full dimensions. This is a source-derived alternative, not a tested replacement.",
+           "basis": "inference",
+           "evidence": [
+-            "call_e28e2c50c5ca47769d915d746fc9e7e0",
+             "call_5173440a24814bf58e41c1556bfdf3cf",
+-            "call_b9d4afc9689c4633b37006de277945dc",
+-            "call_4dd28603dbf245bca3c1438dec06d487"
++            "call_4dd28603dbf245bca3c1438dec06d487",
++            "call_b9d4afc9689c4633b37006de277945dc"
+           ]
+         }
+       ]
+@@ -178,9 +175,9 @@
+       "status": "suspected",
+       "classification": "defect",
+       "description": "The new inner axis predicates skip genuine reductions of full FP16 weights.",
+-      "trigger": "Ordinary FP16 loading receives a full weight whose input or output axis exceeds the requested local axis, such as a split GatedMLP projection loaded through its alternate full-weight key.",
+-      "expected_behavior": "Crop the full axis at the supplied offset, crop output bias when applicable, and retain only the local matrix.",
+-      "actual_behavior": "stored < requested is false for a reduction. The subsequent copy preserves the full shape rather than selecting a region. Gate/up outputs disagree with allocated out_features, and down weights disagree with the local input width; no later crop repairs either case.",
++      "trigger": "Ordinary FP16 loading receives a full weight with an axis larger than its requested local axis, including split GatedMLP projections loaded through alternate full-weight keys.",
++      "expected_behavior": "Crop at the supplied offset, crop output bias when applicable, and retain the local matrix.",
++      "actual_behavior": "stored < requested is false for reductions. The subsequent copy preserves the full shape. Gate/up matrices disagree with allocated output width; down matrices disagree with local input width. No downstream crop repairs them.",
+       "locations": [
+         {
+           "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+@@ -191,38 +188,38 @@
+       "source_evidence": [
+         "call_5173440a24814bf58e41c1556bfdf3cf",
+         "call_4dd28603dbf245bca3c1438dec06d487",
+-        "call_2b879a2aaa8b4066a8174130349f2214",
+-        "call_b9d4afc9689c4633b37006de277945dc"
++        "call_2b879a2aaa8b4066a8174130349f2214"
+       ],
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Whole-parent constructor searches find Linear.load_fp16 as the direct constructor caller. GatedMLP supplies the relevant full dimensions and offsets; its load and forward paths consume those projections. The observation is conditional on loading full FP16 tensors, not already-local tensors or EXL3 storage.",
++          "description": "Inspected both direct constructor callers and GatedMLP's full-size/offset preparation. Reach is conditional on loading full FP16 weights rather than already-local or EXL3 weights.",
+           "evidence": [
+             "call_76def9ce6afc45548d35e176e9c03c15",
++            "call_b9d4afc9689c4633b37006de277945dc",
+             "call_2b879a2aaa8b4066a8174130349f2214"
+           ],
+-          "limits": "No PyTorch multiplication or model conversion ran."
++          "limits": "No tensor multiplication was executed."
+         },
+         {
+           "method": "scalar_transcription",
+-          "description": "Modeled the inspected old/new predicates and list slicing: a 512-element full axis requested as 256 elements at offset 128 remains length 512 under the task condition.",
++          "description": "Modeled the changed axis-selection predicates with Python lists; a 512-to-256 reduction retained 512 indices.",
+           "evidence": [
+             "call_0d847360d8e24a99930d953d19d45767"
+           ],
+-          "limits": "Integer indexing model, not tensor-library execution."
+-        }
+-      ]
+-    },
+-    {
+-      "id": "optional-full-dimensions-typeerror",
++          "limits": "Indexing model, not repository execution."
++        }
++      ]
++    },
++    {
++      "id": "none-full-dimensions",
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "defect",
+-      "description": "Replacing the final inequality with ordering makes the existing fused-weight caller incompatible with the constructor's None defaults.",
+-      "trigger": "Linear.load_fp16 selects its fused frange branch and constructs LinearFP16 without full_in_features or full_out_features.",
+-      "expected_behavior": "Accept the already selected fused-weight region and complete construction.",
+-      "actual_behavior": "The axis-equality tests short-circuit, but the final in_features < full_in_features compares an integer with None and raises TypeError. No default normalization occurs inside LinearFP16.",
++      "description": "The existing fused-weight caller is incompatible with the new ordered comparison.",
++      "trigger": "Linear.load_fp16 selects its fused frange fallback and constructs LinearFP16 without full dimensions.",
++      "expected_behavior": "Accept the already-selected local weight using the declared optional defaults.",
++      "actual_behavior": "The final copy predicate compares integer in_features with None and raises TypeError. LinearFP16 does not normalize these defaults.",
+       "locations": [
+         {
+           "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+@@ -238,22 +235,21 @@
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Both direct constructor calls were inspected. The ordinary caller supplies full sizes; the fused caller does not. Attention prepares fused QKV ranges and GatedMLP prepares fused gate/up ranges, establishing conditional reach through those broader modules.",
++          "description": "Both direct constructor calls were inspected. Attention's fused QKV and GatedMLP's fused gate/up preparation establish conditional broader entry points.",
+           "evidence": [
+             "call_76def9ce6afc45548d35e176e9c03c15",
+             "call_c28c7b1161134732aae1fdb94ac7fd31",
+-            "call_2b879a2aaa8b4066a8174130349f2214",
+-            "call_b9d4afc9689c4633b37006de277945dc"
+-          ],
+-          "limits": "Requires the fused fallback branch actually to be selected."
++            "call_2b879a2aaa8b4066a8174130349f2214"
++          ],
++          "limits": "Requires selection of the fused fallback."
+         },
+         {
+           "method": "scalar_transcription",
+-          "description": "Evaluated the changed final comparison with integer dimensions and None defaults; Python raised TypeError.",
++          "description": "Evaluated the changed predicate with integer dimensions and None defaults; Python raised TypeError.",
+           "evidence": [
+             "call_0d847360d8e24a99930d953d19d45767"
+           ],
+-          "limits": "Predicate evaluation only; the repository constructor did not run."
++          "limits": "The repository constructor did not run."
+         }
+       ]
+     },
+@@ -262,10 +258,10 @@
+       "origin": "authoring_observation",
+       "status": "suspected",
+       "classification": "defect",
+-      "description": "The deferred loader's previously recorded odd-element BF16 conversion omission persists in the unchanged loading path.",
+-      "trigger": "A deferred CUDA BF16 load requiring FP16 conversion contains an odd element count.",
+-      "expected_behavior": "Convert every source element before consuming the destination.",
+-      "actual_behavior": "The CUDA wrapper passes numel / 2 pairs to a pair-only kernel, leaving an odd final element unconverted. The task changes eligibility for loading paths but does not change this implementation.",
++      "description": "The previously recorded odd-element deferred BF16 conversion omission persists.",
++      "trigger": "Deferred CUDA loading converts an odd-sized BF16 tensor to FP16.",
++      "expected_behavior": "Convert every element before destination consumption.",
++      "actual_behavior": "The wrapper launches conversion for numel / 2 pairs; an odd final element remains unconverted. The task does not alter this loader implementation.",
+       "locations": [
+         {
+           "commit": "ddf260767d5e31b04d1e0cd660ef4188071d809a",
+@@ -275,19 +271,18 @@
+       ],
+       "source_evidence": [
+         "call_973a0b1e042c46c4b3fbf84022b66056",
+-        "call_6f3da642e21c497fbd598fac540b3aec",
+-        "call_5173440a24814bf58e41c1556bfdf3cf"
++        "call_6f3da642e21c497fbd598fac540b3aec"
+       ],
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Rechecked the ancestor observation against the parent native implementation and task diff. The sole CUDA conversion call is in stloader_deferred_cuda, reached from SafetensorsCollection.end_deferred_load. This remains conditional on odd-sized BF16 data; no newly affected checkpoint was demonstrated.",
++          "description": "Reinspected the conversion kernel and its stloader_deferred_cuda caller after reading the ancestor observation. The loader data flow remains unchanged.",
+           "evidence": [
+             "call_1e7c77d94c5e44168a2b1657ae01b219",
+             "call_973a0b1e042c46c4b3fbf84022b66056",
+             "call_6f3da642e21c497fbd598fac540b3aec"
+           ],
+-          "limits": "No GPU execution."
++          "limits": "No newly affected checkpoint or GPU execution demonstrated."
+         }
+       ]
+     },
+@@ -297,9 +292,9 @@
+       "status": "suspected",
+       "classification": "defect",
+       "description": "The earlier slicing entry's native GPU read-failure synchronization concern remains unchanged.",
+-      "trigger": "An eager GPU mt_fread read fails while its copy worker waits on an empty queue, without a later enqueue.",
+-      "expected_behavior": "Wake the worker and report the read failure.",
+-      "actual_behavior": "The failure sets load_failed without notifying the condition variable; the wait predicate tests only queue nonemptiness, so joining the copy worker may not complete.",
++      "trigger": "An eager GPU mt_fread read fails while the copy worker waits on an empty queue, without a later enqueue.",
++      "expected_behavior": "Wake the worker and report the failure.",
++      "actual_behavior": "Failure sets load_failed without notifying the condition variable, whose predicate tests only queue nonemptiness. Joining the worker may not complete.",
+       "locations": [
+         {
+           "commit": "ddf260767d5e31b04d1e0cd660ef4188071d809a",
+@@ -313,17 +308,17 @@
+       "verification": [
+         {
+           "method": "source_inspection",
+-          "description": "Reinspected the inherited worker and its sole Python caller in SafetensorsCollection.get_tensor. The task leaves native synchronization unchanged; padding-only instances can now request target-device loading, which can reach the eager GPU branch when deferral is inactive.",
++          "description": "Reinspected the worker and its sole Python caller in get_tensor. Padding-only instances can now request target-device loading, reaching this eager branch when deferral is inactive.",
+           "evidence": [
+             "call_022d872dec544c3287c880e88aca2839",
+             "call_6f3da642e21c497fbd598fac540b3aec",
+             "call_b9d4afc9689c4633b37006de277945dc",
+             "call_e28e2c50c5ca47769d915d746fc9e7e0"
+           ],
+-          "limits": "No injected I/O failure or concurrent execution."
+-        }
+-      ]
+-    }
+-  ],
+-  "summary": "Narrows slice classification to dimension reductions, enabling padding-only loading paths, but reverses inner cropping conditions and breaks the existing fused caller's None defaults."
++          "limits": "No injected read failure or concurrent execution."
++        }
++      ]
++    }
++  ],
++  "summary": "Separates padding-only loading from slicing, but reverses inner cropping conditions and breaks the fused caller's optional full-dimension defaults."
+ }

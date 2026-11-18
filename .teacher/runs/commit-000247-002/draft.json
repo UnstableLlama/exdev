@@ -1,0 +1,504 @@
+{
+  "schema_version": 5,
+  "sha": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+  "parent_shas": [
+    "e53bcef446b14689c58393142278eb36c1951cac"
+  ],
+  "cutoff_date": "2025-06-06T03:44:52+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Gemma3 image ingestion previously forwarded one image and returned one MMEmbedding. The change adds a list-input path that forwards several images together.",
+        "basis": "source",
+        "evidence": [
+          "call_70411f6c659e4c78a2fa81329e3dc122"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Fixed-size preprocessing supplies equally shaped tensors for concatenation along batch axis 0. Removing the final squeeze preserves that axis so the result can be split into one embedding container per image.",
+        "basis": "source",
+        "evidence": [
+          "call_ee72740f055b48319c34f29438cc6830",
+          "call_70411f6c659e4c78a2fa81329e3dc122"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "A list returns a list of MMEmbedding objects, including for a one-element list; a single image retains the single-object return. List input rejects a supplied text_alias. Mistral3 remains single-image, and the existing multimodal example still calls ingestion separately for each image.",
+        "basis": "source",
+        "evidence": [
+          "call_70411f6c659e4c78a2fa81329e3dc122",
+          "call_121c82bf84414ef8a51e0588100890c4",
+          "call_146bf1325264403ba2afc24e4f472b0c",
+          "call_d7eaf539ccc64f788b8c095a1cfaed97"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The Gemma3 introduction, vision implementation and shape-comment cleanup entries were read. They establish the progression from a vision stub to the reusable image-to-token pipeline and its singleton preprocessing tensor; none records a defect in the ingestion code changed here.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_01042319fe10444f8687a6f1688c6eb9",
+          "call_b4e57bd159564836b77752c3d8f4772f",
+          "call_aee8226577604525a01b3e8e4b1e12e7"
+        ]
+      },
+      {
+        "text": "Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports vocabulary/logit-width disagreement, not image batching. Its connection here is inferred from its Gemma3 source reference and shared tensor.py path; this diff does not address the reported failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_5d25e20a953b41069cb1a18efed6b16e",
+          "call_70411f6c659e4c78a2fa81329e3dc122"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension loading failure and an environment workaround. Issues #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concern quantization failures. Their relationships to this inspection are inferred only from shared model.py or linear.py paths, not evidence that image batching fixes them.",
+        "basis": "inference",
+        "evidence": [
+          "call_48b765a81d8a4fcfb767ae9c9e6e7a2a",
+          "call_95ed08d609fc40b1aa88c2ca01d596ee",
+          "call_8bb45e2d98c44459b1fd01ace3559d52",
+          "call_70411f6c659e4c78a2fa81329e3dc122"
+        ]
+      }
+    ],
+    "limitations": [
+      "No image preprocessing, PyTorch tensor operation, model loading, FlashAttention call or GPU kernel was executed. Source-level batch preservation does not establish numerical parity, backend compatibility, memory sufficiency or throughput improvement.",
+      "The scalar check models pooling indices only; it does not exercise tensor strides, floating-point averaging or CUDA execution.",
+      "The shape conclusion assumes the existing square-grid pooling and compatible loaded-weight preconditions. Checkpoint configurations and tensor headers were not independently validated in this inspection.",
+      "Native RMSNorm and hgemm implementations were inspected; the complete EXL3 native kernel chain and external FlashAttention implementation were not."
+    ],
+    "links": [
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+      "532d78658414d8f9aabce52cb64b982b3ec53388",
+      "ec00ef3f895212e274ae1d88588bee04b62efd63"
+    ],
+    "chapters": [
+      {
+        "id": "vision",
+        "title": "Batch ingestion through the Gemma3 vision pipeline",
+        "claims": [
+          {
+            "text": "get_image_embeddings preprocesses each list member separately, concatenates the resulting (1, 3, height, width) tensors on axis 0, and performs one forward with causal=False. Preprocessing always resizes to the configured size, so prep_image_size is common to the batch even though only the last loop value is retained. Original sizes are taken individually from image[i].",
+            "basis": "source",
+            "evidence": [
+              "call_70411f6c659e4c78a2fa81329e3dc122",
+              "call_ee72740f055b48319c34f29438cc6830"
+            ]
+          },
+          {
+            "text": "The ordered top-level path is patch Conv, PosEmbedding, encoder TransformerBlock instances in increasing layer index, post-LayerNorm, Gemma3MMPool, projector RMSNorm, and the final Linear projection. Gemma3VisionModel inherits Model.prepare_inputs, which stores the input without reshaping it. Model.forward visits every module in order; Module.prepare_for_device only transfers devices and does not collapse the batch axis.",
+            "basis": "source",
+            "evidence": [
+              "call_ee72740f055b48319c34f29438cc6830",
+              "call_bf93f2c556bd43ae854b0c39e8b5841e",
+              "call_ea034a28258645359010843cb01b3c41"
+            ]
+          },
+          {
+            "text": "Conv.forward (conv.py:70) selects its 2-D branch for this tower: conv2d uses patch size as stride, then flatten(2).permute(0,2,1) produces (N, spatial_tokens, vision_width). PosEmbedding.forward (pos_embedding.py:62) slices positions using x.shape[1] and adds the same positional table to every batch member. Neither operation removes axis 0. The 3-D convolution branch's unsqueeze(0) is not selected.",
+            "basis": "source",
+            "evidence": [
+              "call_224eb333dab544d487eaa38d6d44baaf",
+              "call_da3bf170d3e04a4c9d833e7baa014242",
+              "call_ee72740f055b48319c34f29438cc6830",
+              "call_946b0ea8036a4f819830840f45519ddf"
+            ]
+          },
+          {
+            "text": "Each TransformerBlock.forward (transformer.py:50) runs layer_norm1 \u2192 Attention \u2192 residual addition, then layer_norm2 \u2192 MLP \u2192 residual addition. No post-branch norms are configured for these vision blocks. LayerNorm.forward (layernorm.py:86) normalizes the last dimension, preserving N and sequence length. MLP.forward (mlp.py:64) delegates to fc1 Linear, tanh-approximate GELU and fc2 Linear, changing feature width but retaining leading dimensions. The final post-LayerNorm has the same batch-preserving behavior.",
+            "basis": "source",
+            "evidence": [
+              "call_ee72740f055b48319c34f29438cc6830",
+              "call_c7db6293e625419d9376a75fe59c34fe",
+              "call_51e927f232dc4c53bbc1798e58e3abfb",
+              "call_cee4468764934cf9b8552c6b3881511c",
+              "call_946b0ea8036a4f819830840f45519ddf"
+            ]
+          },
+          {
+            "text": "Attention.forward (attn.py:267) defaults to flash_attn_nc because ingestion supplies no attn_mode. causal=False controls masking, not dispatch. decode_flash_attn_nc (attn.py:378) projects Q/K/V, views them as (N, S, heads, head_dim), calls flash_attn_func with causal=False, then restores (N, S, query_width) before output projection. This is dense, equal-length attention: every item has the same S; there are no per-image lengths or padding masks. It neither requires N=1 nor uses a KV cache. Vision attention configures no RoPE or Q/K norms and retains the unrestricted-window and zero-softcap defaults.",
+            "basis": "source",
+            "evidence": [
+              "call_1a15b53bcd8b44ac8eaaa3f64820c961",
+              "call_ee72740f055b48319c34f29438cc6830",
+              "call_70411f6c659e4c78a2fa81329e3dc122",
+              "call_946b0ea8036a4f819830840f45519ddf"
+            ]
+          },
+          {
+            "text": "All attention and MLP Linear wrappers delegate to their loaded inner implementation. LinearFP16.forward saves x.shape[:-1], flattens batch and sequence into rows, multiplies, adds bias and restores the saved leading shape. LinearEXL3.forward likewise allocates its output with those leading dimensions. Its unchanged reconstruction crossover is more than 32 flattened rows, not more than 32 images. Attention's optional fused K/V path is limited to at most 32 flattened rows; its temporary view with leading 1 packs rows for the kernel and explicitly restores N and S afterward.",
+            "basis": "source",
+            "evidence": [
+              "call_42700df4f1b2494c965b431212826656",
+              "call_7ae0d45eea7e4726bcf84978c5fb15fc",
+              "call_44eae4c4febb44d0a8305003bb7a794c",
+              "call_1a15b53bcd8b44ac8eaaa3f64820c961"
+            ]
+          },
+          {
+            "text": "Gemma3MMPool.forward (gemma3.py:353) explicitly preserves bsz: it converts (N, P\u00b2, C) to (N, C, P, P), average-pools with kernel and stride K=P//T, then returns (N, floor(P/K)\u00b2, C). Here P=image_size//patch_size and T=int(sqrt(mm_tokens_per_image)); when the assumed divisibility holds, the token count is T\u00b2. Despite its name, the local seq_length variable holds C. Pooling does not merge different images.",
+            "basis": "source",
+            "evidence": [
+              "call_ee72740f055b48319c34f29438cc6830",
+              "call_946b0ea8036a4f819830840f45519ddf"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription checked 1,656 pooling index groups across N=1,2,3 and three divisible grid geometries. Every group remained within its own batch item and the derived output token count was T\u00b2. This checks indexing arithmetic, not repository tensor execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_946b0ea8036a4f819830840f45519ddf"
+            ]
+          },
+          {
+            "text": "Projector RMSNorm.forward (rmsnorm.py:69) allocates an output shaped like its input. Its native implementation multiplies all leading dimensions into the row count and normalizes each row independently; it checks feature divisibility by four and matching weight/output shapes, not a singleton batch. Final Linear then changes only the feature dimension. The inspected native hgemm accepts flattened 2-D matrices with matching dimensions and has no one-image constraint.",
+            "basis": "source",
+            "evidence": [
+              "call_3fdefeb2e62a47e597290397c26fcb67",
+              "call_cbd91a5909a747e18349836a940bb963",
+              "call_42700df4f1b2494c965b431212826656",
+              "call_7ae0d45eea7e4726bcf84978c5fb15fc",
+              "call_661e89f5bdd448a0b56ad47f2584f0dc"
+            ]
+          },
+          {
+            "text": "Consequently, under those existing shape preconditions, the final output is (N, pooled_tokens, projector_out_features), where Linear rounds its configured output width to its alignment. This agrees with the new shape[1] token count and embedding_tensor[i] extraction. Each extracted matrix matches MMEmbedding's documented (num_tokens, input_dim) contract; its -1 placeholders are replaced with separately allocated synthetic token IDs.",
+            "basis": "source",
+            "evidence": [
+              "call_ee72740f055b48319c34f29438cc6830",
+              "call_42700df4f1b2494c965b431212826656",
+              "call_70411f6c659e4c78a2fa81329e3dc122",
+              "call_954021723a1a4aedbb2f3fb409cf36c7"
+            ]
+          },
+          {
+            "text": "Singleton conventions remain at preprocessing's unsqueeze(0) and its shape comment, and at default_load_shape_dtype's leading 1. The former constructs one item before concatenation; the latter makes autosplit probe only one image's activation footprint. The old post-forward squeeze(0) is removed. The inspected active Python module path contains no remaining operation that forces the full image batch to one.",
+            "basis": "source",
+            "evidence": [
+              "call_ee72740f055b48319c34f29438cc6830",
+              "call_70411f6c659e4c78a2fa81329e3dc122",
+              "call_bf93f2c556bd43ae854b0c39e8b5841e",
+              "call_1a15b53bcd8b44ac8eaaa3f64820c961"
+            ]
+          },
+          {
+            "text": "Batching trades potentially fewer forward invocations for larger simultaneous activations. The unchanged example's per-image loop remains a supported lower-concurrency alternative. Neither a throughput gain nor the maximum usable batch size is established by this source inspection.",
+            "basis": "inference",
+            "evidence": [
+              "call_70411f6c659e4c78a2fa81329e3dc122",
+              "call_d7eaf539ccc64f788b8c095a1cfaed97",
+              "call_bf93f2c556bd43ae854b0c39e8b5841e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds list-based Gemma3 image ingestion while preserving single-image returns. The inspected vision path preserves the batch axis and agrees with per-image output extraction; GPU correctness and performance remain untested."
+  },
+  "evidence": {
+    "call_70411f6c659e4c78a2fa81329e3dc122": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "offset": 173,
+        "max_bytes": 2792
+      },
+      "result_sha256": "4657d7e3846dc025ad75877cfce9dae6b2b2ace76c598e8f9b86ad8d86aac7c5"
+    },
+    "call_ee72740f055b48319c34f29438cc6830": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/models/gemma3.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "9eb0d616f9c4170cc26ea7cac5ca5e5243b607fbc49bb1752f7a96358ff43683"
+    },
+    "call_224eb333dab544d487eaa38d6d44baaf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/conv.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "b5463afd4b0d6c7e0c8797e968486641eb57858cae498c2d079f6f99e92188c9"
+    },
+    "call_da3bf170d3e04a4c9d833e7baa014242": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/pos_embedding.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "d3329f7fcfbf4c30dc18c0f8395890d7147f215132e3fa9d6e6842f80e291049"
+    },
+    "call_1a15b53bcd8b44ac8eaaa3f64820c961": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 42000
+      },
+      "result_sha256": "f039e692513034cd605e4a6e6075b9d20cc3909bf5e07798ed3429b15ffbc6b1"
+    },
+    "call_c7db6293e625419d9376a75fe59c34fe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "10d650f34158f55773f0614cb89c949738083a8633808d758fa1304de44f5e5a"
+    },
+    "call_cee4468764934cf9b8552c6b3881511c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2a43d94df209576cbc7e93ff9ba543337b993f297f25726bf663d86be73aed95"
+    },
+    "call_42700df4f1b2494c965b431212826656": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "5d50fc353093ebd2afc8c8afc837c22062eee143acd0eec4c34c7783879f27f5"
+    },
+    "call_51e927f232dc4c53bbc1798e58e3abfb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/layernorm.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "6b87f4749b36f861b2b234f4a4521cb74db87111cdca7d69bce241df3f3e52f1"
+    },
+    "call_3fdefeb2e62a47e597290397c26fcb67": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "d5c22ccaad8b93ea452456a6a977fcfb94778c1cfa7a4a9573a7fda0a9a2df7c"
+    },
+    "call_7ae0d45eea7e4726bcf84978c5fb15fc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "ff79e6b70830c6743673877232fe9d57f140a3525c6c4bd02b016bf55e6fd75a"
+    },
+    "call_44eae4c4febb44d0a8305003bb7a794c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "a3d29df579121080de1fc88869d9c03cf40d46e1f981225f4ab28dcf1764a854"
+    },
+    "call_bf93f2c556bd43ae854b0c39e8b5841e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 38000
+      },
+      "result_sha256": "2a307261d9129df1188b3d1fb13195bd0e916c8d6361454d5c1559fdaa4e2faa"
+    },
+    "call_146bf1325264403ba2afc24e4f472b0c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "get_image_embeddings",
+        "limit": 100
+      },
+      "result_sha256": "d987eef92e8a4643ae7c390666ee911e1e03c61bf760f991e07d632ec2ba4cb0"
+    },
+    "call_121c82bf84414ef8a51e0588100890c4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 14500,
+        "max_bytes": 12000
+      },
+      "result_sha256": "32700876c324a7abd30253f06dc93220b9f3adf172b3ebdf6975fd7f1f115707"
+    },
+    "call_d7eaf539ccc64f788b8c095a1cfaed97": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "examples/multimodal.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "25e664566441099fae6d7e411bb90aee0a2eae265689d871d2840a6feb32fa20"
+    },
+    "call_01042319fe10444f8687a6f1688c6eb9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7e8974fcf5d11f5fdedb9f1af0c4eb2a2c25ad72cf9734dbdfbe25f9e7facd78"
+    },
+    "call_aee8226577604525a01b3e8e4b1e12e7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "max_bytes": 16384
+      },
+      "result_sha256": "831538b740dc28809d53fa2eca6ff932f932db906fc76ec393fca24c6cd3216d"
+    },
+    "call_b4e57bd159564836b77752c3d8f4772f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+        "max_bytes": 16384
+      },
+      "result_sha256": "32b6d4b6a6de6f85f34d97e0c8fed6b53cb641890a0ce0b93b0c82a1d85f9f1e"
+    },
+    "call_5b382a49b0f44aaea906d5c962effeb6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "void rms_norm",
+        "limit": 30
+      },
+      "result_sha256": "d0da71d0f9b277c09cc8b248b37570f084d446baf41cb5bc920c9605fa3778be"
+    },
+    "call_cbd91a5909a747e18349836a940bb963": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/exllamav3_ext/norm.cu",
+        "max_bytes": 17000
+      },
+      "result_sha256": "174ef3e8852f091d50ff34241578fe4a5cbf6398fa7b3a1ca0997c3e93bfd84a"
+    },
+    "call_607ddccb1d784f91981abdc81093524e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/util/tensor.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "ba74803473bc8081ccdccc716939ef5a1ab32f80560705e908cb1108530d679a"
+    },
+    "call_ea034a28258645359010843cb01b3c41": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_eaed4c30d1b64ec8b42ec612114e9126": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "class MMEmbedding",
+        "limit": 20
+      },
+      "result_sha256": "6b969bd470ab383e6a352e1afed3407475717184b450f31a297133b50e6b0698"
+    },
+    "call_954021723a1a4aedbb2f3fb409cf36c7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/tokenizer/mm_embedding.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "6dcb5f9c3fc00e92e292051b23f3d324751bdcca855c5a28708a733488d83200"
+    },
+    "call_5d25e20a953b41069cb1a18efed6b16e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6a6202f6f0699ab7bb674f33c2f5d80ba736bf50a09555789719eca3de09ad76"
+    },
+    "call_48b765a81d8a4fcfb767ae9c9e6e7a2a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b5952b0f97f1581398182a56391867a47a229a08601393be5ea50a08a097849a"
+    },
+    "call_95ed08d609fc40b1aa88c2ca01d596ee": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d43bb953f3ec62a7725789815fe93f106ca7b40eec02a055373ee07dbd3cf091"
+    },
+    "call_8bb45e2d98c44459b1fd01ace3559d52": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c3e8a537aa70bed67544ef665c69b5007a8bd9245a08c4e4ce0904eba1df4cc5"
+    },
+    "call_61758d591d634991b6799551c37d1ef5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "void hgemm",
+        "limit": 20
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_661e89f5bdd448a0b56ad47f2584f0dc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu",
+        "max_bytes": 14000
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_946b0ea8036a4f819830840f45519ddf": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f in ['exllamav3/models/gemma3.py','exllamav3/models/model.py','exllamav3/modules/conv.py','exllamav3/modules/pos_embedding.py','exllamav3/modules/transformer.py','exllamav3/modules/attn.py','exllamav3/modules/mlp.py','exllamav3/modules/layernorm.py','exllamav3/modules/rmsnorm.py','exllamav3/modules/quant/fp16.py','exllamav3/modules/quant/exl3.py']:\n lines=Path(f).read_text().splitlines()\n print(f,[(i+1,l.strip()) for i,l in enumerate(lines) if l.strip().startswith(('def forward(', 'def project_', 'def decode_flash_attn_nc(', 'def preprocess(', 'def get_image_embeddings(', 'def default_load_shape_dtype('))])\nchecks=0\nfor n in [1,2,3]:\n for p,t in [(4,2),(8,4),(64,16)]:\n  k=p//t\n  for b in range(n):\n   for yy in range(t):\n    for xx in range(t):\n     offsets=[b*p*p+(yy*k+dy)*p+xx*k+dx for dy in range(k) for dx in range(k)]\n     assert all(v//(p*p)==b for v in offsets)\n     checks+=1\n  assert (p//k)**2==t*t\nprint('scalar pooling index groups checked:',checks,'; every group stays in its batch item; output per image = t*t')"
+        ]
+      },
+      "result_sha256": "8f68edc68f26f37ac0daea72f9621ff531714a22d337d0439c9caaf0031270b8"
+    },
+    "call_8de411bbbf524e05a333d7bd61065982": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "causal",
+        "limit": 100
+      },
+      "result_sha256": "949620f0238f0fcf4e01231d7b5470b068efe5ee798e7ab71e30d4b053980557"
+    }
+  }
+}

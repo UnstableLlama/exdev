@@ -31,6 +31,15 @@ class AncestorContextTests(unittest.TestCase):
             (run/(name+'.json')).write_text(json.dumps(value))
         return run,packet
 
+    def test_other_model_effort_and_trials_cannot_be_approved(self):
+        run,packet=self.run_fixture()
+        path=run/'provenance.json';original=json.loads(path.read_text())
+        for update in ({'model':'unsupported'}, {'reasoning_effort':'high'}, {'trial_only':True}):
+            path.write_text(json.dumps(dict(original,**update)))
+            with self.assertRaisesRegex(ValueError,'approval'):
+                approve_run(run,packet,'test','forbidden')
+            self.assertEqual(json.loads((run/'review.json').read_text())['status'],'pending')
+
     def test_approval_binds_exact_artifacts_and_exports_only_safe_projection(self):
         run,source=self.run_fixture()
         approve_run(run,source,'TEST REVIEWER','ADMIN_REVIEW_SECRET')

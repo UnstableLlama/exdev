@@ -1,0 +1,688 @@
+{
+  "schema_version": 5,
+  "sha": "754450f6ad4de88dce348f67099a61de14072237",
+  "parent_shas": [
+    "a7e667c3ea3ea3350474fc975ab31be6eec75a49"
+  ],
+  "cutoff_date": "2025-06-21T20:26:34+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Llama's gated MLP previously left down-projection output at the linear backends' FP16 default. Widening that result only after projection cannot recover a value already overflowed during FP16 output storage.",
+        "basis": "source",
+        "evidence": [
+          "call_0940ed7aa3f94007a0cb63fcf32185de",
+          "call_d029f6676b294405ad07b4f50d918020",
+          "call_b7016771323a488d9cb2ce48d157966e",
+          "call_4e10dc2e257044d79a0509724b42e2e2"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The one-line change requests torch.float at GatedMLP construction. Existing plumbing carries this choice into every down projection before its output is allocated, rather than merely casting the completed MLP result.",
+        "basis": "source",
+        "evidence": [
+          "call_af5f80db7c6142d992160849f685e6f2",
+          "call_d029f6676b294405ad07b4f50d918020",
+          "call_2639054d91a648ab9ce16e66054e3bc7"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This is a targeted numerical behavior change: down outputs and sliced-down accumulation become FP32, while gate/up computation, attention output precision and the already-FP32 residual stream are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_af5f80db7c6142d992160849f685e6f2",
+          "call_d029f6676b294405ad07b4f50d918020",
+          "call_63874a9c58c9434d876cb16be08380f6",
+          "call_adc86504442b4808b03f2bd3c200eebe",
+          "call_ca2ecd4e0b8743eca69aab2abee4ae85"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial commit's models and modules chapters and the cache-construction entry 4fa0e686. They establish the shared constructor, module sequence, FP32 embedding default and residual-storage design. The initial models chapter also records a Mistral sliding-window mapping gap; inspection of the current Mistral/Llama constructors and this diff shows that omission is carried over, not corrected by this precision change.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_9b21fe72a58140e793b0857c5911a1db",
+          "call_b5d23e517ef043359c228540d9e732b5",
+          "call_3e01ae6a180747fbaa70503a228fba84"
+        ]
+      },
+      {
+        "text": "The task changes only the GatedMLP constructor argument. Mistral still supplies no sliding-window adaptation, and Llama's Attention construction still omits sliding_window, whose default is -1.",
+        "basis": "source",
+        "evidence": [
+          "call_bf4ab54222034bd39cfedeb313ba3802",
+          "call_0940ed7aa3f94007a0cb63fcf32185de",
+          "call_ca2ecd4e0b8743eca69aab2abee4ae85",
+          "call_af5f80db7c6142d992160849f685e6f2"
+        ]
+      },
+      {
+        "text": "Other inspected discussions have different framing: \u201ctorch._C._LinAlgError on last layer of quant\u201d concerns Command-A and suspected activation overflow; \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values\u201d includes Midnight-Miqu and Command-R+ reports. Their relationship to this task is inference from shared conversion errors and linear.py references, not evidence of an identical cause. \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d reports an extension-import/toolchain problem; \u201c`RuntimeError` when requesting logprobs with Gemma 3 models\u201d reports a tensor-size mismatch. Neither establishes a down-output overflow.",
+        "basis": "inference",
+        "evidence": [
+          "call_a1ba874c7a1b4beaab5ac0ec358a6792",
+          "call_f393d2d63dc74a52ba60f712409c620c",
+          "call_65fbac544961449e955869944a434eb7",
+          "call_3e9148dbade74670b08811ff46092b75",
+          "call_da803cd3f6a84932bb679ea3afbb12f5"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model, PyTorch mixed-dtype addition, CUDA kernel or conversion was executed. Runtime success, numerical accuracy and performance remain unmeasured.",
+      "The scalar check models storage range with Python struct, not GPU arithmetic. Its FP16 overflow raises OverflowError rather than reproducing CUDA's overflow conversion.",
+      "Wider down outputs do not protect against nonfinite gate/up activations, attention outputs, or values exceeding FP32 range. Explicit forward dtype overrides and manually supplied block inputs can differ from the normal constructor-driven path.",
+      "Reference configurations establish configuration values, not checkpoint numerical behavior or complete architectural equivalence."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "4fa0e6863e130adf7319d4b00293284c4f33296d"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Keep Llama down-projection results wide through the residual stream",
+        "claims": [
+          {
+            "text": "LlamaModel.__init__ adds out_dtype=torch.float to the GatedMLP created for every configured transformer layer. GatedMLP stores that argument and passes it to each Linear in self.downs, including sliced projections. Gate and up projections instead use interm_dtype, which this constructor leaves unset. During forward, each slice produces d_; the first becomes d and subsequent slices accumulate with d += d_. The final to2 preserves the configured float output unless explicitly overridden.",
+            "basis": "source",
+            "evidence": [
+              "call_af5f80db7c6142d992160849f685e6f2",
+              "call_0940ed7aa3f94007a0cb63fcf32185de",
+              "call_d029f6676b294405ad07b4f50d918020",
+              "call_e6c78f4fbd304e74923cec49eccbdf2a"
+            ]
+          },
+          {
+            "text": "Slicing is an existing mechanism, not a new restriction: the default intermediate-width limit is 55,296. Above it, GatedMLP divides the intermediate axis into slices, aligning ordinary slice widths to 128 and assigning the remainder to the last slice. Every slice's down output receives the new dtype, so both individual partial outputs and their sum avoid FP16 output storage.",
+            "basis": "source",
+            "evidence": [
+              "call_7b05f1b5757744178eb3e839a520ae52",
+              "call_d029f6676b294405ad07b4f50d918020",
+              "call_af5f80db7c6142d992160849f685e6f2"
+            ]
+          },
+          {
+            "text": "Linear forwards its stored output dtype when loading ordinary weights, loading EXL3 weights, or replacing an ordinary backend during convert_exl3. LinearFP16.forward allocates the requested output dtype; with half input and float output it selects ext.hgemm instead of the same-dtype torch.matmul branch. The native hgemm accepts half operands and float output, selecting cublasGemmEx with FP32 computation and output. This is not an FP16 result followed by a float cast.",
+            "basis": "source",
+            "evidence": [
+              "call_2639054d91a648ab9ce16e66054e3bc7",
+              "call_b7016771323a488d9cb2ce48d157966e",
+              "call_6e8485a989524260a7f040383ea358f5"
+            ]
+          },
+          {
+            "text": "LinearEXL3.forward likewise allocates its result in the requested dtype in both execution routes. The reconstruction route uses half transformed inputs and reconstructed half weights, hgemm into the requested output, then an output Hadamard transform. The direct route passes the float output buffer to exl3_gemm, whose wrapper accepts half input and float or half output and passes the output-type flag to kernel selection. The existing default selects reconstruction above 32 flattened input rows, unless params['reconstruct'] overrides it; this patch does not change that threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_4e10dc2e257044d79a0509724b42e2e2",
+              "call_b74f51ac433e4610bfd5a3a2a0b7e762",
+              "call_6e8485a989524260a7f040383ea358f5"
+            ]
+          },
+          {
+            "text": "The receiving tensor in TransformerBlock.forward is x, not the normalized branch tensor y. Llama leaves Embedding.out_dtype at its torch.float default, so ordinary model execution starts the residual stream in FP32. Device preparation moves x without requesting another dtype. Each block normalizes x into a separate half-precision y for attention and again for the MLP; neither normalization replaces the residual tensor. Llama supplies no branch post-normalizations and no block output dtype.",
+            "basis": "source",
+            "evidence": [
+              "call_0940ed7aa3f94007a0cb63fcf32185de",
+              "call_63874a9c58c9434d876cb16be08380f6",
+              "call_27855ad7ba20461fa29293f44bfdc94e",
+              "call_adc86504442b4808b03f2bd3c200eebe"
+            ]
+          },
+          {
+            "text": "Attention returns an FP16 result for this constructor: no output dtype is supplied to Attention or its o_proj, and both linear backends default to half. The block combines it with FP32 x using x += y. Under the in-place tensor-add semantics expressed here, the half operand is combined into the destination's FP32 storage; the operation does not turn x into half. After this patch, the MLP addition combines FP32 y with FP32 x. Thus the widened down result is not immediately narrowed at the residual addition. Actual mixed-dtype execution was not tested.",
+            "basis": "inference",
+            "evidence": [
+              "call_0940ed7aa3f94007a0cb63fcf32185de",
+              "call_ca2ecd4e0b8743eca69aab2abee4ae85",
+              "call_b7016771323a488d9cb2ce48d157966e",
+              "call_4e10dc2e257044d79a0509724b42e2e2",
+              "call_adc86504442b4808b03f2bd3c200eebe",
+              "call_63874a9c58c9434d876cb16be08380f6"
+            ]
+          },
+          {
+            "text": "The block returns FP32 x on the normal path because neither forward nor constructor requests an output conversion. Model.forward passes it to the next block, whose input RMSNorm produces half branch input while retaining FP32 residual storage. After the last block, model.norm consumes that FP32 state and explicitly produces half output for lm_head. Consequently, a finite down result needing more than FP16 range can retain that range through residual combination and into the next normalization. Compared with the parent, the residual dtype is unchanged; the correction removes the earlier FP16 down-output bottleneck. This is a numerical bugfix, not evidence of a residual-narrowing defect.",
+            "basis": "inference",
+            "evidence": [
+              "call_adc86504442b4808b03f2bd3c200eebe",
+              "call_e6c78f4fbd304e74923cec49eccbdf2a",
+              "call_8d1245850f754e53aa25f998f26647da",
+              "call_8254ebe27ccb46d581e0eb3f9a7c88b4",
+              "call_0940ed7aa3f94007a0cb63fcf32185de",
+              "call_af5f80db7c6142d992160849f685e6f2"
+            ]
+          },
+          {
+            "text": "A bounded standard-library storage-range check decoded binary16's largest finite value as 65,504. It represented 70,000 in binary32 and modeled adding it to a binary32 residual of 1,000 as 71,000; two binary32 sliced partials of 40,000 summed to 80,000. Binary16 packing of 70,000 raised OverflowError. These examples illustrate the removed storage bottleneck, not execution of either backend or PyTorch's addition.",
+            "basis": "execution",
+            "evidence": [
+              "call_06b29fa9a645410b9633c0d724e72168"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree LlamaModel search finds MistralModel, Qwen2Model and MiMoModel as subclasses. Each inspected constructor delegates directly to LlamaModel.__init__, so each inherits this change. Other independently constructed model classes are not covered merely because they also use GatedMLP.",
+            "basis": "source",
+            "evidence": [
+              "call_705942d084054fc8b07dff1f1257b3a5",
+              "call_bf4ab54222034bd39cfedeb313ba3802",
+              "call_3be3f5d631a04a5780ad9a67e6966873",
+              "call_0cfb9b3224bb43e2aceae8e03a7d1225"
+            ]
+          },
+          {
+            "text": "Reference configs read were TinyLlama-1.1B-Chat-v1.0, Qwen2.5-0.5B, Mistral-7B-v0.1 and MiMo-7B-Base, -RL, -RL-0530, -RL-Zero and -SFT. Each names the corresponding shared-constructor architecture and SiLU activation. TinyLlama has hidden/intermediate widths 2048/5632; Qwen2.5 has 896/4864; Mistral has 4096/14336. Each MiMo variant has 4096/11008 and 36 layers. All these intermediate widths stay below the slicing limit. Their declared bfloat16 checkpoint dtype does not override the constructor's FP32 down-output choice; this does not establish complete compatibility with their other configuration features.",
+            "basis": "source",
+            "evidence": [
+              "call_ee4351f8b001479785bcad13f71e0f25",
+              "call_ca7d6c3d196649fcbf58a5d0a4de8e26",
+              "call_a7f68dfac97f43a28659d4a9276bc93e",
+              "call_8a152d7b578c4016a24e78d6d99f9f9a",
+              "call_326c37d4d01c421f8de85810c04c9fae",
+              "call_7a25cd46c23c46d9b65931acb6b124a6",
+              "call_a43e3f2a3d6d4d71bb2971898b5fdf18",
+              "call_b9a000d7c38b4471a728e9ce0023c049",
+              "call_d029f6676b294405ad07b4f50d918020"
+            ]
+          },
+          {
+            "text": "The strongest discussion connection is inferential but specific: \u201cError converting moonshotai/Kimi-Dev-72B\u201d reports Qwen2ForCausalLM conversion failures and a NaN after the final normalization. Task author turboderp proposed exactly out_dtype=torch.float at Llama's GatedMLP call, explaining suspected last-layer overflow; reporter artus-dev subsequently reported a successful conversion with that proposal. This matches the task's exact edit. The reporter and fix author are different contributors, and the report is not a conversion executed in this session.",
+            "basis": "inference",
+            "evidence": [
+              "call_955c03794fe249d9a2b7f7caea98f42b",
+              "call_af5f80db7c6142d992160849f685e6f2",
+              "call_3be3f5d631a04a5780ad9a67e6966873"
+            ]
+          },
+          {
+            "text": "The targeted tradeoff is wider down-result buffers and accumulation without widening gate/up activations or the whole attention branch. Casting only the final MLP return would be too late; the existing backend output-allocation mechanism is essential. Source inspection supports that data-flow explanation, but not a measured memory cost, speed change, or universal prevention of nonfinite values.",
+            "basis": "inference",
+            "evidence": [
+              "call_d029f6676b294405ad07b4f50d918020",
+              "call_b7016771323a488d9cb2ce48d157966e",
+              "call_4e10dc2e257044d79a0509724b42e2e2",
+              "call_af5f80db7c6142d992160849f685e6f2"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Requests FP32 down-projection outputs throughout Llama's shared constructor. The existing FP32 residual stream preserves the wider result through block addition; backend execution and conversion success were not independently tested."
+  },
+  "evidence": {
+    "call_af5f80db7c6142d992160849f685e6f2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "754450f6ad4de88dce348f67099a61de14072237",
+        "offset": 179,
+        "max_bytes": 540
+      },
+      "result_sha256": "661ec397d6d27d5bd67ad07d2ece8899a2817f99b6bb338da97b1a6c631c8ad0"
+    },
+    "call_0940ed7aa3f94007a0cb63fcf32185de": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/models/llama.py"
+      },
+      "result_sha256": "4c3c4611cdd9d0be477e27cd35b22dce717354d1457aa2474d2f3b5ae96d8d1a"
+    },
+    "call_9f66dd97062e47f3839937180a22e3dd": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules",
+        "limit": 100
+      },
+      "result_sha256": "5cdf5c689ecceccfbee4e21d27d0310e58112312dc7fe1d854ebb459c817a466"
+    },
+    "call_d029f6676b294405ad07b4f50d918020": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/mlp.py"
+      },
+      "result_sha256": "2a43d94df209576cbc7e93ff9ba543337b993f297f25726bf663d86be73aed95"
+    },
+    "call_adc86504442b4808b03f2bd3c200eebe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "467875d2c491348086b1928519621b7a30b94feb8e1f40188301a5a52f15f798"
+    },
+    "call_63874a9c58c9434d876cb16be08380f6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/embedding.py"
+      },
+      "result_sha256": "5381fb34860bed1824cb54b6ab7e9499c998725c69ccc2b0cfa66f573f21853c"
+    },
+    "call_2639054d91a648ab9ce16e66054e3bc7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "281730f75995b2e75e810ae969dc0a7ee900a98de49f112c56c3ed1bd3ef4890"
+    },
+    "call_b7016771323a488d9cb2ce48d157966e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/quant/fp16.py"
+      },
+      "result_sha256": "808a29d5ede82c644e75f52b94480009d9fc878a311b75798053e77664405ea1"
+    },
+    "call_4e10dc2e257044d79a0509724b42e2e2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "f042c9bc02cad55b4e29f28352d343401a49f2aaa1a935c2792a7f6ed80f38ec"
+    },
+    "call_705942d084054fc8b07dff1f1257b3a5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "query": "LlamaModel",
+        "limit": 100
+      },
+      "result_sha256": "07deda06f975c4ef67740580a6b700be0423a10c3ba3e2f7639942bed6d53c3c"
+    },
+    "call_3be3f5d631a04a5780ad9a67e6966873": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/models/qwen2.py"
+      },
+      "result_sha256": "6579c9f2d222a5cb7b9f8bad906134963eab42cc3cbbc6901977dd9282a77e37"
+    },
+    "call_bf4ab54222034bd39cfedeb313ba3802": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/models/mistral.py"
+      },
+      "result_sha256": "f55b7deee8981a7457727f5dbaa397d20b3f79b62ee7faf87f8b5bced8d06c81"
+    },
+    "call_0cfb9b3224bb43e2aceae8e03a7d1225": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/models/mimo.py"
+      },
+      "result_sha256": "a29eafb109932a774d69b0faee0c72db56107eb9da774e2190e3d00e53238512"
+    },
+    "call_5b0e3ce7868f43d7a25cb676b4c46b42": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/llama.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "a95fcac9c101566e0befa2dd6e179cdfe47676c45cdd40400ba1a287d083346b",
+      "catalog_only": true
+    },
+    "call_9b21fe72a58140e793b0857c5911a1db": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_ca2ecd4e0b8743eca69aab2abee4ae85": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "f039e692513034cd605e4a6e6075b9d20cc3909bf5e07798ed3429b15ffbc6b1"
+    },
+    "call_59f2a03ee12c4ba091bedc8b84477136": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/util/tensor.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "d6ac4bbbe5d55021a521d0ac987191021f18491a58ac32537f305c38f14cd8a8"
+    },
+    "call_e6c78f4fbd304e74923cec49eccbdf2a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/util/tensor.py",
+        "offset": 4000,
+        "max_bytes": 7000
+      },
+      "result_sha256": "01cd039a3f0cddd4d5c1d0e9fd57678de4a7d4fa56da2f0125d365abdfc88a1a"
+    },
+    "call_8254ebe27ccb46d581e0eb3f9a7c88b4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/rmsnorm.py"
+      },
+      "result_sha256": "d5c22ccaad8b93ea452456a6a977fcfb94778c1cfa7a4a9573a7fda0a9a2df7c"
+    },
+    "call_8bab2dc584324ae193873c6518cc6178": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "query": "out_dtype = torch.float",
+        "limit": 100
+      },
+      "result_sha256": "c6a9b5dd674227567b16afea9935d48312d55fa1174e5afa75abc705836f9fba"
+    },
+    "call_4aabda82073f4b94961bcde4e9297a73": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "query": "void hgemm",
+        "limit": 20
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_6e8485a989524260a7f040383ea358f5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu"
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_32a4dbf9331c45c0b1fb9d3353be47c0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "query": "output_fp32",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 50
+      },
+      "result_sha256": "e03d94f808492bd17c703a66dbc0ea365ec2f242ae3abc539f9c274c6743fe42"
+    },
+    "call_955c03794fe249d9a2b7f7caea98f42b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 20000
+      },
+      "result_sha256": "0508bca3951b10f15d3ccc988ba06a08493fc6a9e749790a8b67282a4edab692"
+    },
+    "call_a1ba874c7a1b4beaab5ac0ec358a6792": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "032b01fa7087975b8b3b9527700a9ceeebeaa7ca345ece5d05882b240a5aaff6"
+    },
+    "call_f393d2d63dc74a52ba60f712409c620c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 15000
+      },
+      "result_sha256": "a044ce66ecfe536ff92b1b5c5d0ad13ba85b7b7c5f94fdb8eb72c1ce13eb1dbe"
+    },
+    "call_65fbac544961449e955869944a434eb7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "offset": 15000,
+        "max_bytes": 2000
+      },
+      "result_sha256": "3d5eeb01455a96518ba0a808f84f9f061bfea4b5d01f3167e5605a120fcda8a6"
+    },
+    "call_676aaf8a00624391a7552af91e92acfa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/models/model.py",
+        "query": ".forward(",
+        "limit": 40
+      },
+      "result_sha256": "24ec499e2424a6dfed944ec6d6566044d2b9d46b8ac11b333550d0cc7b89b8e9"
+    },
+    "call_8d1245850f754e53aa25f998f26647da": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/models/model.py",
+        "offset": 0,
+        "max_bytes": 4500
+      },
+      "result_sha256": "9ad5879b0cc155cc8fc89a6a568c0d1570cd5c892f352a738b628d948602117e"
+    },
+    "call_2ba743dd1833419687cafe3627398fc0": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "03c3c20bb0d484bb9b2aec86300797cd6c85ea8eb733a322da8c5d489937e43d",
+      "catalog_only": true
+    },
+    "call_ba57fad66cb64767b22be0f30c45dd71": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "846e965a77d47c68e5680894a01108ed1e33e0d696cc8abeeac0d2d7e3702220",
+      "catalog_only": true
+    },
+    "call_0ba21a8bcb7b46b28b6f1c70a30b7520": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 40960,
+        "max_bytes": 16384
+      },
+      "result_sha256": "c86b76d39e76ec2554814ed5066a4b828c93f9ff51ef06fa5c3f3fa3237310e3",
+      "catalog_only": true
+    },
+    "call_ee4351f8b001479785bcad13f71e0f25": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+        "path": "config.json"
+      },
+      "result_sha256": "2645648f5573db4fedf5850ec364d621c00a0b5d3b44ac1672554d301486127f"
+    },
+    "call_ca7d6c3d196649fcbf58a5d0a4de8e26": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "path": "config.json"
+      },
+      "result_sha256": "508171009a18b3e4385b0c25a10de5fc1ced24ac1de2298fcfc6506b6d26c78d"
+    },
+    "call_a7f68dfac97f43a28659d4a9276bc93e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-7B-v0.1",
+        "revision": "7231864981174d9bee8c7687c24c8344414eae6b",
+        "path": "config.json"
+      },
+      "result_sha256": "34214157e54f69c0201a1a6cbf088d2959c28c409802bd997e624d2f9e6a6ed6"
+    },
+    "call_8a152d7b578c4016a24e78d6d99f9f9a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-Base",
+        "revision": "95b45ad994ca84c52a941a3edc644b9574d0e401",
+        "path": "config.json"
+      },
+      "result_sha256": "85924a47325190caa3a61ce2e88cd13c001539dc209edb9689c8bd3b150b5d11"
+    },
+    "call_326c37d4d01c421f8de85810c04c9fae": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-RL",
+        "revision": "8aa36ea74c8d6956faf4a67dc4daec35f52431fc",
+        "path": "config.json"
+      },
+      "result_sha256": "73d44c058ffd49bbd1264eeddce7c15366fedb3004c0d3a707ded013d4b385cd"
+    },
+    "call_7a25cd46c23c46d9b65931acb6b124a6": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-RL-0530",
+        "revision": "2ab7cb1423ca7d880a07e1f0ef3d57f7a1649984",
+        "path": "config.json"
+      },
+      "result_sha256": "addd1bd5fa8cd8bc93347c76909c53ebd9181dc5cfe1c9cec07a8174bad29eb1"
+    },
+    "call_a43e3f2a3d6d4d71bb2971898b5fdf18": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-RL-Zero",
+        "revision": "ba7bc55278fbfcfb3d51fe496420b6132514929c",
+        "path": "config.json"
+      },
+      "result_sha256": "28aa3b1c22b77cefe1de541dd3392bc7faed5697082943a2abe4871297a95315"
+    },
+    "call_b9a000d7c38b4471a728e9ce0023c049": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "XiaomiMiMo/MiMo-7B-SFT",
+        "revision": "31bf3666982e8389681e9808356d40d786ec3648",
+        "path": "config.json"
+      },
+      "result_sha256": "c682f33e10178891ced6cfad0d6e7084140bb2093fee5b253e0f2880baefd1ab"
+    },
+    "call_da803cd3f6a84932bb679ea3afbb12f5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0e8a729e3ff41635652d4a669a8cd83b9d942e29ab78372a6d02fd53fd65092e"
+    },
+    "call_3e9148dbade74670b08811ff46092b75": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "8309b826e962649de22959f188bc59b11832ed7ceb15ee5a19f18e0d08789f7a"
+    },
+    "call_3e01ae6a180747fbaa70503a228fba84": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "84d644c6ca6265befdf210ff9153f1a204e9c934ffc0796bd591382048abfc30"
+    },
+    "call_06b29fa9a645410b9633c0d724e72168": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct, math\nhalfmax=struct.unpack('<e',bytes.fromhex('ff7b'))[0]\nf32=lambda v:struct.unpack('<f',struct.pack('<f',v))[0]\nprint('binary16 largest finite:',halfmax)\nv=70000.0\ntry: h=struct.unpack('<e',struct.pack('<e',v))[0]\nexcept OverflowError: h='OverflowError (stdlib packing, not CUDA inf conversion)'\nprint('down=70000 stored as binary16:',h)\nprint('down=70000 stored as binary32:',f32(v))\nprint('binary32 residual 1000 plus down:', f32(f32(1000)+f32(v)))\nprint('two binary32 sliced partials 40000+40000:', f32(f32(40000)+f32(40000)))"
+        ]
+      },
+      "result_sha256": "3c31a045abb7df3cbaf5f83ad1a8ea48f4ab042a3b9caeb7809e181b3dd7dae6"
+    },
+    "call_7bc53505b18442acbcd0169851c5d89b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/exllamav3_ext",
+        "query": "c.dtype()",
+        "limit": 50
+      },
+      "result_sha256": "fcefb5f66643e5a3e45bdf1fa490ff56cf4c114886da0a3e493edd11bf42745e"
+    },
+    "call_efc1d35bfd0c4b7fb8f2d8771543e7db": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/exllamav3_ext",
+        "query": "y.dtype()",
+        "limit": 80
+      },
+      "result_sha256": "dd80d631581a9687777a5aca90ee5d5def3b1cbc4f63cb75ce025cf86040a97c"
+    },
+    "call_6f61aba7d576470e87cfa4d4417f172b": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 100
+      },
+      "result_sha256": "960f4ed999bdffc8a2985e278b75eb22b95f6b3f8dc1df5188a01f04d328b332"
+    },
+    "call_b74f51ac433e4610bfd5a3a2a0b7e762": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "max_bytes": 25000
+      },
+      "result_sha256": "44ae74daa39ef6adc4b2eb48f46cd4abfc19ee58c589581df0595544789134aa"
+    },
+    "call_7b05f1b5757744178eb3e839a520ae52": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "query": "MAX_MLP_INTERMEDIATE",
+        "limit": 30
+      },
+      "result_sha256": "82bef7a66ebe850573d8a382822040579a33f7bb0ebb7e85f04d85c5a5e1755e"
+    },
+    "call_b5d23e517ef043359c228540d9e732b5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_27855ad7ba20461fa29293f44bfdc94e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_2af2e13446ef4be58eb12da933c0ad1f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "query": ".prefill(",
+        "limit": 30
+      },
+      "result_sha256": "742a0d90cba955ed7c9ce0c4575797592e3523c6387baab7ece20608b7c91595"
+    }
+  }
+}

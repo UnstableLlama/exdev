@@ -1,0 +1,149 @@
+{
+  "origin": "authoring_observation",
+  "classification": "behavior_change",
+  "status": "suspected",
+  "description": "The P2P override covers host-facing transfers as well as inter-GPU copies, so it can add output even in a single-GPU configuration.",
+  "trigger": "Import with a nonempty EXLLAMA_NO_P2P_COPY and pass a CPU tensor to a module on a GPU, or a GPU tensor to a module on CPU. For example, Model._load_single honors the embedding's prefer_cpu capability while placing ordinary modules on the selected GPU; Model.forward passes state across that boundary.",
+  "expected_behavior": "If the option only bypassed peer-to-peer GPU copies, a transfer with a CPU endpoint would retain the original quiet to(self.device) path.",
+  "actual_behavior": "Any device mismatch takes the enabled branch. It prints a dot before calling cpu().to(self.device), even if the source or destination is already CPU.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Compared the new predicate with the parent helper and inspected model placement and the parent call sites. The difference applies only when an inspected caller supplies a mismatched device while the override is enabled.",
+      "evidence": [
+        "call_51a1df56df1e49878d47c449d11db5ef",
+        "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+        "call_8d00843b4719415d84d282f007f3648a",
+        "call_f7f8f3bd46b04b1ba38130c6c601f2b3"
+      ],
+      "limits": "This establishes branch scope, not that PyTorch makes an extra physical copy when an endpoint is already on CPU."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Fake CPU-to-GPU and GPU-to-CPU cases both recorded cpu(), to(...), and one dot line with the override enabled.",
+      "evidence": [
+        "call_71f0edb5fba2476684ac8646d21b9d11"
+      ],
+      "limits": "No real tensors, model execution, or GPU transfers."
+    }
+  ],
+  "defect_id": "exllamav3-cpu-endpoints-enter-p2p-workaround",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+      "paths": [
+        "exllamav3/modules/module.py"
+      ],
+      "status": "source_supported",
+      "rationale": "The new opt-in branch checks device inequality and prints a dot before staging, so any mismatch with a CPU endpoint enters it."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+      "run": ".teacher/runs/commit-000316-001",
+      "local_id": "cpu-endpoints-enter-p2p-workaround",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "cpu-endpoints-enter-p2p-workaround",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The P2P override covers host-facing transfers as well as inter-GPU copies, so it can add output even in a single-GPU configuration.",
+        "trigger": "Import with a nonempty EXLLAMA_NO_P2P_COPY and pass a CPU tensor to a module on a GPU, or a GPU tensor to a module on CPU. For example, Model._load_single honors the embedding's prefer_cpu capability while placing ordinary modules on the selected GPU; Model.forward passes state across that boundary.",
+        "expected_behavior": "If the option only bypassed peer-to-peer GPU copies, a transfer with a CPU endpoint would retain the original quiet to(self.device) path.",
+        "actual_behavior": "Any device mismatch takes the enabled branch. It prints a dot before calling cpu().to(self.device), even if the source or destination is already CPU.",
+        "locations": [
+          {
+            "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+            "path": "exllamav3/modules/module.py",
+            "symbol": "Module.prepare_for_device"
+          }
+        ],
+        "source_evidence": [
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+          "call_b5bb014997c4490fa479334ba1e0afda",
+          "call_8d00843b4719415d84d282f007f3648a",
+          "call_240a425d3b5246009c1c0bd4660a6bc9"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the new predicate with the parent helper and inspected model placement and the parent call sites. The difference applies only when an inspected caller supplies a mismatched device while the override is enabled.",
+            "evidence": [
+              "call_51a1df56df1e49878d47c449d11db5ef",
+              "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+              "call_8d00843b4719415d84d282f007f3648a",
+              "call_f7f8f3bd46b04b1ba38130c6c601f2b3"
+            ],
+            "limits": "This establishes branch scope, not that PyTorch makes an extra physical copy when an endpoint is already on CPU."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Fake CPU-to-GPU and GPU-to-CPU cases both recorded cpu(), to(...), and one dot line with the override enabled.",
+            "evidence": [
+              "call_71f0edb5fba2476684ac8646d21b9d11"
+            ],
+            "limits": "No real tensors, model execution, or GPU transfers."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit316-001-draft.json",
+      "sha256": "834d8c68126a2f6e01603ced68d050569483b1ffa47c18af96766cc42e42a951"
+    },
+    {
+      "file": "evidence/commit316-001-transcript.json",
+      "sha256": "af5f7d1c0bb79536a5d3a3605257eb2e0e386f3e2dcbbe5617b682146a972a79"
+    },
+    {
+      "file": "evidence/commit316-001-verdict.md",
+      "sha256": "81837d721811e7880eeae28ef4ae2fd48e0ad7f2aa782d9395cf7ca257185e3d"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+      "available_at": "2025-07-13T12:39:28+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit316-001-draft.json",
+      "source_id": "evidence/commit316-001-draft.json",
+      "content_sha256": "834d8c68126a2f6e01603ced68d050569483b1ffa47c18af96766cc42e42a951",
+      "available_at": "2026-11-17T23:53:45.018418+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit316-001-transcript.json",
+      "source_id": "evidence/commit316-001-transcript.json",
+      "content_sha256": "af5f7d1c0bb79536a5d3a3605257eb2e0e386f3e2dcbbe5617b682146a972a79",
+      "available_at": "2026-11-17T23:53:45.018418+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit316-001-verdict.md",
+      "source_id": "evidence/commit316-001-verdict.md",
+      "content_sha256": "81837d721811e7880eeae28ef4ae2fd48e0ad7f2aa782d9395cf7ca257185e3d",
+      "available_at": "2026-11-17T23:53:45.018418+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042"
+    ],
+    "limits": "Source inspection and fake-tensor branch checks. Actual PyTorch copy behavior, CUDA transport, and driver recovery were not measured."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "recorded_at": "2026-11-17T23:53:45.018418+00:00",
+  "reviewed_at": null,
+  "reviewer": null
+}

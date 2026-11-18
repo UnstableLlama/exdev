@@ -1,0 +1,390 @@
+{
+  "schema_version": 5,
+  "sha": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+  "parent_shas": [
+    "d5c48a647bed87ade58919b147a8ed2b461c9bde"
+  ],
+  "cutoff_date": "2025-06-14T15:30:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "refactor",
+    "problem": [
+      {
+        "text": "LinearEXL3.get_tensors used repeated assignments and different inclusion rules for ordinary tensors and decoder-multiplier metadata.",
+        "basis": "source",
+        "evidence": [
+          "call_ee3ad65868904109a651d82999a35b06"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The cleanup centralizes export in one comprehension: enumerate known attributes, exclude None, prefix each name with the layer key, and make every exported tensor contiguous. This reduces repetition but is not strictly behavior-preserving.",
+        "basis": "source",
+        "evidence": [
+          "call_ee3ad65868904109a651d82999a35b06"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Present mcg and mul1 tensors are now exported even when their decoded multiplier is zero; previously their integer truth value controlled inclusion. Both metadata tensors also gain contiguous() normalization. Constructor decoding and inference calls remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_ee3ad65868904109a651d82999a35b06",
+          "call_6897bb297a3f4015968ce6f3f7e37d57"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial quantized-inference entry and the experimental-codebook entry d359bcc. They establish the earlier loading/export interface and the introduction of per-tensor multiplier metadata, respectively.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_9c5f45ab2b09421d9fb13e750b97363b",
+          "call_78fed9277eba4186b525508b693b1921"
+        ]
+      },
+      {
+        "text": "Issue #11, \u201cAssertionError: bias is wrong datatype,\u201d reports a constructor failure and subsequent successful fix. Its contextual relationship is inferred from the same exl3.py constructor; the inspected parent already converts FP32 bias to half, and this task changes only export.",
+        "basis": "inference",
+        "evidence": [
+          "call_88a3b1cef6a8481fbbc0174c97b4b1fb",
+          "call_6897bb297a3f4015968ce6f3f7e37d57",
+          "call_ee3ad65868904109a651d82999a35b06"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d discusses alternative codebooks and explicitly identifies d359bcc as their implementation. Its relationship to this cleanup is inferred specifically from mcg/mul1 metadata, not an explicit reference to the task commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_ebf07b44b9574cb1aa45edd9fe1b65ed",
+          "call_5ba1668f2fb54029804adb7d9600a21e",
+          "call_ee3ad65868904109a651d82999a35b06"
+        ]
+      },
+      {
+        "text": "Other discussions matching inspected conversion paths concern distinct failures: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns native-extension loading; #33, \u201cError converting model,\u201d develops from file-opening failures into a GLM sampling report; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concern factorization/nonfinite-state failures. Their contextual links are inferred from shared source paths, not evidence that this export cleanup fixes them.",
+        "basis": "inference",
+        "evidence": [
+          "call_972d0df856064b0dbc0c6aca0fcd23d0",
+          "call_f88c1f7080a342d1b2d7cfcc6bd42500",
+          "call_4034eaaf25d34a2aa3c0925d320e2b98",
+          "call_9c07186f14ec40b686ff992fae5bde98",
+          "call_ee3ad65868904109a651d82999a35b06"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch tensor operation, serialization round trip, model conversion or GPU execution was tested. The bounded check used fake tensor objects and a transcription of the new comprehension.",
+      "Repository searches establish visible callers, not dynamic or external consumers. No performance improvement is measured."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "d359bcc0d366c64fe7bed2e13446641d9f99c163"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Uniform EXL3 tensor export",
+        "claims": [
+          {
+            "text": "get_tensors retains the key argument and dictionary return interface. Its candidate list contains su, sv, suh, svh, trellis, bias, mcg and mul1; each non-None value becomes tensor.contiguous() under key.subkey. The obsolete commented scale export disappears.",
+            "basis": "source",
+            "evidence": [
+              "call_ee3ad65868904109a651d82999a35b06"
+            ]
+          },
+          {
+            "text": "The uniform None filter also replaces unconditional trellis export. For normally constructed instances this does not weaken the required-trellis invariant: __init__ still asserts trellis is present. It stores unpacked suh/svh and sets su/sv to None, so ordinary exports contain the unpacked representation.",
+            "basis": "source",
+            "evidence": [
+              "call_6897bb297a3f4015968ce6f3f7e37d57",
+              "call_ee3ad65868904109a651d82999a35b06"
+            ]
+          },
+          {
+            "text": "The removed multiplier truth checks previously omitted zero-valued metadata. The replacement preserves presence instead of testing decoder selection. Linear.load_exl3 reads either optional tensor and __init__ decodes its unsigned value, with absence defaulting to zero. create_quantization_config_json still lists stored tensors but emits named multiplier fields only for nonzero values; it therefore accepts the newly retained zero tensors without reporting an active experimental multiplier.",
+            "basis": "source",
+            "evidence": [
+              "call_ee3ad65868904109a651d82999a35b06",
+              "call_6897bb297a3f4015968ce6f3f7e37d57",
+              "call_7fff6598c8ca42fcb483b8752a85a87f",
+              "call_fc71d5aeca3343479f4be8894ca12968"
+            ]
+          },
+          {
+            "text": "The whole-parent search locates Linear.get_tensors as the direct inner-export caller. It supplies self.key only for a loaded layer. Conversion collects these dictionaries, saves them, and reloads from the same dictionary; Model.get_storage_info and the evaluation adapter consume values for byte accounting. These consumers retain compatible dictionary usage, although a present zero multiplier now contributes storage bytes. The FP16 alternatives keep their existing get_tensors(key) interface; no LinearEXL3 subclass appeared in the class-name search.",
+            "basis": "source",
+            "evidence": [
+              "call_6b9188b85a4f450d850eec1061e4cbd5",
+              "call_1e4cb70a85134fee9db1ae293abfb41a",
+              "call_7fff6598c8ca42fcb483b8752a85a87f",
+              "call_0962319d8d304c0e83d91acac63414c2",
+              "call_531f19c0c45f40a7af0392dfc01f12e0",
+              "call_b2a63885ca444721ab997f7d03440c5b",
+              "call_9a73e7a1868e44a0af1fd2e1e3c40150",
+              "call_2edb0d641c8e40aaa067d85462e7abcb"
+            ]
+          },
+          {
+            "text": "A bounded Python check compared the extracted parent method with a transcription of the replacement using fake tensors. Absent and nonzero metadata produced matching key sets; present zero metadata added exactly k.mcg and k.mul1. This checks selection logic, not real tensor contiguity or saved-file compatibility.",
+            "basis": "execution",
+            "evidence": [
+              "call_ffa016c34323403297e6a729ad2ad318"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Consolidates EXL3 tensor export into a None-filtered comprehension, normalizing every exported tensor and retaining present zero-valued multiplier metadata."
+  },
+  "evidence": {
+    "call_ee3ad65868904109a651d82999a35b06": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "offset": 141,
+        "max_bytes": 1477
+      },
+      "result_sha256": "7fa2b80dd1cb0adcc55e3cf27c8b4347f48df99118c8bf2515d9757bb1ac5405"
+    },
+    "call_6897bb297a3f4015968ce6f3f7e37d57": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "d8dd288df759ae4320316f2acd354904877d9ecdad85f5459b5fd1add6735680"
+    },
+    "call_6b9188b85a4f450d850eec1061e4cbd5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "query": "get_tensors",
+        "limit": 100
+      },
+      "result_sha256": "9dbcdff5b3b14384ac908080ed6a1a9c12854caca5ad528b65da35ea8852499f"
+    },
+    "call_ea9ef6b7e0a9404c8b553c1df6ed3804": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 6000,
+        "limit": 20
+      },
+      "result_sha256": "a96b33e6c1d4409c87a4a72391e85bc560747b90f4b8a97939a20569475dbcf4",
+      "catalog_only": true
+    },
+    "call_9c5f45ab2b09421d9fb13e750b97363b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantized-inference",
+        "max_bytes": 16384
+      },
+      "result_sha256": "02b6734d29272cca0d4ea8a56ffcd9ba2d18a4cc524cb44db9d12c4d8741226c"
+    },
+    "call_7fff6598c8ca42fcb483b8752a85a87f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "281730f75995b2e75e810ae969dc0a7ee900a98de49f112c56c3ed1bd3ef4890"
+    },
+    "call_88a3b1cef6a8481fbbc0174c97b4b1fb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ad51f3188cfc960da1eb5d1d64dbf402b905e582c3de397b78dc448065c14d57"
+    },
+    "call_49bfa9f9727347149c299f51209a2b60": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/modules/quant/exl3.py",
+        "limit": 20
+      },
+      "result_sha256": "a669e11708b847759764619d4e17817ad50cc729b581510256769139923afe0c"
+    },
+    "call_78fed9277eba4186b525508b693b1921": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d359bcc0d366c64fe7bed2e13446641d9f99c163",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6def3b674258b3c913571913d81795eb4e8957a945dc62c19121fcca5e362531"
+    },
+    "call_531f19c0c45f40a7af0392dfc01f12e0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 19000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "32165560201dfe8df7e8f274d6850a9e18f325421334daea1018fdede7d997ac"
+    },
+    "call_0962319d8d304c0e83d91acac63414c2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 17100,
+        "max_bytes": 2000
+      },
+      "result_sha256": "a1a5935b8ba388ca30db38cf4e0f244f41cf3b40e5e382db179b0049c380031e"
+    },
+    "call_b2a63885ca444721ab997f7d03440c5b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/models/model.py",
+        "offset": 16000,
+        "max_bytes": 4000
+      },
+      "result_sha256": "46598844cee438876db813d9aab1642a7c53a024f3834ef6f1a081b36c4a02ec"
+    },
+    "call_9a73e7a1868e44a0af1fd2e1e3c40150": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "eval/compare_q_exllamav3.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "2a90bae250b400f6914f22bab71a42263123eb775681c9b1d67efd77388bb72a"
+    },
+    "call_972d0df856064b0dbc0c6aca0fcd23d0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42d5c11e04f730de154feafb0bc2a27527180d06b9ba512ae6ade47a8037ca65"
+    },
+    "call_ebf07b44b9574cb1aa45edd9fe1b65ed": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16384
+      },
+      "result_sha256": "a56f9d8964b74d353db6888241b3f26db4b9a5d5cba0d849b18b848d5b176b5c"
+    },
+    "call_0fa6fd3d9504458e93fe8b3be0efb611": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16384,
+        "max_bytes": 110000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_89a07f5e59be490dbba852096a4ab0fb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16384,
+        "max_bytes": 65536
+      },
+      "result_sha256": "b0409cb9aedf36af4328d31981b60f93d4345c2ef907de03965646e1be9d0c82"
+    },
+    "call_5ba1668f2fb54029804adb7d9600a21e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 81920,
+        "max_bytes": 45000
+      },
+      "result_sha256": "54bc2abf6af12e47abe269d0a00012f0f62f2a8a92ee55415615db853495e58a"
+    },
+    "call_f88c1f7080a342d1b2d7cfcc6bd42500": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 65000
+      },
+      "result_sha256": "a2586740cedd9924e082661063fc01839ad6f3c803c8212db4b29172714b1fd2"
+    },
+    "call_4034eaaf25d34a2aa3c0925d320e2b98": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 65000
+      },
+      "result_sha256": "5e23435ce4069c28fa7ed9daa3914d2028d6217a38c27b14e207f68971834639"
+    },
+    "call_9c07186f14ec40b686ff992fae5bde98": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 20000
+      },
+      "result_sha256": "a7dba67297929e56b5392e102b04670090d9eec677425560608f0e38a33ea73b"
+    },
+    "call_1e4cb70a85134fee9db1ae293abfb41a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "query": "LinearEXL3",
+        "limit": 100
+      },
+      "result_sha256": "146e8d765dc4af83ba63317fc6e1ff405d6b965d8cefb1930b7bc56f787e685d"
+    },
+    "call_0c2a446790cb47e585e75e5dedead85b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "query": ".mcg",
+        "limit": 100
+      },
+      "result_sha256": "a8ce913cf945f070992910aa5d601bb9fb6d0e6640051452531172d61c83ea40"
+    },
+    "call_2edb0d641c8e40aaa067d85462e7abcb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "808a29d5ede82c644e75f52b94480009d9fc878a311b75798053e77664405ea1"
+    },
+    "call_fc71d5aeca3343479f4be8894ca12968": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/conversion/quant_config.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "cdf7591276312a174ad24a86759083f75ec19d6447679f15790bb0532e1c2253"
+    },
+    "call_ab2b2e5b365943dab6f598de3b81d74c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "path": "exllamav3/integration/transformers.py",
+        "offset": 2000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "3ec56c5feb5d8118fccbd35e953224886ef2095290219eb93ccb00550252f1f1"
+    },
+    "call_ffa016c34323403297e6a729ad2ad318": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib,types\np=ast.parse(pathlib.Path('exllamav3/modules/quant/exl3.py').read_text()); c=next(n for n in p.body if isinstance(n,ast.ClassDef) and n.name=='LinearEXL3'); f=next(n for n in c.body if isinstance(n,ast.FunctionDef) and n.name=='get_tensors'); ns={}; exec(compile(ast.Module(body=[f],type_ignores=[]),'parent','exec'),ns)\nclass T:\n def __init__(self,name): self.name=name; self.calls=0\n def contiguous(self): self.calls+=1; return self\nnames=['su','sv','suh','svh','trellis','bias','mcg','mul1']\ndef new(o): return {'k.'+s:t.contiguous() for s,t in [(s,getattr(o,s)) for s in names] if t is not None}\nfor v in [None,0,1]:\n o=types.SimpleNamespace(**{s:(T(s) if s in ['suh','svh','trellis'] or (s in ['mcg','mul1'] and v is not None) else None) for s in names},mcg_mult=v or 0,mul1_mult=v or 0)\n old=ns['get_tensors'](o,'k'); before={s:getattr(o,s).calls for s in ['mcg','mul1'] if getattr(o,s) is not None}; out=new(o)\n print(v,sorted(old),sorted(out),'old_metadata_contiguous_calls',before)\n assert set(old)<=set(out)\n assert set(out)-set(old)==({'k.mcg','k.mul1'} if v==0 else set())\nprint('selection checks passed; fake tensors only')"
+        ]
+      },
+      "result_sha256": "625a2762a83e2899f92952c03ef2aa755be8700bac3c54287f307c71b727bdfc"
+    }
+  }
+}

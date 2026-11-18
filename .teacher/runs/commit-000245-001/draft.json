@@ -1,0 +1,350 @@
+{
+  "schema_version": 5,
+  "sha": "4f9851616c46007d83dcd5b75b6d0907874471ee",
+  "parent_shas": [
+    "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e"
+  ],
+  "cutoff_date": "2025-06-06T03:44:13+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Model.forward previously projected every token's hidden state into logits, even when a caller needed only a suffix.",
+        "basis": "source",
+        "evidence": [
+          "call_366df40eeac74145811cab2131a32f4e",
+          "call_4845eb62814e460d80234ab0b30254d3"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Selecting hidden states immediately before the logits-output module can avoid projecting unwanted positions without shortening the preceding transformer computation.",
+        "basis": "inference",
+        "evidence": [
+          "call_4845eb62814e460d80234ab0b30254d3",
+          "call_12758edb302143a1b6907de46900d4fb"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The option is opt-in through params[\"last_tokens_only\"], not a new forward keyword argument. No existing parent-tree caller supplies the key.",
+        "basis": "source",
+        "evidence": [
+          "call_4845eb62814e460d80234ab0b30254d3",
+          "call_15ebd099389a4d9db450192a15639dc4"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root models ancestor entry was read. It establishes the shared sequential model boundary, logits head, and separate prefill path on which this change builds.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_6f64b9d976174031b008fbe860ec384e"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure; issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d reports an installation-time traceback ending in an assertion.",
+        "basis": "source",
+        "evidence": [
+          "call_ce76af9c05144fdfa74c5669262a9a71",
+          "call_94fb8ade50ff490e82df7baa37a67a5e"
+        ]
+      },
+      {
+        "text": "Their connection to this task is only inferred from traceback references to models/model.py. Neither discussion establishes a motivation for suffix-logit selection, and the diff does not alter imports or extension loading.",
+        "basis": "inference",
+        "evidence": [
+          "call_ce76af9c05144fdfa74c5669262a9a71",
+          "call_94fb8ade50ff490e82df7baa37a67a5e",
+          "call_4845eb62814e460d80234ab0b30254d3"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model forward, GPU operation, output-equivalence test, or performance benchmark was executed. The scalar check models Python suffix indexing and element counts only.",
+      "The new option has no explicit type or positivity validation. Its intended contract for negative counts or non-integer values is not documented by this diff.",
+      "Whole-tree literal and AST searches cover inspected static definitions and call sites, not dynamic invocation or external callers."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Selecting suffix hidden states before logits projection",
+        "claims": [
+          {
+            "text": "Inside Model.forward's module loop, a truthy module.caps[\"logits_output\"] and truthy params[\"last_tokens_only\"] now trigger x[..., -num:, :].contiguous(). This selects the final num positions on the penultimate axis while retaining leading dimensions and all hidden features. The selection happens before prepare_for_device and module.forward; params and the original input IDs are not shortened.",
+            "basis": "source",
+            "evidence": [
+              "call_4845eb62814e460d80234ab0b30254d3",
+              "call_366df40eeac74145811cab2131a32f4e"
+            ]
+          },
+          {
+            "text": "In LlamaModel the flagged module is the final Linear lm_head, after embedding, transformer blocks and final normalization. Module.prepare_for_device moves its input when devices differ. Linear.forward still delegates to its existing inner implementation and applies any configured softcap or post-scale. Thus the change narrows the head's input rather than slicing already-computed logits or changing the attention path.",
+            "basis": "source",
+            "evidence": [
+              "call_12758edb302143a1b6907de46900d4fb",
+              "call_de1c89ef3e6c46e3bc5304385116b5a4",
+              "call_ae93086b07f44a97981f8230f8059081",
+              "call_4845eb62814e460d80234ab0b30254d3"
+            ]
+          },
+          {
+            "text": "The parent constructors for Cohere, Cohere2, DeciLM, Gemma2, Gemma3, GLM4, Llama, Mistral3, Mixtral, Phi3, Qwen3 and Qwen3Moe all mark their Linear logits heads with this capability. Whole-tree AST inspection found no Model subclass overriding forward, including the Llama-derived Mistral, Qwen2 and MiMo classes. The two other forward definitions in models belong to image-processing modules, not Model overrides.",
+            "basis": "source",
+            "evidence": [
+              "call_44fd5249af58454e88ee3f9ae0f53b01",
+              "call_decba5de548f4e6c96753da9b77b5310",
+              "call_bcbf75cbc72c48949d512f95996cef04"
+            ]
+          },
+          {
+            "text": "Missing, None or zero values leave the sequence unchanged because the condition tests truthiness. For a positive integer num and sequence length T, suffix indexing retains min(num, T) positions; num=1 means the last position, not an empty or squeezed sequence. No matching last_tokens_only key existed in the parent tree, and near-spelling searches found no competing option.",
+            "basis": "source",
+            "evidence": [
+              "call_4845eb62814e460d80234ab0b30254d3",
+              "call_15ebd099389a4d9db450192a15639dc4",
+              "call_5f70cfceeab9458c952b4e952edfb966",
+              "call_818610970c1544d39af3be6f458a8f7a",
+              "call_af170bc22e3148c09570f8fef1261e04"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription checked a six-position sequence: counts 1 and 2 retained [5] and [4,5], while counts 6 and 9 retained all positions. None and zero bypassed selection. It also exposed the literal unchecked behavior: -2 selected positions [2,3,4,5], and True behaved as one. For an illustrative batch of two, six positions and output width eleven, selecting two positions reduced modeled logits elements from 132 to 44. This did not execute tensor slicing, contiguous copies or the model.",
+            "basis": "execution",
+            "evidence": [
+              "call_8b6d123b2a874a9fb5f3420f8ec13fd3"
+            ]
+          },
+          {
+            "text": "Existing callers remain on their original full-output path: compare_q_exllamav3 supplies only its attention mode; ppl consumes logits aligned with shifted targets; generation_loop supplies a single input position; generator.py's draft and main calls supply cache metadata without the new key. Gemma3 and Mistral3 image-embedding calls likewise omit it. Their inspected argument dictionaries therefore require no migration.",
+            "basis": "source",
+            "evidence": [
+              "call_6200674764274ab98ee37e70bb9ac02f",
+              "call_bcbf75cbc72c48949d512f95996cef04",
+              "call_4845eb62814e460d80234ab0b30254d3"
+            ]
+          },
+          {
+            "text": "Model.prefill and autosplit sizing remain separate mechanisms. Prefill stops at the last KV-cache module; autosplit already limits dummy logits-layer input using max_output_size. The new runtime option neither changes that load-time estimate nor automatically enables itself in generation.",
+            "basis": "source",
+            "evidence": [
+              "call_366df40eeac74145811cab2131a32f4e",
+              "call_4845eb62814e460d80234ab0b30254d3",
+              "call_bcbf75cbc72c48949d512f95996cef04"
+            ]
+          },
+          {
+            "text": "The tradeoff is a potentially smaller logits projection and, across device boundaries, smaller head-input transfer, in exchange for making the suffix contiguous before projection. Earlier transformer work remains full-length. This is an expected resource benefit, not measured acceleration.",
+            "basis": "inference",
+            "evidence": [
+              "call_4845eb62814e460d80234ab0b30254d3",
+              "call_12758edb302143a1b6907de46900d4fb",
+              "call_de1c89ef3e6c46e3bc5304385116b5a4"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds opt-in suffix-logit computation by narrowing hidden states immediately before flagged output heads; existing callers retain full-output behavior."
+  },
+  "evidence": {
+    "call_4845eb62814e460d80234ab0b30254d3": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4f9851616c46007d83dcd5b75b6d0907874471ee",
+        "offset": 178,
+        "max_bytes": 648
+      },
+      "result_sha256": "8634cdf6565a60f5a8c23ae5db0ac33efeb9ff0308f8276d7ae2edd14b4fd124"
+    },
+    "call_366df40eeac74145811cab2131a32f4e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3063a0558ee86a27bdb269e2b4f31c8797eb28a1491e0e22ea7d56dfb839c068"
+    },
+    "call_5f70cfceeab9458c952b4e952edfb966": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "query": "last_tokens",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_44fd5249af58454e88ee3f9ae0f53b01": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "query": "logits_output",
+        "limit": 100
+      },
+      "result_sha256": "dfa8128a12cc5d1f2309fc8b393913e252567b82441915dca9721f9ac6b41377"
+    },
+    "call_6200674764274ab98ee37e70bb9ac02f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "query": ".forward(",
+        "limit": 250
+      },
+      "result_sha256": "fc2e1030fdc33336dcb195b1712fb1d7c2bb55f13869b98479fd89550c48f5b9"
+    },
+    "call_c2cea167887244d4a277d040f85ce361": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "limit": 30,
+        "max_bytes": 10000
+      },
+      "result_sha256": "1612db8acd50db36ae58d34167409c0297bebe46a450d7b085148a2b3dcef3b3",
+      "catalog_only": true
+    },
+    "call_6f64b9d976174031b008fbe860ec384e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_ce76af9c05144fdfa74c5669262a9a71": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "e7bd54c2cb967f1dac7a123429db4010c95150ec894e67f81a90ed826ee10ae9"
+    },
+    "call_94fb8ade50ff490e82df7baa37a67a5e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 14000
+      },
+      "result_sha256": "530ac0fe7222e69d0cde1312d4b0a27c839426832cc5eb75d4147b166b5fa01f"
+    },
+    "call_41e1b13baf944c6295369a6a8ed77f0b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "path": "exllamav3/models",
+        "query": "def forward",
+        "limit": 100
+      },
+      "result_sha256": "7cec527fe09aaee6d3682b7c695d80557258fcd20b2890d91982160d912f9aca"
+    },
+    "call_12758edb302143a1b6907de46900d4fb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "path": "exllamav3/models/llama.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "089c14bc830bae652e2dd7737aa461ca7015cfe9d5d494a18ffba58e819c67ca"
+    },
+    "call_ae93086b07f44a97981f8230f8059081": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 10500,
+        "max_bytes": 4500
+      },
+      "result_sha256": "57739d3ed754e0add8ff79ada93cadea9c27eb7b8cb4ff4fca9187341aa1574e"
+    },
+    "call_bcbf75cbc72c48949d512f95996cef04": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nsites={'eval/compare_q_exllamav3.py':[(30,48)],'eval/ppl.py':[(48,85)],'examples/generation_loop.py':[(48,85)],'exllamav3/generator/generator.py':[(339,380),(423,466)],'exllamav3/models/gemma3.py':[(283,317),(348,374),(525,550)],'exllamav3/models/mistral3.py':[(184,212),(235,265),(458,485)]}\nfor p,rs in sites.items():\n print('\\nFILE',p); ls=Path(p).read_text().splitlines()\n for a,b in rs:\n  print('\\n'.join(f'{i+1}: {ls[i]}' for i in range(a-1,min(b,len(ls)))))"
+        ]
+      },
+      "result_sha256": "b006e888a19793d332aeb3693e88bbdfd966101d895af5fc63ea6cf028d8fcda"
+    },
+    "call_818610970c1544d39af3be6f458a8f7a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "query": "tokens_only",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_af170bc22e3148c09570f8fef1261e04": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "query": "last_token",
+        "limit": 100
+      },
+      "result_sha256": "3dda4290c9e59bd210df98ad71e96b3dcba69e8577ed13d25f4c2e40dbdb2648"
+    },
+    "call_de1c89ef3e6c46e3bc5304385116b5a4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 12500
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_decba5de548f4e6c96753da9b77b5310": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\nfor p in Path('.').rglob('*.py'):\n try: t=ast.parse(p.read_text())\n except (SyntaxError,UnicodeError): continue\n for n in ast.walk(t):\n  if isinstance(n,ast.ClassDef) and any(isinstance(b,ast.Name) and (b.id=='Model' or b.id.endswith('Model')) for b in n.bases):\n   print(str(p), n.name, 'bases', [ast.unparse(b) for b in n.bases], 'overrides forward',any(isinstance(x,(ast.FunctionDef,ast.AsyncFunctionDef)) and x.name=='forward' for x in n.body))\nfor p in Path('exllamav3/models').glob('*.py'):\n ls=p.read_text().splitlines()\n for i,l in enumerate(ls):\n  if '\"logits_output\"' in l and p.name!='model.py':\n   print('\\n',str(p));print('\\n'.join(ls[max(0,i-11):i+4]))"
+        ]
+      },
+      "result_sha256": "cdb1fdc751647047f709ae5f3a0665bafa354ba973eb3f14f7bde8e618aae643"
+    },
+    "call_15ebd099389a4d9db450192a15639dc4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "query": "last_tokens_only",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8b6d123b2a874a9fb5f3420f8ec13fd3": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "tokens=list(range(6))\nfor n in [None,0,1,2,6,9,-2,True]:\n out=tokens[-n:] if n else tokens\n print(repr(n),out,'length',len(out))\nfor b,t,h,v,n in [(2,6,4,11,2),(2,6,4,11,9)]:\n k=min(t,n)\n full=b*t*v; suffix=b*k*v\n print({'B':b,'T':t,'H':h,'V':v,'n':n,'selected_hidden_elements':b*k*h,'full_logits_elements':full,'suffix_logits_elements':suffix})"
+        ]
+      },
+      "result_sha256": "fbe5d3baad9b61c2f044bf439cecc1bba91677b7d1327fee9fd8a83c618c4ed7"
+    },
+    "call_23bddc93775f47299fd53d46b0aca370": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea4ef8dcbb58d3afc5cffadcb90a01204af7036e",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 0,
+        "max_bytes": 4000
+      },
+      "result_sha256": "0fd5f0b3d301c2949c2892dd17ca0f16a4756cfb999203dc40de2430d698b611"
+    }
+  }
+}

@@ -1,0 +1,330 @@
+{
+  "defect_id": "exllamav3-variant-collection-loader-api",
+  "revision_id": "r005",
+  "supersedes": "r004",
+  "origin": "reviewer_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "VariantSafetensorsCollection does not implement the expanded loading API.",
+  "trigger": "Load a Config constructed with public st_variants keyword.",
+  "expected_behavior": "Variant collections accept module loading keyword arguments and the deferred lifecycle.",
+  "actual_behavior": "Eager module loading passes float2half and other unsupported keywords, causing TypeError. Automatic splitting calls missing begin_deferred_load first, causing AttributeError.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "paths": [
+        "exllamav3/loader/safetensors.py",
+        "exllamav3/models/model.py",
+        "exllamav3/modules/embedding.py"
+      ],
+      "status": "reviewer_source_supported",
+      "rationale": "Fable identifies this regression in the task changes moving transformations into get_tensor; no execution."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000119-001.md",
+      "description": "VariantSafetensorsCollection does not implement the expanded loading API."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000140-001.md",
+      "description": "Variant collection still lacks begin_deferred_load/end_deferred_load; explicit-device loading now reaches them too."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+      "run": ".teacher/runs/commit-000120-001",
+      "local_id": "metrics-wrapper-compatibility",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "metrics-wrapper-compatibility",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Removing SafetensorsCollection.get_metrics leaves existing metrics wrappers calling a missing method.",
+        "trigger": "Call Model.get_load_metrics with a SafetensorsCollection, or VariantSafetensorsCollection.get_metrics with at least one child collection.",
+        "expected_behavior": "Return the existing bytes, elapsed-time and bandwidth tuple.",
+        "actual_behavior": "The unchanged wrappers call stc.get_metrics(), which the task removes, leading to an attribute lookup failure rather than returning metrics.",
+        "locations": [
+          {
+            "commit": "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "VariantSafetensorsCollection.get_metrics"
+          },
+          {
+            "commit": "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.get_load_metrics"
+          }
+        ],
+        "source_evidence": [
+          "call_8e31cd1d59b347a698a6c5dbd9d71753",
+          "call_d4081dced3134f3d9c2e3a3e558a7e12",
+          "call_18d8b7a353db44139da9f273f84286d4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree searches locate both remaining consumers. No in-tree caller of Model.get_load_metrics was found beyond its definition; the new CLI bypasses these wrappers and prints stc.metrics directly.",
+            "evidence": [
+              "call_91e4af82ab1f4d2298a4e7f025236a8e",
+              "call_574b60503c8b478eb60f03e134985d32",
+              "call_c176979cd0734182b7ba4303db870ad0"
+            ],
+            "limits": "Not executed; external consumers and dynamic calls were not enumerated."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+      "run": ".teacher/runs/commit-000297-001",
+      "local_id": "inherited-model-metrics-wrapper",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "inherited-model-metrics-wrapper",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Model.get_load_metrics remains incompatible with the collection API.",
+        "trigger": "Call Model.get_load_metrics with an ordinary or new variant collection.",
+        "expected_behavior": "Return load metrics.",
+        "actual_behavior": "Model calls stc.get_metrics(), absent from the ordinary collection and removed from the variant collection by this task.",
+        "locations": [
+          {
+            "commit": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.get_load_metrics"
+          }
+        ],
+        "source_evidence": [
+          "call_bea39925058242c3be968c70cdd09d9b",
+          "call_b2b96b609b624b048fe27ee1efa18c48",
+          "call_eb5f8b3812474d3488c2f50cff9831df"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected Model.get_load_metrics, the complete parent collection implementation and the removal of the variant method. The tree-wide stc search identifies the stale Model call.",
+            "evidence": [
+              "call_bea39925058242c3be968c70cdd09d9b",
+              "call_b2b96b609b624b048fe27ee1efa18c48",
+              "call_eb5f8b3812474d3488c2f50cff9831df",
+              "call_a2461ec13b19490290ee22e3bad944eb"
+            ],
+            "limits": "API-level trigger; no external caller or repository execution demonstrated."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e370ed289d76f51d62e7300a213d64a4484355f3",
+      "run": ".teacher/runs/commit-000299-001",
+      "local_id": "carried-metrics-interface",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "carried-metrics-interface",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Inherited metrics consumers remain incompatible with collection interfaces.",
+        "trigger": "Reach shared initialization's metrics block with a variant collection, or call Model.get_load_metrics.",
+        "expected_behavior": "Print or return loader metrics.",
+        "actual_behavior": "The variant lacks metrics; ordinary and variant collections lack get_metrics, producing attribute lookup failures.",
+        "locations": [
+          {
+            "commit": "e370ed289d76f51d62e7300a213d64a4484355f3",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "VariantSafetensorsCollection.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+          "call_1c831e16b2714f0cbfe475066dcfb4cc",
+          "call_cbc0c84b251246889f6f7539a598b56d",
+          "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared constructors and collection APIs with both metrics consumers and the task diff. Searches found only the get_load_metrics definition and shared initialization's metrics.print call.",
+            "evidence": [
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+              "call_1c831e16b2714f0cbfe475066dcfb4cc",
+              "call_cbc0c84b251246889f6f7539a598b56d",
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+              "call_ce15c9ba92fa4df286f6c54a851c33ee",
+              "call_e6e640ed668a44908e8d0c5062f4c922"
+            ],
+            "limits": "Carried-over conditional failures, not introduced by trie indexing and not executed."
+          }
+        ]
+      },
+      "reviewer_confirmed": true,
+      "scope_note": "Model.get_load_metrics calls missing get_metrics on collection interfaces; this observation does not re-establish every other condition in the prior identity."
+    }
+  ],
+  "fixes": [],
+  "verification": [
+    {
+      "method": "reviewer_source_inspection",
+      "description": "Finding transcribed from independent commit 119 verdict, not an authoring-time finding.",
+      "limits": "No repository caller supplies st_variants; public configuration keyword only. No execution."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit119-verdict.md",
+      "sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8"
+    },
+    {
+      "file": "evidence/commit140-verdict.md",
+      "sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000120-001__draft.json",
+      "sha256": "476d8d7a17849a1d7f636d1e5045dc1721374c39db09e4cdf29c4c29e9268b79"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000120-001.md",
+      "sha256": "f6d5b6ee4edb430f0cb260c9559b93ef61399ac7e4dd4f6fd1bf02e84b9c31bc"
+    },
+    {
+      "file": "evidence/commit297-001-draft.json",
+      "sha256": "2bcf0a553781b59425bd5c32b3118535c32c3662579f5f5f19c303a3e29f6fc3"
+    },
+    {
+      "file": "evidence/commit297-001-transcript.json",
+      "sha256": "0ca31de0c43607231849aa077d663e8ba82d9ab1a437e79563552df0b81150cb"
+    },
+    {
+      "file": "evidence/commit297-001-verdict.md",
+      "sha256": "c8398b675ffcf093a10da0a150d0ca056c148827490f8845f6e7301f2f07ab15"
+    },
+    {
+      "file": "evidence/commit299-001-draft.json",
+      "sha256": "7782dba7bc1c997c0693228ae96f8a691df24c1d404bb5d078661f0525b0ec9f"
+    },
+    {
+      "file": "evidence/commit299-001-transcript.json",
+      "sha256": "7ad5866d6cc892f7c7ef7254aae45e7783e49f40e63e7edc28b38fba96aabba9"
+    },
+    {
+      "file": "evidence/commit299-001-verdict.md",
+      "sha256": "52668d3753de53029dbdb35c1d1806a33d609668edc4166b93ecf760ecb538af"
+    }
+  ],
+  "recorded_at": "2026-11-17T18:44:33.129740+00:00",
+  "reviewed_at": "2026-11-17T18:44:33.129740+00:00",
+  "reviewer": "Fable; commit-000299-001.md confirms carried finding; administrative revision submitted with300",
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+      "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+      "e370ed289d76f51d62e7300a213d64a4484355f3"
+    ],
+    "limits": "No repository caller supplies st_variants; public configuration keyword only. No execution. No descendant interval asserted. At 140 explicit-device loading also invokes absent deferred lifecycle methods; public variant configuration remains the interface boundary. At commit297, the Model.get_load_metrics call to absent stc.get_metrics is source-supported; this observation does not assert every other variant-loading condition at297. At299, only the carried metrics-interface aspect is rechecked by source inspection; no runtime confirmation or affected interval."
+  },
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "available_at": "2025-05-03T06:43:44+02:00"
+    },
+    {
+      "url": "urn:exdev:reviews:verdicts:commit-000119-001",
+      "source_id": "review:commit-000119-001",
+      "content_sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8",
+      "available_at": "2026-11-15T03:43:16.306206+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "available_at": "2025-05-11T15:35:09+02:00"
+    },
+    {
+      "url": "urn:exdev:reviews:verdicts:commit-000140-001",
+      "source_id": "review:commit-000140-001",
+      "content_sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000120-001/draft.json",
+      "source_id": ".teacher/runs/commit-000120-001/draft.json",
+      "content_sha256": "476d8d7a17849a1d7f636d1e5045dc1721374c39db09e4cdf29c4c29e9268b79",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000120-001.md",
+      "source_id": "reviews/verdicts/commit-000120-001.md",
+      "content_sha256": "f6d5b6ee4edb430f0cb260c9559b93ef61399ac7e4dd4f6fd1bf02e84b9c31bc",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+      "available_at": "2025-05-04T05:15:00+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit297-001-draft.json",
+      "source_id": "evidence/commit297-001-draft.json",
+      "content_sha256": "2bcf0a553781b59425bd5c32b3118535c32c3662579f5f5f19c303a3e29f6fc3",
+      "available_at": "2026-11-17T17:33:13.650467+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit297-001-transcript.json",
+      "source_id": "evidence/commit297-001-transcript.json",
+      "content_sha256": "0ca31de0c43607231849aa077d663e8ba82d9ab1a437e79563552df0b81150cb",
+      "available_at": "2026-11-17T17:33:13.650467+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit297-001-verdict.md",
+      "source_id": "evidence/commit297-001-verdict.md",
+      "content_sha256": "c8398b675ffcf093a10da0a150d0ca056c148827490f8845f6e7301f2f07ab15",
+      "available_at": "2026-11-17T17:33:13.650467+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+      "available_at": "2025-07-08T18:58:43+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit299-001-draft.json",
+      "source_id": "evidence/commit299-001-draft.json",
+      "content_sha256": "7782dba7bc1c997c0693228ae96f8a691df24c1d404bb5d078661f0525b0ec9f",
+      "available_at": "2026-11-17T18:44:33.129740+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit299-001-transcript.json",
+      "source_id": "evidence/commit299-001-transcript.json",
+      "content_sha256": "7ad5866d6cc892f7c7ef7254aae45e7783e49f40e63e7edc28b38fba96aabba9",
+      "available_at": "2026-11-17T18:44:33.129740+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit299-001-verdict.md",
+      "source_id": "evidence/commit299-001-verdict.md",
+      "content_sha256": "52668d3753de53029dbdb35c1d1806a33d609668edc4166b93ecf760ecb538af",
+      "available_at": "2026-11-17T18:44:33.129740+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e370ed289d76f51d62e7300a213d64a4484355f3",
+      "available_at": "2025-07-08T19:52:00+02:00"
+    }
+  ],
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

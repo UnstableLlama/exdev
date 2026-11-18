@@ -21,7 +21,7 @@ class FakeTransport:
     def request(self, method, params):
         self.requests.append((method,params))
         if method=='thread/start':
-            return {'thread':{'id':'fresh'},'model':'wrong' if self.mode=='model' else 'gpt-6-astra',
+            return {'thread':{'id':'fresh'},'model':'wrong' if self.mode=='model' else params['model'],
                     'reasoningEffort':'medium','instructionSources':['/bad/AGENTS.md'] if self.mode=='instructions' else []}
         if method=='turn/start':return {'turn':{'id':'turn'}}
         return {}
@@ -45,7 +45,7 @@ class CodexTeacherTests(unittest.TestCase):
         self.assertFalse(result['published'])
         self.assertEqual(result['review']['status'],'pending')
         start=transport.requests[1][1]
-        self.assertEqual(start['model'],'gpt-6-astra')
+        self.assertEqual(start['model'],'gpt-6.2-sol')
         self.assertEqual(start['config']['model_reasoning_effort'],'medium')
         self.assertTrue(start['ephemeral']); self.assertFalse(start['allowProviderModelFallback'])
         self.assertEqual(start['environments'],[])

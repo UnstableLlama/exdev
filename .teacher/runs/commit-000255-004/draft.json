@@ -1,0 +1,685 @@
+{
+  "schema_version": 5,
+  "sha": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+  "parent_shas": [
+    "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513"
+  ],
+  "cutoff_date": "2025-06-07T15:19:44+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "integration",
+    "problem": [
+      {
+        "text": "The change adds a preliminary bridge for loading EXL3 linear layers through Transformers rather than through ExLlamaV3's model runtime.",
+        "basis": "source",
+        "evidence": [
+          "call_eac9faee6db44749b8656f78918db17b",
+          "call_bd19a3625f434c1fb0e435d810d832ed"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Header-derived meta buffers let Transformers load checkpoint tensors into replacement nn.Modules; post-loading finalization then constructs the existing LinearEXL3 implementation. This separates Transformers' model orchestration from EXL3 linear computation.",
+        "basis": "source",
+        "evidence": [
+          "call_eac9faee6db44749b8656f78918db17b",
+          "call_7fd37a91da834d0da1479adad73dd58c",
+          "call_3bb1c93a6a7c407989881a20633a7069"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Registration remains explicit, but importing the adapter does not: ordinary import exllamav3 now eagerly imports Transformers. Its dependency declaration and package-list omissions are recorded as suspected defects.",
+        "basis": "source",
+        "evidence": [
+          "call_fc6a25f21b584d1dbdd4c7dac8d9c522",
+          "call_57b60102014f442f9b58bf0823d04c10",
+          "call_eac9faee6db44749b8656f78918db17b",
+          "call_bc70b94fcd954548a463007026d3440d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the earlier dtype-metadata, nullable-config and CPU-unpacking entries. They establish three prerequisites: list_tensors supplies torch_dtype, LinearEXL3 explicitly accepts an unused None configuration, and transformers_fix enables CPU packed-sign expansion followed by device restoration.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_86966bafd24d4f85b3bfd2609dadb732",
+          "call_b82761cffdec48a3a5b8b973c4dee614",
+          "call_09533960f82b4f2193a2cd8a609e70ce"
+        ]
+      },
+      {
+        "text": "Those entries discuss an older packed-sign concern. The inspected parent already expands packed factors during construction, stores su/sv as None and forwards unpacked suh/svh; the task preserves that implementation and enables its CPU workaround. This is source inspection, not proof that the reported GPU assert is avoided.",
+        "basis": "source",
+        "evidence": [
+          "call_3bb1c93a6a7c407989881a20633a7069",
+          "call_eac9faee6db44749b8656f78918db17b"
+        ]
+      },
+      {
+        "text": "Closed issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d and issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d report earlier native-extension import failures. Their relationship to this change is inferred only from tracebacks through exllamav3/__init__.py and the inspected import chain; neither reports the newly introduced Transformers dependency failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_3d88a3400c344981b8beb09929b6817f",
+          "call_f6455cf6347849c49e668354114d057b",
+          "call_7ad7049ec53d42fcbdb87c77554c306e"
+        ]
+      },
+      {
+        "text": "Other inspected discussions have different framing: #33, \u201cError converting model,\u201d covers file-opening failures and later GLM sampling trouble; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concern quantization failures. Their connections here are inferred from the shared loader or Linear.convert_exl3 paths, not evidence that this adapter fixes them.",
+        "basis": "inference",
+        "evidence": [
+          "call_dc293a22ca5741b389410432d890bbe5",
+          "call_2b3ed441869442f694e2a6cea15b13e4",
+          "call_4bfc8d8e957b4949b932ba488e67fcb3",
+          "call_d4d4519bd0254785b921e93102a869d4",
+          "call_49311c0462ee4ed2b067962a29c9c9e2"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d describes a spelling correction; #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?,\u201d discusses RoPE scaling; #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports vocabulary/head padding disagreement; #49, \u201crunning the QTIP inference code,\u201d offers QTIP installation advice. Their inferred overlap is confined to inspected filenames or import dependencies, not an established motivation for this commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_7f65b6fb78e140e2b18b8b2c8557a4f3",
+          "call_1892d7242ded46fa9708dfdc917ce3fd",
+          "call_f28477366ddf49a2a2799abaa9daaeaa",
+          "call_d2ee9c6447844e9e99d01f2951cdc061"
+        ]
+      },
+      {
+        "text": "The inspected opening of PR #26, \u201cSuperior 3INST parameters,\u201d proposes alternative decoder multipliers and discusses metadata needed to distinguish codebooks. Its relevance to the adapter's omitted mcg/mul1 forwarding is an inference based on that shared multiplier mechanism, not an upstream link to this task.",
+        "basis": "inference",
+        "evidence": [
+          "call_69081e89e20b486b9a6352aeb92daeb0",
+          "call_eac9faee6db44749b8656f78918db17b",
+          "call_3bb1c93a6a7c407989881a20633a7069"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository import, package build, Transformers loading, Torch operation or CUDA kernel was executed. Import order is a static project-source traversal, not a measured sys.modules trace; third-party internal imports and environment-dependent native loading are outside that inventory.",
+      "Transformers-version compatibility of the imported symbols, hook signatures, registry mutation and QuantizationMethod attribute assignment was not established by eligible Transformers implementation evidence.",
+      "Checkpoint loading, device placement, tied-weight behavior, numerical accuracy and the example's generation remain untested. The dummy weight is an ordinary meta tensor attribute, not an actual dense weight.",
+      "The adapter's generic tensor contract and illustrative dimensions were inspected, but no EXL3 checkpoint header was validated. No model architecture or configuration class is added by this change.",
+      "Only the opening portion of PR #26 was inspected; no conclusion relies on its unread discussion tail."
+    ],
+    "links": [
+      "dbbeccfb63ee50c8de7feff6e45001b98406958f",
+      "849c62fc6d0c634984f07f264b1564d515711910",
+      "4ab2b253533b19e461a01ce7b74957ae9834d557"
+    ],
+    "chapters": [
+      {
+        "id": "transformers-integration",
+        "title": "A preliminary Transformers adapter and its import boundary",
+        "claims": [
+          {
+            "text": "patch_transformers writes the string key exl3 into AUTO_QUANTIZER_MAPPING and AUTO_QUANTIZATION_CONFIG_MAPPING and assigns QuantizationMethod.EXL3 = \"exl3\". Exl3Config stores that quant_method and otherwise ignores constructor kwargs. These are process-wide mutations performed when patch_transformers is called, not automatically when the package is imported.",
+            "basis": "source",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_57b60102014f442f9b58bf0823d04c10"
+            ]
+          },
+          {
+            "text": "The parent root initializer imports, in textual order, models.config, models.model, tokenizer, cache, generator and generator.sampler. Package initialization expands that sequence. The task retains it and appends integration, whose initializer immediately imports integration.transformers.patch_transformers. There is no optional-import guard, deferred import, dependency probe or exception handler around these new imports.",
+            "basis": "source",
+            "evidence": [
+              "call_bc70b94fcd954548a463007026d3440d",
+              "call_7ad7049ec53d42fcbdb87c77554c306e",
+              "call_fc6a25f21b584d1dbdd4c7dac8d9c522",
+              "call_57b60102014f442f9b58bf0823d04c10",
+              "call_eac9faee6db44749b8656f78918db17b"
+            ]
+          },
+          {
+            "text": "Static first-encounter inventory of parent project modules follows. Names are relative to exllamav3; brackets list module-level third-party packages, with \u2014 meaning none: 1 root [\u2014]; 2 models [\u2014]; 3 models.model [torch]; 4 models.config [torch]; 5 util [\u2014]; 6 util.misc [torch]; 7 util.rope [torch]; 8 ext [torch, plus attempted native exllamav3_ext]; 9 util.arch_list [torch]; 10 loader [\u2014]; 11 loader.safetensors [torch, numpy]; 12 util.file [\u2014]; 13 util.progress [rich]; 14 util.memory [torch]; 15 tokenizer [\u2014]; 16 tokenizer.tokenizer [torch, tokenizers]; 17 util.profile_opt [\u2014]; 18 tokenizer.mm_embedding [torch]; 19 cache [\u2014]; 20 cache.cache [torch]; 21 modules [\u2014]; 22 modules.module [torch]; 23 modules.linear [typing_extensions, torch, numpy]; 24 modules.quant [\u2014]; 25 modules.quant.fp16 [typing_extensions, torch]; 26 util.tensor [torch]; 27 modules.quant.exl3 [torch]; 28 modules.quant.exl3_lib [\u2014]; 29 modules.quant.exl3_lib.quantize [torch]; 30 util.hadamard [torch]; 31 conversion [\u2014]; 32 conversion.allocation [\u2014]; 33 modules.mlp [typing_extensions, torch]; 34 constants [\u2014]; 35 modules.block_sparse_mlp [typing_extensions, torch]; 36 modules.multilinear [torch]; 37 modules.rmsnorm [typing_extensions, torch]; 38 modules.layernorm [typing_extensions, torch]; 39 modules.embedding [typing_extensions, torch]; 40 modules.attn [typing_extensions, torch, flash_attn]; 41 device [torch]; 42 modules.transformer [typing_extensions, torch]; 43 modules.conv [typing_extensions, torch]; 44 modules.pos_embedding [typing_extensions, torch]; 45 cache.fp16 [typing_extensions, torch]; 46 cache.quant [typing_extensions, torch]; 47 generator [\u2014]; 48 generator.generator [torch, numpy]; 49 generator.pagetable [torch]; 50 generator.job [torch, numpy]; 51 generator.sampler [\u2014]; 52 generator.sampler.sampler [torch]; 53 generator.sampler.custom [torch, typing_extensions]; 54 generator.sampler.presets [\u2014]; 55 generator.visualizer [\u2014]; 56 generator.async_generator [\u2014]. This records project-module entry order, not completion order; circular references reuse modules already being initialized. ext conditionally JIT-loads the native extension if its import is missing.",
+            "basis": "source",
+            "evidence": [
+              "call_44287d6056c64a5ba30b67bda40f5a83",
+              "call_7ad7049ec53d42fcbdb87c77554c306e",
+              "call_cdc0db01aa1f4979b891b4aee3eff2e4"
+            ]
+          },
+          {
+            "text": "At the task, the same project inventory is followed by 57 integration [\u2014] and 58 integration.transformers [torch, transformers]. The latter imports torch.nn and Transformers' quantizers.auto, quantizers.base and utils.quantization_config at module level; its SafetensorsCollection and LinearEXL3 imports refer back to already encountered project modules. Thus Transformers is newly on the ordinary root-import path, whereas the parent's named Transformers imports were in evaluation/example programs rather than this package-initializer chain.",
+            "basis": "source",
+            "evidence": [
+              "call_fc6a25f21b584d1dbdd4c7dac8d9c522",
+              "call_57b60102014f442f9b58bf0823d04c10",
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_44287d6056c64a5ba30b67bda40f5a83",
+              "call_7744abe9f480419698e6af0b56efeb4d"
+            ]
+          },
+          {
+            "text": "All discovered requirements files and setup.py were inspected. For packages imported by the new adapter, torch is declared in requirements.txt and setup.py install_requires, but not requirements_eval.txt or requirements_examples.txt. transformers appears only in requirements_eval.txt, as transformers>=4.50.0; it is absent from requirements.txt, requirements_examples.txt and install_requires. The ordinary library installation contract is setup.py's install_requires, not the separately maintained evaluation requirements. The task changes none of these declarations.",
+            "basis": "source",
+            "evidence": [
+              "call_bc70b94fcd954548a463007026d3440d",
+              "call_7744abe9f480419698e6af0b56efeb4d",
+              "call_eac9faee6db44749b8656f78918db17b"
+            ]
+          },
+          {
+            "text": "get_modules_to_replace requires model.name_or_path to be an existing local directory. SafetensorsCollection scans its *.safetensors headers, rather than consuming quantization_config.json or downloading Hub weights. It considers only torch.nn.Linear modules, requiring trellis and one member of each su/suh and sv/svh pair. Other modules remain unchanged. For names beginning model.language_model., it preserves the module path for replacement but looks up tensors under language_model.model. instead.",
+            "basis": "source",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_7fd37a91da834d0da1479adad73dd58c"
+            ]
+          },
+          {
+            "text": "Exl3HfLinear infers a common tensor prefix, creates meta tensors using header shape and torch_dtype, and registers trellis plus present factor/bias tensors as buffers. Missing optional factors become None. inner remains None until finalization. A one-element FP16 meta weight attribute supplies .weight.dtype compatibility without reconstructing a dense weight.",
+            "basis": "source",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_7fd37a91da834d0da1479adad73dd58c"
+            ]
+          },
+          {
+            "text": "replace_modules recursively collects replacements before changing children and records inserted wrappers for postprocessing. The before-loading hook builds and inserts placeholders; the after-loading hook finalizes each wrapper, clears its reference list and returns the model. finalize casts suh, svh and bias to FP16, then passes dimensions, trellis, packed/unpacked factors and bias to LinearEXL3 with config=None, out_dtype=float16 and transformers_fix=True. It does not forward scale, mcg or mul1.",
+            "basis": "source",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_3bb1c93a6a7c407989881a20633a7069"
+            ]
+          },
+          {
+            "text": "The existing direct LinearEXL3 constructors are Linear.load_exl3 and Linear.convert_exl3. The loader first checks the same factor/trellis group, loads optional mcg and mul1 explicitly on CPU and passes them through; conversion forwards them from quantizer outputs. Both use prepared ExLlamaV3 dimensions and leave transformers_fix disabled. The adapter instead uses Transformers' in_features/out_features directly, performs no ExLlamaV3 padding or slicing preparation, and omits multiplier forwarding. Its FP16 casts satisfy the inner constructor's factor-dtype assertions, while the preceding nullable-config and unpacking changes supply the other required interfaces.",
+            "basis": "source",
+            "evidence": [
+              "call_165a49edf59948fbac6b51b82bcf6ccc",
+              "call_49311c0462ee4ed2b067962a29c9c9e2",
+              "call_3bb1c93a6a7c407989881a20633a7069",
+              "call_eac9faee6db44749b8656f78918db17b"
+            ]
+          },
+          {
+            "text": "forward saves the incoming dtype, calls inner.forward(x.half(), {}) and casts its result back. This preserves the output dtype interface, not higher-precision linear arithmetic. The empty params dictionary leaves the existing flattened-row dispatch at its default: more than 32 rows reconstructs the inner weight and uses Hadamard transforms plus hgemm; at most 32 uses exl3_gemm. Bias addition occurs inside LinearEXL3. The wrapper does not expose capture/reconstruct controls, softcap or post_scale behavior from the outer ExLlamaV3 Linear.",
+            "basis": "source",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_3bb1c93a6a7c407989881a20633a7069",
+              "call_49311c0462ee4ed2b067962a29c9c9e2"
+            ]
+          },
+          {
+            "text": "The before-loading hook sets config.tie_word_embeddings=False only if a truthy config is supplied in kwargs. This is an in-memory mutation, not a config.json rewrite or explicit CPU embedding-placement mechanism. Parent source uses the exact tie_word_embeddings spelling, while conversion.update_config separately writes tied_word_embeddings=True; those are different keys and the adapter does not reconcile them. The comment frames untied loading as necessary because quantization separates the unquantized embedding and quantized output layer.",
+            "basis": "source",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_dc1a4162ab2640ceadb26a2275d67ad4",
+              "call_4bdb730b830d408bbe162fc258fa96a5",
+              "call_7ad7049ec53d42fcbdb87c77554c306e",
+              "call_cdc0db01aa1f4979b891b4aee3eff2e4"
+            ]
+          },
+          {
+            "text": "Bounded standard-library arithmetic confirmed that the rewritten prefix has length 21, matching name[21:], and that a 16\u00d716 tile at three bits per weight occupies 48 sixteen-bit words. A 4096-input, 1024-output layer has a 256\u00d764 tile grid, agreeing with the illustrative trellis shape [256,64,48]. This validates string/shape arithmetic only, not tensor packing or GPU execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_7ad7049ec53d42fcbdb87c77554c306e"
+            ]
+          },
+          {
+            "text": "validate_environment rejects unavailable CUDA; update_torch_dtype substitutes FP16 only when no dtype was supplied. The quantizer declares neither calibration nor parameter quantization required, and reports training and serialization unsupported. The example explicitly patches Transformers before from_pretrained(..., device_map=\"auto\") and demonstrates tokenization and generation. Its comments identify local-directory loading, fused q/k/v or up/gate projections and sliced Nemotron-Ultra layers as current limitations; the adapter contains no unfusing or slice-reassembly implementation.",
+            "basis": "source",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_bd19a3625f434c1fb0e435d810d832ed"
+            ]
+          },
+          {
+            "text": "The design reuses the existing decoder rather than duplicating it, but couples loading to Transformers' registries and lifecycle hooks. Header discovery is an alternative to the existing JSON tensor inventory; neither path by itself establishes compatibility with every model implementation. The author's \u201cstill needs some work\u201d framing is consistent with the explicit TODOs and limited interface, not a demonstrated compatibility result.",
+            "basis": "inference",
+            "evidence": [
+              "call_eac9faee6db44749b8656f78918db17b",
+              "call_bd19a3625f434c1fb0e435d810d832ed",
+              "call_cdc0db01aa1f4979b891b4aee3eff2e4"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "eager-undeclared-transformers",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "A new unconditional root-import dependency is absent from the ordinary runtime dependency declaration.",
+        "trigger": "An existing caller executes import exllamav3 in an otherwise working environment containing the declared runtime dependencies but no Transformers installation.",
+        "expected_behavior": "Import-only callers should not need an undeclared package for an integration they never invoke.",
+        "actual_behavior": "The root initializer imports integration, its initializer imports integration.transformers, and that module immediately imports Transformers symbols. If reached without Transformers installed, this raises ModuleNotFoundError before the caller can use the package. Calling patch_transformers is not required to reach the failure. The parent initializer did not have this path.",
+        "locations": [
+          {
+            "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+            "path": "exllamav3/__init__.py",
+            "symbol": "module initialization"
+          },
+          {
+            "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+            "path": "exllamav3/integration/__init__.py",
+            "symbol": "module initialization"
+          },
+          {
+            "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+            "path": "exllamav3/integration/transformers.py",
+            "symbol": "module-level imports"
+          }
+        ],
+        "source_evidence": [
+          "call_fc6a25f21b584d1dbdd4c7dac8d9c522",
+          "call_57b60102014f442f9b58bf0823d04c10",
+          "call_eac9faee6db44749b8656f78918db17b",
+          "call_bc70b94fcd954548a463007026d3440d",
+          "call_7744abe9f480419698e6af0b56efeb4d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both initializer chains, the adapter imports and every discovered requirements file plus setup.py.",
+            "evidence": [
+              "call_44287d6056c64a5ba30b67bda40f5a83",
+              "call_bc70b94fcd954548a463007026d3440d",
+              "call_eac9faee6db44749b8656f78918db17b"
+            ],
+            "limits": "No import was executed. Existing native-extension or other dependency failures may occur earlier; transitive installations may happen to provide Transformers, but the project's runtime declaration does not guarantee it."
+          }
+        ]
+      },
+      {
+        "id": "integration-not-packaged",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new eagerly imported integration package is not added to setup.py's explicit packages list.",
+        "trigger": "Build and install a distribution using the unchanged explicit package list, then import exllamav3 outside the source checkout.",
+        "expected_behavior": "The installed distribution should contain the integration package that its root initializer imports.",
+        "actual_behavior": "setup.py explicitly lists the existing packages but omits exllamav3.integration, while the task adds an unconditional import of it. The inspected packaging configuration therefore does not select the new package.",
+        "locations": [
+          {
+            "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+            "path": "setup.py",
+            "symbol": "setup(packages=...)"
+          },
+          {
+            "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+            "path": "exllamav3/__init__.py",
+            "symbol": "module initialization"
+          }
+        ],
+        "source_evidence": [
+          "call_bc70b94fcd954548a463007026d3440d",
+          "call_fc6a25f21b584d1dbdd4c7dac8d9c522",
+          "call_57b60102014f442f9b58bf0823d04c10"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the newly added package with setup.py's explicit package enumeration; setup.py is untouched by the task.",
+            "evidence": [
+              "call_bc70b94fcd954548a463007026d3440d",
+              "call_eac9faee6db44749b8656f78918db17b"
+            ],
+            "limits": "No wheel or source distribution was built or inspected. Editable/source-tree imports may mask the omission."
+          }
+        ]
+      },
+      {
+        "id": "decoder-multipliers-not-forwarded",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The adapter drops optional decoder-selection tensors supported by the existing loader.",
+        "trigger": "Transformers replaces a qualifying linear group whose checkpoint contains a nonzero mcg or mul1 decoder multiplier.",
+        "expected_behavior": "Finalization should preserve the checkpoint's decoder parameters as Linear.load_exl3 does.",
+        "actual_behavior": "Header discovery accepts the group, but Exl3HfLinear creates no mcg/mul1 buffers and finalize passes neither argument. LinearEXL3 consequently stores zero multipliers and passes those defaults to reconstruction or exl3_gemm instead of the checkpoint's values.",
+        "locations": [
+          {
+            "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+            "path": "exllamav3/integration/transformers.py",
+            "symbol": "Exl3HfLinear.__init__"
+          },
+          {
+            "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+            "path": "exllamav3/integration/transformers.py",
+            "symbol": "Exl3HfLinear.finalize"
+          }
+        ],
+        "source_evidence": [
+          "call_eac9faee6db44749b8656f78918db17b",
+          "call_3bb1c93a6a7c407989881a20633a7069",
+          "call_49311c0462ee4ed2b067962a29c9c9e2",
+          "call_cdc0db01aa1f4979b891b4aee3eff2e4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent constructor search found Linear.load_exl3 and Linear.convert_exl3; inspected both and compared them with the new discovery/finalization hooks. Quantizer output construction explicitly emits optional mcg/mul1 tensors.",
+            "evidence": [
+              "call_165a49edf59948fbac6b51b82bcf6ccc",
+              "call_49311c0462ee4ed2b067962a29c9c9e2",
+              "call_cdc0db01aa1f4979b891b4aee3eff2e4",
+              "call_931e1fc86ffe43c88b7fec706ba58865"
+            ],
+            "limits": "Reach is limited to replaced linear groups using nondefault multipliers. Transformers may reject unexpected checkpoint tensors before forward; neither that loader behavior nor resulting numerical output was executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds a header-driven Transformers EXL3 adapter with explicit registration and post-load finalization, while introducing eager undeclared imports, a packaging omission and incomplete decoder-metadata forwarding."
+  },
+  "evidence": {
+    "call_bd19a3625f434c1fb0e435d810d832ed": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "offset": 186,
+        "max_bytes": 14692
+      },
+      "result_sha256": "b1a276ffcf19462dd0f47838cbf66eea9785d55ec25ed09dc6e601bb0a0d5c8a"
+    },
+    "call_fc6a25f21b584d1dbdd4c7dac8d9c522": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "offset": 2418,
+        "max_bytes": 583
+      },
+      "result_sha256": "eb0149a37c18a138467fd809dfee40381336897c3cdad00c969db31f5534eee5"
+    },
+    "call_57b60102014f442f9b58bf0823d04c10": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "offset": 3001,
+        "max_bytes": 335
+      },
+      "result_sha256": "420716d7c04c6041bd26992416a1d6cc2e7b830e75ee49379fcceb11c9900c00"
+    },
+    "call_eac9faee6db44749b8656f78918db17b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "offset": 3336,
+        "max_bytes": 11542
+      },
+      "result_sha256": "ea268122e2d9e46b6ca85af36ab2303db0ef67fdf4c1e9eb6f6475ea2f624cbd"
+    },
+    "call_bc70b94fcd954548a463007026d3440d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import pathlib,ast\nr=pathlib.Path('.')\nfor p in sorted(r.rglob('*')):\n if p.is_file() and (p.name.startswith('requirements') or p.name in ('setup.py','pyproject.toml')): print('\\nFILE',p,'\\n',p.read_text())\nfor p in [r/'exllamav3/__init__.py']:\n print('\\nFILE',p,'\\n',p.read_text())\n"
+        ]
+      },
+      "result_sha256": "26bed14ac1f4b07aa12525db61d93ec29346902d32ab09d94042e602e84b30c9"
+    },
+    "call_3bb1c93a6a7c407989881a20633a7069": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "d8dd288df759ae4320316f2acd354904877d9ecdad85f5459b5fd1add6735680"
+    },
+    "call_86966bafd24d4f85b3bfd2609dadb732": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "dbbeccfb63ee50c8de7feff6e45001b98406958f",
+        "max_bytes": 16000
+      },
+      "result_sha256": "791820448853cd9f7aeac5502b435bcd1ca589aa25bc79c69e7098955e34a486"
+    },
+    "call_b82761cffdec48a3a5b8b973c4dee614": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "max_bytes": 16000
+      },
+      "result_sha256": "20fd023c10204e195353245d5e742508350cdb4f91014ad927c92414b6db655f"
+    },
+    "call_09533960f82b4f2193a2cd8a609e70ce": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "max_bytes": 16000
+      },
+      "result_sha256": "16cad8e7b7daeeb730cb8cbfbbb4764499f88ccd8d745c53b45400351e412bbe"
+    },
+    "call_44287d6056c64a5ba30b67bda40f5a83": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib,importlib.util\nroot=pathlib.Path('.'); seen=set(); order=[]\ndef walk(name):\n if name in seen:return\n p=root.joinpath(*name.split('.')); p=p/'__init__.py' if p.is_dir() else p.with_suffix('.py')\n if not p.exists():return\n parent=name.rpartition('.')[0]\n if parent:walk(parent)\n if name in seen:return\n seen.add(name); t=ast.parse(p.read_text()); ns=[]\n def nodes(n):\n  for c in ast.iter_child_nodes(n):\n   if isinstance(c,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):continue\n   if isinstance(c,(ast.Import,ast.ImportFrom)):ns.append(c)\n   else:nodes(c)\n nodes(t)\n order.append((name,[ast.unparse(n) for n in ns if (isinstance(n,ast.Import) and any(not a.name.startswith('exllamav3') and a.name.split('.')[0] not in __import__('sys').stdlib_module_names for a in n.names)) or (isinstance(n,ast.ImportFrom) and not n.level and not (n.module or '').startswith('exllamav3') and (n.module or '').split('.')[0] not in __import__('sys').stdlib_module_names)]))\n for n in ns:\n  if isinstance(n,ast.Import):\n   for a in n.names:\n    if a.name.startswith('exllamav3'):walk(a.name)\n  else:\n   pkg=name if p.name=='__init__.py' else parent\n   mod=importlib.util.resolve_name('.'*n.level+(n.module or ''),pkg) if n.level else n.module or ''\n   if mod.startswith('exllamav3'):\n    walk(mod)\n    for a in n.names:\n     if a.name!='*':walk(mod+'.'+a.name)\nwalk('exllamav3')\nfor i,(m,im) in enumerate(order,1):print(i,m,':','; '.join(im) or '\u2014')\nprint('NEW TARGET IMPORTS exllamav3.integration -> exllamav3.integration.transformers; torch, torch.nn, transformers.quantizers.auto, transformers.quantizers.base, transformers.utils.quantization_config; loader and quant.exl3 already visited if listed.')\n"
+        ]
+      },
+      "result_sha256": "ccd596ae5e34d79e21f1662f4d1a8d710f94a5b3034f2c29976ad6d02ba34b66"
+    },
+    "call_165a49edf59948fbac6b51b82bcf6ccc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "query": "LinearEXL3(",
+        "limit": 100
+      },
+      "result_sha256": "6a47b6f9ab555b631388c884ebbe5bdc0c4b029e6956267f60730ae3543f5099"
+    },
+    "call_7744abe9f480419698e6af0b56efeb4d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "query": "transformers",
+        "limit": 100
+      },
+      "result_sha256": "de04bd8f89da6b7af49627b2597ed5bf664ab58f181554d63abbe4653f4824d9"
+    },
+    "call_49311c0462ee4ed2b067962a29c9c9e2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 0,
+        "max_bytes": 18000
+      },
+      "result_sha256": "5d50fc353093ebd2afc8c8afc837c22062eee143acd0eec4c34c7783879f27f5"
+    },
+    "call_dc1a4162ab2640ceadb26a2275d67ad4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "query": "tie_word",
+        "limit": 100
+      },
+      "result_sha256": "eb56de8c5abd4af5b5df6beb58a2b488f4c04d20dbef23b1f9f00910449e230e"
+    },
+    "call_4bdb730b830d408bbe162fc258fa96a5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "query": "tied_word",
+        "limit": 20
+      },
+      "result_sha256": "b438f6a7436fc93d899675e6e8924e14c4903af81af3e6b4ccf58a5398c00d66"
+    },
+    "call_7fd37a91da834d0da1479adad73dd58c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "f1bdf9c9e1e2206ea1d10b041e4088bb0f702249599e3f449d6b6cc589d3ca7d"
+    },
+    "call_3d88a3400c344981b8beb09929b6817f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fd285ae0f01839f72c745810abd4df2478b7737ff630a326a2b55422fbdfe69c"
+    },
+    "call_f6455cf6347849c49e668354114d057b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "2f597aaa3d8a55162235c10ca5ece7ff7f78fa0fbf0cf5969c7510158547a6ff"
+    },
+    "call_d2ee9c6447844e9e99d01f2951cdc061": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49",
+        "max_bytes": 16000
+      },
+      "result_sha256": "07f2615fe9946fcc04a561a5160fb36d2cb1e7d1beddbcf85a734233ff0dea9b"
+    },
+    "call_dc293a22ca5741b389410432d890bbe5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a05c7aa121de4c9f1440590a2d133891b85f3dd2bfe4a49bc800dd80d9bf5f57"
+    },
+    "call_2b3ed441869442f694e2a6cea15b13e4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 32000
+      },
+      "result_sha256": "64fa6ad271cb6b2e071f0de8d4fcc2e0b6a5f496e509cbce5191e6c90ad359e8"
+    },
+    "call_4bfc8d8e957b4949b932ba488e67fcb3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f02bf2943363564d6013e1c0bb2c76b15dd95cf880848c614a5af79d0258a293"
+    },
+    "call_d4d4519bd0254785b921e93102a869d4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2a6d3b42c82d4c50a27e82107f006ab30069390b6fd88e9c35a8fe45ad6f5948"
+    },
+    "call_7f65b6fb78e140e2b18b8b2c8557a4f3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 6000
+      },
+      "result_sha256": "da036441f360270ccc2055691eed42fb59ccf951fd008b739ac0301c99bdf989"
+    },
+    "call_1892d7242ded46fa9708dfdc917ce3fd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 12000
+      },
+      "result_sha256": "e5b1b54bd5991ba887c9f47c5feddfa7f2dab6200508f89f1d4e5e926420502c"
+    },
+    "call_69081e89e20b486b9a6352aeb92daeb0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 10000
+      },
+      "result_sha256": "89852666dfb0badba750b1a6541037c04760beb7494d2042b7888ad2682623f8"
+    },
+    "call_f28477366ddf49a2a2799abaa9daaeaa": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 14000
+      },
+      "result_sha256": "1a2cd5d14f5e984c300a4b8da1c7d1ccece947348f7c9102245599e86f4b5622"
+    },
+    "call_7ad7049ec53d42fcbdb87c77554c306e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor p in sorted(Path('exllamav3').rglob('__init__.py')):\n print('\\n###',p);print(p.read_text())\nprint('\\n### exllamav3/ext.py'); print(Path('exllamav3/ext.py').read_text())\nprint('\\n### tie consumers')\nfor f in ['exllamav3/conversion/quant_config.py','exllamav3/models/llama.py']:\n s=Path(f).read_text().splitlines();print(f)\n for i,l in enumerate(s):\n  if 'tie' in l: print('\\n'.join(s[max(0,i-3):i+12]))\nprint('prefix length',len('model.language_model.'))\nprint('3bpw uint16 per 16x16 tile',16*16*3//16)\nprint('tile grid in,out',4096//16,1024//16)\n"
+        ]
+      },
+      "result_sha256": "1639e246bb231c14dd86dfa26a0a71e9ba3e24f38578bb750fc7d35f91e13389"
+    },
+    "call_3d12cda019ae4fcab0dd5096fd015d11": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "query": "mul1",
+        "path": "exllamav3/modules/quant/exl3_lib/quantize.py",
+        "limit": 40
+      },
+      "result_sha256": "bdf0cc0f5f1347f855376587a3fb844dc981e1a310b2289d48ae2876ae0431a3"
+    },
+    "call_243350d4e3a3419183968a484fd98219": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "query": "list_tensors(",
+        "limit": 30
+      },
+      "result_sha256": "995408082c0ec17fc94a0052f147367f76a5c3b6d4a84933e820f6cc0cd15ee4"
+    },
+    "call_95825444847b442d95c4ab00b986d96e": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "5293b981ed3e5c7581463326b20686b32bcf070aa8096487b77369280ca21fbd",
+      "catalog_only": true
+    },
+    "call_cdc0db01aa1f4979b891b4aee3eff2e4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f in ['models/model.py','models/config.py','util/misc.py','generator/generator.py','generator/job.py','generator/visualizer.py','generator/async_generator.py','conversion/quant_config.py']:\n p=Path('exllamav3')/f;print('\\n###',p); print('\\n'.join(p.read_text().splitlines()[:65]))\np=Path('exllamav3/modules/quant/exl3_lib/quantize.py');s=p.read_text().splitlines();print('\\n### quantize output\\n'+'\\n'.join(s[850:900]))\n"
+        ]
+      },
+      "result_sha256": "e757c48a1ce9dc0051066e6325c46bbbb11fab45e9c3427d85fee7ff862929cd"
+    },
+    "call_74874dd5c8c94d8f84bd87d8cf1c38c1": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "f849e6a8255ef797c3fe52c85042cd40c9c5eba28a6ad14064d7d98d748d0e7f",
+      "catalog_only": true
+    },
+    "call_931e1fc86ffe43c88b7fec706ba58865": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f6e2de2a7cfd1c6f1ca73cdeb2a42266b334c513",
+        "query": "Exl3Hf",
+        "limit": 20
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    }
+  }
+}

@@ -1,0 +1,264 @@
+{
+  "schema_version": 5,
+  "sha": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+  "parent_shas": [
+    "849c62fc6d0c634984f07f264b1564d515711910"
+  ],
+  "cutoff_date": "2025-06-07T05:48:23+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The author reports that packed-sign expansion can cause a GPU assert with Transformers. The added comment identifies CPU execution as a workaround, but supplies no reproducer or root-cause diagnosis.",
+        "basis": "source",
+        "evidence": [
+          "call_490d43c30b234fe8bb5fdb1cae46a278"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change makes CPU unpacking opt-in and restores the result to the input device, preserving the device contract expected by subsequent weight reconstruction and inference.",
+        "basis": "source",
+        "evidence": [
+          "call_490d43c30b234fe8bb5fdb1cae46a278",
+          "call_76a7342ca5a2438190f7deb3c756a22c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Existing repository constructors remain compatible and leave the workaround disabled. Enabling it requires a caller to supply transformers_fix=True; this commit does not wire that option through Linear.load_exl3 or Linear.convert_exl3.",
+        "basis": "source",
+        "evidence": [
+          "call_d5856d3ab6214bfdb22e961fa252a890",
+          "call_35722bfe67a54b5bb250a4f40a7b35e1",
+          "call_490d43c30b234fe8bb5fdb1cae46a278"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The parent entry describes the nullable, unused config argument. The original quantized-inference entry establishes the loading/reconstruction interface and records incomplete historical packed-sign support.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_89530da2b0d241dd9c84c7613115a6ee",
+          "call_edb936e7f82a476e8bb5359fc14e6cc6"
+        ]
+      },
+      {
+        "text": "Issue #11, \u201cAssertionError: bias is wrong datatype,\u201d concerns constructor bias validation, not bitfield expansion. Its relationship is inferred from the shared LinearEXL3 constructor. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports a Cholesky failure; its relationship is inferred only from its traceback through the inspected Linear.convert_exl3. Neither establishes the reported Transformers assert.",
+        "basis": "inference",
+        "evidence": [
+          "call_3e48a97a32824992bcc3cb9be9abb209",
+          "call_a6f09264fc1f498c8b0aae2cc481f5d1",
+          "call_35722bfe67a54b5bb250a4f40a7b35e1",
+          "call_490d43c30b234fe8bb5fdb1cae46a278"
+        ]
+      },
+      {
+        "text": "Closed issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d discusses quantization regularization and output normalization, not this CPU-unpacking workaround.",
+        "basis": "source",
+        "evidence": [
+          "call_e9c98679783948598840482aec39710b"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Torch, CUDA or Transformers execution was performed. Assert avoidance, transfer overhead and GPU numerical behavior remain unverified.",
+      "Whole-tree literal searches cover named repository callers, not dynamic or external integrations. The Transformers search found evaluation wrappers, examples and dependency references, but does not establish a triggering integration or affected version.",
+      "The scalar check models integer sign expansion only; it does not exercise tensor reinterpretation, device transfers, tensor layout or torch.where."
+    ],
+    "links": [
+      "849c62fc6d0c634984f07f264b1564d515711910",
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Opt-in CPU expansion of packed sign factors",
+        "claims": [
+          {
+            "text": "LinearEXL3.__init__ appends transformers_fix: bool = False and stores it before either constructor call to unpack_bf. That ordering is necessary: packed su or sv is expanded immediately when its corresponding unpacked suh or svh is absent. Supplying both unpacked factors bypasses expansion entirely.",
+            "basis": "source",
+            "evidence": [
+              "call_490d43c30b234fe8bb5fdb1cae46a278",
+              "call_76a7342ca5a2438190f7deb3c756a22c"
+            ]
+          },
+          {
+            "text": "unpack_bf saves bitfield.device, conditionally moves the input to CPU, performs the unchanged expansion, and returns contiguous output moved to the saved device. The final device restoration is unconditional; only the initial CPU move is controlled by the flag.",
+            "basis": "source",
+            "evidence": [
+              "call_490d43c30b234fe8bb5fdb1cae46a278"
+            ]
+          },
+          {
+            "text": "Expansion reinterprets storage as unsigned 16-bit words, converts to integer values and tests masks 1 << i for i=0\u202615. Thus 16 is the packed word width: each word produces sixteen least-significant-bit-first FP16 factors, with set bits mapped to \u22121 and clear bits to +1. Flattening retains word order and puts each word's sixteen factors consecutively.",
+            "basis": "source",
+            "evidence": [
+              "call_76a7342ca5a2438190f7deb3c756a22c",
+              "call_490d43c30b234fe8bb5fdb1cae46a278"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription exhaustively expanded all 65,536 unsigned 16-bit values and reconstructed each original word from the negative-factor positions. All round-trips passed; this checks the sign mapping, not the repository tensor implementation.",
+            "basis": "execution",
+            "evidence": [
+              "call_00da48fe5b194770977fc65b15db0a35"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree searches find one LinearEXL3 definition, two direct construction sites and no other named unpack_bf callers outside the class. Linear.load_exl3 supplies checkpoint factors; Linear.convert_exl3 supplies quantizer factors. Both omit the new trailing argument and retain False. The remaining unpack_bf calls are conditional branches in get_weight_tensor; ordinary construction stores su and sv as None and uses the unpacked factors instead.",
+            "basis": "source",
+            "evidence": [
+              "call_d5856d3ab6214bfdb22e961fa252a890",
+              "call_3892a23823fa410b949559a192a07702",
+              "call_35722bfe67a54b5bb250a4f40a7b35e1",
+              "call_76a7342ca5a2438190f7deb3c756a22c",
+              "call_490d43c30b234fe8bb5fdb1cae46a278"
+            ]
+          },
+          {
+            "text": "The original entry's packed-sign concern is changed rather than carried over in this data flow: the inspected parent already unpacks packed inputs into suh/svh and clears stored su/sv. The task preserves that initialization while making its expansion device selectable. forward consumes suh/svh and does not call unpack_bf, so the workaround is not a new per-forward CPU fallback.",
+            "basis": "source",
+            "evidence": [
+              "call_76a7342ca5a2438190f7deb3c756a22c",
+              "call_490d43c30b234fe8bb5fdb1cae46a278"
+            ]
+          },
+          {
+            "text": "The design trades extra device transfers during packed-factor preparation for avoiding the reported GPU operation. Keeping it opt-in preserves the existing path for other callers; successful avoidance of the assert remains the author's reported motivation, not a measured result here.",
+            "basis": "inference",
+            "evidence": [
+              "call_490d43c30b234fe8bb5fdb1cae46a278"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds an opt-in CPU workaround for LinearEXL3 packed-sign expansion, restoring output to the original device while leaving existing callers unchanged."
+  },
+  "evidence": {
+    "call_490d43c30b234fe8bb5fdb1cae46a278": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4ab2b253533b19e461a01ce7b74957ae9834d557",
+        "offset": 193,
+        "max_bytes": 1799
+      },
+      "result_sha256": "853a6326d45ab6a3593e40a1c24c74ef0b2e1f8e0262ec63973bcf3268c6e0c7"
+    },
+    "call_76a7342ca5a2438190f7deb3c756a22c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "150b9e47153832f878f0caf90e2384e5a41a46c656c54f4780c4d7f16285935b"
+    },
+    "call_d5856d3ab6214bfdb22e961fa252a890": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "query": "LinearEXL3",
+        "limit": 100
+      },
+      "result_sha256": "4a3513a659a60f21a217039dcc56d3b31d46425b8580c321a138a09e1aeebdbf"
+    },
+    "call_3892a23823fa410b949559a192a07702": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "query": "unpack_bf",
+        "limit": 100
+      },
+      "result_sha256": "1a036e3567c09636ad7800093494b934f5ab8f5ec31777ea2d53dec157426288"
+    },
+    "call_10af73f503044319ba6cd5c2202484db": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "query": "transformers",
+        "limit": 100
+      },
+      "result_sha256": "6c6a1dcde5b6a8de6887275f1525d4297bab0681dff2e6d9b9938f2583d73e38"
+    },
+    "call_89530da2b0d241dd9c84c7613115a6ee": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "max_bytes": 16384
+      },
+      "result_sha256": "20fd023c10204e195353245d5e742508350cdb4f91014ad927c92414b6db655f"
+    },
+    "call_edb936e7f82a476e8bb5359fc14e6cc6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "quantized-inference",
+        "max_bytes": 16384
+      },
+      "result_sha256": "02b6734d29272cca0d4ea8a56ffcd9ba2d18a4cc524cb44db9d12c4d8741226c"
+    },
+    "call_35722bfe67a54b5bb250a4f40a7b35e1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 4200,
+        "max_bytes": 8500
+      },
+      "result_sha256": "b4494315323a967416896f8899566c2aeec1331b1e7b747cced6297dc1412754"
+    },
+    "call_3e48a97a32824992bcc3cb9be9abb209": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 16384
+      },
+      "result_sha256": "580c277acfd151381a7afec5ae88e9abbcc6ed3877379478cda63fb116d272df"
+    },
+    "call_e9c98679783948598840482aec39710b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 16384
+      },
+      "result_sha256": "8e15d0d8dfcd991ac4d90fe9ce1a63a87c106c493570bc436cd85cfa7f1840b3"
+    },
+    "call_51723377435e4f28af9e4f9d9f78a372": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "849c62fc6d0c634984f07f264b1564d515711910",
+        "query": "transformers_fix",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_00da48fe5b194770977fc65b15db0a35": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def unpack(w):\n    return [-1 if w & (1 << i) else 1 for i in range(16)]\nfor w in range(65536):\n    signs=unpack(w)\n    reconstructed=sum((s == -1) << i for i,s in enumerate(signs))\n    assert reconstructed == w\n    assert len(signs)==16\nprint('Checked all 65536 unsigned 16-bit words: LSB-first 16-sign expansion round-trips exactly.')\nprint('Examples:', {w: unpack(w) for w in [0,1,32768,65535]})"
+        ]
+      },
+      "result_sha256": "9a016c1be7a30406a1039111e3c2ab6637cb7184a15d62ad54b833b8225ab963"
+    },
+    "call_a6f09264fc1f498c8b0aae2cc481f5d1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16384
+      },
+      "result_sha256": "ce670887de26907a38ebc165b0efe6736e1db48382ba50eaef3baba116562c28"
+    }
+  }
+}

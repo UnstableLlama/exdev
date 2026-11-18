@@ -1,0 +1,276 @@
+{
+  "schema_version": 5,
+  "sha": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+  "parent_shas": [
+    "e53bcef446b14689c58393142278eb36c1951cac"
+  ],
+  "cutoff_date": "2025-06-06T03:44:52+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Gemma3 image ingestion previously accepted one image and returned one MMEmbedding per call. The change adds list-based ingestion while preserving that scalar interface.",
+        "basis": "source",
+        "evidence": [
+          "call_9e87f84d32fe4b9596241027c88eda12"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Preprocessing already produces a singleton-batch tensor at a configured fixed size. Concatenating those tensors along dimension zero supplies one batched forward call without changing image preprocessing.",
+        "basis": "source",
+        "evidence": [
+          "call_54c3916b342c45ec9224aaa3167a1245",
+          "call_9e87f84d32fe4b9596241027c88eda12"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "A list input returns a list of embeddings, including for a one-element list; a scalar input still returns one embedding. List input rejects a supplied text_alias through an assertion.",
+        "basis": "source",
+        "evidence": [
+          "call_9e87f84d32fe4b9596241027c88eda12"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The Gemma3 introduction and vision-implementation ancestor entries were read. They establish the progression from a vision stub to the fixed-size preprocessing, pooling and projection pipeline reused here.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_8e7258c6dd8940a18edf3b878187b83e",
+          "call_7c288d563a7940bc8c9fb0ef8c4f8fbb"
+        ]
+      },
+      {
+        "text": "Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports mismatched vocabulary/logit widths. Its connection is inferred from its explicit gemma3.py reference, not evidence that image batching addresses that report. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension loading failure; its connection is inferred from the shared model.py path. Neither report establishes a batching defect.",
+        "basis": "inference",
+        "evidence": [
+          "call_639d455ec67345359cb28fe4ab558562",
+          "call_0301ce4317424530b80a57e55620d90c",
+          "call_9e87f84d32fe4b9596241027c88eda12"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository tensor operations, image-library operations or GPU inference were executed. The scalar check models output packaging, not vision inference or numerical equivalence.",
+      "Batch memory requirements and throughput gains were not measured. The implementation concatenates the entire input list and introduces no chunking.",
+      "The list branch has no explicit empty-list handling; empty-input filesystem or tensor-library behavior was not executed."
+    ],
+    "links": [
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+      "532d78658414d8f9aabce52cb64b982b3ec53388"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Batching Gemma3 images while preserving per-image embeddings",
+        "claims": [
+          {
+            "text": "The list branch preprocesses images individually, concatenates their tensors on the leading batch axis, and calls forward once with causal=False. The scalar branch wraps the original image in a list only for subsequent bookkeeping. Preprocessing remains sequential; the vision forward receives the batch.",
+            "basis": "source",
+            "evidence": [
+              "call_9e87f84d32fe4b9596241027c88eda12",
+              "call_54c3916b342c45ec9224aaa3167a1245"
+            ]
+          },
+          {
+            "text": "Retaining the batch dimension replaces the old squeeze(0). Consequently image-token count moves from shape[0] to shape[1], and embedding_tensor[i] supplies each MMEmbedding with a two-dimensional token-by-feature tensor. These edits are interdependent: retaining a batch axis requires changing both token counting and per-image extraction.",
+            "basis": "source",
+            "evidence": [
+              "call_9e87f84d32fe4b9596241027c88eda12",
+              "call_b0502aaff8714e2a8b3154693ebcb1d1"
+            ]
+          },
+          {
+            "text": "Each image gets its own token string: one start-of-image ID, one -1 placeholder per embedding row, and one end-of-image ID. MMEmbedding replaces placeholders with independently allocated synthetic IDs and generates an alias when none is supplied. The batch assertion prevents assigning one caller-supplied alias to every image.",
+            "basis": "source",
+            "evidence": [
+              "call_9e87f84d32fe4b9596241027c88eda12",
+              "call_b0502aaff8714e2a8b3154693ebcb1d1"
+            ]
+          },
+          {
+            "text": "Metadata takes original_size from the corresponding input image. Although prep_image_size is retained only from the last preprocessing iteration, the inspected preprocessing method returns the same configured target size for every image, so that reuse agrees with its present contract.",
+            "basis": "source",
+            "evidence": [
+              "call_9e87f84d32fe4b9596241027c88eda12",
+              "call_54c3916b342c45ec9224aaa3167a1245"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree searches found one direct caller, examples/multimodal.py, and the separate Mistral3 definition; no Gemma3VisionModel subclass appeared. The example passes individual images and consumes individual aliases, so its existing list comprehension remains compatible. Mistral3 remains scalar-only. Passing a whole image list through the example's existing comprehension without adapting its consumers would instead create nested lists.",
+            "basis": "source",
+            "evidence": [
+              "call_78c238ac195a4d119be302f98d4a03e9",
+              "call_0fa874ee06ed4dfb8b5fab534610553e",
+              "call_70aae7f92acb45ea94a364a9a48a1cae",
+              "call_c527ecd4364841ecb4577e601a94aa74",
+              "call_9e87f84d32fe4b9596241027c88eda12"
+            ]
+          },
+          {
+            "text": "A standard-library packaging transcription checked batches of one and three images with five embedding rows each. It preserved per-image rows, produced seven-token representations, and allocated respectively five and fifteen distinct synthetic IDs. This checks indexing and allocation arithmetic only.",
+            "basis": "execution",
+            "evidence": [
+              "call_30b244a00326496398c6fd465c52a137"
+            ]
+          },
+          {
+            "text": "The design trades repeated forward invocations for a single larger invocation, while still returning ordinary per-image containers suitable for existing tokenizer and Job interfaces. Improved throughput is plausible, not measured by the inspected evidence.",
+            "basis": "inference",
+            "evidence": [
+              "call_9e87f84d32fe4b9596241027c88eda12",
+              "call_70aae7f92acb45ea94a364a9a48a1cae"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds Gemma3 list-based image ingestion using one batched forward call, then returns separate MMEmbedding objects while preserving scalar-call compatibility."
+  },
+  "evidence": {
+    "call_9e87f84d32fe4b9596241027c88eda12": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "offset": 173,
+        "max_bytes": 2792
+      },
+      "result_sha256": "4657d7e3846dc025ad75877cfce9dae6b2b2ace76c598e8f9b86ad8d86aac7c5"
+    },
+    "call_54c3916b342c45ec9224aaa3167a1245": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/models/gemma3.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "9eb0d616f9c4170cc26ea7cac5ca5e5243b607fbc49bb1752f7a96358ff43683"
+    },
+    "call_78c238ac195a4d119be302f98d4a03e9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "get_image_embeddings",
+        "limit": 100
+      },
+      "result_sha256": "d987eef92e8a4643ae7c390666ee911e1e03c61bf760f991e07d632ec2ba4cb0"
+    },
+    "call_5c5dc47592614f24be378f765aa64ff0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/gemma3.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "05096c13205b22c5af962c94ce4f5ec12001311794b880c9a9c5064400d6d69e",
+      "catalog_only": true
+    },
+    "call_8e7258c6dd8940a18edf3b878187b83e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7e8974fcf5d11f5fdedb9f1af0c4eb2a2c25ad72cf9734dbdfbe25f9e7facd78"
+    },
+    "call_7c288d563a7940bc8c9fb0ef8c4f8fbb": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+        "max_bytes": 16384
+      },
+      "result_sha256": "32b6d4b6a6de6f85f34d97e0c8fed6b53cb641890a0ce0b93b0c82a1d85f9f1e"
+    },
+    "call_70aae7f92acb45ea94a364a9a48a1cae": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "examples/multimodal.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "25e664566441099fae6d7e411bb90aee0a2eae265689d871d2840a6feb32fa20"
+    },
+    "call_c527ecd4364841ecb4577e601a94aa74": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 16000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "cd8af1bdcc5854c1f039a4cb5ceb59e0e595c4ab3b54210b25735504ac6e5aab"
+    },
+    "call_6261fe01be184f919d47d66c282f40d6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "class MMEmbedding",
+        "limit": 20
+      },
+      "result_sha256": "6b969bd470ab383e6a352e1afed3407475717184b450f31a297133b50e6b0698"
+    },
+    "call_b0502aaff8714e2a8b3154693ebcb1d1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/tokenizer/mm_embedding.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "6dcb5f9c3fc00e92e292051b23f3d324751bdcca855c5a28708a733488d83200"
+    },
+    "call_197f2f2765694d809717190eea174a9d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "path": "exllamav3/models/model.py",
+        "offset": 0,
+        "max_bytes": 4000
+      },
+      "result_sha256": "427085a53f342c715aa45d7e3872718b4141180f862918f643e848ae0a19de82"
+    },
+    "call_639d455ec67345359cb28fe4ab558562": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6a6202f6f0699ab7bb674f33c2f5d80ba736bf50a09555789719eca3de09ad76"
+    },
+    "call_0301ce4317424530b80a57e55620d90c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 14000
+      },
+      "result_sha256": "b5952b0f97f1581398182a56391867a47a229a08601393be5ea50a08a097849a"
+    },
+    "call_0fa874ee06ed4dfb8b5fab534610553e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e53bcef446b14689c58393142278eb36c1951cac",
+        "query": "Gemma3VisionModel",
+        "limit": 100
+      },
+      "result_sha256": "b8d94948bbe023e6d9b664b2d04a8a8ca6eb8f9b3daa6a90ccfeba1de51e71c1"
+    },
+    "call_30b244a00326496398c6fd465c52a137": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def package(batch, start=1000000000):\n    out=[]\n    for rows in batch:\n        n=len(rows)\n        tokens=[101]+list(range(start,start+n))+[102]\n        out.append((rows,tokens))\n        start+=n\n    return out\nfor b in (1,3):\n    batch=[[[i,t,f] for t in range(5)] for i in range(b) for f in (7,)]\n    out=package(batch)\n    assert len(out)==b\n    assert all(rows==batch[i] and len(tokens)==7 for i,(rows,tokens) in enumerate(out))\n    ids=[v for _,tokens in out for v in tokens[1:-1]]\n    assert len(set(ids))==5*b\n    print({'batch':b,'per_image_shape':(5,3),'token_string_shape':(1,7),'distinct_dynamic_ids':len(set(ids))})"
+        ]
+      },
+      "result_sha256": "4884981533821f5a7957972c3dab96c5d9a9f0981b4b0401923c842156fc0082"
+    }
+  }
+}

@@ -1,0 +1,562 @@
+{
+  "schema_version": 5,
+  "sha": "7989c93b6a476a918dbfff0a0b96954a79111662",
+  "parent_shas": [
+    "51c2b8d2e69de43546c4a28ea6cd977800262217"
+  ],
+  "cutoff_date": "2025-06-06T16:31:55+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Single-request scripts lacked a model-level chat formatter. The new convenience API selects a fixed architecture-associated template, explicitly ignoring the checkpoint's actual Jinja template.",
+        "basis": "source",
+        "evidence": [
+          "call_449530873adc425bbfe722fcb5b93e2b",
+          "call_e2eeb10c3ff248e19d914a7e5eb8f6d8"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Putting the interface on Model permits polymorphic formatting without duplicating architecture selection in scripts. Explicit MiMo, Mistral and Qwen2 overrides also prevent those Llama subclasses from inheriting the newly added Llama3 syntax.",
+        "basis": "inference",
+        "evidence": [
+          "call_e2eeb10c3ff248e19d914a7e5eb8f6d8",
+          "call_aacdc722ea5c440c8614160133b7f549",
+          "call_dd3c403510d445a9be7a81cc714c8a27",
+          "call_1f7b0f5b9e8d417f91f3a907680b8bb1",
+          "call_137f61c073e44d5a998fbe0b427d7a38"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change adds string-formatting methods, not automatic chat generation, tokenization or stop-condition selection. No existing default_chat_prompt callers were found in the whole parent tree, and the diff adds none.",
+        "basis": "source",
+        "evidence": [
+          "call_449530873adc425bbfe722fcb5b93e2b",
+          "call_e2eeb10c3ff248e19d914a7e5eb8f6d8",
+          "call_aacdc722ea5c440c8614160133b7f549"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root usage-evaluation entry describes the original application-side chat templates and their BOS/stop policies. The Cohere-template entry records optional system turns and an open chatbot prefix. These entries establish earlier formatting interfaces, not independent validation of the new methods.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_9ae8527ac13543379ddd8a4ba1222cce",
+          "call_f8df80b5ebf94ad2a793cd18dbab1559"
+        ]
+      },
+      {
+        "text": "Discussion #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d and closed #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d report import/build failures. Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports incompatible logits dimensions. Their relationship to this task is only an inferred shared-file overlap: their text names model.py or gemma3.py, but none describes the added formatting methods.",
+        "basis": "inference",
+        "evidence": [
+          "call_c0bbb00d4a1b40718e82a042a1b333f9",
+          "call_7aa68092384343d39797c6420a47b30a",
+          "call_5de133f260464296a86c6322aaa5f710",
+          "call_e2eeb10c3ff248e19d914a7e5eb8f6d8",
+          "call_5e3f9019f8484675b921278eb8b8bd37"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model, tokenizer backend or generation pipeline was executed. The Python check transcribed the Gemma string construction only.",
+      "Checkpoint-specific template compatibility and output quality remain unverified; architecture defaults deliberately do not consult checkpoint Jinja templates.",
+      "The whole-tree literal search found no existing callers of the new method; it does not establish external or dynamically constructed usage."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "b077d49957b9bbc8f6370916cd8df9f273aabed9"
+    ],
+    "chapters": [
+      {
+        "id": "chat-templates",
+        "title": "Architecture-default single-round chat formatting",
+        "claims": [
+          {
+            "text": "Model.default_chat_prompt(prompt, system_prompt=None) defines the interface and raises NotImplementedError by default. Concrete implementations return text containing one user request and an unfinished assistant prefix. System content is conditional on truthiness, so None and an empty string both omit it; no default system message is supplied.",
+            "basis": "source",
+            "evidence": [
+              "call_e2eeb10c3ff248e19d914a7e5eb8f6d8",
+              "call_550495a1ca2f43f8973317208ccbe6eb",
+              "call_aacdc722ea5c440c8614160133b7f549",
+              "call_137f61c073e44d5a998fbe0b427d7a38"
+            ]
+          },
+          {
+            "text": "Cohere and Cohere2 prepend <BOS_TOKEN>, delimit system/user turns with START_OF_TURN_TOKEN and END_OF_TURN_TOKEN, and leave CHATBOT_TOKEN open. Llama uses the explicitly labelled Llama3 format: begin_of_text, role headers and eot_id after completed turns.",
+            "basis": "source",
+            "evidence": [
+              "call_550495a1ca2f43f8973317208ccbe6eb",
+              "call_c88f5a60fd6c4493ac78cd0b795bab22",
+              "call_aacdc722ea5c440c8614160133b7f549"
+            ]
+          },
+          {
+            "text": "MiMo, Qwen2, Qwen3 and Qwen3MoE use the same ChatML construction: optional system message, user message, and assistant opening, with im_end closing supplied messages. They do not prepend a BOS spelling.",
+            "basis": "source",
+            "evidence": [
+              "call_dd3c403510d445a9be7a81cc714c8a27",
+              "call_137f61c073e44d5a998fbe0b427d7a38",
+              "call_1e25e84f637642f68fd838448ae5153c",
+              "call_a410231b263140ae942b990ee37d4481"
+            ]
+          },
+          {
+            "text": "Mistral and Mixtral use <s>[INST], placing optional system text before the user text within the instruction block. Mistral3 instead puts optional system content in SYSTEM_PROMPT delimiters before its INST block. DeciLM uses <s> and Markdown-style System/User/Assistant headings; Phi3 uses <s>, role markers and end markers; GLM4 uses [gMASK]<sop> followed by role markers.",
+            "basis": "source",
+            "evidence": [
+              "call_1f7b0f5b9e8d417f91f3a907680b8bb1",
+              "call_0fce228f50cb4a48a449e8592be2fe4b",
+              "call_d039e3ca382e454593876fe9eb3559ed",
+              "call_2651bb7becff407cb21ea7c780f26d98",
+              "call_62db754aa5004b49a2b1dea34e5484d9",
+              "call_9f639417db4c404e9dfb889997cd555f"
+            ]
+          },
+          {
+            "text": "Gemma2 and Gemma3 prepend <bos> and open user/model turns. Gemma3TextModel inherits the Gemma3 implementation unchanged. The separate Gemma3VisionModel and Mistral3VisionModel are direct Model subclasses, not subclasses of the text-model implementations; this diff supplies them no chat override.",
+            "basis": "source",
+            "evidence": [
+              "call_c79a289702e1430ba1ae31087ea37c52",
+              "call_5e3f9019f8484675b921278eb8b8bd37",
+              "call_4e0471cd4551444384e6348121233b96",
+              "call_0c85f824e08345d9b9b817e4c6912532"
+            ]
+          },
+          {
+            "text": "The existing interactive chat path remains an alternative, not a consumer of this API: it chooses PromptFormat from the mode registry, formats conversation history, explicitly enables special-token encoding, supplies the template's BOS policy and separately obtains stop conditions. In contrast, callers of the new methods must arrange those steps themselves. Tokenizer.encode defaults to treating special-token spellings as text, and add_bos independently prepends a BOS ID when available.",
+            "basis": "source",
+            "evidence": [
+              "call_cb14ce8684db471ab13fd4251fe94848",
+              "call_8118811f13a94ecbbacc90921d0fd030",
+              "call_3576a2374da44f3485dda89eab75cf0e",
+              "call_e2eeb10c3ff248e19d914a7e5eb8f6d8"
+            ]
+          },
+          {
+            "text": "The convenience tradeoff is simpler single-round scripting versus checkpoint-specific fidelity and conversation management. The existing formatter registry supports history and separate stopping policies; the new interface only returns a fixed architecture-associated string.",
+            "basis": "inference",
+            "evidence": [
+              "call_e2eeb10c3ff248e19d914a7e5eb8f6d8",
+              "call_8118811f13a94ecbbacc90921d0fd030",
+              "call_cb14ce8684db471ab13fd4251fe94848"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "gemma-system-interpolation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Both Gemma formatters append a literal placeholder instead of the supplied system text.",
+        "trigger": "Call Gemma2Model.default_chat_prompt or Gemma3Model.default_chat_prompt with a nonempty system_prompt; Gemma3TextModel inherits the latter.",
+        "expected_behavior": "Include the supplied system content in the returned prompt.",
+        "actual_behavior": "The ordinary string \"{system_prompt}\\n\\n\" is appended, so the supplied content is absent and the placeholder is visible. Whole-parent-tree search found no existing callers, so the established reach is direct use of the new API, not existing chat workflows.",
+        "locations": [
+          {
+            "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+            "path": "exllamav3/models/gemma2.py",
+            "symbol": "Gemma2Model.default_chat_prompt"
+          },
+          {
+            "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+            "path": "exllamav3/models/gemma3.py",
+            "symbol": "Gemma3Model.default_chat_prompt"
+          }
+        ],
+        "source_evidence": [
+          "call_c79a289702e1430ba1ae31087ea37c52",
+          "call_5e3f9019f8484675b921278eb8b8bd37",
+          "call_449530873adc425bbfe722fcb5b93e2b",
+          "call_4e0471cd4551444384e6348121233b96"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed the identical Gemma string construction with None, empty and nonempty system prompts. The nonempty case retained {system_prompt} and omitted 'Follow safety rules'.",
+            "evidence": [
+              "call_a80078dda88d4adc823fa7f0246923e1"
+            ],
+            "limits": "Standard-library Python string check, not execution of either repository class or a model."
+          }
+        ]
+      },
+      {
+        "id": "gemma-user-turn-closure",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new Gemma prompts omit the user-turn end marker present in the existing Gemma formatter.",
+        "trigger": "Format any request through the new Gemma2 or Gemma3 default_chat_prompt methods, including inherited Gemma3TextModel use.",
+        "expected_behavior": "Close the user turn with <end_of_turn> before starting the model turn, as the existing PromptFormat_gemma.format does.",
+        "actual_behavior": "The new methods append only a newline after user content and immediately start the model turn. A scalar transcription produced two turn starts and zero turn ends. No parent-tree callers of the new API were found; model-output consequences are untested.",
+        "locations": [
+          {
+            "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+            "path": "exllamav3/models/gemma2.py",
+            "symbol": "Gemma2Model.default_chat_prompt"
+          },
+          {
+            "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+            "path": "exllamav3/models/gemma3.py",
+            "symbol": "Gemma3Model.default_chat_prompt"
+          }
+        ],
+        "source_evidence": [
+          "call_c79a289702e1430ba1ae31087ea37c52",
+          "call_5e3f9019f8484675b921278eb8b8bd37",
+          "call_8118811f13a94ecbbacc90921d0fd030",
+          "call_449530873adc425bbfe722fcb5b93e2b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the new methods with PromptFormat_gemma.format, which emits user content followed by <end_of_turn> and then the model prefix.",
+            "evidence": [
+              "call_8118811f13a94ecbbacc90921d0fd030",
+              "call_c79a289702e1430ba1ae31087ea37c52",
+              "call_5e3f9019f8484675b921278eb8b8bd37"
+            ],
+            "limits": "Repository-local format comparison, not checkpoint-specific template validation."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Counted turn markers in the transcribed new construction for three system-prompt cases.",
+            "evidence": [
+              "call_a80078dda88d4adc823fa7f0246923e1"
+            ],
+            "limits": "Checks string structure only, not tokenizer recognition or generation behavior."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds architecture-default single-round prompt formatting without changing existing chat callers. The Gemma implementations appear to lose supplied system content and omit user-turn closure."
+  },
+  "evidence": {
+    "call_550495a1ca2f43f8973317208ccbe6eb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 198,
+        "max_bytes": 13890
+      },
+      "result_sha256": "d04b0a4aa48f18beee8702f546deb3dde9cf302f657a1e0b84456d3d27604d83"
+    },
+    "call_c88f5a60fd6c4493ac78cd0b795bab22": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 1153,
+        "max_bytes": 988
+      },
+      "result_sha256": "7f28bc1c3297ef289bbcc9f914eb4029c2bdb1d35fcd014ad937911887ccca2d"
+    },
+    "call_2651bb7becff407cb21ea7c780f26d98": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 2141,
+        "max_bytes": 901
+      },
+      "result_sha256": "fb5892f50d4896e30a919b4fce85a7c6893d678d7b770fb076b984a26dbb1c04"
+    },
+    "call_c79a289702e1430ba1ae31087ea37c52": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 3042,
+        "max_bytes": 867
+      },
+      "result_sha256": "78934984f318200ad5f50ec8e0ff2da1e8fa829ebb7236efa64dff1c9fa731de"
+    },
+    "call_5e3f9019f8484675b921278eb8b8bd37": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 3909,
+        "max_bytes": 681
+      },
+      "result_sha256": "5c18aaa1749a3300d96c51c65f2104439763a53f5dcaf5cae6bac118c323f352"
+    },
+    "call_9f639417db4c404e9dfb889997cd555f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 4590,
+        "max_bytes": 854
+      },
+      "result_sha256": "1ad2a1ee55464c4b8fa082d7639cddde3e187b5347251fcee0004a35347a5a19"
+    },
+    "call_aacdc722ea5c440c8614160133b7f549": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 5444,
+        "max_bytes": 1010
+      },
+      "result_sha256": "2034589ab816ad6a2c2bbb139be43c749a6685cf1eb28d32067aace1228ed74f"
+    },
+    "call_dd3c403510d445a9be7a81cc714c8a27": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 6454,
+        "max_bytes": 898
+      },
+      "result_sha256": "9da027208dd27f2ec06be73cb7848fe78897d07122e69273348bda17e8ad5e72"
+    },
+    "call_1f7b0f5b9e8d417f91f3a907680b8bb1": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 7352,
+        "max_bytes": 757
+      },
+      "result_sha256": "44849aeeab89d7529b9d117484639ef65724025fe443d1bfe2903625224f91c8"
+    },
+    "call_d039e3ca382e454593876fe9eb3559ed": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 8109,
+        "max_bytes": 648
+      },
+      "result_sha256": "600f9961ef7afa6d7c4ff83469efe7b6a8aaff7ad591c0815fc92a1ac692806f"
+    },
+    "call_0fce228f50cb4a48a449e8592be2fe4b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 8757,
+        "max_bytes": 824
+      },
+      "result_sha256": "b39bc055a941892ba5f41f242f4060007443f65a37a63f2f5566c223881048de"
+    },
+    "call_e2eeb10c3ff248e19d914a7e5eb8f6d8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 9581,
+        "max_bytes": 816
+      },
+      "result_sha256": "d3c37a726ea30ca7d63ecccfa8780b5b15bdebddcfbc8c387fabf717b424d0f2"
+    },
+    "call_62db754aa5004b49a2b1dea34e5484d9": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 10397,
+        "max_bytes": 862
+      },
+      "result_sha256": "e5107e5dfc4eb3c0223c11c829f46f38f29788f2f07cdb87d0850d3200cb8476"
+    },
+    "call_137f61c073e44d5a998fbe0b427d7a38": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 11259,
+        "max_bytes": 942
+      },
+      "result_sha256": "0fab36860066659ec6f8312648abff0b2753b0bd2868913c497ed3f7017f5c99"
+    },
+    "call_1e25e84f637642f68fd838448ae5153c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 12201,
+        "max_bytes": 934
+      },
+      "result_sha256": "d85891f475ee9fb557bf5fbabd2426fe9d2e6aa8a90023095ba8afc38906a8e7"
+    },
+    "call_a410231b263140ae942b990ee37d4481": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "offset": 13135,
+        "max_bytes": 953
+      },
+      "result_sha256": "0c0517c9e13c883e833575ebea31e4581bf58307812ac8c86f6923c693876155"
+    },
+    "call_449530873adc425bbfe722fcb5b93e2b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "query": "default_chat_prompt",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8118811f13a94ecbbacc90921d0fd030": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "path": "examples/chat_templates.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "85f56757c7888c9324fc950b5c459596cec5c7559d230fd9879e44444ce2f7a9"
+    },
+    "call_5e1eb0fd1bcd4a8fa90e97aabb534d6f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "query": "class ",
+        "path": "exllamav3/models",
+        "limit": 160
+      },
+      "result_sha256": "502235ca47a67ffae6bfef5a2fc67b2471b487a5eaf2a0aea0b1b7734c69883d"
+    },
+    "call_aae682c1afdb40b49e70b3aa6a0a0e30": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "examples/chat_templates.py",
+        "limit": 10,
+        "max_bytes": 6000
+      },
+      "result_sha256": "853761689c606962712bb5df7b62e2f1710ded5c0684afb0180e4ba5b32cd793",
+      "catalog_only": true
+    },
+    "call_9ae8527ac13543379ddd8a4ba1222cce": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_f8df80b5ebf94ad2a793cd18dbab1559": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b077d49957b9bbc8f6370916cd8df9f273aabed9",
+        "max_bytes": 12000
+      },
+      "result_sha256": "2fe36fc7416a179c208940961521424592a09cddb3873257fd28ca0b90d8271e"
+    },
+    "call_c0bbb00d4a1b40718e82a042a1b333f9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "70000f0e244ce1a065bb86359cb4232daeaa7cb9c30539f86f2e6208d56302c5"
+    },
+    "call_5de133f260464296a86c6322aaa5f710": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c9acae7d1be2edfd48e1532982888c261fbcc9b9f0f81190843718d6993ab207"
+    },
+    "call_7aa68092384343d39797c6420a47b30a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ae0727ec954a6991107c68f4143be2ce38ae950e49facf085a8acf0770ad194b"
+    },
+    "call_0c85f824e08345d9b9b817e4c6912532": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "query": "Model):",
+        "limit": 100
+      },
+      "result_sha256": "b1492fd600fc6f01cc5a2f70194c00e8d7c1488a24f194f2bb82df23fa773bda"
+    },
+    "call_71e6b75ca4e64a8495d92dd1eeef5ba7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "query": "prompt_format",
+        "path": "examples/chat.py",
+        "limit": 80
+      },
+      "result_sha256": "f1e077f486d54df8e9a205b8ff0fe3a4bc810b362bab26d64a575310c8c7ca4e"
+    },
+    "call_cb14ce8684db471ab13fd4251fe94848": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "path": "examples/chat.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "6b82cecc1f1b3a9242340d81ef7482784478059296e51a41694156054ae7c405"
+    },
+    "call_5695109310eb493b8ddc8ba638c149da": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 12800,
+        "max_bytes": 4500
+      },
+      "result_sha256": "00e9f5d4744188e37516643232686597a4f89f160559522bb484213cd830d2c9"
+    },
+    "call_4e0471cd4551444384e6348121233b96": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 11600,
+        "max_bytes": 1250
+      },
+      "result_sha256": "a7bc05e909d44a3081ccdfe993389a067419ce942b258164aa4dd48bb74bd272"
+    },
+    "call_a80078dda88d4adc823fa7f0246923e1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def new(prompt, system_prompt=None):\n p='<bos><start_of_turn>user\\n'\n if system_prompt: p += '{system_prompt}\\n\\n'\n p += f'{prompt}\\n'\n p += f'<start_of_turn>model\\n'\n return p\nfor system in (None, '', 'Follow safety rules'):\n p=new('Hello',system)\n print(repr(system),repr(p),'system_inserted=',bool(system and system in p),'turn_starts=',p.count('<start_of_turn>'),'turn_ends=',p.count('<end_of_turn>'))\n"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "3b30237b258440cb463d63fa1bc1f1dde06e3b41478c0af4ec0b2ca325d1b3bb"
+    },
+    "call_b154bd76925f4fc29f2740b28b1b8bd0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "limit": 10,
+        "max_bytes": 5000
+      },
+      "result_sha256": "4333b9f993daac606e1ff9e3b1aa12704295ffdd25182455759cf1318996537d",
+      "catalog_only": true
+    },
+    "call_db4e3c2e085349caacb323a11c887acf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "query": "def encode",
+        "limit": 20
+      },
+      "result_sha256": "b328be255134cd2ea0fddb53d30d99236af242453ef1102e1e3d9bc565316ea2"
+    },
+    "call_3576a2374da44f3485dda89eab75cf0e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "offset": 9700,
+        "max_bytes": 4200
+      },
+      "result_sha256": "2445b4c489b2e1f782c9f1e8387c2755d89f22ba09b619868d9848c09779e8ee"
+    }
+  }
+}

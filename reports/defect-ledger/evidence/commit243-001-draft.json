@@ -1,0 +1,415 @@
+{
+  "schema_version": 5,
+  "sha": "64ef2a379213f88671e04d71a45f18ae8590e079",
+  "parent_shas": [
+    "17f1ab5e59ead2e410854ef53539b2915b304460"
+  ],
+  "cutoff_date": "2025-06-05T02:27:20+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Tokenizer construction eagerly builds lookup tables using per-token decoding and repeated backend vocabulary-size queries. The change replaces these operations with batched decoding and cached helpers.",
+        "basis": "source",
+        "evidence": [
+          "call_d380f428399c423d86ad9b05de1c76bc",
+          "call_c63c8e37f42f452e9f1c1a514ab559d7"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Reducing Python/backend crossings plausibly explains the claimed faster initialization, but the inspected evidence contains no timing comparison.",
+        "basis": "inference",
+        "evidence": [
+          "call_c63c8e37f42f452e9f1c1a514ab559d7"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The optimization also changes cache ownership and the ordinal getter's return behavior; it is not strictly a performance-only substitution.",
+        "basis": "source",
+        "evidence": [
+          "call_c63c8e37f42f452e9f1c1a514ab559d7",
+          "call_84774abb51104d59b9d8d4b620be95b1"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root loading-tokenization entry describes eager vocabulary construction, the whitespace probe, and inherited decode-filter limitations.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_edad02c3b728473fa1c1975ab8f27aee"
+        ]
+      },
+      {
+        "text": "PR #13, \u201cFix a tokenizer issue while converting models without a bos_token_id defined,\u201d reports a separate None-valued BOS failure. Its relationship here is contextual inference based on the shared tokenizer file, not evidence motivating this optimization; the parent already guards that BOS lookup.",
+        "basis": "inference",
+        "evidence": [
+          "call_573351c4e42547729f046195800215f4",
+          "call_d380f428399c423d86ad9b05de1c76bc"
+        ]
+      }
+    ],
+    "limitations": [
+      "No real Hugging Face tokenizer, initialization benchmark, model generation, or concurrent execution was run. Batched-versus-individual decoding equivalence remains unmeasured.",
+      "The scalar check models inspected Python cache and list behavior; it does not execute the repository implementation.",
+      "Replacing token-to-string-to-ID round trips with range assumes dense, round-tripping backend IDs. Compatibility with sparse or unusual tokenizer vocabularies is unestablished."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Batching and caching tokenizer lookup construction",
+        "claims": [
+          {
+            "text": "raw_vocab_size caches the backend size and supplies actual_vocab_size calculation, decode filtering, and table construction. Initialization remains eager: it builds ordinals, special and ordinary piece lists, and the reverse map before returning.",
+            "basis": "source",
+            "evidence": [
+              "call_c63c8e37f42f452e9f1c1a514ab559d7",
+              "call_d380f428399c423d86ad9b05de1c76bc"
+            ]
+          },
+          {
+            "text": "get_fixed_vocab preserves the existing ' t' probe. One token decoding to the probe's two-character length selects singleton sequences; otherwise each ID is decoded after a space-prefix token, whose decoded character length is sliced away. Both paths now issue decode_batch rather than one decode call per ID. The nonempty-probe assertion remains, as does the unguarded indexing of the separately encoded space.",
+            "basis": "source",
+            "evidence": [
+              "call_c63c8e37f42f452e9f1c1a514ab559d7",
+              "call_d380f428399c423d86ad9b05de1c76bc"
+            ]
+          },
+          {
+            "text": "The table getters replace attribute-based early returns with lru_cache. synchronized still surrounds their cache access using the utility's reentrant lock, allowing the special-list getter to call the ordinary getter recursively. get_fixed_vocab and raw_vocab_size themselves have no synchronized decorator.",
+            "basis": "source",
+            "evidence": [
+              "call_c63c8e37f42f452e9f1c1a514ab559d7",
+              "call_707eee569ac743eca6704d212af4f9be"
+            ]
+          },
+          {
+            "text": "get_id_to_ord_list now initializes base entries as range(raw_vocab_size), rather than round-tripping through id_to_token and token_to_id. Appended entries retain hexadecimal-byte parsing, single-character ordinals up to 255, and -1 for unsupported pieces or gaps. Thus base entries remain ID-like rather than becoming a general byte decoder.",
+            "basis": "source",
+            "evidence": [
+              "call_c63c8e37f42f452e9f1c1a514ab559d7",
+              "call_d380f428399c423d86ad9b05de1c76bc"
+            ]
+          },
+          {
+            "text": "Whole-parent searches found no ordinal-table consumer beyond construction. Piece-list consumers remain list-compatible: generation_loop indexes sampled IDs; Job indexes completion, healing and stop-token strings; prefix helpers scan or index the list. single_id still consumes the reverse dictionary. However, their shared table construction can duplicate appended entries, as recorded in the finding.",
+            "basis": "source",
+            "evidence": [
+              "call_401d009eaff341fda397753e97c9fef1",
+              "call_9b3a599c07b84a6d9d62a9039da73b26",
+              "call_56109dfed9994f76a7cd4e207eea5a2d",
+              "call_ea53c7090d3340a889e36085b48038bf",
+              "call_1de7019ddd034b63a6110648956f7409",
+              "call_4c24e04395f048dc9e71cc2f151853dc",
+              "call_d380f428399c423d86ad9b05de1c76bc"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription reproduced separate default/explicit-False cache computations mutating one cached vocabulary list: the ordinary table contained two copies of the appended token while the special copy contained one. It also reproduced the ordinal getter returning None despite setting its attribute.",
+            "basis": "execution",
+            "evidence": [
+              "call_84774abb51104d59b9d8d4b620be95b1"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "shared-vocabulary-extension",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The cached decoded vocabulary is mutated by separately cached ordinary-list calls, duplicating appended vocabulary entries during construction.",
+        "trigger": "A tokenizer has actual_vocab_size greater than raw_vocab_size. Construction calls get_id_to_piece_list(True), which invokes the no-argument form, then calls get_id_to_piece_list(False).",
+        "expected_behavior": "Each appended ID occupies exactly one table position, and the reverse map points to that ID.",
+        "actual_behavior": "Both ordinary computations obtain the same get_fixed_vocab list and append the extension again. The special copy predates the second append; the reverse dictionary enumerates the duplicated list and can map an extended piece to its later, incorrect index.",
+        "locations": [
+          {
+            "commit": "64ef2a379213f88671e04d71a45f18ae8590e079",
+            "path": "exllamav3/tokenizer/tokenizer.py",
+            "symbol": "Tokenizer.get_id_to_piece_list"
+          }
+        ],
+        "source_evidence": [
+          "call_c63c8e37f42f452e9f1c1a514ab559d7",
+          "call_d380f428399c423d86ad9b05de1c76bc",
+          "call_56109dfed9994f76a7cd4e207eea5a2d",
+          "call_9b3a599c07b84a6d9d62a9039da73b26"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled constructor call order, lru_cache argument distinctions, cached-list aliasing and extension.",
+            "evidence": [
+              "call_84774abb51104d59b9d8d4b620be95b1"
+            ],
+            "limits": "Synthetic two-token vocabulary with one extension; no tokenizer backend executed."
+          }
+        ]
+      },
+      {
+        "id": "ordinal-return-removed",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "get_id_to_ord_list no longer returns its populated list.",
+        "trigger": "A caller uses the getter's return value.",
+        "expected_behavior": "Return the ordinal list, as the parent implementation did.",
+        "actual_behavior": "The function falls through and its cache stores None. self.id_to_ord is still populated. Whole-parent search found only the constructor call, which discards the return, so no inspected internal consumer fails on this change.",
+        "locations": [
+          {
+            "commit": "64ef2a379213f88671e04d71a45f18ae8590e079",
+            "path": "exllamav3/tokenizer/tokenizer.py",
+            "symbol": "Tokenizer.get_id_to_ord_list"
+          }
+        ],
+        "source_evidence": [
+          "call_c63c8e37f42f452e9f1c1a514ab559d7",
+          "call_401d009eaff341fda397753e97c9fef1"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared removed return statement with the complete parent function and searched callers.",
+            "evidence": [
+              "call_c63c8e37f42f452e9f1c1a514ab559d7",
+              "call_d380f428399c423d86ad9b05de1c76bc",
+              "call_401d009eaff341fda397753e97c9fef1"
+            ],
+            "limits": "External callers were not available."
+          }
+        ]
+      },
+      {
+        "id": "inherited-eos-filter",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The touched decode_ path carries over the earlier entry's ineffective EOS truncation.",
+        "trigger": "decode receives ordinary tokens both before and after EOS with special rendering disabled.",
+        "expected_behavior": "The explicit EOS-truncation branch would discard tokens after EOS.",
+        "actual_behavior": "Filtering removes EOS first, making that branch unreachable; post-EOS tokens remain. Only the vocabulary-size query changes in this commit. Direct callers are the rank-one and rank-two branches of decode; Job also uses decode for incomplete-character recovery, but this does not establish that its stop handling reaches this trigger.",
+        "locations": [
+          {
+            "commit": "64ef2a379213f88671e04d71a45f18ae8590e079",
+            "path": "exllamav3/tokenizer/tokenizer.py",
+            "symbol": "Tokenizer.decode_"
+          }
+        ],
+        "source_evidence": [
+          "call_c63c8e37f42f452e9f1c1a514ab559d7",
+          "call_d380f428399c423d86ad9b05de1c76bc",
+          "call_fb95b995600f4552be90295a36bf5f39",
+          "call_1de7019ddd034b63a6110648956f7409"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Applied the inspected filter to [11,2,12,0,99] with EOS 2, PAD 0 and vocabulary size 50; result was [11,12].",
+            "evidence": [
+              "call_84774abb51104d59b9d8d4b620be95b1"
+            ],
+            "limits": "Filtering only; no backend decoding or generation execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Batches vocabulary decoding and caches tokenizer lookup construction, with unmeasured speed benefits, shared-list extension risk, and a removed ordinal-getter return."
+  },
+  "evidence": {
+    "call_c63c8e37f42f452e9f1c1a514ab559d7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "64ef2a379213f88671e04d71a45f18ae8590e079",
+        "offset": 166,
+        "max_bytes": 6934
+      },
+      "result_sha256": "28cff36fe727e342190394afe01a63c106b36621fa5a36044d92811dfb148892"
+    },
+    "call_d380f428399c423d86ad9b05de1c76bc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "078f7845eeee7a6aecd6031c14f8e2eb85cfbe9abadeb12a1eeec8c89b2957f1"
+    },
+    "call_d2509eadc5d14ef4a5e3d334cefeb70a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": "get_id_to",
+        "limit": 100
+      },
+      "result_sha256": "5927da4575f591502eff8e7f8cfdffa41aba2bc498db7b43d8bc617706289967"
+    },
+    "call_401d009eaff341fda397753e97c9fef1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": "id_to_ord",
+        "limit": 100
+      },
+      "result_sha256": "f9132bae62522ee46c5ff9b13e12b74bbc0416477a0a29955a1323c9df9b22e1"
+    },
+    "call_b22b7c08d234419893add122da2f52e5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "tokenizer/tokenizer.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "7149b9523439c3c34cc4355b79443cbf12def26ff86828eb56e305a3ba02caa3",
+      "catalog_only": true
+    },
+    "call_edad02c3b728473fa1c1975ab8f27aee": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    },
+    "call_fb95b995600f4552be90295a36bf5f39": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": "decode_(",
+        "limit": 100
+      },
+      "result_sha256": "587cc70ef73c8c7952f942836df506cbb96d7403bc44cd15065e9c0e4c780b2a"
+    },
+    "call_1d0692a6568649b0929fd28a68e42539": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": ".vocab",
+        "limit": 100
+      },
+      "result_sha256": "efaf75ed5b4a560b1249d61f122ee64f5b3d80dd645e3124a587f41f1698929c"
+    },
+    "call_56109dfed9994f76a7cd4e207eea5a2d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": "piece_to_id",
+        "limit": 100
+      },
+      "result_sha256": "ae51ce901e33058d29ab0f320b6b7021148ce786ed9ba6f3184517f410a65c13"
+    },
+    "call_1de7019ddd034b63a6110648956f7409": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "path": "exllamav3/generator/job.py",
+        "offset": 18000,
+        "max_bytes": 8500
+      },
+      "result_sha256": "a329911c1dbe88bf06f8e84b44d9e220242178885f34a00534e65eba9db1a36f"
+    },
+    "call_4c24e04395f048dc9e71cc2f151853dc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "path": "exllamav3/generator/job.py",
+        "offset": 17100,
+        "max_bytes": 1200
+      },
+      "result_sha256": "ff595bf1ae6b62cfed30d4a02cb7082ab66bba1475b4ef5b8ea8b7f134fa9a03"
+    },
+    "call_ea53c7090d3340a889e36085b48038bf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "path": "examples/generation_loop.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "77beefe271aeb16b40b9e7f3ee6c900bcf27c97b73637021cd393461d70cbebb"
+    },
+    "call_573351c4e42547729f046195800215f4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "6f835bc05396571fc24a64be1ccccf5f2f4627076cecde81e3faf2203366bcca"
+    },
+    "call_9b3a599c07b84a6d9d62a9039da73b26": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": "id_to_piece",
+        "limit": 100
+      },
+      "result_sha256": "4d66ab6755983562aa2d074a8b971aea3c6a959773d2b579ffc42647754c440e"
+    },
+    "call_0de0e979efef44a28221ec521f4de270": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "path": "exllamav3/util/__init__.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "ecec40de1e31d1106f0555bd9fc2f1b3509fc5832e9ed2ae0ae20777fd0219e7"
+    },
+    "call_03d3dd485eea4d6fb6a537f4875a0a73": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": "def synchronized",
+        "limit": 10
+      },
+      "result_sha256": "e6d8ec8a9dba3d9406ce4350c6b6f8538f1e11b32e0b3d8f2c7908e5133eb4ab"
+    },
+    "call_707eee569ac743eca6704d212af4f9be": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "path": "exllamav3/util/misc.py",
+        "max_bytes": 2200
+      },
+      "result_sha256": "097bd3f57c949313fd06424ce4076b3858330b0178e4dafb03f819496829175e"
+    },
+    "call_1b4a7cb38aa04f4390abb3a9f89d3ade": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "query": "profile_opt",
+        "limit": 100
+      },
+      "result_sha256": "61d913ce32302d733c7f6fba3cf1c8172bbd6c8df6a951d2b20891541dc9890a"
+    },
+    "call_a3af35e91c8048d889685de7b97ffff6": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "17f1ab5e59ead2e410854ef53539b2915b304460",
+        "path": "exllamav3/util",
+        "limit": 100
+      },
+      "result_sha256": "fb62cbae693c589871d1366c1c39b16c48270d403206383b87b757e74ccfbe30"
+    },
+    "call_84774abb51104d59b9d8d4b620be95b1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from functools import lru_cache\nclass T:\n @lru_cache\n def get_fixed_vocab(self): return ['a','b']\n @lru_cache\n def pieces(self, special=False):\n  if special: return self.pieces().copy()\n  self.id_to_piece=self.get_fixed_vocab()\n  self.id_to_piece.append('<extra>')\n  return self.id_to_piece\n @lru_cache\n def ords(self): self.id_to_ord=list(range(2))\nt=T(); a=t.pieces(True); b=t.pieces(False); print({'special':a,'ordinary':b,'cached_default':t.pieces(),'ord_return':t.ords(),'ord_attribute':t.id_to_ord});\nseq=[11,2,12,0,99]; print('decode_filter', [t for t in seq if t!=0 and t<50 and t!=2])"
+        ]
+      },
+      "result_sha256": "8ef0e183c74c368752dcbd11b155d7c5f8af6bc3f223c93975fdc06479cb3860"
+    }
+  }
+}

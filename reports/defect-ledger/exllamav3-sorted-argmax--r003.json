@@ -1,0 +1,378 @@
+{
+  "defect_id": "exllamav3-sorted-argmax",
+  "revision_id": "r003",
+  "supersedes": "r002",
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Sorted argmax assigns the selected result to state.state instead of state.sample.",
+  "trigger": "A custom chain reaches SS_Argmax with sorted logits or probabilities.",
+  "expected_behavior": "Map the selected position to its token ID and store it in state.sample.",
+  "actual_behavior": "The sorted branches assign to state.state then overwrite it with DONE; state.sample stays None. Subsequent forward attempts sample.view if indexing succeeds; indexing also lacks row-wise mapping.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "paths": [
+        "exllamav3/generator/sampler/custom.py"
+      ],
+      "status": "reviewer_source_supported",
+      "rationale": "Finding in the approved root entry; introduction confirmed by the 178 reviewer correction."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "run": ".teacher/assemblies/root-002"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+      "run": ".teacher/runs/commit-000177-001"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+      "run": ".teacher/runs/commit-000080-001",
+      "local_id": "inherited-sorted-argmax",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-sorted-argmax",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged sorted branches of SS_Argmax do not populate the sample tensor.",
+        "trigger": "A custom chain reaches SS_Argmax with sorted logits or sorted probabilities, including a sorted min-p composition.",
+        "expected_behavior": "Map each row's selected position back to its token ID and assign state.sample.",
+        "actual_behavior": "The branches assign indexed values to state.state, then overwrite it with DONE; state.sample remains None, so forward cannot return its reshaped sample if indexing reaches completion.",
+        "locations": [
+          {
+            "commit": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Argmax.run"
+          }
+        ],
+        "source_evidence": [
+          "call_cc8aee7c156a4f0c89c67da90fb70c5c",
+          "call_cad0396b1b2943918f88727bc70a460d",
+          "call_6d9d3c99556044358f373889e6c75075",
+          "call_8bd794e9987d4bfa9a90b2c1d0baa30d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree SS_Argmax search and preset inspection found built-in uses starting directly from INIT. The new default uses SS_Sample, so this observation concerns custom sorted-greedy compositions rather than DefaultSampler.",
+            "evidence": [
+              "call_6d9d3c99556044358f373889e6c75075",
+              "call_8bd794e9987d4bfa9a90b2c1d0baa30d",
+              "call_4ce759ad816e499096aa1d093e79ed7a"
+            ],
+            "limits": "No repository execution or external custom-caller inventory."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+      "run": ".teacher/runs/commit-000081-001",
+      "local_id": "inherited-sorted-argmax",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-sorted-argmax",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The sorted-argmax problem identified in the parent annotation is carried over unchanged despite the new selection docstring.",
+        "trigger": "A custom chain reaches SS_Argmax.run with sorted logits or probabilities.",
+        "expected_behavior": "Map each row's selected position to its token ID and populate state.sample.",
+        "actual_behavior": "Sorted branches assign indexed values to state.state instead of state.sample, then overwrite state.state with DONE. If indexing completes, forward still cannot reshape the unset sample.",
+        "locations": [
+          {
+            "commit": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Argmax.run"
+          }
+        ],
+        "source_evidence": [
+          "call_9542b9bdcbd84be9882f37889c84dfc5",
+          "call_f2c6a3b52b0747b3a78d6c26fa273212",
+          "call_d6b9528255a1468790eedcf55aea9614",
+          "call_e4ef472467b24b539983c7c84450a82b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared parent implementation with the comments-only diff. Whole-parent-tree SS_Argmax search and preset inspection found built-in constructions starting directly from INIT; CustomSampler.forward is the direct step runner. Reach therefore includes custom sorted-greedy chains, not the inspected built-in greedy branches.",
+            "evidence": [
+              "call_9542b9bdcbd84be9882f37889c84dfc5",
+              "call_f2c6a3b52b0747b3a78d6c26fa273212",
+              "call_d6b9528255a1468790eedcf55aea9614",
+              "call_e4ef472467b24b539983c7c84450a82b"
+            ],
+            "limits": "No runtime reproduction or external caller inventory."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+      "run": ".teacher/runs/commit-000177-001",
+      "local_id": "inherited-sorted-argmax",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-sorted-argmax",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The sorted-argmax defect recorded by the ancestor remains unchanged; conditional reseeding does not repair it.",
+        "trigger": "A custom chain reaches SS_Argmax.run with sorted logits or probabilities, for example SS_Sort followed by SS_Argmax.",
+        "expected_behavior": "Map the selected sorted position back to a token ID and store it in state.sample.",
+        "actual_behavior": "The sorted branches assign to state.state rather than state.sample and then overwrite state.state with DONE. If indexing succeeds, ordinary forward subsequently attempts state.sample.view while sample remains None; indexing also lacks the row-wise mapping used by SS_Sample.",
+        "locations": [
+          {
+            "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Argmax.run"
+          }
+        ],
+        "source_evidence": [
+          "call_89926da9606046c4a7c181905664aaee",
+          "call_f1748c862a114512bfc56912ba3f267d",
+          "call_124711739a354705800c8a3250a90319",
+          "call_dd14e171b770416992cfca2424dbe68f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent implementation with the complete task diff and searched the whole parent tree for SS_Argmax uses. Its direct invocation is through CustomSampler's step loop. Inspected preset constructions do not place sorting before argmax, so this observation concerns custom sorted-argmax composition, not every greedy workflow.",
+            "evidence": [
+              "call_89926da9606046c4a7c181905664aaee",
+              "call_f1748c862a114512bfc56912ba3f267d",
+              "call_124711739a354705800c8a3250a90319",
+              "call_dd14e171b770416992cfca2424dbe68f"
+            ],
+            "limits": "No tensor execution was performed; the precise first failure depends on the indices and tensor dimensions."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "08dde73e664b997091370894072065f1f15055bf",
+      "run": ".teacher/runs/commit-000310-001",
+      "local_id": "inherited-sorted-argmax",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-sorted-argmax",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited sorted-argmax assignment defect persists through the sampler interface change.",
+        "trigger": "A custom sampling chain reaches SS_Argmax with sorted logits or probabilities.",
+        "expected_behavior": "Store the selected original token ID in state.sample.",
+        "actual_behavior": "Sorted branches assign to state.state, then overwrite it with DONE. If indexing succeeds, CustomSampler.forward subsequently tries to reshape the still-None sample.",
+        "locations": [
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Argmax.run"
+          }
+        ],
+        "source_evidence": [
+          "call_2e485476e6a343228cfcf303d7336088",
+          "call_17f8b55bcb374847abc86ac766a51991",
+          "call_369c3ad9ea594ca5bfda0cd7f302d487",
+          "call_7be8ba4b28a54ebd924110cbe3b2a503",
+          "call_3410e5e520d047ef880eeb88a4775098"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent branches and forward return with the task diff. Whole-parent SS_Argmax search and preset inspection show built-in greedy paths do not sort before argmax.",
+            "evidence": [
+              "call_7be8ba4b28a54ebd924110cbe3b2a503",
+              "call_3410e5e520d047ef880eeb88a4775098"
+            ],
+            "limits": "Limited to custom sorted-argmax composition; no tensor execution."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "verification": [
+    {
+      "method": "source_inspection",
+      "repository_execution": false,
+      "limits": "Source-only defect status; scalar transcriptions are not repository/tensor/CUDA execution. No continuous affected range or runtime impact established."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Compared the parent branches and forward return with the task diff. Whole-parent SS_Argmax search and preset inspection show built-in greedy paths do not sort before argmax.",
+      "evidence": [
+        "call_7be8ba4b28a54ebd924110cbe3b2a503",
+        "call_3410e5e520d047ef880eeb88a4775098"
+      ],
+      "limits": "Limited to custom sorted-argmax composition; no tensor execution."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/root-002-entry.json",
+      "sha256": "e3bfb397d2b4143bb9f0abde29707d4c657b429ddee0ebb6269f4e1b718e4d65",
+      "source": ".teacher/assemblies/root-002/entry.json"
+    },
+    {
+      "file": "evidence/commit176-ledger-draft.json",
+      "sha256": "d22a5e0af3fb2a5801d93c0897528fba5fdfb3c351d3dcc7c63795b5c7f822f1",
+      "source": ".teacher/runs/commit-000176-001/draft.json"
+    },
+    {
+      "file": "evidence/commit177-ledger-draft.json",
+      "sha256": "90af5d924de40a66fb1e0c371063263a542be117d04e0517cd5ece788d0f3869",
+      "source": ".teacher/runs/commit-000177-001/draft.json"
+    },
+    {
+      "file": "evidence/commit178-ledger-verdict.md",
+      "sha256": "bd6e8432eb1bce48ff6f0f0f4c570b51b6af2ba15c62717366ad60d3ff529b1b",
+      "source": "reviews/verdicts/commit-000178-001.md"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000080-001__draft.json",
+      "sha256": "3aaeb5b9f0febc20f720c0fdfce8b67714480f23e894c3325ef4d2fe9b4c2339"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000080-001.md",
+      "sha256": "5c370be828374bdd27db8488aa730dfe0a32ccee508258aed75bf933e8bf514b"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000081-001__draft.json",
+      "sha256": "70c09be70f4deafafea00d0d60c0eadf9c670b37262776e065095be3dc7af74a"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000081-001.md",
+      "sha256": "a6e3baf4b4b17cf87dbaa8647b009ed842c0e3a0ea556143ab4c7430db35ecd4"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000177-001__draft.json",
+      "sha256": "90af5d924de40a66fb1e0c371063263a542be117d04e0517cd5ece788d0f3869"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000177-001.md",
+      "sha256": "b470443ac1d1c0ed4ee58ce17b68f1f2ac978df3c0ebb5c8e64cc7ad1bf239c8"
+    },
+    {
+      "file": "evidence/commit310-001-draft.json",
+      "sha256": "57ef485fa408c1797cd889af0f87a42d5a1f09a3b1226b7e24caf7607e71953a"
+    },
+    {
+      "file": "evidence/commit310-001-transcript.json",
+      "sha256": "9ff63b504d2d45e99e151eac134b23958864f61cb92bc301bffcefe92fc3d503"
+    },
+    {
+      "file": "evidence/commit310-001-verdict.md",
+      "sha256": "ace3878dd9b5c31909e296ecb864638740c6a20f3fc06497eb139d6b56c59b72"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+      "available_at": "2025-05-23T23:33:20+02:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000080-001/draft.json",
+      "source_id": ".teacher/runs/commit-000080-001/draft.json",
+      "content_sha256": "3aaeb5b9f0febc20f720c0fdfce8b67714480f23e894c3325ef4d2fe9b4c2339",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000080-001.md",
+      "source_id": "reviews/verdicts/commit-000080-001.md",
+      "content_sha256": "5c370be828374bdd27db8488aa730dfe0a32ccee508258aed75bf933e8bf514b",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000081-001/draft.json",
+      "source_id": ".teacher/runs/commit-000081-001/draft.json",
+      "content_sha256": "70c09be70f4deafafea00d0d60c0eadf9c670b37262776e065095be3dc7af74a",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000081-001.md",
+      "source_id": "reviews/verdicts/commit-000081-001.md",
+      "content_sha256": "a6e3baf4b4b17cf87dbaa8647b009ed842c0e3a0ea556143ab4c7430db35ecd4",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000177-001/draft.json",
+      "source_id": ".teacher/runs/commit-000177-001/draft.json",
+      "content_sha256": "90af5d924de40a66fb1e0c371063263a542be117d04e0517cd5ece788d0f3869",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000177-001.md",
+      "source_id": "reviews/verdicts/commit-000177-001.md",
+      "content_sha256": "b470443ac1d1c0ed4ee58ce17b68f1f2ac978df3c0ebb5c8e64cc7ad1bf239c8",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+      "available_at": "2025-04-25T00:47:07+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+      "available_at": "2025-04-25T00:47:37+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "08dde73e664b997091370894072065f1f15055bf",
+      "available_at": "2025-07-11T21:29:40+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit310-001-draft.json",
+      "source_id": "evidence/commit310-001-draft.json",
+      "content_sha256": "57ef485fa408c1797cd889af0f87a42d5a1f09a3b1226b7e24caf7607e71953a",
+      "available_at": "2026-11-17T22:45:02.316839+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit310-001-transcript.json",
+      "source_id": "evidence/commit310-001-transcript.json",
+      "content_sha256": "9ff63b504d2d45e99e151eac134b23958864f61cb92bc301bffcefe92fc3d503",
+      "available_at": "2026-11-17T22:45:02.316839+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit310-001-verdict.md",
+      "source_id": "evidence/commit310-001-verdict.md",
+      "content_sha256": "ace3878dd9b5c31909e296ecb864638740c6a20f3fc06497eb139d6b56c59b72",
+      "available_at": "2026-11-17T22:45:02.316839+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-17T22:45:02.316839+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+      "24aa1b7c7c44324d1da0e86fdda9f60316b7d01f",
+      "46f98ca32ddf1ad82b3deeff5a2744ef9f11f1e5",
+      "08dde73e664b997091370894072065f1f15055bf"
+    ],
+    "limits": "Only explicitly source-supported revisions; no continuous range."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "New identity requested by 178 verdict; ledger acceptance pending. Never teacher input."
+}

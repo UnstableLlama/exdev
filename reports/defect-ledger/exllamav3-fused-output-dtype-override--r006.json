@@ -1,0 +1,610 @@
+{
+  "origin": "authoring_observation",
+  "classification": "behavior_change",
+  "status": "suspected",
+  "description": "The fused path no longer honors the forward call's out_dtype override.",
+  "trigger": "Call the single-token fused path with out_dtype different from the load-time output dtype.",
+  "expected_behavior": "Preserve the former precedence of per-call out_dtype over self.out_dtype.",
+  "actual_behavior": "The returned view uses cfg.out_d, allocated using only self.out_dtype and the FP16 fallback. Inspected decoder callers omit the override, so they do not demonstrate this incompatibility.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Compared removed per-call allocation with load-time allocation and inspected decoder call sites.",
+      "evidence": [
+        "call_4878c88c5a8b4e52bde0f87ded17c62a",
+        "call_6c4d2be7adad42ff9dae070afc5c3574"
+      ],
+      "limits": "External callers were not available."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Traced the returned view to persistent allocation and compared immediate decoder consumers.",
+      "evidence": [
+        "call_e5b969b808f247e38d3cf80adfea8878",
+        "call_8bf8287596514c09b56db8bd6d102d26"
+      ],
+      "limits": "No output-lifetime or dtype test."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Traced fused return storage and compared decoder consumers.",
+      "evidence": [
+        "call_ab4f548364dc435cbd9361ef76fa8da7",
+        "call_4c733e3b50b0424d976290d20d714723"
+      ],
+      "limits": "No tensor lifetime or dtype test."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Compared ordinary and fused returns with the decoder call sites.",
+      "evidence": [
+        "call_c3967061bf19417081b20e0328f9045d",
+        "call_621b63f49188430798fe2427c378a872"
+      ],
+      "limits": "No tensor lifetime or dtype test."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Compared both return paths and inspected the located decoder consumers.",
+      "evidence": [
+        "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+        "call_525b13d730af439e9477d68a158cef78"
+      ],
+      "limits": "No tensor-lifetime or dtype execution test; no inspected decoder caller exercises the problematic usage."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Compared both return branches and located decoder consumption.",
+      "evidence": [
+        "call_dd6e44356ad74741bbbaadf005fbb4d9",
+        "call_d004e439fccd4fb281ce8cc9715b62e5",
+        "call_2307a285e1db4d5983642e393857ac60"
+      ],
+      "limits": "No tensor-lifetime execution test; inspected decoder callers do not exercise the incompatible usage."
+    }
+  ],
+  "defect_id": "exllamav3-fused-output-dtype-override",
+  "revision_id": "r006",
+  "supersedes": "r005",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+      "run": ".teacher/runs/commit-000184-001",
+      "local_id": "fused-output-dtype-override",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "fused-output-dtype-override",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused path no longer honors the forward call's out_dtype override.",
+        "trigger": "Call the single-token fused path with out_dtype different from the load-time output dtype.",
+        "expected_behavior": "Preserve the former precedence of per-call out_dtype over self.out_dtype.",
+        "actual_behavior": "The returned view uses cfg.out_d, allocated using only self.out_dtype and the FP16 fallback. Inspected decoder callers omit the override, so they do not demonstrate this incompatibility.",
+        "locations": [
+          {
+            "commit": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_4878c88c5a8b4e52bde0f87ded17c62a",
+          "call_fe63c6f9973844ae96e42fa59f69fa34",
+          "call_6c4d2be7adad42ff9dae070afc5c3574"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared removed per-call allocation with load-time allocation and inspected decoder call sites.",
+            "evidence": [
+              "call_4878c88c5a8b4e52bde0f87ded17c62a",
+              "call_6c4d2be7adad42ff9dae070afc5c3574"
+            ],
+            "limits": "External callers were not available."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+      "run": ".teacher/runs/commit-000185-001",
+      "local_id": "inherited-persistent-output-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-persistent-output-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The earlier fused MLP output ownership and dtype behavior remains unchanged.",
+        "trigger": "Retain a fused result across another call, or request an out_dtype different from the load-time workspace dtype.",
+        "expected_behavior": "An independently retained result and an honored per-call dtype override.",
+        "actual_behavior": "The returned view aliases reusable cfg.out_d and does not apply the per-call override. Inspected decoder callers consume the result immediately and omit the override, so they do not demonstrate a failure from these conditions.",
+        "locations": [
+          {
+            "commit": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_7494838537624e73885bc637c15f7082",
+          "call_693c246646fd4604b0ff6f69736b3e56",
+          "call_232abb3986c643c5a1e13c2f8c6c1413"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the unchanged returned slice to load-time storage and inspected both matched decoder consumers.",
+            "evidence": [
+              "call_7494838537624e73885bc637c15f7082",
+              "call_232abb3986c643c5a1e13c2f8c6c1413"
+            ],
+            "limits": "No tensor lifetime or dtype execution test."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+      "run": ".teacher/runs/commit-000272-001",
+      "local_id": "inherited-fused-output-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-fused-output-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused path retains its workspace-backed output and ignored per-call dtype override.",
+        "trigger": "Retain a fused result across another fused call, or request out_dtype different from the load-time output dtype.",
+        "expected_behavior": "An independent result honoring the per-call dtype, as recorded for the earlier implementation.",
+        "actual_behavior": "The returned view shares cfg.out_d and uses its load-time dtype; subsequent fused calls overwrite that workspace. Inspected decoder callers omit the override and consume results immediately, so they do not demonstrate either incompatibility.",
+        "locations": [
+          {
+            "commit": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_e5b969b808f247e38d3cf80adfea8878",
+          "call_8bf8287596514c09b56db8bd6d102d26",
+          "call_33a2395a1305486daa293943b378e412",
+          "call_4fe7f9c7606741fbb0abae986c908a1b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the returned view to persistent allocation and compared immediate decoder consumers.",
+            "evidence": [
+              "call_e5b969b808f247e38d3cf80adfea8878",
+              "call_8bf8287596514c09b56db8bd6d102d26"
+            ],
+            "limits": "No output-lifetime or dtype test."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6735462a21fc889267373011b5867868e57c14f8",
+      "run": ".teacher/runs/commit-000290-001",
+      "local_id": "inherited-fused-output-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-fused-output-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused path retains workspace-backed results and ignores the per-call output-dtype override.",
+        "trigger": "Retain a fused result across another fused call, or request a dtype different from the load-time output dtype.",
+        "expected_behavior": "An independent result honoring out_dtype, consistent with the ordinary path.",
+        "actual_behavior": "The returned view shares cfg.out_d and retains its allocation dtype. A later fused call overwrites the workspace. Located decoder callers consume results immediately and omit the override, so they do not demonstrate either incompatibility.",
+        "locations": [
+          {
+            "commit": "6735462a21fc889267373011b5867868e57c14f8",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_ab4f548364dc435cbd9361ef76fa8da7",
+          "call_81e6e71f8d3148f6b87ff7237fcd5fe5",
+          "call_810d56918ce646d68be1ffa46251f9f5",
+          "call_4c733e3b50b0424d976290d20d714723"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced fused return storage and compared decoder consumers.",
+            "evidence": [
+              "call_ab4f548364dc435cbd9361ef76fa8da7",
+              "call_4c733e3b50b0424d976290d20d714723"
+            ],
+            "limits": "No tensor lifetime or dtype test."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "47d83f567ccc93633d70354f93f153dad6266812",
+      "run": ".teacher/runs/commit-000292-001",
+      "local_id": "ernie-inherited-fused-result-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "ernie-inherited-fused-result-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The reused fused sparse path returns workspace-backed storage and ignores a per-call dtype override.",
+        "trigger": "Retain a fused sparse result across another fused call, or request an out_dtype different from the allocated output dtype.",
+        "expected_behavior": "An independent result honoring the override, consistent with the ordinary path.",
+        "actual_behavior": "The fused return is a view of cfg.out_d without the ordinary path's to2 conversion. Another call reuses that storage. The located TransformerBlock caller immediately adds the result and supplies no override, so that caller does not demonstrate either incompatibility.",
+        "locations": [
+          {
+            "commit": "e1484296dd5878d85f782d4b9b36c2917cf2dbcb",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_c3967061bf19417081b20e0328f9045d",
+          "call_a85535df047f4b33a958d3fc3d085590",
+          "call_621b63f49188430798fe2427c378a872"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared ordinary and fused returns with the decoder call sites.",
+            "evidence": [
+              "call_c3967061bf19417081b20e0328f9045d",
+              "call_621b63f49188430798fe2427c378a872"
+            ],
+            "limits": "No tensor lifetime or dtype test."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+      "run": ".teacher/runs/commit-000294-001",
+      "local_id": "inherited-fused-return-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-fused-return-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused return remains workspace-backed and does not honor the ordinary path's per-call dtype conversion.",
+        "trigger": "Retain a fused result across another fused call, or request an out_dtype different from the allocated output dtype.",
+        "expected_behavior": "An independent result honoring the override, consistent with the ordinary path.",
+        "actual_behavior": "The fused branch returns a view of cfg.out_d without to2 conversion, and later calls reuse that workspace. The inspected TransformerBlock immediately adds the result and supplies no override, so it does not demonstrate either incompatibility. The task's intermediate dtype edit leaves this inherited contract unchanged.",
+        "locations": [
+          {
+            "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+          "call_aeabbd1ff9a14290a843e748aaba1c4b",
+          "call_525b13d730af439e9477d68a158cef78",
+          "call_26c9e703f630491183d18710c92d0226"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both return paths and inspected the located decoder consumers.",
+            "evidence": [
+              "call_9bb5901c23cf4d2cbcf2fa17cd590959",
+              "call_525b13d730af439e9477d68a158cef78"
+            ],
+            "limits": "No tensor-lifetime or dtype execution test; no inspected decoder caller exercises the problematic usage."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+      "run": ".teacher/runs/commit-000295-003",
+      "local_id": "inherited-fused-return-contract",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "inherited-fused-return-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused sparse result remains workspace-backed and bypasses the ordinary path's output conversion.",
+        "trigger": "Retain a fused result across another fused call, or request a per-call output dtype different from the workspace dtype.",
+        "expected_behavior": "An independent result honoring the override, consistent with ordinary evaluation.",
+        "actual_behavior": "Fusion returns a view of cfg.out_d without to2; subsequent calls reuse that workspace. The inspected TransformerBlock immediately adds the result and supplies no override, so it does not demonstrate problematic retention or conversion.",
+        "locations": [
+          {
+            "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_dd6e44356ad74741bbbaadf005fbb4d9",
+          "call_2307a285e1db4d5983642e393857ac60",
+          "call_95c8a3e34cd04a39b9905b1bab39d6d0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both return branches and located decoder consumption.",
+            "evidence": [
+              "call_dd6e44356ad74741bbbaadf005fbb4d9",
+              "call_d004e439fccd4fb281ce8cc9715b62e5",
+              "call_2307a285e1db4d5983642e393857ac60"
+            ],
+            "limits": "No tensor-lifetime execution test; inspected decoder callers do not exercise the incompatible usage."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000184-001__draft.json",
+      "sha256": "eaad2613f8075456b0277e156f05467b446027027a18c9a88da75a40bd25b7d2"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000184-001.md",
+      "sha256": "fd986397334c8880263bb04d601c980ebebf69292816c5cf9101fac3039d9501"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000185-001__draft.json",
+      "sha256": "5f49b515f8f347e0d5749f847dbd89319353011db5fc4b0bd4f49b6d389c064f"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000185-001.md",
+      "sha256": "a99fd7a9943efe06d9210668c3423ebc549892f3b9c6c569fa1301be7c517450"
+    },
+    {
+      "file": "evidence/commit272-001-draft.json",
+      "sha256": "82cb95f322a8b3e13f57a5ac9661a331331bf6a0bf5c0e11925a36e17cf0dfcf"
+    },
+    {
+      "file": "evidence/commit272-001-transcript.json",
+      "sha256": "ea07c2ba6f6aceb21d9c7834dc994165577a0e66a662db9a75caec021011d69c"
+    },
+    {
+      "file": "evidence/commit272-001-verdict.md",
+      "sha256": "d9f561e1512ab9babb618b7e311c70ead1a8ef6c2ee2587c6e50e37439b9bae8"
+    },
+    {
+      "file": "evidence/commit290-001-draft.json",
+      "sha256": "eb85914782d28854d321f04847cf7db4849a356484f9b566b201f3a1c90bd5b1"
+    },
+    {
+      "file": "evidence/commit290-001-transcript.json",
+      "sha256": "26e18b706ee655246b2909261e04f830ffb0a10054cc33a49647f2ba46f4636d"
+    },
+    {
+      "file": "evidence/commit290-001-verdict.md",
+      "sha256": "d1d7015aedd8c1bfa79d38f64a11b593f8dd5aa8c04f5df9a8bc7ab30561ad7c"
+    },
+    {
+      "file": "evidence/commit292-001-draft.json",
+      "sha256": "f4777275c45499ce511cf8c1a7a06a1afb35e51755d4b6844a928615c12e9a03"
+    },
+    {
+      "file": "evidence/commit292-001-transcript.json",
+      "sha256": "c8bd75affa481de665f2faf16132892a336955d7cbd22134599ce6740dd14e0c"
+    },
+    {
+      "file": "evidence/commit292-001-verdict.md",
+      "sha256": "ab5578997a8c62dd5b26338ba39d7f94b514ffc75535246de4cd28513bfaf9ca"
+    },
+    {
+      "file": "evidence/commit294-001-draft.json",
+      "sha256": "251d8cc8cb68da48edf66f1605759d45f5a2ae44f768a8c47be4e63e2d3a8317"
+    },
+    {
+      "file": "evidence/commit294-001-transcript.json",
+      "sha256": "5ef72accb81fb5445b513a53892e2ab1e83ae5565e5f09ad0299be9af702cbe4"
+    },
+    {
+      "file": "evidence/commit294-001-verdict.md",
+      "sha256": "facf9e4babeae58194456b1ecc301665d3900a0ac78a44386d051da0dc2cbd29"
+    },
+    {
+      "file": "evidence/commit295-003-draft.json",
+      "sha256": "f0d63294d3ebc77c2d5ea87836ce8d0c31dba31f2f462b56cc355ac87ca9ddb6"
+    },
+    {
+      "file": "evidence/commit295-003-transcript.json",
+      "sha256": "1a862a9ecff4e88378cc8ef13b8ef7902051f066c3c0c9b0fe8c3afaf4154303"
+    },
+    {
+      "file": "evidence/commit295-003-verdict.md",
+      "sha256": "92ab6acfa2b48dc08d2855db320f5f87dd433624dc1343796a3e25a3a13439d7"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000184-001/draft.json",
+      "source_id": ".teacher/runs/commit-000184-001/draft.json",
+      "content_sha256": "eaad2613f8075456b0277e156f05467b446027027a18c9a88da75a40bd25b7d2",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000184-001.md",
+      "source_id": "reviews/verdicts/commit-000184-001.md",
+      "content_sha256": "fd986397334c8880263bb04d601c980ebebf69292816c5cf9101fac3039d9501",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000185-001/draft.json",
+      "source_id": ".teacher/runs/commit-000185-001/draft.json",
+      "content_sha256": "5f49b515f8f347e0d5749f847dbd89319353011db5fc4b0bd4f49b6d389c064f",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000185-001.md",
+      "source_id": "reviews/verdicts/commit-000185-001.md",
+      "content_sha256": "a99fd7a9943efe06d9210668c3423ebc549892f3b9c6c569fa1301be7c517450",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+      "available_at": "2025-05-25T02:20:06+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+      "available_at": "2025-05-25T13:33:39+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+      "available_at": "2025-06-14T18:00:27+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit272-001-draft.json",
+      "source_id": "evidence/commit272-001-draft.json",
+      "content_sha256": "82cb95f322a8b3e13f57a5ac9661a331331bf6a0bf5c0e11925a36e17cf0dfcf",
+      "available_at": "2026-11-17T09:19:22.579771+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit272-001-transcript.json",
+      "source_id": "evidence/commit272-001-transcript.json",
+      "content_sha256": "ea07c2ba6f6aceb21d9c7834dc994165577a0e66a662db9a75caec021011d69c",
+      "available_at": "2026-11-17T09:19:22.579771+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit272-001-verdict.md",
+      "source_id": "evidence/commit272-001-verdict.md",
+      "content_sha256": "d9f561e1512ab9babb618b7e311c70ead1a8ef6c2ee2587c6e50e37439b9bae8",
+      "available_at": "2026-11-17T09:19:22.579771+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6735462a21fc889267373011b5867868e57c14f8",
+      "available_at": "2025-07-06T17:01:14+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit290-001-draft.json",
+      "source_id": "evidence/commit290-001-draft.json",
+      "content_sha256": "eb85914782d28854d321f04847cf7db4849a356484f9b566b201f3a1c90bd5b1",
+      "available_at": "2026-11-17T13:02:27.545484+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit290-001-transcript.json",
+      "source_id": "evidence/commit290-001-transcript.json",
+      "content_sha256": "26e18b706ee655246b2909261e04f830ffb0a10054cc33a49647f2ba46f4636d",
+      "available_at": "2026-11-17T13:02:27.545484+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit290-001-verdict.md",
+      "source_id": "evidence/commit290-001-verdict.md",
+      "content_sha256": "d1d7015aedd8c1bfa79d38f64a11b593f8dd5aa8c04f5df9a8bc7ab30561ad7c",
+      "available_at": "2026-11-17T13:02:27.545484+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "47d83f567ccc93633d70354f93f153dad6266812",
+      "available_at": "2025-07-07T04:18:07+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit292-001-draft.json",
+      "source_id": "evidence/commit292-001-draft.json",
+      "content_sha256": "f4777275c45499ce511cf8c1a7a06a1afb35e51755d4b6844a928615c12e9a03",
+      "available_at": "2026-11-17T14:18:33.963612+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit292-001-transcript.json",
+      "source_id": "evidence/commit292-001-transcript.json",
+      "content_sha256": "c8bd75affa481de665f2faf16132892a336955d7cbd22134599ce6740dd14e0c",
+      "available_at": "2026-11-17T14:18:33.963612+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit292-001-verdict.md",
+      "source_id": "evidence/commit292-001-verdict.md",
+      "content_sha256": "ab5578997a8c62dd5b26338ba39d7f94b514ffc75535246de4cd28513bfaf9ca",
+      "available_at": "2026-11-17T14:18:33.963612+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+      "available_at": "2025-07-08T15:57:24+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit294-001-draft.json",
+      "source_id": "evidence/commit294-001-draft.json",
+      "content_sha256": "251d8cc8cb68da48edf66f1605759d45f5a2ae44f768a8c47be4e63e2d3a8317",
+      "available_at": "2026-11-17T14:49:47.301982+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit294-001-transcript.json",
+      "source_id": "evidence/commit294-001-transcript.json",
+      "content_sha256": "5ef72accb81fb5445b513a53892e2ab1e83ae5565e5f09ad0299be9af702cbe4",
+      "available_at": "2026-11-17T14:49:47.301982+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit294-001-verdict.md",
+      "source_id": "evidence/commit294-001-verdict.md",
+      "content_sha256": "facf9e4babeae58194456b1ecc301665d3900a0ac78a44386d051da0dc2cbd29",
+      "available_at": "2026-11-17T14:49:47.301982+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit295-003-draft.json",
+      "source_id": "evidence/commit295-003-draft.json",
+      "content_sha256": "f0d63294d3ebc77c2d5ea87836ce8d0c31dba31f2f462b56cc355ac87ca9ddb6",
+      "available_at": "2026-11-17T16:40:12.505694+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit295-003-transcript.json",
+      "source_id": "evidence/commit295-003-transcript.json",
+      "content_sha256": "1a862a9ecff4e88378cc8ef13b8ef7902051f066c3c0c9b0fe8c3afaf4154303",
+      "available_at": "2026-11-17T16:40:12.505694+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit295-003-verdict.md",
+      "source_id": "evidence/commit295-003-verdict.md",
+      "content_sha256": "92ab6acfa2b48dc08d2855db320f5f87dd433624dc1343796a3e25a3a13439d7",
+      "available_at": "2026-11-17T16:40:12.505694+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+      "c82af98d57c4ffd21b67baad0eb89a5ed9091759",
+      "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+      "6735462a21fc889267373011b5867868e57c14f8",
+      "47d83f567ccc93633d70354f93f153dad6266812",
+      "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+      "69f8f9a07b95142878997f79e0053b1c1e08422f"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted. At272 the retained finding is source-only and conditional; see the complete observation for trigger and caller limits. No CUDA runtime reproduction. At290 this is a source-only conditional API observation; no CUDA/runtime reproduction. The result aliases cfg.out_d and may be overwritten by the next call; inspected decoder callers consume immediately and omit overrides, so no caller failure is demonstrated. At292 source-only Ernie observation; no runtime reproduction. The result aliases cfg.out_d and ignores an output dtype override; immediate residual addition does not establish a workspace lifetime failure. Source inspection at294 only; no GPU, checkpoint or calibration execution; reach remains conditional. At295 this is a conditional source observation only; see the full finding for caller bounds. No CUDA or checkpoint execution."
+  },
+  "recorded_at": "2026-11-17T16:40:12.505694+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "295/003 reviewer-assisted observation accepted by Fable; ancestor retrieval only. No continuous affected range or demonstrated runtime failure is added."
+  ]
+}

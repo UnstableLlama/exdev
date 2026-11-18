@@ -1,0 +1,522 @@
+{
+  "schema_version": 5,
+  "sha": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+  "parent_shas": [
+    "1385615f4b993b1e6c1ba210eee081bfa2ea35bc"
+  ],
+  "cutoff_date": "2025-07-13T12:39:28+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "turboderp described the change as a driver-bug workaround for device-to-device copies. Before the change, Module.prepare_for_device requested a direct Tensor.to(self.device) whenever the incoming tensor's device differed from the module's device. The commit does not identify the affected driver, hardware, or failure symptom.",
+        "basis": "source",
+        "evidence": [
+          "call_bd31130bc36e4feca6ddac79c1c2918f",
+          "call_51a1df56df1e49878d47c449d11db5ef"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The module reads EXLLAMA_NO_P2P_COPY once at import and tests the saved string for truthiness. Unset or empty preserves the original path; any nonempty value, including `0` or `false`, enables host staging. On a device mismatch the enabled branch prints a dot and then calls x.cpu().to(self.device). A same-device input is still returned unchanged, and params is still unused.",
+        "basis": "source",
+        "evidence": [
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+          "call_51a1df56df1e49878d47c449d11db5ef"
+        ]
+      },
+      {
+        "text": "For an inter-GPU handoff, explicitly routing through CPU lets the caller avoid requesting a direct GPU-to-GPU move at this boundary without changing layer placement. The tradeoff is an extra host transfer leg and temporary host storage. This is an opt-in path, not a retry after a failed copy, a peer-capability check, or a process-wide CUDA setting.",
+        "basis": "inference",
+        "evidence": [
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+          "call_8d00843b4719415d84d282f007f3648a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Model.forward and Model.prefill pass each top-level module's output to the next module through this helper. Model._load_autosplit also uses it for the dummy forward pass after loading a module, so the override can affect both split probing and later inference. Generation reaches it indirectly through the generator's logit forward pass and the job's prompt prefill.",
+        "basis": "source",
+        "evidence": [
+          "call_8d00843b4719415d84d282f007f3648a",
+          "call_c6b541705204447fa5b06101d447fc15",
+          "call_3ebc23bc559841508621eaf6d50f3dd8",
+          "call_240a425d3b5246009c1c0bd4660a6bc9"
+        ]
+      },
+      {
+        "text": "Other direct callers found in the parent tree are conversion's calibration capture, optional selected-expert reference pass, and post-quantization state advance; eval/compare_q_logits.py, both sides of eval/model_diff.py, and eval/prequant_test.py before their layer forwards; and science/kv_quant_exp.py during its layer walk. The call in tests/test_quant_fn.py creates the input on the same device passed to linear.load, so it is not coverage of the intended inter-GPU route. The patch does not change standalone transfers such as conversion's reference-state .to(...) or get_for_device's metadata copies.",
+        "basis": "source",
+        "evidence": [
+          "call_b5bb014997c4490fa479334ba1e0afda",
+          "call_f7f8f3bd46b04b1ba38130c6c601f2b3",
+          "call_240a425d3b5246009c1c0bd4660a6bc9",
+          "call_2a69fb4849ac4136a5c2cab255f9bbd2",
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial implementation's modules chapter describes prepare_for_device as the activation handoff between top-level modules. The FP16 feature-slicing entry separately describes host staging for weights and Module.load forwarding keywords to its children; that is a different operation from the activation move changed here.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_4b49ded041b142f5b7eefd6a05b74743",
+          "call_2d6f4cddde5c420690b1e73e1dd93580"
+        ]
+      },
+      {
+        "text": "No literal parent-tree match was found for EXLLAMA_NO_P2P_COPY, no_p2p_copy, P2P, or `driver bug`. The broader `driver` search did find a build-workflow comment about an NVIDIA driver dependency breaking a CUDA installation method, not an activation-copy report.",
+        "basis": "source",
+        "evidence": [
+          "call_8ec1c82424ca4bcabf076b6f60f36e36",
+          "call_15d53fed880643f08794be0aa3b91501",
+          "call_5fcdfdfd07324edca1653dba9be3c240",
+          "call_06271dab234a4b2e9af42e9a80eba1ee",
+          "call_4f9bb436128f4173a3af1a21bb85697d",
+          "call_f7f8f3bd46b04b1ba38130c6c601f2b3"
+        ]
+      },
+      {
+        "text": "Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d and #55, \u201cPossible GLM4 32B regression,\u201d both show the unchanged recursive Module.load call, not prepare_for_device. The former reports a tensor-size mismatch in safetensors padding; the latter reports an int-versus-None comparison in LinearFP16 construction. The shared module path is not evidence that either was the driver bug. Issue #15, \u201c`cogito-v1-preview-qwen-32B` generates incoherent output for bpw <= 2.5,\u201d discusses a quantization-regularization workaround, not host-staged transfers.",
+        "basis": "inference",
+        "evidence": [
+          "call_387d8e68ea0d4fa583c1553e17daf4e4",
+          "call_efd623da7ac449bd8ab2d4fcc1d69563",
+          "call_47955a6cd5eb4c11a2491cc449bac353",
+          "call_51a1df56df1e49878d47c449d11db5ef",
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5"
+        ]
+      },
+      {
+        "text": "Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d quotes the autosplit error in Model._load_autosplit. Issue #54, \u201cGPU split isn't followed here?\u201d, discusses the same dummy-forward placement mechanism, but reports allocator and VRAM utilization problems and a different environment workaround. These are useful context for the caller, not evidence that this override fixes placement or memory allocation.",
+        "basis": "inference",
+        "evidence": [
+          "call_4e71a097345f4512a844ec39ee8f0436",
+          "call_411e29aeb12e4a0dbae4d9a5e9e18b9c",
+          "call_8d00843b4719415d84d282f007f3648a",
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5"
+        ]
+      },
+      {
+        "text": "Other overlaps are with callers or utility files, not with the changed transfer statement. PR #26, \u201cSuperior 3INST parameters,\u201d mentions eval/model_diff.py as a possible evaluation starting point for its codebook proposal. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d passes through models/model.py during import but fails loading the extension. Issue #33, \u201cError converting model,\u201d reports a file-open error while compiling output; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d and #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d show Cholesky failures reached from the conversion driver. Issue #53, \u201cCommand A support,\u201d starts as a support request and later shows a similar conversion traceback. Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d points to SeqTensor.append in the same utility file as get_for_device, but reports a logits width mismatch, not a device handoff failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_4d678faf7ca14e37ad2ff35412948d57",
+          "call_a61240f8445f469b8a4cf0b20ca79b4a",
+          "call_4cbf5e91b9f54593bb2e2f8f3beac91f",
+          "call_7197741eb5904258b9d69b914ba3a70b",
+          "call_38a8feba65b2403a8e523ae593c770ca",
+          "call_248c50f9deae4d6fadc309fd6af65a7a",
+          "call_2132a03a1b614849a969809fd1e50816",
+          "call_bdd60ed985704965ae70989eae3c5dfa",
+          "call_90504a9ba02c48519c13f06562124593",
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5"
+        ]
+      }
+    ],
+    "limitations": [
+      "The Python check transcribed the branch with fake tensor methods. It did not import the changed repository module or execute PyTorch or CUDA copies. The actual transport selected by the original Tensor.to call, driver recovery, copy latency, synchronization, and peak host memory were not measured.",
+      "The caller inventory is from a literal search of the parent tree and does not establish coverage for dynamic or external callers."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "8e128ed9040b0fff1107798a1d5e57c8376bb4d5"
+    ],
+    "chapters": [
+      {
+        "id": "runtime",
+        "title": "Route module input transfers through CPU on request",
+        "claims": [
+          {
+            "text": "Set EXLLAMA_NO_P2P_COPY=1 before importing the module to request CPU staging. Leaving it unset or empty keeps the existing path. There is no GPU-pair check: the condition is device inequality, so host-to-device and device-to-host handoffs also enter the enabled branch and print a newline-terminated dot before attempting the transfer.",
+            "basis": "source",
+            "evidence": [
+              "call_4c46e229470f4fa7a428d2fab4d4c7c5"
+            ]
+          },
+          {
+            "text": "A standard-library branch check modeled four device pairs and five initial environment values. Changing the environment after initialization did not change the selected path. Equal devices returned the original object without output; a mismatch with an unset or empty value called only to(...); with `0`, `false`, or `1` it recorded cpu() followed by to(...) and captured one dot line.",
+            "basis": "execution",
+            "evidence": [
+              "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+              "call_71f0edb5fba2476684ac8646d21b9d11"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "cpu-endpoints-enter-p2p-workaround",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The P2P override covers host-facing transfers as well as inter-GPU copies, so it can add output even in a single-GPU configuration.",
+        "trigger": "Import with a nonempty EXLLAMA_NO_P2P_COPY and pass a CPU tensor to a module on a GPU, or a GPU tensor to a module on CPU. For example, Model._load_single honors the embedding's prefer_cpu capability while placing ordinary modules on the selected GPU; Model.forward passes state across that boundary.",
+        "expected_behavior": "If the option only bypassed peer-to-peer GPU copies, a transfer with a CPU endpoint would retain the original quiet to(self.device) path.",
+        "actual_behavior": "Any device mismatch takes the enabled branch. It prints a dot before calling cpu().to(self.device), even if the source or destination is already CPU.",
+        "locations": [
+          {
+            "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+            "path": "exllamav3/modules/module.py",
+            "symbol": "Module.prepare_for_device"
+          }
+        ],
+        "source_evidence": [
+          "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+          "call_b5bb014997c4490fa479334ba1e0afda",
+          "call_8d00843b4719415d84d282f007f3648a",
+          "call_240a425d3b5246009c1c0bd4660a6bc9"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the new predicate with the parent helper and inspected model placement and the parent call sites. The difference applies only when an inspected caller supplies a mismatched device while the override is enabled.",
+            "evidence": [
+              "call_51a1df56df1e49878d47c449d11db5ef",
+              "call_4c46e229470f4fa7a428d2fab4d4c7c5",
+              "call_8d00843b4719415d84d282f007f3648a",
+              "call_f7f8f3bd46b04b1ba38130c6c601f2b3"
+            ],
+            "limits": "This establishes branch scope, not that PyTorch makes an extra physical copy when an endpoint is already on CPU."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Fake CPU-to-GPU and GPU-to-CPU cases both recorded cpu(), to(...), and one dot line with the override enabled.",
+            "evidence": [
+              "call_71f0edb5fba2476684ac8646d21b9d11"
+            ],
+            "limits": "No real tensors, model execution, or GPU transfers."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds an import-time EXLLAMA_NO_P2P_COPY switch that stages module input transfers through CPU. The default path is unchanged; the opt-in branch also affects host-facing handoffs. Driver recovery was not verified."
+  },
+  "evidence": {
+    "call_4c46e229470f4fa7a428d2fab4d4c7c5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "offset": 222,
+        "max_bytes": 1127
+      },
+      "result_sha256": "77748608cbf45661de37cfe22fc63b16b3e6965de5ae875ecb209cfb1e162065"
+    },
+    "call_b5bb014997c4490fa479334ba1e0afda": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "prepare_for_device"
+      },
+      "result_sha256": "d67cc95fa67e45a818c0cfd058110fb56bcd60b50aba37e821517cacff547db1"
+    },
+    "call_06271dab234a4b2e9af42e9a80eba1ee": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "driver bug"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8ec1c82424ca4bcabf076b6f60f36e36": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "EXLLAMA_NO_P2P_COPY"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_5fcdfdfd07324edca1653dba9be3c240": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "P2P"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_15d53fed880643f08794be0aa3b91501": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "no_p2p_copy"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_4f9bb436128f4173a3af1a21bb85697d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "driver",
+        "limit": 30
+      },
+      "result_sha256": "b7e021cd40722cbb65aca9a1d38814beaf7eac643aa72a440ab18797a317b406"
+    },
+    "call_2ff8a7c1c452420f9781e7d2f43e90c6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "prepare_for_device",
+        "limit": 30
+      },
+      "result_sha256": "e6574702ba517318e0e42b4824bbf34616d302ee76cd55bff31513a9e3a3b73e",
+      "catalog_only": true
+    },
+    "call_4b49ded041b142f5b7eefd6a05b74743": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules"
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_51a1df56df1e49878d47c449d11db5ef": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "path": "exllamav3/modules/module.py"
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_8d00843b4719415d84d282f007f3648a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 12400
+      },
+      "result_sha256": "bed103f0ed5e4b954e6e173ee6f4e4856fb1034f622066b85b0564d6db14aa20"
+    },
+    "call_f7f8f3bd46b04b1ba38130c6c601f2b3": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,positions in {'eval/compare_q_logits.py':[38], 'eval/model_diff.py':[88,98], 'eval/prequant_test.py':[305], 'exllamav3/conversion/convert_model.py':[350,358,474], 'science/kv_quant_exp.py':[58], 'tests/test_quant_fn.py':[152], '.github/workflows/build.yml':[143]}.items():\n print(f)\n rows=Path(f).read_text().splitlines()\n for n in positions:\n  for j in range(n-6,n+6): print(j,rows[j-1])"
+        ]
+      },
+      "result_sha256": "e7df774c36705076176b7cbb926a4f7162d98f35d246a694a1f97baed28df154"
+    },
+    "call_47955a6cd5eb4c11a2491cc449bac353": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/15",
+        "max_bytes": 12000
+      },
+      "result_sha256": "0ed6f1cb5c3e38c114dfbac18703cd260ae3d9ee783a2402e9e25517c0e1d8cd"
+    },
+    "call_387d8e68ea0d4fa583c1553e17daf4e4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 13000
+      },
+      "result_sha256": "24980ae6fc7d31c8fb46ffc7e0d29149fdb84766b4627e960b962c33ec487a35"
+    },
+    "call_efd623da7ac449bd8ab2d4fcc1d69563": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/55",
+        "max_bytes": 14000
+      },
+      "result_sha256": "31d85160b193e4e396401e9031f220b73d3cbbb4311ff962bac24b518ecc08fd"
+    },
+    "call_7257b0f8eb254a3793240316f118d747": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions"
+      },
+      "result_sha256": "dc4c2a12090e664aae5288a448ede403bf7755c617a7ee9a683ccb23b348f27f",
+      "catalog_only": true
+    },
+    "call_a61240f8445f469b8a4cf0b20ca79b4a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7"
+      },
+      "result_sha256": "eb036e4f585eb0a66ca903a9ad3476a8d68de94d3a4e5989d91418829a682329"
+    },
+    "call_4d678faf7ca14e37ad2ff35412948d57": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "cd3a80834f03fa1993c41a5455db91506dddddf5e16927c81e0ca42b43b6ed63"
+    },
+    "call_4cbf5e91b9f54593bb2e2f8f3beac91f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 5000
+      },
+      "result_sha256": "4586dc1d12ac80b2a604ec35eee7f91390e2804fcbccf0053ed9fcd1acf37095"
+    },
+    "call_7197741eb5904258b9d69b914ba3a70b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 10000
+      },
+      "result_sha256": "415ea4c0eb8192b1cf30e49fee7552655893c041a69d4d4dd548e8d74df79df6"
+    },
+    "call_38a8feba65b2403a8e523ae593c770ca": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 4800
+      },
+      "result_sha256": "efbf14da524c2c5d2b0500e27983a3735baaa94ba66711bf2d5627e36d4f14d0"
+    },
+    "call_248c50f9deae4d6fadc309fd6af65a7a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 5400
+      },
+      "result_sha256": "d3dc38495bd6e5c0584100b32bd50ab0de3cc6f52b44e8ffb6cf52d29b674004"
+    },
+    "call_2132a03a1b614849a969809fd1e50816": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 5200
+      },
+      "result_sha256": "f16584dac61827b984e65641500b2c0d7d9cc407da471a8bfb71eaf356500d43"
+    },
+    "call_bd31130bc36e4feca6ddac79c1c2918f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "max_bytes": 222
+      },
+      "result_sha256": "1d70be8ca60fa9300a6f94537f04a3ed2ce35eb2ed192c1a899e7b05346b8472"
+    },
+    "call_ff6f02bd10a74ba0b92237a7a73fef2f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/module.py",
+        "limit": 20
+      },
+      "result_sha256": "3e48733977d9fc1877d3c2c08378a47b736a8a9ba8a64dc045785fda329a2f65",
+      "catalog_only": true
+    },
+    "call_4e71a097345f4512a844ec39ee8f0436": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 4000
+      },
+      "result_sha256": "4773a24f1c668019808b6361374b82e8b306b31bcaa65fc1497ef0e2aad51f1a"
+    },
+    "call_411e29aeb12e4a0dbae4d9a5e9e18b9c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/54",
+        "max_bytes": 6500
+      },
+      "result_sha256": "1b93daa2b196f844bd40360625beacb068027e616bbc37510ce8af02dd77b23c"
+    },
+    "call_bdd60ed985704965ae70989eae3c5dfa": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "offset": 16000,
+        "max_bytes": 11458
+      },
+      "result_sha256": "a0a6193425ee08a09ab5da7c21a0ff082d6be965547b4c197eb20c46efc38912"
+    },
+    "call_27a7dc5de9d6420581a27ba5fe5eb782": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "def get_for_device"
+      },
+      "result_sha256": "f604561a04ba2447592aad0b06c6495bf377c809b6c8eb4a152371aff12aa42d"
+    },
+    "call_2a69fb4849ac4136a5c2cab255f9bbd2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "path": "exllamav3/util/tensor.py",
+        "offset": 3300,
+        "max_bytes": 5500
+      },
+      "result_sha256": "0299ec4f61c280835c36ff88a9f2a0f74c18420a8f18e82952c2aab9ccacec78"
+    },
+    "call_1f9683869d60415897ff80de58a6c44b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": "prefer_cpu",
+        "limit": 30
+      },
+      "result_sha256": "a7937d851306ab5f21bbc02c57573f41b49980545125db9f1c1db1f447f572e1"
+    },
+    "call_71f0edb5fba2476684ac8646d21b9d11": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import io,os,contextlib,itertools\nclass Tensor:\n def __init__(self,device,log): self.device,self.log=device,log\n def cpu(self): self.log.append('cpu()'); return Tensor('cpu',self.log)\n def to(self,device): self.log.append(f'to({device})'); return Tensor(device,self.log)\ncode='''no_p2p_copy = os.environ.get('EXLLAMA_NO_P2P_COPY', None)\ndef prepare(self,x,params):\n    global no_p2p_copy\n    if x.device != self.device:\n        if no_p2p_copy:\n            print('.')\n            x = x.cpu().to(self.device)\n        else:\n            x = x.to(self.device)\n    return x\n'''\nfrom types import SimpleNamespace\nfor val in (None,'','0','false','1'):\n key='EXLLAMA_NO_P2P_COPY'; os.environ.pop(key,None)\n if val is not None: os.environ[key]=val\n g={'os':os}; exec(code,g); os.environ[key]='' if val else '1'\n for src,dst in [('cuda:0','cuda:0'),('cuda:0','cuda:1'),('cpu','cuda:0'),('cuda:0','cpu')]:\n  log=[]; x=Tensor(src,log); buf=io.StringIO()\n  with contextlib.redirect_stdout(buf): y=g['prepare'](SimpleNamespace(device=dst),x,{})\n  assert y.device==dst and ((y is x)==(src==dst))\n  print(repr(val),src,dst,log,repr(buf.getvalue()))"
+        ]
+      },
+      "result_sha256": "b0ed35b3b2fc238a5f4a9b9fa9e4fb9464087217506e8769728a58fdbb5ad029"
+    },
+    "call_2d6f4cddde5c420690b1e73e1dd93580": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "8e128ed9040b0fff1107798a1d5e57c8376bb4d5",
+        "max_bytes": 9000
+      },
+      "result_sha256": "40fb2658233ba16414d6a583fc6c4fc5a355bb8ffe5d943862e861e63840674a"
+    },
+    "call_90504a9ba02c48519c13f06562124593": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 3300
+      },
+      "result_sha256": "c0bb6f14b9f14645e57dad16ac7da52396cf6e6fae55fec6cb177200c976eb28"
+    },
+    "call_c6b541705204447fa5b06101d447fc15": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "path": "exllamav3/generator",
+        "query": "self.model.",
+        "limit": 50
+      },
+      "result_sha256": "6b7ef7d4ddedb21df721cf19ce8ab170aff6135fbcf80642d38a70527161b7ba"
+    },
+    "call_3ebc23bc559841508621eaf6d50f3dd8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1385615f4b993b1e6c1ba210eee081bfa2ea35bc",
+        "query": ".prefill(",
+        "limit": 40
+      },
+      "result_sha256": "34cecd126d8106c502a33b3287d51d17d5812e0cf973632be9fa74810e5cd2fd"
+    },
+    "call_240a425d3b5246009c1c0bd4660a6bc9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,a,b in [('exllamav3/generator/generator.py',437,450),('exllamav3/generator/job.py',869,895),('exllamav3/modules/embedding.py',30,93),('tests/test_quant_fn.py',130,153),('exllamav3/conversion/convert_model.py',315,344),('exllamav3/conversion/convert_model.py',449,469)]:\n print(f); rows=Path(f).read_text().splitlines(); print('\\n'.join(f'{i}: {rows[i-1]}' for i in range(a,min(b,len(rows))+1)))"
+        ]
+      },
+      "result_sha256": "c8e4c86c1f0efae4df809b0e5ea6b2c61e84215d331269c2f5539beccdff9b59"
+    }
+  }
+}

@@ -1,0 +1,404 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Floating-point division followed by ceiling can push a limiting dimension above its maximum, and patch alignment amplifies the overshoot.",
+  "trigger": "Call the new helper with input_size=(230,1), max_size=(224,192), patch_size=(16,32).",
+  "expected_behavior": "Return patch-aligned dimensions no larger than (224,192), as promised by the bounding-box contract.",
+  "actual_behavior": "The scalar transcription produces (240,32): the computed limiting dimension rounds up to 225 before alignment. The source has no final clamp. No repository callers were found in the parent, and the diff introduces none, so reach is limited to direct prospective or external use. At 234 the first integrated caller is Mistral3 preprocessing, reached by get_image_embeddings; scalar transcription gives 1568x1008 for 1541x1000 at longest edge 1540 and alignment 28. Replacement 234/002 follows the same overflow into the precomputed vision RoPE table: 28x1541 becomes 28x1568, a (112,2) feature grid reaches position 12211 against 12100 rows. Source and scalar evidence only; no GPU fault observed.",
+  "verification": [
+    {
+      "method": "scalar_transcription",
+      "description": "Swept input dimensions 1 through 300 using the inspected scaling and alignment formulas.",
+      "evidence": [
+        "call_d05e036eb3c74e63a3d0d5a38be97288"
+      ],
+      "limits": "Used standard-library math.ceil rather than NumPy ceil; did not execute the repository helper or image resizing."
+    }
+  ],
+  "defect_id": "exllamav3-vision-floating-ceiling-overflow",
+  "revision_id": "r005",
+  "supersedes": "r004",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+      "status": "source_supported",
+      "rationale": "231 introduces the helper and its floating division/ceiling/alignment sequence; reviewer confirms introduction."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+      "run": ".teacher/runs/commit-000231-001",
+      "local_id": "floating-ceiling-overflow",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "floating-ceiling-overflow",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Floating-point division followed by ceiling can push a limiting dimension above its maximum, and patch alignment amplifies the overshoot.",
+        "trigger": "Call the new helper with input_size=(230,1), max_size=(224,192), patch_size=(16,32).",
+        "expected_behavior": "Return patch-aligned dimensions no larger than (224,192), as promised by the bounding-box contract.",
+        "actual_behavior": "The scalar transcription produces (240,32): the computed limiting dimension rounds up to 225 before alignment. The source has no final clamp. No repository callers were found in the parent, and the diff introduces none, so reach is limited to direct prospective or external use.",
+        "locations": [
+          {
+            "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+            "path": "exllamav3/util/vision.py",
+            "symbol": "size_to_longest_edge_and_patch_size"
+          }
+        ],
+        "source_evidence": [
+          "call_17c57986a1dd4e4797a9aee7511340cb",
+          "call_86597b999c464906a796ea782ed9e67d"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Swept input dimensions 1 through 300 using the inspected scaling and alignment formulas.",
+            "evidence": [
+              "call_d05e036eb3c74e63a3d0d5a38be97288"
+            ],
+            "limits": "Used standard-library math.ceil rather than NumPy ceil; did not execute the repository helper or image resizing."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "45fa5abff9001ff373a612303e48ec01d34efe42",
+      "run": ".teacher/runs/commit-000234-001",
+      "local_id": "inherited-resize-overflow",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-resize-overflow",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new preprocessing path inherits floating-point ceiling overflow from the unchanged image-sizing helper.",
+        "trigger": "Call Mistral3VisionModel.get_image_embeddings with a 1541\u00d71000 image and preprocessing longest_edge=1540, patch_size=14, spatial_merge_size=2.",
+        "expected_behavior": "Resize to a grid-aligned image whose dimensions do not exceed 1540.",
+        "actual_behavior": "The scalar transcription yields 1568\u00d71008: division rounds the limiting dimension slightly above 1540, ceiling preserves 1541, and alignment raises it to 1568. Neither the helper nor the new caller clamps the result. The parent had no caller of this sizing helper; the task adds a direct preprocessing call reached by get_image_embeddings. The existing example invokes the same interface on Gemma3, so it is not itself evidence of a Mistral3 execution.",
+        "locations": [
+          {
+            "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+            "path": "exllamav3/util/vision.py",
+            "symbol": "size_to_longest_edge_and_patch_size"
+          },
+          {
+            "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+            "path": "exllamav3/models/mistral3.py",
+            "symbol": "Mistral3VisionModel.preprocess"
+          }
+        ],
+        "source_evidence": [
+          "call_81514a70349245709df4ca0760d83bb2",
+          "call_00cb2dc6ce174608b1d34452e6fde068",
+          "call_8857efb6fa79405987eb3bd93934e709",
+          "call_be44b0637a904356893dc98f3eab6468",
+          "call_ce5552b985394f79962389b6c72a47f0"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed ratio, ceiling and alignment using Python floats and math.ceil; the first tested overflowing width was 1541.",
+            "evidence": [
+              "call_5f745d75c2c145bb9f4a7b041252f90b"
+            ],
+            "limits": "Did not execute NumPy, Pillow, the repository helper or rotary kernels. The preprocessing edge is an explicit test assumption, not a verified checkpoint preprocessing value."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+      "run": ".teacher/runs/commit-000241-001",
+      "local_id": "inherited-bounding-box-overflow",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-bounding-box-overflow",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly documented bounding-box guarantee remains vulnerable to inherited floating-point ceiling overflow; this comment-only change carries the behavior over.",
+        "trigger": "Mistral3VisionModel.get_image_embeddings receives a 1541\u00d71000 image with longest_edge=1540, patch_size=14 and spatial_merge_size=2.",
+        "expected_behavior": "Produce patch-aligned dimensions no larger than 1540 on either axis.",
+        "actual_behavior": "Scalar transcription produces 1568\u00d71008. Division leaves the limiting dimension slightly above 1540, ceiling yields 1541, and alignment to 28 pixels increases it to 1568. Neither the helper nor preprocess clamps the result. Whole-parent-tree search finds the helper's sole direct call in Mistral3 preprocess; get_image_embeddings directly calls that preprocessing method.",
+        "locations": [
+          {
+            "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+            "path": "exllamav3/util/vision.py",
+            "symbol": "size_to_longest_edge_and_patch_size"
+          },
+          {
+            "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+            "path": "exllamav3/models/mistral3.py",
+            "symbol": "Mistral3VisionModel.preprocess"
+          }
+        ],
+        "source_evidence": [
+          "call_5b0ad51112314baea2f8d0827edd2a31",
+          "call_944f1d2839e04c9ab3a2f55717e125e8",
+          "call_6f90181763164b56bc985484e3d8bfa5",
+          "call_f579319aecdf42ccb0e10d3964b99f3d"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the inspected ratio, ceiling and 28-pixel alignment with standard-library Python; output was (1568, 1008).",
+            "evidence": [
+              "call_1169a120ef5a48b085f376da93776b10"
+            ],
+            "limits": "Does not execute the repository helper, NumPy, Pillow or downstream vision kernels."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "45fa5abff9001ff373a612303e48ec01d34efe42",
+      "run": ".teacher/runs/commit-000234-002",
+      "local_id": "resize-overflow-reaches-vision-rope-table",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "resize-overflow-reaches-vision-rope-table",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new image pipeline inherits an unclamped floating-point resize overflow, allowing feature positions outside its precomputed RoPE table.",
+        "trigger": "Use an otherwise valid processor configuration with longest_edge=1540, patch_size=14 and spatial_merge_size=2, then call Mistral3VisionModel.get_image_embeddings with a 28\u00d71541 image.",
+        "expected_behavior": "Resize to merge-aligned dimensions within the configured maximum, keeping every generated position ID inside the angle table.",
+        "actual_behavior": "The scalar transcription rounds the limiting height to 1541 before alignment and returns 28\u00d71568. The new caller therefore builds features_size=(112,2), with position IDs reaching 12211 despite only 12100 table rows. Neither the image caller nor the inspected CUDA wrapper validates row bounds. Source reach is the new get_image_embeddings \u2192 preprocess \u2192 helper \u2192 vision attention path; the parent had no caller of the sizing helper. No resulting image-library behavior or GPU fault was observed.",
+        "locations": [
+          {
+            "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+            "path": "exllamav3/models/mistral3.py",
+            "symbol": "Mistral3VisionModel.preprocess / get_image_embeddings"
+          },
+          {
+            "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+            "path": "exllamav3/util/vision.py",
+            "symbol": "size_to_longest_edge_and_patch_size"
+          }
+        ],
+        "source_evidence": [
+          "call_3e30be17b6284c9b95e8ae7daa523b29",
+          "call_0035c45b902448e4b3b28252bf05770f",
+          "call_6c79721059194cfca1c96eb08b067701",
+          "call_36539a2c2a5d44d4a63f2dc53dae6b66"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unchanged helper with the new caller, position-grid construction, attention forwarding and native table-indexing guards.",
+            "evidence": [
+              "call_0035c45b902448e4b3b28252bf05770f",
+              "call_3e30be17b6284c9b95e8ae7daa523b29",
+              "call_2c6322bba0b744bb8f74173efb9b4a4d",
+              "call_36539a2c2a5d44d4a63f2dc53dae6b66"
+            ],
+            "limits": "The trigger specifies processor settings; the reference preprocessor file was unavailable."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed scaling, ceiling, patch alignment and position indexing using Python floats and math.ceil; obtained output (28,1568), feature grid (112,2), and maximum position 12211.",
+            "evidence": [
+              "call_197426d9e2ef4fa4a603d55384080a36"
+            ],
+            "limits": "Did not execute NumPy, Pillow, repository code or CUDA; does not measure an actual out-of-bounds load."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "17f1ab5e59ead2e410854ef53539b2915b304460",
+      "status": "source_supported",
+      "rationale": "242 floors scaled dimensions with a minimum of one before patch alignment. Reviewer confirms the bound and the fix, including the integrated Mistral3 path."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit231-001-draft.json",
+      "sha256": "00f4a6d598335f9abaf67da5030281abdbe3eac2a8bdb5408455764f14e27d9b"
+    },
+    {
+      "file": "evidence/commit231-001-transcript.json",
+      "sha256": "9cadcee31a5a753ee3d4495c3bee98a54131a0ecd47ae9da5211cd2c743eebff"
+    },
+    {
+      "file": "evidence/commit231-001-verdict.md",
+      "sha256": "26f8ce65dc7e85171a5a3c6343dd59140cf10326d4b18f389036172bf36f640e"
+    },
+    {
+      "file": "evidence/commit234-001-draft.json",
+      "sha256": "0b3d02722fd4fe928fd64a2e5413d0bd296df32d5bb40e0208f31d909d06e43a"
+    },
+    {
+      "file": "evidence/commit234-001-transcript.json",
+      "sha256": "063a9a2504553a3cb4a676650282dfb5e4f17d6600dc78fb8a490520ecdbf7b2"
+    },
+    {
+      "file": "evidence/commit234-001-verdict.md",
+      "sha256": "3ad8f0580b972b12d9790fb7cd0170f2f731d0a901e819fe189c6cedbfe503a7"
+    },
+    {
+      "file": "evidence/commit241-001-draft.json",
+      "sha256": "17fd850e80c23274d44542243c527b10b80816911f35f36bbf9cced2e3a778ab"
+    },
+    {
+      "file": "evidence/commit241-001-transcript.json",
+      "sha256": "396398f50cd72e49db93a779862c42d1ce70427106bee2b5ae4652242eb9faee"
+    },
+    {
+      "file": "evidence/commit241-001-verdict.md",
+      "sha256": "df85f63a0fdb5c11eb539d93e4b720e386acd5a23a8ea26be76a19f4a85cd504"
+    },
+    {
+      "file": "evidence/commit242-001-draft.json",
+      "sha256": "acc5607797b5cc63ca89cf520cc4525e392357bf8f64cd48ba63c391d2be6ee4"
+    },
+    {
+      "file": "evidence/commit242-001-transcript.json",
+      "sha256": "e01b6bfb13ef43910ce1a74314d198d54c6f0b5e610ac47962cf860c888612c7"
+    },
+    {
+      "file": "evidence/commit242-001-verdict.md",
+      "sha256": "117886e9bbc783f3f5af802d046d4dedc6db715cd84509c9ba59bc03e0cc13b9"
+    },
+    {
+      "file": "evidence/commit234-002-draft.json",
+      "sha256": "e394556011599931b2d5ae5a710044ff1b398a1cbff15226ae276fd9021a42e9"
+    },
+    {
+      "file": "evidence/commit234-002-transcript.json",
+      "sha256": "c6a18c44d57b535c1afd9ee0900115b47638c661ae374e5cacd8d24f0216e5ad"
+    },
+    {
+      "file": "evidence/commit234-002-verdict.md",
+      "sha256": "9b3a75cb0f93768fc25ce94620cf9ecf475aa6a6239b1bf44e92dd8babd550c5"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit231-001-draft.json",
+      "source_id": "evidence/commit231-001-draft.json",
+      "content_sha256": "00f4a6d598335f9abaf67da5030281abdbe3eac2a8bdb5408455764f14e27d9b",
+      "available_at": "2026-11-16T14:55:10.067425+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit231-001-transcript.json",
+      "source_id": "evidence/commit231-001-transcript.json",
+      "content_sha256": "9cadcee31a5a753ee3d4495c3bee98a54131a0ecd47ae9da5211cd2c743eebff",
+      "available_at": "2026-11-16T14:55:10.067425+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit231-001-verdict.md",
+      "source_id": "evidence/commit231-001-verdict.md",
+      "content_sha256": "26f8ce65dc7e85171a5a3c6343dd59140cf10326d4b18f389036172bf36f640e",
+      "available_at": "2026-11-16T14:55:10.067425+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit234-001-draft.json",
+      "source_id": "evidence/commit234-001-draft.json",
+      "content_sha256": "0b3d02722fd4fe928fd64a2e5413d0bd296df32d5bb40e0208f31d909d06e43a",
+      "available_at": "2026-11-16T15:30:01.302671+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit234-001-transcript.json",
+      "source_id": "evidence/commit234-001-transcript.json",
+      "content_sha256": "063a9a2504553a3cb4a676650282dfb5e4f17d6600dc78fb8a490520ecdbf7b2",
+      "available_at": "2026-11-16T15:30:01.302671+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit234-001-verdict.md",
+      "source_id": "evidence/commit234-001-verdict.md",
+      "content_sha256": "3ad8f0580b972b12d9790fb7cd0170f2f731d0a901e819fe189c6cedbfe503a7",
+      "available_at": "2026-11-16T15:30:01.302671+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit241-001-draft.json",
+      "source_id": "evidence/commit241-001-draft.json",
+      "content_sha256": "17fd850e80c23274d44542243c527b10b80816911f35f36bbf9cced2e3a778ab",
+      "available_at": "2026-11-16T18:25:45.584548+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit241-001-transcript.json",
+      "source_id": "evidence/commit241-001-transcript.json",
+      "content_sha256": "396398f50cd72e49db93a779862c42d1ce70427106bee2b5ae4652242eb9faee",
+      "available_at": "2026-11-16T18:25:45.584548+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit241-001-verdict.md",
+      "source_id": "evidence/commit241-001-verdict.md",
+      "content_sha256": "df85f63a0fdb5c11eb539d93e4b720e386acd5a23a8ea26be76a19f4a85cd504",
+      "available_at": "2026-11-16T18:25:45.584548+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit242-001-draft.json",
+      "source_id": "evidence/commit242-001-draft.json",
+      "content_sha256": "acc5607797b5cc63ca89cf520cc4525e392357bf8f64cd48ba63c391d2be6ee4",
+      "available_at": "2026-11-16T18:38:19.578499+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit242-001-transcript.json",
+      "source_id": "evidence/commit242-001-transcript.json",
+      "content_sha256": "e01b6bfb13ef43910ce1a74314d198d54c6f0b5e610ac47962cf860c888612c7",
+      "available_at": "2026-11-16T18:38:19.578499+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit242-001-verdict.md",
+      "source_id": "evidence/commit242-001-verdict.md",
+      "content_sha256": "117886e9bbc783f3f5af802d046d4dedc6db715cd84509c9ba59bc03e0cc13b9",
+      "available_at": "2026-11-16T18:38:19.578499+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit234-002-draft.json",
+      "source_id": "evidence/commit234-002-draft.json",
+      "content_sha256": "e394556011599931b2d5ae5a710044ff1b398a1cbff15226ae276fd9021a42e9",
+      "available_at": "2026-11-17T05:19:19.642899+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit234-002-transcript.json",
+      "source_id": "evidence/commit234-002-transcript.json",
+      "content_sha256": "c6a18c44d57b535c1afd9ee0900115b47638c661ae374e5cacd8d24f0216e5ad",
+      "available_at": "2026-11-17T05:19:19.642899+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit234-002-verdict.md",
+      "source_id": "evidence/commit234-002-verdict.md",
+      "content_sha256": "9b3a75cb0f93768fc25ce94620cf9ecf475aa6a6239b1bf44e92dd8babd550c5",
+      "available_at": "2026-11-17T05:19:19.642899+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+      "45fa5abff9001ff373a612303e48ec01d34efe42",
+      "93cb21ca9b23d22164f38c1d91d968a3c25538b7"
+    ],
+    "limits": "231 helper introduction and 234 first integrated caller established; no continuous affected range or image execution established. 241 documents the bound in the Mistral3 preprocessing docstring; inherited overflow remains."
+  },
+  "administrative_qualifications": [
+    "Reviewer independently reproduced 2497 floating overflows and zero exact-rational overflows in 90000 cases. Reviewer-only corroboration, never teacher input.",
+    "Suspected: standard-library scalar transcription only; repository NumPy helper and image resizing not executed.",
+    "234 verdict knowledge is administrative only, never teacher input; original observations preserved.",
+    "242 fixes the bounding helper; reviewer-only table-width consequence resolves through the same identity. No separate table-width ledger identity found. Original observations and suspected scalar-only status retained.",
+    "234/002 strengthens the existing 231 identity with a table consequence; the angle table was introduced at 230, not a second resize defect. Original introduction, fix at 242, and observations preserved."
+  ],
+  "recorded_at": "2026-11-17T05:19:19.642899+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

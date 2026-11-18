@@ -1,0 +1,252 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Token-skipping can pass a noncontiguous state view to a stride-unaware histogram kernel.",
+  "trigger": "Multiple state rows, positive skip_tokens smaller than the context length, and state already on the selected device so no copying materializes the slice.",
+  "expected_behavior": "Histogram every element of the selected token suffixes.",
+  "actual_behavior": "inspect_state does not make the slice contiguous. The native kernel traverses input_ptr[0:numel], ignoring row gaps, so it can include skipped tokens from later rows and omit selected trailing tokens.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "The parent has no inspect_state caller; the new main calls it after each module forward. Traced its slice through histogram to raw-pointer CUDA indexing.",
+      "evidence": [
+        "call_9eddef54a568407d859d648f4cd846fe",
+        "call_045b77a492f242d58957471b366b89ce",
+        "call_e63b6ef1e803448da5b9f96b896b345e"
+      ],
+      "limits": "Conditional on the view retaining row strides; device-copy behavior was not executed."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Modeled a contiguous [2,3,2] tensor with one skipped token per row: selected values sum to 52, whereas contiguous pointer traversal from the slice offset sums to 44.",
+      "evidence": [
+        "call_bd7175d165234a5e9148422282b9142b"
+      ],
+      "limits": "Python indexing model, not Torch or CUDA execution."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Compared the unchanged slice and raw-pointer kernel with main's newly gated direct call. The defect remains conditional within the selected interval; no_inspect_modules does not disable this call.",
+      "evidence": [
+        "call_c4188ea4b5714da1a4fe20be5f500026",
+        "call_2ae5e87fc3da4461993d53d4bdb24c4a",
+        "call_06db37a9495548c99eef4359033f6794",
+        "call_1d69bb7fc2204ab09bcd962586faeee6"
+      ],
+      "limits": "Literal search establishes the located direct caller, not external callers or actual device-copy behavior."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Modeled a contiguous [2,3,2] array with one skipped token per row. Selected elements sum to 52; contiguous traversal from the slice offset sums to 44.",
+      "evidence": [
+        "call_588d69fb4ee948b9813f46333ede90f6"
+      ],
+      "limits": "Python indexing model only; neither Torch slicing nor the CUDA implementation ran."
+    }
+  ],
+  "defect_id": "exllamav3-skipped-state-strides",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "34d2f1f5fa069b842b8791de8c8db499b3884579",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "34d2f1f5fa069b842b8791de8c8db499b3884579",
+      "run": ".teacher/runs/commit-000205-001",
+      "local_id": "skipped-state-strides",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "skipped-state-strides",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Token-skipping can pass a noncontiguous state view to a stride-unaware histogram kernel.",
+        "trigger": "Multiple state rows, positive skip_tokens smaller than the context length, and state already on the selected device so no copying materializes the slice.",
+        "expected_behavior": "Histogram every element of the selected token suffixes.",
+        "actual_behavior": "inspect_state does not make the slice contiguous. The native kernel traverses input_ptr[0:numel], ignoring row gaps, so it can include skipped tokens from later rows and omit selected trailing tokens.",
+        "locations": [
+          {
+            "commit": "34d2f1f5fa069b842b8791de8c8db499b3884579",
+            "path": "eval/prequant_test.py",
+            "symbol": "inspect_state"
+          }
+        ],
+        "source_evidence": [
+          "call_045b77a492f242d58957471b366b89ce",
+          "call_e63b6ef1e803448da5b9f96b896b345e",
+          "call_9eddef54a568407d859d648f4cd846fe"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent has no inspect_state caller; the new main calls it after each module forward. Traced its slice through histogram to raw-pointer CUDA indexing.",
+            "evidence": [
+              "call_9eddef54a568407d859d648f4cd846fe",
+              "call_045b77a492f242d58957471b366b89ce",
+              "call_e63b6ef1e803448da5b9f96b896b345e"
+            ],
+            "limits": "Conditional on the view retaining row strides; device-copy behavior was not executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled a contiguous [2,3,2] tensor with one skipped token per row: selected values sum to 52, whereas contiguous pointer traversal from the slice offset sums to 44.",
+            "evidence": [
+              "call_bd7175d165234a5e9148422282b9142b"
+            ],
+            "limits": "Python indexing model, not Torch or CUDA execution."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "34d2f1f5fa069b842b8791de8c8db499b3884579",
+      "observer": "Fable",
+      "source": "reviews/verdicts/commit-000205-001.md",
+      "description": "Reviewer-only wider reach: count_inf_nan also uses dense indexing; no tensor execution."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "fce1b96e3fa533e9d3e371b640d3a48c4f97eae7",
+      "run": ".teacher/runs/commit-000261-001",
+      "local_id": "retained-state-histogram-strides",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "retained-state-histogram-strides",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Selected hidden-state inspections retain the inherited mismatch between sliced tensor strides and contiguous native histogram traversal.",
+        "trigger": "An inspected state has multiple rows and a positive skip_tokens smaller than the context length, and conversion to the selected device leaves the sliced view's row gaps intact.",
+        "expected_behavior": "Histogram all and only the selected token suffixes from every row.",
+        "actual_behavior": "inspect_state does not request contiguity. histogram_kernel reads input_ptr[i] for numel elements without consulting strides, potentially counting skipped tokens from subsequent rows while omitting selected trailing elements.",
+        "locations": [
+          {
+            "commit": "fce1b96e3fa533e9d3e371b640d3a48c4f97eae7",
+            "path": "eval/prequant_test.py",
+            "symbol": "inspect_state"
+          },
+          {
+            "commit": "463ebe1841ebe115ac46ccf91e1a40f68199c16a",
+            "path": "exllamav3/exllamav3_ext/histogram.cu",
+            "symbol": "histogram_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_c4188ea4b5714da1a4fe20be5f500026",
+          "call_2ae5e87fc3da4461993d53d4bdb24c4a",
+          "call_06db37a9495548c99eef4359033f6794",
+          "call_1d69bb7fc2204ab09bcd962586faeee6"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unchanged slice and raw-pointer kernel with main's newly gated direct call. The defect remains conditional within the selected interval; no_inspect_modules does not disable this call.",
+            "evidence": [
+              "call_c4188ea4b5714da1a4fe20be5f500026",
+              "call_2ae5e87fc3da4461993d53d4bdb24c4a",
+              "call_06db37a9495548c99eef4359033f6794",
+              "call_1d69bb7fc2204ab09bcd962586faeee6"
+            ],
+            "limits": "Literal search establishes the located direct caller, not external callers or actual device-copy behavior."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled a contiguous [2,3,2] array with one skipped token per row. Selected elements sum to 52; contiguous traversal from the slice offset sums to 44.",
+            "evidence": [
+              "call_588d69fb4ee948b9813f46333ede90f6"
+            ],
+            "limits": "Python indexing model only; neither Torch slicing nor the CUDA implementation ran."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000205-001__draft.json",
+      "sha256": "662afc132762eb6a89350a4d78520f4972893217e1183d35b07b232dffdbde82"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000205-001.md",
+      "sha256": "61611c9feff51c50b090e684d378ffb49aac765051d4689e1aa1dd41ea056a61"
+    },
+    {
+      "file": "evidence/commit261-001-draft.json",
+      "sha256": "c5309d2e35e40dd301298102d706aeda872e68581aeeb13db80a90d8618c45b8"
+    },
+    {
+      "file": "evidence/commit261-001-transcript.json",
+      "sha256": "095b022ad1edf3257bbd13a0c92d5377b019adb88c034f80956995b47334e261"
+    },
+    {
+      "file": "evidence/commit261-001-verdict.md",
+      "sha256": "29b6f87ce56ee842bc508524bdf19334e344486d911d81861034763fc12eb45c"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000205-001/draft.json",
+      "source_id": ".teacher/runs/commit-000205-001/draft.json",
+      "content_sha256": "662afc132762eb6a89350a4d78520f4972893217e1183d35b07b232dffdbde82",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000205-001.md",
+      "source_id": "reviews/verdicts/commit-000205-001.md",
+      "content_sha256": "61611c9feff51c50b090e684d378ffb49aac765051d4689e1aa1dd41ea056a61",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "34d2f1f5fa069b842b8791de8c8db499b3884579",
+      "available_at": "2025-05-30T19:42:49+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit261-001-draft.json",
+      "source_id": "evidence/commit261-001-draft.json",
+      "content_sha256": "c5309d2e35e40dd301298102d706aeda872e68581aeeb13db80a90d8618c45b8",
+      "available_at": "2026-11-17T06:24:42.588595+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit261-001-transcript.json",
+      "source_id": "evidence/commit261-001-transcript.json",
+      "content_sha256": "095b022ad1edf3257bbd13a0c92d5377b019adb88c034f80956995b47334e261",
+      "available_at": "2026-11-17T06:24:42.588595+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit261-001-verdict.md",
+      "source_id": "evidence/commit261-001-verdict.md",
+      "content_sha256": "29b6f87ce56ee842bc508524bdf19334e344486d911d81861034763fc12eb45c",
+      "available_at": "2026-11-17T06:24:42.588595+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "fce1b96e3fa533e9d3e371b640d3a48c4f97eae7",
+      "available_at": "2025-06-14T15:00:09+02:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "34d2f1f5fa069b842b8791de8c8db499b3884579",
+      "fce1b96e3fa533e9d3e371b640d3a48c4f97eae7"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted."
+  },
+  "recorded_at": "2026-11-17T06:24:42.588595+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

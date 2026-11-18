@@ -1,0 +1,306 @@
+{
+  "schema_version": 5,
+  "sha": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+  "parent_shas": [
+    "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd"
+  ],
+  "cutoff_date": "2025-06-05T02:26:00+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "docs",
+    "problem": [
+      {
+        "text": "Comments retained an outdated DynamicJob name and described Mistral3 preprocessing as targeting Siglip. The change corrects these descriptions and removes a sampling TODO.",
+        "basis": "source",
+        "evidence": [
+          "call_c44307e5211f46629ad30a27d2d9c0ce",
+          "call_f579319aecdf42ccb0e10d3964b99f3d",
+          "call_a0874dbad94846c2902321c2d42a4835"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "All four edits affect comments or docstrings, not executable operations. They clarify existing interfaces rather than implementing a new preprocessing or sampling strategy.",
+        "basis": "source",
+        "evidence": [
+          "call_c44307e5211f46629ad30a27d2d9c0ce",
+          "call_a0874dbad94846c2902321c2d42a4835",
+          "call_44def8a91944415c86cdca07ac9aea33",
+          "call_f579319aecdf42ccb0e10d3964b99f3d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The revised Mistral3 bounding-box description expresses the intended sizing contract, but the unchanged rounding helper does not guarantee that bound for every input.",
+        "basis": "source",
+        "evidence": [
+          "call_f579319aecdf42ccb0e10d3964b99f3d",
+          "call_5b0ad51112314baea2f8d0827edd2a31",
+          "call_6f90181763164b56bc985484e3d8bfa5"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The Gemma3 vision introduction and Mistral3 architecture entries were read. They establish the existing preprocessing pipelines; the Mistral3 entry also records the inherited sizing overflow.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_db5263e6914e468e98ca56eafdac1fab",
+          "call_7faaf86a9ee84416b5bea61230688e9e"
+        ]
+      },
+      {
+        "text": "Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports mismatched logits dimensions. Its relationship to this task is inferred only from the shared gemma3.py path: this task edits a preprocessing docstring, not logits handling. PR #35, \u201chumaneval.py: fix top_k type, remove rep_p, add qwen3,\u201d concerns evaluation and sampling failures; it does not establish a reason for deleting this sampling TODO.",
+        "basis": "inference",
+        "evidence": [
+          "call_0f6c8865ca1d4c9092da476ed3d70079",
+          "call_6ef0a950853842b7952ff7fe2b82b937",
+          "call_44def8a91944415c86cdca07ac9aea33",
+          "call_a0874dbad94846c2902321c2d42a4835"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository image processing, model inference or sampling implementation was executed. The arithmetic check uses Python floats and math.ceil rather than NumPy and Pillow.",
+      "The overflow example assumes longest_edge=1540, patch_size=14 and spatial_merge_size=2; these are test inputs, not newly verified checkpoint settings."
+    ],
+    "links": [
+      "532d78658414d8f9aabce52cb64b982b3ec53388",
+      "45fa5abff9001ff373a612303e48ec01d34efe42"
+    ],
+    "chapters": [
+      {
+        "id": "comments",
+        "title": "Clarifying existing wrappers and vision preprocessing",
+        "claims": [
+          {
+            "text": "AsyncJob already imports and constructs Job, forwards its arguments to that constructor, and enqueues the wrapper. Replacing DynamicJob with Job makes the docstring point to the actual underlying class without changing queue or cancellation behavior.",
+            "basis": "source",
+            "evidence": [
+              "call_ddde4633ec0a4bd0981293fc9bb6e737",
+              "call_c44307e5211f46629ad30a27d2d9c0ce"
+            ]
+          },
+          {
+            "text": "SS_Sample.run loses only the suggestion to evaluate multinomial sampling over sorted probabilities. The fused Gumbel-noise-plus-argmax TODO remains; no alternative algorithm is selected by this edit.",
+            "basis": "source",
+            "evidence": [
+              "call_a0874dbad94846c2902321c2d42a4835"
+            ]
+          },
+          {
+            "text": "Gemma3's addition of \u201cformat\u201d covers existing RGB conversion, float32 rescaling and channel normalization, followed by channels-first half-precision conversion with a batch dimension. Its fixed-size resize remains unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_44def8a91944415c86cdca07ac9aea33",
+              "call_c19f541753de44a4b99371ac5c1e5606",
+              "call_863934a8923748ddb391b774048355b1"
+            ]
+          },
+          {
+            "text": "Mistral3 prepares a square bounding limit from longest_edge and aligns each output dimension to patch_size \u00d7 spatial_merge_size. This alignment supplies complete patch neighborhoods for merging. It then performs RGB conversion, rescaling, normalization and BCHW half conversion; get_image_embeddings derives the feature grid from the returned size and divides its dimensions by spatial_merge_size for image-token serialization. Grid rounding means aspect-ratio preservation is approximate, not exact.",
+            "basis": "source",
+            "evidence": [
+              "call_6f90181763164b56bc985484e3d8bfa5",
+              "call_5b0ad51112314baea2f8d0827edd2a31",
+              "call_f579319aecdf42ccb0e10d3964b99f3d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-bounding-box-overflow",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly documented bounding-box guarantee remains vulnerable to inherited floating-point ceiling overflow; this comment-only change carries the behavior over.",
+        "trigger": "Mistral3VisionModel.get_image_embeddings receives a 1541\u00d71000 image with longest_edge=1540, patch_size=14 and spatial_merge_size=2.",
+        "expected_behavior": "Produce patch-aligned dimensions no larger than 1540 on either axis.",
+        "actual_behavior": "Scalar transcription produces 1568\u00d71008. Division leaves the limiting dimension slightly above 1540, ceiling yields 1541, and alignment to 28 pixels increases it to 1568. Neither the helper nor preprocess clamps the result. Whole-parent-tree search finds the helper's sole direct call in Mistral3 preprocess; get_image_embeddings directly calls that preprocessing method.",
+        "locations": [
+          {
+            "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+            "path": "exllamav3/util/vision.py",
+            "symbol": "size_to_longest_edge_and_patch_size"
+          },
+          {
+            "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+            "path": "exllamav3/models/mistral3.py",
+            "symbol": "Mistral3VisionModel.preprocess"
+          }
+        ],
+        "source_evidence": [
+          "call_5b0ad51112314baea2f8d0827edd2a31",
+          "call_944f1d2839e04c9ab3a2f55717e125e8",
+          "call_6f90181763164b56bc985484e3d8bfa5",
+          "call_f579319aecdf42ccb0e10d3964b99f3d"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the inspected ratio, ceiling and 28-pixel alignment with standard-library Python; output was (1568, 1008).",
+            "evidence": [
+              "call_1169a120ef5a48b085f376da93776b10"
+            ],
+            "limits": "Does not execute the repository helper, NumPy, Pillow or downstream vision kernels."
+          }
+        ]
+      }
+    ],
+    "summary": "Corrects wrapper and vision-preprocessing documentation and removes a sampling TODO without changing executable behavior; the documented Mistral3 size bound retains an inherited rounding exception."
+  },
+  "evidence": {
+    "call_c44307e5211f46629ad30a27d2d9c0ce": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "offset": 154,
+        "max_bytes": 2801
+      },
+      "result_sha256": "9bdff51cd3a470b6aca77ece41e246aa0f537d1d21ca81b0de2a48a471c1b542"
+    },
+    "call_a0874dbad94846c2902321c2d42a4835": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "offset": 776,
+        "max_bytes": 642
+      },
+      "result_sha256": "772678bd15392e39f836f52a2ada4fc218e24c315bb6470763a2adb7e8f78661"
+    },
+    "call_44def8a91944415c86cdca07ac9aea33": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "offset": 1418,
+        "max_bytes": 631
+      },
+      "result_sha256": "501b0abdac1b6375b31dd4bb8ad35086dc1cde02e6b040bf4a258f2ed72d1d59"
+    },
+    "call_f579319aecdf42ccb0e10d3964b99f3d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "93cb21ca9b23d22164f38c1d91d968a3c25538b7",
+        "offset": 2049,
+        "max_bytes": 906
+      },
+      "result_sha256": "3ac9640fb75db182a053ae8ee3da4327169ce7a9ceec595c82f0892774cf6889"
+    },
+    "call_6f90181763164b56bc985484e3d8bfa5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 13000,
+        "max_bytes": 14000
+      },
+      "result_sha256": "0d8d185912260c4c11d2d6024e50fc4ebea1b86ff545e1c743c79c8f44180c00"
+    },
+    "call_7faaf86a9ee84416b5bea61230688e9e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+        "max_bytes": 16384
+      },
+      "result_sha256": "04f9dcba7ac6258e7262761e77534119814d28f3491f359a59dcbcb86853f39a"
+    },
+    "call_5b0ad51112314baea2f8d0827edd2a31": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+        "path": "exllamav3/util/vision.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "4173954a5967d2cac534ad8a8d514ac6a843f2273808231c889dd07f511bbec4"
+    },
+    "call_944f1d2839e04c9ab3a2f55717e125e8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+        "query": "size_to_longest_edge_and_patch_size",
+        "limit": 100
+      },
+      "result_sha256": "734630be202d27ace34e3717d22f2f5eff304338659e885d258a73fb7c74b35b"
+    },
+    "call_863934a8923748ddb391b774048355b1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 19000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "5a821ed78fc5fcd4971771e093ccc69f9026f9e140416391bb3945786c0b9f4e"
+    },
+    "call_c19f541753de44a4b99371ac5c1e5606": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 17700,
+        "max_bytes": 1400
+      },
+      "result_sha256": "d1444f591bda573505c96962f005dab627d3a0b4b73caa052595688698b4f8dc"
+    },
+    "call_ddde4633ec0a4bd0981293fc9bb6e737": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "98964cbdae78ddcc85b0eefef2f4b13c6a606fbd",
+        "path": "exllamav3/generator/async_generator.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "912ba1266be1de21b40ff0b614a6bb47813851cc898909392eacdaed0a84b9cc"
+    },
+    "call_0f6c8865ca1d4c9092da476ed3d70079": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a336b7bba0c78990cafc0f3ecbfa181e447bfdda73a4143bed601a591ff1dee4"
+    },
+    "call_6ef0a950853842b7952ff7fe2b82b937": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a47e3955ab1c36eed83101c8dff9019c8d5a687358b8e52c8e168b9de053c3cb"
+    },
+    "call_27778d16b8774198a0b5e320af64f9a7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "async_generator.py",
+        "limit": 3
+      },
+      "result_sha256": "04e9adf94dda3368ad48a40523757cfc7cfcc3b5abcfcd6e94f70a0c24db5573",
+      "catalog_only": true
+    },
+    "call_db5263e6914e468e98ca56eafdac1fab": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+        "max_bytes": 16384
+      },
+      "result_sha256": "32b6d4b6a6de6f85f34d97e0c8fed6b53cb641890a0ce0b93b0c82a1d85f9f1e"
+    },
+    "call_1169a120ef5a48b085f376da93776b10": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\ns=(1541,1000); r=max(s[0]/1540,s[1]/1540); scaled=tuple(math.ceil(d/r) for d in s); aligned=tuple((d+27)//28*28 for d in scaled); print({'ratio':r,'scaled':scaled,'aligned':aligned})"
+        ]
+      },
+      "result_sha256": "d5dfc51485786fad482eb88a57b86f74781fd9826e34f5a60a550d5aa531071c"
+    }
+  }
+}

@@ -1,0 +1,77 @@
+commit ea4ef8dcbb58d3afc5cffadcb90a01204af7036e
+Author:     turboderp <11859846+turboderp@users.noreply.github.com>
+AuthorDate: Fri Jun 6 03:43:41 2025 +0200
+Commit:     turboderp <11859846+turboderp@users.noreply.github.com>
+CommitDate: Fri Jun 6 03:43:41 2025 +0200
+
+    Chat.py: Add stats
+
+diff --git a/examples/chat.py b/examples/chat.py
+index 9c09484a..6e0dcfa7 100644
+--- a/examples/chat.py
++++ b/examples/chat.py
+@@ -26,6 +26,7 @@ def main(args):
+     add_bos = prompt_format.add_bos()
+     max_response_tokens = args.max_response_tokens
+     multiline = args.multiline
++    show_tps = args.show_tps
+ 
+     if args.basic_console:
+         read_input_fn = read_input_ptk
+@@ -113,6 +114,15 @@ def main(args):
+                     print_info("Cleared context")
+                     continue
+ 
++                # Toggle TPS
++                case "/tps":
++                    multiline = not multiline
++                    if multiline:
++                        print_info("Enabled tokens/second output")
++                    else:
++                        print_info("Disabled tokens/second output")
++                    continue
++
+                 case _:
+                     print_error(f"Unknown command: {c[0]}")
+                     continue
+@@ -162,6 +172,20 @@ def main(args):
+                 "and was cut short." + col_default
+             )
+ 
++        if show_tps:
++            prompt_tokens = ids.shape[-1]
++            cached_tokens = r["cached_tokens"]
++            new_tokens = prompt_tokens - cached_tokens
++            prompt_tps = new_tokens / r["time_prefill"]
++            new_tokens = r["new_tokens"]
++            tps = new_tokens / r["time_generate"]
++            print(
++                "\n"
++                f"Context: {col_info}{new_tokens:,}{col_default} new tokens at {col_info}{prompt_tps:.3f}{col_default} t/s - "
++                f"{col_info}{cached_tokens:,}{col_default} tokens cached - "
++                f"Generate: {col_info}{new_tokens:,}{col_default} tokens at {col_info}{tps:.3f}{col_default} t/s"
++            )
++
+         # Add response to context
+         response = s.all_text.strip()
+ 
+@@ -191,5 +215,6 @@ if __name__ == "__main__":
+     parser.add_argument("-minp", "--min_p", type = float, help = "Min-P truncation, 0 to disable (default: 0.08)", default = 0.08)
+     parser.add_argument("-topk", "--top_k", type = int, help = "Top-K truncation, 0 to disable (default: disabled)", default = 0)
+     parser.add_argument("-topp", "--top_p", type = float, help = "Top-P truncation, 1 to disable (default: disabled)", default = 1.0)
++    parser.add_argument("-tps", "--show_tps", action = "store_true", help = "Show tokens/second after every reply")
+     _args = parser.parse_args()
+     main(_args)
+diff --git a/examples/chat_console.py b/examples/chat_console.py
+index 349ecb36..8645ada0 100644
+--- a/examples/chat_console.py
++++ b/examples/chat_console.py
+@@ -15,7 +15,7 @@ col_bot = "\u001b[34;1m"  # Blue
+ col_think1 = "\u001b[35;1m"  # Bright magenta
+ col_think2 = "\u001b[35m"  # Magenta
+ col_error = "\u001b[31;1m"  # Bright red
+-col_info = "\u001b[32;1m"  # Bright red
++col_info = "\u001b[32;1m"  # Green
+ col_sysprompt = "\u001b[37;1m"  # Grey
+ 
+ def print_error(text):

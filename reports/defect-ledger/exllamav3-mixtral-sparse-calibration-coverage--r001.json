@@ -1,0 +1,152 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Mixtral omits the existing all-expert calibration override, allowing expert-specific capture data to be missing during conversion.",
+  "trigger": "A Mixtral layer\u2019s calibration tokens never select at least one expert, while conversion subsequently attempts to quantize all its expert projections.",
+  "expected_behavior": "Collect calibration input for every down projection, or handle an unvisited expert explicitly.",
+  "actual_behavior": "Model defaults calibration_all_experts to false. BlockSparseMLP skips unselected experts, and Linear creates capture entries only when forwarded. Conversion later indexes capture_H[linear.qmap] for every loaded quantization target, so an unvisited down projection has no entry and the lookup raises KeyError. The inspected Qwen3 MoE construction prevents this coverage gap with its true override. Direct convert_exl3 callers found were conversion main and test_quant_dequant; the test explicitly forwards its individual Linear before conversion and does not exercise routed coverage.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Traced the inherited calibration default through conversion parameters, sparse expert visitation, lazy capture creation and the unconditional capture lookup.",
+      "evidence": [
+        "call_70c9c088207f436f823c98992deedb1a",
+        "call_78fbdc61ce8747edb0718c48dc8bc502",
+        "call_e554464f43d346b287afd441a248c5b8",
+        "call_3b8a7cfe24864bc1bb01863f2d45d2fb"
+      ],
+      "limits": "Conditional on actual router coverage; no checkpoint calibration was executed."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Modeled repeated routing to experts zero and one; expert-specific capture keys for experts two through seven remain absent.",
+      "evidence": [
+        "call_5708122539954b908a4fe826ebd2d6fd"
+      ],
+      "limits": "Dictionary bookkeeping only; does not simulate learned routing or execute repository conversion."
+    }
+  ],
+  "defect_id": "exllamav3-mixtral-sparse-calibration-coverage",
+  "revision_id": "r001",
+  "supersedes": null,
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9665ba99989955593d2fb148323c9a96c77d1bea",
+      "status": "source_supported",
+      "rationale": "Mixtral construction introduced at158 inherits false calibration_all_experts rather than the sibling Qwen3 MoE override. Conditional on routing coverage; no actual conversion or learned router executed."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9665ba99989955593d2fb148323c9a96c77d1bea",
+      "run": ".teacher/runs/commit-000158-002",
+      "local_id": "mixtral-sparse-calibration-coverage",
+      "finding": {
+        "id": "mixtral-sparse-calibration-coverage",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Mixtral omits the existing all-expert calibration override, allowing expert-specific capture data to be missing during conversion.",
+        "trigger": "A Mixtral layer\u2019s calibration tokens never select at least one expert, while conversion subsequently attempts to quantize all its expert projections.",
+        "expected_behavior": "Collect calibration input for every down projection, or handle an unvisited expert explicitly.",
+        "actual_behavior": "Model defaults calibration_all_experts to false. BlockSparseMLP skips unselected experts, and Linear creates capture entries only when forwarded. Conversion later indexes capture_H[linear.qmap] for every loaded quantization target, so an unvisited down projection has no entry and the lookup raises KeyError. The inspected Qwen3 MoE construction prevents this coverage gap with its true override. Direct convert_exl3 callers found were conversion main and test_quant_dequant; the test explicitly forwards its individual Linear before conversion and does not exercise routed coverage.",
+        "locations": [
+          {
+            "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+            "path": "exllamav3/models/mixtral.py",
+            "symbol": "MixtralModel.__init__"
+          },
+          {
+            "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_d5131c10b83a48a1b38611bbe396bc27",
+          "call_70c9c088207f436f823c98992deedb1a",
+          "call_78fbdc61ce8747edb0718c48dc8bc502",
+          "call_e554464f43d346b287afd441a248c5b8",
+          "call_3b8a7cfe24864bc1bb01863f2d45d2fb",
+          "call_bedb364f824640029a62bcb281864f37",
+          "call_0572f8fe89074f4186fe81d7b3c80dc3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the inherited calibration default through conversion parameters, sparse expert visitation, lazy capture creation and the unconditional capture lookup.",
+            "evidence": [
+              "call_70c9c088207f436f823c98992deedb1a",
+              "call_78fbdc61ce8747edb0718c48dc8bc502",
+              "call_e554464f43d346b287afd441a248c5b8",
+              "call_3b8a7cfe24864bc1bb01863f2d45d2fb"
+            ],
+            "limits": "Conditional on actual router coverage; no checkpoint calibration was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled repeated routing to experts zero and one; expert-specific capture keys for experts two through seven remain absent.",
+            "evidence": [
+              "call_5708122539954b908a4fe826ebd2d6fd"
+            ],
+            "limits": "Dictionary bookkeeping only; does not simulate learned routing or execute repository conversion."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit158-002-draft.json",
+      "sha256": "c0425f5e311a1221be2c55b4ae5a07aa70e3a226d10d368745fd0fea331e01be",
+      "retrieved_at": "2026-11-16T21:57:29.072975+00:00"
+    },
+    {
+      "file": "evidence/commit158-002-verdict.md",
+      "sha256": "ed881d845e913ceef6e7354985047f28533c5d5ace9620430539b920afe711a5",
+      "retrieved_at": "2026-11-16T21:57:29.072975+00:00"
+    },
+    {
+      "file": "evidence/commit158-002-transcript.json",
+      "sha256": "a618650e2b83fa0a714771f95117b7aaf47a3546d88e9306bde008db0afb0178",
+      "retrieved_at": "2026-11-16T21:57:29.072975+00:00"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000158-002/draft.json",
+      "source_id": ".teacher/runs/commit-000158-002/draft.json",
+      "content_sha256": "c0425f5e311a1221be2c55b4ae5a07aa70e3a226d10d368745fd0fea331e01be",
+      "available_at": "2026-11-16T21:57:29.072975+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000158-002.md",
+      "source_id": "reviews/verdicts/commit-000158-002.md",
+      "content_sha256": "ed881d845e913ceef6e7354985047f28533c5d5ace9620430539b920afe711a5",
+      "available_at": "2026-11-16T21:57:29.072975+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000158-002/raw-transcript.json",
+      "source_id": ".teacher/runs/commit-000158-002/raw-transcript.json",
+      "content_sha256": "a618650e2b83fa0a714771f95117b7aaf47a3546d88e9306bde008db0afb0178",
+      "available_at": "2026-11-16T21:57:29.072975+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T21:57:29.072975+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "9665ba99989955593d2fb148323c9a96c77d1bea"
+    ],
+    "limits": "Only158 established. Conditional on an expert remaining unvisited during calibration; latent path, not an expected conversion failure or a continuous affected range."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

@@ -1,0 +1,292 @@
+{
+  "schema_version": 5,
+  "sha": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+  "parent_shas": [
+    "dcae5a04be7885ad9dc9a6cfcb135ead75847695"
+  ],
+  "cutoff_date": "2025-06-06T15:21:06+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Mistral3 image ingestion accepted one image at a time; this change adds list input without requiring equal-sized image embeddings.",
+        "basis": "source",
+        "evidence": [
+          "call_4f14a59ee58f407d9ad18a3c85a18000"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Processing each list member through the existing single-image method preserves image-specific spatial parameters and satisfies Mistral3PatchMerger.forward's batch-size-one assertion. Unlike Gemma3's concatenated batch, this is sequential ingestion.",
+        "basis": "source",
+        "evidence": [
+          "call_4f14a59ee58f407d9ad18a3c85a18000",
+          "call_88c36d82ca9c4f5190427a6a27d7361e",
+          "call_2134c99de32e4c3ca1cf0f575f599ee1"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Single-image calls retain their MMEmbedding return. A list returns an ordered list, including an empty list for empty input, and rejects a supplied text_alias. The existing multimodal example remains compatible because it calls the method separately for each image.",
+        "basis": "source",
+        "evidence": [
+          "call_4f14a59ee58f407d9ad18a3c85a18000",
+          "call_c6b31617bc9a4185bfec7f628c6135f0",
+          "call_79aa8167daca40b9b6b642d68e3e3905"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the Gemma3 batching and Mistral3 introduction entries. They establish the preceding list interface and the merger's singleton-batch precondition. The Mistral3 introduction also records an inherited resize-overflow observation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_218684a3ae2946a895922f5828374b75",
+          "call_2395a83a148c49db8a7aca6c3a6e42c1"
+        ]
+      },
+      {
+        "text": "That recorded overflow mechanism is no longer present in the inspected parent helper: it floors scaled dimensions before patch alignment. The task leaves that helper and its preprocessing caller unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_178efb3bd11a4044ace57d646e9c215c",
+          "call_c6b31617bc9a4185bfec7f628c6135f0",
+          "call_4f14a59ee58f407d9ad18a3c85a18000"
+        ]
+      },
+      {
+        "text": "Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports vocabulary/logit-width disagreement. Its relationship to this task is inferred solely from the shared gemma3.py path; the image-ingestion edits do not address its reported failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_2b60f89ccfd84b9bb0a377d4e57211ba",
+          "call_a0f6764026114dfc9c8f23f9f3c015da"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository image preprocessing, tensor operations, checkpoint loading or GPU inference were executed; numerical correctness and performance remain unmeasured.",
+      "The scalar sizing check assumes longest_edge=1540, patch_size=14 and spatial_merge_size=2; these are illustrative inputs, not independently verified checkpoint preprocessing values.",
+      "Whole-tree literal searches establish the inspected direct caller and absence of the new capability key in parent source, not compatibility with dynamic or external consumers."
+    ],
+    "links": [
+      "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+      "45fa5abff9001ff373a612303e48ec01d34efe42"
+    ],
+    "chapters": [
+      {
+        "id": "vision",
+        "title": "List-based Mistral3 image ingestion",
+        "claims": [
+          {
+            "text": "Mistral3VisionModel.get_image_embeddings now accepts Image | list[Image]. Its list branch asserts that text_alias is None and recursively calls the same method once per member, passing the tokenizer but no alias. The original preprocessing and forward path remains the leaf implementation; no concatenation, padding or batched forward is introduced.",
+            "basis": "source",
+            "evidence": [
+              "call_4f14a59ee58f407d9ad18a3c85a18000",
+              "call_c6b31617bc9a4185bfec7f628c6135f0"
+            ]
+          },
+          {
+            "text": "Each leaf preprocesses to a singleton BCHW tensor aligned to patch_size times spatial_merge_size. Its own resized height and width determine features_size and rotary position IDs. Forward receives causal=False and those spatial parameters; the merger explicitly requires batch size one. Sequential recursion therefore preserves an existing execution precondition rather than merely accommodating unequal output lengths.",
+            "basis": "source",
+            "evidence": [
+              "call_c6b31617bc9a4185bfec7f628c6135f0",
+              "call_88c36d82ca9c4f5190427a6a27d7361e"
+            ]
+          },
+          {
+            "text": "After forwarding, each image's embeddings move to CPU. Dividing the patch-grid dimensions by spatial_merge_size gives the merged grid: each row contributes w embedding placeholders and one [IMG_BREAK], followed by one final [IMG_END]. Thus a merged h-by-w grid has h*w vectors and h*(w+1)+1 serialized tokens. Each returned MMEmbedding retains that image's original and preprocessed sizes.",
+            "basis": "source",
+            "evidence": [
+              "call_c6b31617bc9a4185bfec7f628c6135f0"
+            ]
+          },
+          {
+            "text": "A standard-library transcription of the inspected sizing and token-count arithmetic produced 1540\u00d71008, 1980 vectors and 2017 serialized tokens for a 1541\u00d71000 image; an 800\u00d7600 image produced 812\u00d7616, 638 vectors and 661 tokens. The assumed alignment is 28 pixels, from patch size 14 times merge size 2. These examples illustrate unequal token counts and removal of the earlier overflow example, not execution of NumPy, Pillow or the model.",
+            "basis": "execution",
+            "evidence": [
+              "call_5e076af893b5412cb1b51d243c203e49",
+              "call_178efb3bd11a4044ace57d646e9c215c",
+              "call_c6b31617bc9a4185bfec7f628c6135f0"
+            ]
+          },
+          {
+            "text": "The whole-parent-tree get_image_embeddings search found definitions only in Gemma3 and Mistral3, plus the multimodal example's single-image call. That caller builds a flat list of returned objects and reads each text_alias, so its unchanged single-image arguments agree with the retained return form. The new recursive call also uses that retained form.",
+            "basis": "source",
+            "evidence": [
+              "call_d2f32228baea4707a56bb45f2f2832c0",
+              "call_79aa8167daca40b9b6b642d68e3e3905",
+              "call_4f14a59ee58f407d9ad18a3c85a18000"
+            ]
+          },
+          {
+            "text": "Gemma3 additionally advertises caps['fixed_size_image_embeddings']=True. Its existing preprocessing always resizes to one configured size and its list path concatenates inputs for one forward. Mistral3 retains only image_input=True. No parent-tree occurrence of the new capability key was found, so the diff adds discoverable metadata rather than an inspected internal dispatch change.",
+            "basis": "source",
+            "evidence": [
+              "call_a0f6764026114dfc9c8f23f9f3c015da",
+              "call_2134c99de32e4c3ca1cf0f575f599ee1",
+              "call_88c36d82ca9c4f5190427a6a27d7361e",
+              "call_ccc49617d1654ed69420da7f45e041d3",
+              "call_d1fc2b21eb4f4173a11647d82baab40d"
+            ]
+          },
+          {
+            "text": "The two edits distinguish interface uniformity from execution uniformity: both architectures accept image lists, but only Gemma3 batches them. Mistral3's approach reuses existing spatial handling at the cost of one forward per image; no throughput improvement is established.",
+            "basis": "inference",
+            "evidence": [
+              "call_4f14a59ee58f407d9ad18a3c85a18000",
+              "call_2134c99de32e4c3ca1cf0f575f599ee1",
+              "call_a0f6764026114dfc9c8f23f9f3c015da"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds ordered, sequential list ingestion to Mistral3 while preserving single-image returns and singleton merger execution; Gemma3 gains fixed-size embedding capability metadata."
+  },
+  "evidence": {
+    "call_a0f6764026114dfc9c8f23f9f3c015da": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "offset": 188,
+        "max_bytes": 1031
+      },
+      "result_sha256": "24702c78369e3c77e48d779e6eb20943e6e5f5cca790c9e0ef6fd84b3f8a01d2"
+    },
+    "call_4f14a59ee58f407d9ad18a3c85a18000": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "offset": 1219,
+        "max_bytes": 955
+      },
+      "result_sha256": "ca1bd7a934c57df952f741257d8b4d417018292f2896d5ef360f5b5cc36a1bb9"
+    },
+    "call_d2f32228baea4707a56bb45f2f2832c0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "query": "get_image_embeddings",
+        "limit": 100
+      },
+      "result_sha256": "d987eef92e8a4643ae7c390666ee911e1e03c61bf760f991e07d632ec2ba4cb0"
+    },
+    "call_ccc49617d1654ed69420da7f45e041d3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "query": "fixed_size_image_embeddings",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c6b31617bc9a4185bfec7f628c6135f0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 12500,
+        "max_bytes": 12000
+      },
+      "result_sha256": "1d286a09c40efe2eab3029a95941422a5a82a31b2d3538d18169a17dc4816c4d"
+    },
+    "call_2134c99de32e4c3ca1cf0f575f599ee1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 17700,
+        "max_bytes": 9000
+      },
+      "result_sha256": "ca09d5e1a0460bb7ba27e7b27515d7f5075c85097cb8e739d86c4c06dcd72d95"
+    },
+    "call_79aa8167daca40b9b6b642d68e3e3905": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "path": "examples/multimodal.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "25e664566441099fae6d7e411bb90aee0a2eae265689d871d2840a6feb32fa20"
+    },
+    "call_218684a3ae2946a895922f5828374b75": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "max_bytes": 16384
+      },
+      "result_sha256": "788de9ebefd9dc07ea5f1c2fd2989b6f942c6b6de53f2c49db06e860d857c824"
+    },
+    "call_7f845b5b2e6a4577b6bb3d6962e33393": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/mistral3.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "384792d40e1edf976f85df69fe83525a82a1c82a15cfb11d76d5e6a0282e59cf",
+      "catalog_only": true
+    },
+    "call_2395a83a148c49db8a7aca6c3a6e42c1": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+        "max_bytes": 16384
+      },
+      "result_sha256": "04f9dcba7ac6258e7262761e77534119814d28f3491f359a59dcbcb86853f39a"
+    },
+    "call_178efb3bd11a4044ace57d646e9c215c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "path": "exllamav3/util/vision.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "15503ef44330887f2aae1025a9a07a1f35edd0570b3f218e986ea4069223888f"
+    },
+    "call_88c36d82ca9c4f5190427a6a27d7361e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 8000,
+        "max_bytes": 4000
+      },
+      "result_sha256": "4113441088dbc69f45e4122eb6fa231fdf9c269235222e13c4193c8586689001"
+    },
+    "call_2b60f89ccfd84b9bb0a377d4e57211ba": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 16000
+      },
+      "result_sha256": "06078138ccdc9db606b28b96fb0846b4ac646779d0dbdc18aeac3d0e1df92276"
+    },
+    "call_d1fc2b21eb4f4173a11647d82baab40d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "dcae5a04be7885ad9dc9a6cfcb135ead75847695",
+        "query": ".caps",
+        "limit": 100
+      },
+      "result_sha256": "a54ee0cdb424d1a224d54e8b6315383831dc864859f34055629dcccc55728da3"
+    },
+    "call_5e076af893b5412cb1b51d243c203e49": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\nfor wh in [(1541,1000),(800,600)]:\n ratio=max(wh[0]/1540,wh[1]/1540)\n scaled=tuple(max(1,math.floor(d/ratio)) for d in wh) if ratio>1 else wh\n sized=tuple(((d+27)//28)*28 for d in scaled)\n w,h=(d//28 for d in sized)\n print({'input':wh,'aligned':sized,'vectors':w*h,'serialized_tokens':h*(w+1)+1})"
+        ]
+      },
+      "result_sha256": "5c3fadbd95bc14fe8b9162c79832ca35085cbc93a638324a9d03dbc06b1a4e59"
+    }
+  }
+}

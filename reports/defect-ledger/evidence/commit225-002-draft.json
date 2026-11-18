@@ -1,0 +1,940 @@
+{
+  "schema_version": 5,
+  "sha": "532d78658414d8f9aabce52cb64b982b3ec53388",
+  "parent_shas": [
+    "074019737caac1c6e6a457e3bed7e4a30e0a5877"
+  ],
+  "cutoff_date": "2025-06-02T02:03:38+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "Gemma3 already exposed a vision component, but its constructor was unfinished and its load/unload methods raised NotImplementedError. This change replaces that stub with image preprocessing, a vision tower and language-space embedding production.",
+        "basis": "source",
+        "evidence": [
+          "call_e33d4e849d3d47cebe447df61f21d1ce",
+          "call_548584d10c9a4ef88e1549ac8513de44"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The implementation composes existing modules rather than adding a separate execution engine. Configuration supplies their dimensions; preprocessing supplies half-precision image inputs; pooling reduces patch sequences before projection into the text model's hidden width.",
+        "basis": "source",
+        "evidence": [
+          "call_548584d10c9a4ef88e1549ac8513de44",
+          "call_10e645ef0d604682820fdc3a931f8b97"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The vision component gains image_input capability and get_image_embeddings, returning an MMEmbedding containing CPU vectors, image-boundary tokens, an alias and size metadata. The text-only Gemma3TextModel is relocated without changing its prefix-free construction.",
+        "basis": "source",
+        "evidence": [
+          "call_548584d10c9a4ef88e1549ac8513de44",
+          "call_40dca287017b4fcf979309ddf839766b"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The Gemma3 introduction entry establishes the prior text/vision component separation and unfinished vision implementation. The RGB utility entry establishes that normalization alone did not rescale pixels; this task supplies that missing caller-side step.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_57b59beb37454803b550020ff3e53ccc",
+          "call_7cce593dee194569ba7d507d11e161dc"
+        ]
+      },
+      {
+        "text": "The Conv, PosEmbedding, MLP-activation and Linear-orientation entries were read. They document the token-shaped convolution output, consecutive positional lookup, tanh-approximate GELU and already-oriented weight loading used here.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_a8a34d1462574a23beca7013f4599eb1",
+          "call_4fd0ed3d3eed4462a7c8999bdac6e4bc",
+          "call_588495609c554421aca5fbc2f1ac7393",
+          "call_48c22047e12048bfb17957947a2c8864"
+        ]
+      },
+      {
+        "text": "Conv's recorded unused output-dtype controls remain unchanged, but this caller requests neither control. MLP's unsupported-activation case also remains unchanged, but the new caller supplies the supported literal \"gelu\". PosEmbedding still starts at position zero, fitting the new whole-image rather than chunked input path.",
+        "basis": "source",
+        "evidence": [
+          "call_548584d10c9a4ef88e1549ac8513de44",
+          "call_581cf55ece66405694d6847c7490bcf5",
+          "call_ca5debbe4b7245189b7f0f0bd1647843",
+          "call_e33b45c7a4ef4940b090236fdfc6dfb6"
+        ]
+      },
+      {
+        "text": "PR #25, \u201cLanguage layers for Mistral Small 3.1 and InternVL3,\u201d discusses component-model compatibility and later reports missing Gemma3ForCausalLM support. Its relationship to this task is inferred from that architecture reference and the shared component design, not an explicit link to this commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_9c3f8a370c344cc688d31133c11fa6f8",
+          "call_548584d10c9a4ef88e1549ac8513de44"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d initially concerns file-opening failures and later GLM4 sampling. Its later discussion explicitly says Gemma3 vision_config was then ignored. That is relevant historical context by inference from the matching Gemma3 architecture and configuration identifiers, not evidence that this task fixes the reported conversion or sampling failures.",
+        "basis": "inference",
+        "evidence": [
+          "call_b51296f6a128455a86c905d5207f3771",
+          "call_2351eb7c491d492188d0256371652ba8",
+          "call_12292f377d9f427f9eab4db8573c0a34",
+          "call_548584d10c9a4ef88e1549ac8513de44"
+        ]
+      },
+      {
+        "text": "Other inspected reports concern different failures: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concern quantization/factorization. Connections here are inferred only from shared model.py or linear.py paths; none establishes a vision-model failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_66aa4fad67d043cfbe435856ae679d22",
+          "call_55a220df2a3d421fbab46acc0b03a009",
+          "call_07c027ddc147453980936c255e81b58f",
+          "call_10e645ef0d604682820fdc3a931f8b97",
+          "call_af1131ba1626423c9a9f4564fb6bdb74"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model, Pillow/NumPy preprocessing, checkpoint loading or GPU kernel was executed. The scalar check models pooling/indexing and dimension arithmetic only, without FP16 rounding.",
+      "The approved preprocessor_config.json retrieval failed. Actual checkpoint preprocessing statistics, resampling values and size settings therefore remain unverified.",
+      "Complete vision tensor-name coverage was inspected for the 4B reference; 12B and 27B header inspection sampled their vision tensors and verified their distinct projector widths. Other checkpoint variants were checked through configuration files, not exhaustive tensor headers.",
+      "Successful image-conditioned generation, conversion of the vision component, autosplit memory estimates and compatibility with dynamic or external callers were not demonstrated.",
+      "Gemma3MMPool assumes a square patch grid and compatible pooling geometry; the inspected reference configurations satisfy its dimension arithmetic, but arbitrary configuration support is not established."
+    ],
+    "links": [
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+      "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+      "9bde46e775df21d54d78a0fbe78b1490bf311a5a",
+      "08f7e1b1fcced3ba38e83d5ab1e426051eb02553",
+      "95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225",
+      "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+      "4e493719fbbb25c91142a65bfbc56791f18ccaec"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Gemma3 images become indexed language-space embeddings",
+        "claims": [
+          {
+            "text": "Gemma3Config now reads a separate vision namespace. Required fields include attention heads, hidden width, patch size and mm_tokens_per_image. KV heads default to query heads; head dimension defaults to hidden_size // num_q_heads. Other fallbacks include 24 layers, intermediate width equal to hidden width and image size 896. Three RGB channels and LayerNorm epsilon 1e-6 are fixed in code; multimodal_projector_bias is stored but not consumed by the new assembly.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_3e67c98524c14cd19b4e1cde65219fa2",
+              "call_b505de01527c4ce09f7ae1eeddd93308",
+              "call_3d855a8d6f51498183157c6b0edcb99b"
+            ]
+          },
+          {
+            "text": "Configuration also unconditionally opens directory/preprocessor_config.json, requires image_processor_type == \"Gemma3ImageProcessor\", and reads image_mean, image_std, resample, rescale_factor and size. These settings are not optional merely because only the text component will subsequently be constructed.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_e33d4e849d3d47cebe447df61f21d1ce",
+              "call_10e645ef0d604682820fdc3a931f8b97",
+              "call_1258ba2e0e9b4bdc86d64ac87fcff2ef",
+              "call_70b1b269d2554500bff5b57e9d71f9ac"
+            ]
+          },
+          {
+            "text": "preprocess converts transparency to white-backed RGB, resizes to its configured tuple, converts pixels to float32, multiplies by rescale_factor, then applies (image - mean) / std while channels are last. It finally transposes to channel-first, converts to half precision and adds batch dimension one. This is a single resized image path; the function adds no crop or multi-resolution expansion.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_d022e0ea3ab14746a9933d106be796a8"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree searches found no existing preprocess/get_image_embeddings methods, Conv or PosEmbedding construction sites, ordinary MLP construction sites, or callers of the two image utilities. The new vision implementation therefore integrates previously exposed primitives rather than copying an established image workflow with additional guards.",
+            "basis": "source",
+            "evidence": [
+              "call_70b1b269d2554500bff5b57e9d71f9ac",
+              "call_14eec8167554444dbc569ff856aea5c7",
+              "call_927fc3c39c50416f8a814efff77d0b58",
+              "call_6ff01d5d65f344c28a5de0567156bb59",
+              "call_be7d78a8faf14c65bf9680083e5afed9"
+            ]
+          },
+          {
+            "text": "The tower starts with a stride-equals-patch-size Conv, which flattens its spatial output into [batch, patches, hidden], followed by learned consecutive position vectors. Each encoder layer uses LayerNorm before attention and before an ordinary two-projection MLP, with residual additions supplied by TransformerBlock. Attention has no RoPE, and get_image_embeddings explicitly supplies causal=False. The inherited attention dispatcher selects uncached FlashAttention by default; its SDPA alternative permits this tower's absent sliding window and zero softcap.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_581cf55ece66405694d6847c7490bcf5",
+              "call_e33b45c7a4ef4940b090236fdfc6dfb6",
+              "call_e7cb53b6ec604481ab9b13854deb1fda",
+              "call_748c95e5c7e94af3a4f753ac54e87466"
+            ]
+          },
+          {
+            "text": "The MLP selects tanh-approximate GELU and pad_to=1. These choices work together: the checkpoint intermediate width is 4304, whereas default 128-element alignment would round it to 4352 and the down projection rejects unapproved input padding. Keeping exact dimensions avoids that constructor precondition rather than merely reducing storage.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_ca5debbe4b7245189b7f0f0bd1647843",
+              "call_af1131ba1626423c9a9f4564fb6bdb74",
+              "call_c6c3581fc79b4140befb0a7663bc6f4d"
+            ]
+          },
+          {
+            "text": "After post-LayerNorm, Gemma3MMPool transposes [B,P\u00b2,D] to channel-first spatial form, averages nonoverlapping square regions, and returns contiguous [B,T\u00b2,D]. The constructor derives P from image_size // patch_size and T from the integer square root of mm_tokens_per_image. A Gemma-style RMSNorm uses weight + 1, then Linear maps vision width to text width with transposed_load=False.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_61014b3fa80e4c1ca5a34439407ed1c9",
+              "call_af1131ba1626423c9a9f4564fb6bdb74"
+            ]
+          },
+          {
+            "text": "A bounded scalar transcription calculated 896/14 = 64 patches per side, 4096 patch tokens, 1152/16 = 72 channels per head, a pooling kernel/stride of 4 and 256 pooled tokens. It checked raster-order averaging on two synthetic channels and obtained [1,256,2]. The resulting image token string has 258 positions including its two boundaries. This was not execution of PyTorch pooling or the model.",
+            "basis": "execution",
+            "evidence": [
+              "call_2c2edfb56f2c49d49fae2c35f30119b4"
+            ]
+          },
+          {
+            "text": "google/gemma-3-4b-it, google/gemma-3-4b-pt, google/gemma-3-4b-it-qat-int4-unquantized and google/gemma-3-4b-it-qat-q4_0-unquantized each explicitly provide the same tower: hidden/intermediate widths 1152/4304, 27 layers, 16 heads, image size 896, patch size 14 and 256 image tokens. Each therefore overrides the layer/intermediate defaults, derives 72-wide heads and equal query/KV head counts, and projects to text width 2560. The QAT files explicitly agree with the fixed three channels, epsilon 1e-6 and selected GELU variant.",
+            "basis": "source",
+            "evidence": [
+              "call_c6c3581fc79b4140befb0a7663bc6f4d",
+              "call_43ff457cb2594365abc53e4ed74c1267",
+              "call_77501d7c2e3f4aa58d691d2500dfa21a",
+              "call_ac6eb37f134f41699bd399a8be9df506",
+              "call_548584d10c9a4ef88e1549ac8513de44"
+            ]
+          },
+          {
+            "text": "google/gemma-3-12b-it, google/gemma-3-12b-pt, google/gemma-3-12b-it-qat-int4-unquantized and google/gemma-3-12b-it-qat-q4_0-unquantized each provide that same vision geometry and defaults, but project to text width 3840. google/gemma-3-27b-it, google/gemma-3-27b-pt and google/gemma-3-27b-it-qat-q4_0-unquantized likewise share the tower and project to width 5376. The three QAT files explicitly agree with the fixed channel count, epsilon and activation selection.",
+            "basis": "source",
+            "evidence": [
+              "call_dc649946f096464c973d5fcf59b07ef0",
+              "call_8bd1f7bb7bc44eb29ca973161b452d32",
+              "call_8e82afeb4b1c4cefa9f2cfb515dc12ea",
+              "call_63333c70196d4494a78039f99977a001",
+              "call_8897baa9fe5a4235a2d780c700ccd188",
+              "call_378da604a809439b84e7e357fe1aa784",
+              "call_3f03f7acae004373a96426bb198d7ed4"
+            ]
+          },
+          {
+            "text": "The 4B reference header contains patch weights [1152,3,14,14], patch bias [1152], positions [4096,1152], and all 27 layers' requested norm, q/k/v/out and fc1/fc2 weights and biases. Attention weights are [1152,1152]; fc1/fc2 weights are [4304,1152] and [1152,4304]. Post-LayerNorm and projector RMSNorm have width 1152. These vision tensors are all consumed by the assembly; pooling requests no checkpoint tensors.",
+            "basis": "source",
+            "evidence": [
+              "call_c4bbbf9e97b44c4d85a129a150602f31",
+              "call_50df7cb4f1314337a58236a4619e3cce",
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_5ac945500a954f189dc6216283e4694c"
+            ]
+          },
+          {
+            "text": "The reference projector is stored as mm_input_projection_weight with shape [1152,2560], [1152,3840] or [1152,5376] for the inspected 4B, 12B and 27B checkpoints. The existing header normalization changes that spelling to mm_input_projection.weight; transposed_load=False then preserves its input-by-output orientation. The sampled headers contain no projector bias or FP8 scale alongside these weights, so those optional reads have no supplied tensor. No alternate projector key is configured.",
+            "basis": "source",
+            "evidence": [
+              "call_c4bbbf9e97b44c4d85a129a150602f31",
+              "call_19b7b8119f5d4f0ab5b2dc79efa80005",
+              "call_e77d0f1a5d1d4bce8cbf520609e266dc",
+              "call_02d95f143dac476e9fa5a812f1b9eedd",
+              "call_af1131ba1626423c9a9f4564fb6bdb74",
+              "call_548584d10c9a4ef88e1549ac8513de44"
+            ]
+          },
+          {
+            "text": "The header-normalization ancestor records a collision when both projector spellings occur. That normalization remains unchanged in the inspected parent and is not repaired by this task; the inspected reference projector entries instead use the legacy spelling alone.",
+            "basis": "source",
+            "evidence": [
+              "call_02d95f143dac476e9fa5a812f1b9eedd",
+              "call_c4bbbf9e97b44c4d85a129a150602f31",
+              "call_19b7b8119f5d4f0ab5b2dc79efa80005",
+              "call_e77d0f1a5d1d4bce8cbf520609e266dc",
+              "call_548584d10c9a4ef88e1549ac8513de44"
+            ]
+          },
+          {
+            "text": "get_image_embeddings runs the tower noncausally, moves the result to CPU and removes its batch dimension. It constructs <start_of_image>, one -1 placeholder per vector, and <end_of_image>. MMEmbedding replaces placeholders with allocated synthetic IDs. Existing tokenization expands aliases to that token list, and Embedding.forward can replace synthetic IDs with the supplied vectors without applying the text embedding's square-root-width normalization to them.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_40dca287017b4fcf979309ddf839766b",
+              "call_02f657a704c844b2aa0344dcc315788f",
+              "call_988bfe927e8643d293119b4c93f8f657"
+            ]
+          },
+          {
+            "text": "The autosplit hook now returns a half-precision [1,3,height,width] image probe instead of token IDs. Model._load_autosplit uses that metadata before loading and forwarding each module. Its dummy forwards use empty parameters, unlike get_image_embeddings' explicit causal=False, so the hook establishes input shape compatibility but not equivalent attention semantics during probing.",
+            "basis": "source",
+            "evidence": [
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_10e645ef0d604682820fdc3a931f8b97",
+              "call_748c95e5c7e94af3a4f753ac54e87466"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "gemma3-preprocessor-required-for-text",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "The shared multimodal configuration now requires preprocessing assets even for text-only use of its text component.",
+        "trigger": "Construct Gemma3Config from a directory with previously sufficient text configuration and tensors but no preprocessor_config.json.",
+        "expected_behavior": "The prior constructor could configure the text component without opening a vision preprocessor file.",
+        "actual_behavior": "The new constructor unconditionally opens preprocessor_config.json before a caller can select the text component; a missing file prevents configuration construction.",
+        "locations": [
+          {
+            "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+            "path": "exllamav3/models/gemma3.py",
+            "symbol": "Gemma3Config.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_e33d4e849d3d47cebe447df61f21d1ce",
+          "call_548584d10c9a4ef88e1549ac8513de44",
+          "call_5f640712b3b24086b33a7d6de51230c0",
+          "call_10e645ef0d604682820fdc3a931f8b97"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both constructors and searched the whole parent tree for Gemma3 references. Gemma3Model uses Gemma3Config, which supplies both component classes; Model.from_config defaults to text but receives an already-created configuration. Gemma3TextConfig is separate and is not changed by these new reads.",
+            "evidence": [
+              "call_e33d4e849d3d47cebe447df61f21d1ce",
+              "call_548584d10c9a4ef88e1549ac8513de44",
+              "call_5f640712b3b24086b33a7d6de51230c0",
+              "call_10e645ef0d604682820fdc3a931f8b97"
+            ],
+            "limits": "No missing-file execution or affected packaged checkpoint was demonstrated; this records a new source-level requirement, not a confirmed deployment failure."
+          }
+        ]
+      }
+    ],
+    "summary": "Replaces Gemma3's vision stub with a configurable image tower, spatial pooling and projector, returning indexed multimodal embeddings; shared configuration now also requires vision preprocessing assets."
+  },
+  "evidence": {
+    "call_548584d10c9a4ef88e1549ac8513de44": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+        "offset": 158,
+        "max_bytes": 12480
+      },
+      "result_sha256": "858201debd5ad7cc3a98663050ae838dca337c715aacc6ec5f30ab832c54af40"
+    },
+    "call_39de650a69dc475caeb9f0dcab3686ef": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "5293b981ed3e5c7581463326b20686b32bcf070aa8096487b77369280ca21fbd",
+      "catalog_only": true
+    },
+    "call_2520e8f643214b1f9b1a962a45c6d48e": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "6877c91642b9fc9e11ba8419b8a9dcd9264eac30f098ce9986e88232cd5bfffc",
+      "catalog_only": true
+    },
+    "call_e33d4e849d3d47cebe447df61f21d1ce": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/models/gemma3.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "30dd97f822dad562a3461bd86bf582375d7a71b9ff56b77f8608ee8725076ada"
+    },
+    "call_57b59beb37454803b550020ff3e53ccc": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7e8974fcf5d11f5fdedb9f1af0c4eb2a2c25ad72cf9734dbdfbe25f9e7facd78"
+    },
+    "call_748c95e5c7e94af3a4f753ac54e87466": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "4d5417ca0f9cd50fe2ddb7789b03be0e8c0b482cc67e6fc71ca9ef4a739c0793"
+    },
+    "call_10e645ef0d604682820fdc3a931f8b97": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "8f3f3a41f910c0444d12e059c61d58c8559286e7fed06d8e215128796bb5a590"
+    },
+    "call_dc649946f096464c973d5fcf59b07ef0": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it",
+        "revision": "bfa370037dad85e96e27f383482eb642490d94caffa7a8d5261374380476e826",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "fb936b312c99176feba2eb4bf4ae5e52ca62adcfbf80494bb8d6f169a86258c0"
+    },
+    "call_8e82afeb4b1c4cefa9f2cfb515dc12ea": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it-qat-int4-unquantized",
+        "revision": "e7f83727dbceb78288d03a5be9306732d65e9c1ec236559e23ecca95c50bc600",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "9e4fe7086ff146b5cb0ce8023157dfe245e1c4db3d5cf0e033b2ac9112ab2010"
+    },
+    "call_63333c70196d4494a78039f99977a001": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it-qat-q4_0-unquantized",
+        "revision": "5a13093554eadc575b7e22dabb83ce11de7aa4fe5c326473f8338d4b2e124751",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "5c49c1c8590d0aa3d9a2ca8deb2e2eb5a99e7c1f585d74b92e8feb9706add065"
+    },
+    "call_8bd1f7bb7bc44eb29ca973161b452d32": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-pt",
+        "revision": "405f9ea391f2687827846f3bf9bdfb95ba36315ec04d609c41f1cedc5797a787",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "bbf1da573d3d4f4335c714c0f3032d5740e9cadc07730585dc039cc36076ca57"
+    },
+    "call_8897baa9fe5a4235a2d780c700ccd188": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-it",
+        "revision": "7c1934e18aba594d8726189f95245f86215b8ba095aadd7396fb063ebe362531",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "2db0f0a74209ed6c51ed4c4dd14a87374e097decc1342a45c460e25c14156ef4"
+    },
+    "call_3f03f7acae004373a96426bb198d7ed4": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-it-qat-q4_0-unquantized",
+        "revision": "9298cefe01f299638bab3696e5368cbb041d8ec78674f10545fe2d93c10ad37e",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "c7842feb179b46fbc9fd744c82f1dd7c14d12a5636e2de2b29ef4b1e1ae4b32c"
+    },
+    "call_378da604a809439b84e7e357fe1aa784": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-pt",
+        "revision": "78896a1322ea631148a290906354880f3c9f3d20c7dd93459de4630e13ba6c5f",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "5325cc52132af2907e30e76b173415e61a1e420504f4b0120d598dcb89e9c562"
+    },
+    "call_c6c3581fc79b4140befb0a7663bc6f4d": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it",
+        "revision": "68d0dd42f002fd8304ea8af6335c656e254697df9d260550874186f0a7975022",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "4df131b27733cf5aed2b17ed6469ab93bbe907b54c74b8814140c0e1b2758706"
+    },
+    "call_77501d7c2e3f4aa58d691d2500dfa21a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it-qat-int4-unquantized",
+        "revision": "545141ed13e0aba86542ce589599306c21773b9a572d62d3ed311601202cdbe7",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "758aa3e988309a18b0f83cc5430827f1a88d23dcbb3c8eedaed43dfe37cfe8b6"
+    },
+    "call_ac6eb37f134f41699bd399a8be9df506": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it-qat-q4_0-unquantized",
+        "revision": "1c4d825a9b2f731f62bb1a4f7e6822e93dc6a85f64b2a0ecf0ca988dd8bff872",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "d59a6d4606576accd19b0e1e5ce4baf0e8849b86408f5fe42a7e55f3d7d3b3d8"
+    },
+    "call_43ff457cb2594365abc53e4ed74c1267": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-pt",
+        "revision": "10aa25f11b7f97ccaab63ebcb85b264d9ab0eea57a06bddf83003c017c2cb034",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "aeb4c3a1876e5513286dd2cf6607f01a7a2a9738104ece1cadec81b5c517ee1d"
+    },
+    "call_a5d8ce0960904214a6adbfacf8b4ef96": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "fdf8c1f1d070ede43d029833c88683aadf1945fa2e815ac9c98ce6f43fe78d1c",
+        "max_bytes": 12000
+      },
+      "result_sha256": "050ac3efdcff1ed83d948430e2760ca5d551e04144471331458f305149321832",
+      "catalog_only": true
+    },
+    "call_b89d2eca9a554a39a091bc8da2c52642": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it",
+        "revision": "68d0dd42f002fd8304ea8af6335c656e254697df9d260550874186f0a7975022",
+        "path": "preprocessor_config.json",
+        "max_bytes": 6000
+      },
+      "result_sha256": "052a3182280785c063c5b991c28508c919aea6e48429565e2db4fd8445a44353"
+    },
+    "call_e6c47ee223ce475d8073f4153b190cb6": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it",
+        "revision": "68d0dd42f002fd8304ea8af6335c656e254697df9d260550874186f0a7975022",
+        "path": "model-00002-of-00002.safetensors",
+        "offset": 0,
+        "limit": 300
+      },
+      "result_sha256": "d92851ef0fbbd71763897178307188db3f9f72d4b97d9b87a795b795505fae9d"
+    },
+    "call_c4bbbf9e97b44c4d85a129a150602f31": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it",
+        "revision": "68d0dd42f002fd8304ea8af6335c656e254697df9d260550874186f0a7975022",
+        "path": "model-00001-of-00002.safetensors",
+        "offset": 190,
+        "limit": 200
+      },
+      "result_sha256": "c0a450956eefdd74429e6074a751fba7a312bfea52474dd74b8c32ead238b329"
+    },
+    "call_581cf55ece66405694d6847c7490bcf5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/conv.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b5463afd4b0d6c7e0c8797e968486641eb57858cae498c2d079f6f99e92188c9"
+    },
+    "call_e33b45c7a4ef4940b090236fdfc6dfb6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/pos_embedding.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "d3329f7fcfbf4c30dc18c0f8395890d7147f215132e3fa9d6e6842f80e291049"
+    },
+    "call_ca5debbe4b7245189b7f0f0bd1647843": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "c57889c572194ab1edf7f85571a21829fbe3279dbe836c8e676622fd87e9d2bb"
+    },
+    "call_af1131ba1626423c9a9f4564fb6bdb74": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "5d50fc353093ebd2afc8c8afc837c22062eee143acd0eec4c34c7783879f27f5"
+    },
+    "call_d47abff1872f45e9a08b9e5a8a1a3922": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_40dca287017b4fcf979309ddf839766b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/tokenizer/mm_embedding.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "6dcb5f9c3fc00e92e292051b23f3d324751bdcca855c5a28708a733488d83200"
+    },
+    "call_39cb142fb4c548d18ec57928756a8157": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "MMEmbedding",
+        "limit": 100
+      },
+      "result_sha256": "1ee30e48a85a064fc61fb73b9a8382c23706f85afa781251bbeb2406d780dd80"
+    },
+    "call_5f640712b3b24086b33a7d6de51230c0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "Gemma3",
+        "limit": 100
+      },
+      "result_sha256": "1da3e8704716776d274247fd1f07e47950b742add043f496aa44664633ed7901"
+    },
+    "call_3e67c98524c14cd19b4e1cde65219fa2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "vision_config",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_1258ba2e0e9b4bdc86d64ac87fcff2ef": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "preprocessor",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_b505de01527c4ce09f7ae1eeddd93308": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "mm_tokens_per_image",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_3d855a8d6f51498183157c6b0edcb99b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "multimodal_projector_bias",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_d022e0ea3ab14746a9933d106be796a8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/util/vision.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "1f91ff6a4482f59b264839adb45f369a8e44d2934cf85c9f4d029c4921e99ef1"
+    },
+    "call_6ff01d5d65f344c28a5de0567156bb59": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "normalize_image",
+        "limit": 100
+      },
+      "result_sha256": "3222b05969f6ba96f24b60a272ffc49b58817a00f34a46036834c21a3b453476"
+    },
+    "call_be7d78a8faf14c65bf9680083e5afed9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "convert_to_rgb",
+        "limit": 100
+      },
+      "result_sha256": "947806284e61f8b939bf310fcfbdd1aa7707cc23937ad4963b9242a7b2086f93"
+    },
+    "call_7cce593dee194569ba7d507d11e161dc": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "max_bytes": 7000
+      },
+      "result_sha256": "6e0ac557ab93b984d3d9801d4d3346fb042701322379829e2ae6721ed3a92b06"
+    },
+    "call_48c22047e12048bfb17957947a2c8864": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "94514ae02a7d2b14cd3348b94b64e2b3388139c7",
+        "max_bytes": 9000
+      },
+      "result_sha256": "23d9cefe54d10244689b849e0e9076fe7c9d0683656774b1b740dcea5e224f18"
+    },
+    "call_a8a34d1462574a23beca7013f4599eb1": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "9bde46e775df21d54d78a0fbe78b1490bf311a5a",
+        "max_bytes": 7000
+      },
+      "result_sha256": "dca2fb3ecbe65ab5096ae14d6a5de3a80bd939c66bcf501ecd30546cef3664e3"
+    },
+    "call_4fd0ed3d3eed4462a7c8999bdac6e4bc": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "08f7e1b1fcced3ba38e83d5ab1e426051eb02553",
+        "max_bytes": 7000
+      },
+      "result_sha256": "0e607a2803bc9f9855b25c8ff1510da0a940bb0107c822aaddd5363ecd44364a"
+    },
+    "call_588495609c554421aca5fbc2f1ac7393": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "95c41ce0e15aa7362cc50aaf5d4efcd7dd4c2225",
+        "max_bytes": 7000
+      },
+      "result_sha256": "b88ddeece74eba99175fcc580f2f0510db95f312ab95e9e28a2cd06558a3c396"
+    },
+    "call_70b1b269d2554500bff5b57e9d71f9ac": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nterms=['Conv(', 'PosEmbedding(', 'MLP(', 'transposed_load', 'get_image_embeddings','preprocess(', 'default_load_shape_dtype','image_mean','image_std','resample','rescale_factor','tokens_per_image','projector_bias','vision_pp','image_processor_type']\nfor t in terms:\n print('\\nTERM',t)\n for p in Path('.').rglob('*.py'):\n  for i,l in enumerate(p.read_text().splitlines(),1):\n   if t in l: print(str(p),i,l.strip())"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "81fa1573ec2a4c9d68a9783db2ebae2eab193c217bc7f79d2c034e4384341de6"
+    },
+    "call_e7cb53b6ec604481ab9b13854deb1fda": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "10d650f34158f55773f0614cb89c949738083a8633808d758fa1304de44f5e5a"
+    },
+    "call_9edbc271355549b1a279f6bcc3d22559": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it",
+        "revision": "bfa370037dad85e96e27f383482eb642490d94caffa7a8d5261374380476e826",
+        "path": "model-00001-of-00005.safetensors",
+        "offset": 0,
+        "limit": 10
+      },
+      "result_sha256": "928ceea1801d673060b1aa6164d5fbd068e9ca1303382a32f4cbd644fe54e464"
+    },
+    "call_19b7b8119f5d4f0ab5b2dc79efa80005": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "google/gemma-3-12b-it",
+        "revision": "bfa370037dad85e96e27f383482eb642490d94caffa7a8d5261374380476e826",
+        "path": "model-00001-of-00005.safetensors",
+        "offset": 61,
+        "limit": 25
+      },
+      "result_sha256": "237c581a8a8593422fd83eae142fe87a1288c9aebb6076e95e89dedc63ffaabb"
+    },
+    "call_e77d0f1a5d1d4bce8cbf520609e266dc": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "google/gemma-3-27b-it",
+        "revision": "7c1934e18aba594d8726189f95245f86215b8ba095aadd7396fb063ebe362531",
+        "path": "model-00001-of-00012.safetensors",
+        "offset": 0,
+        "limit": 30
+      },
+      "result_sha256": "a3551b892b501751f05da848a973d17183b34c32daa0167cd43f9a9ac534bdff"
+    },
+    "call_9c3f8a370c344cc688d31133c11fa6f8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "max_bytes": 12000
+      },
+      "result_sha256": "21731b8debef76459d1aceae1f57acf785e6f88679cbf11abb77b7dfa334c540"
+    },
+    "call_66aa4fad67d043cfbe435856ae679d22": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 15000
+      },
+      "result_sha256": "3ddd4d124495ed0bfeddafd15aa088a6e77095f370a48751f21782454b85e54e"
+    },
+    "call_b51296f6a128455a86c905d5207f3771": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "5708394f28280bdc51b947f86e76c8605ead5a84247c1de5d6952c2e3d2440b9"
+    },
+    "call_2351eb7c491d492188d0256371652ba8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "c857caddd3b4a0666741e1379d838267c27475f1af9b552ff109395dbdb03259"
+    },
+    "call_12292f377d9f427f9eab4db8573c0a34": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 32000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "b9d68432fb38d7f8b2b7b302882d622d47ab38d1f20f37adeb57e014a202b305"
+    },
+    "call_55a220df2a3d421fbab46acc0b03a009": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f6e2f4c0b576c084260ad5dbbd903751f82cb36b410726f0881dd3919a378fff"
+    },
+    "call_07c027ddc147453980936c255e81b58f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 16000
+      },
+      "result_sha256": "5dad938e6f26e18b9c0c018264a0b8b4aaaa92f09cf916e7a53f74d882a666f0"
+    },
+    "call_61014b3fa80e4c1ca5a34439407ed1c9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "d5c22ccaad8b93ea452456a6a977fcfb94778c1cfa7a4a9573a7fda0a9a2df7c"
+    },
+    "call_5ac945500a954f189dc6216283e4694c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/layernorm.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "6b87f4749b36f861b2b234f4a4521cb74db87111cdca7d69bce241df3f3e52f1"
+    },
+    "call_91b2f02623ba4367b16be8d9d46c443a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "mm_input_projection",
+        "limit": 100
+      },
+      "result_sha256": "076f662f3e1eb7607339ef41bbb56d27c49e823ab5840fdaa58ed8a2555706d6"
+    },
+    "call_02d95f143dac476e9fa5a812f1b9eedd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 0,
+        "max_bytes": 6500
+      },
+      "result_sha256": "7010497995e6ddbb308a94e0796e692c9bfaf37c22836e994c073bf28c63686a"
+    },
+    "call_988bfe927e8643d293119b4c93f8f657": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/modules/embedding.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "5381fb34860bed1824cb54b6ab7e9499c998725c69ccc2b0cfa66f573f21853c"
+    },
+    "call_02f657a704c844b2aa0344dcc315788f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "offset": 9600,
+        "max_bytes": 6500
+      },
+      "result_sha256": "3302a118a53cf94f3ca0fabe7a68307ce7306a740999f96b76a8ae6bc9a7606e"
+    },
+    "call_14eec8167554444dbc569ff856aea5c7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "get_image_embeddings",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_927fc3c39c50416f8a814efff77d0b58": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "preprocess(",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_20344a9e1ea94ddd87d31a204ff5ca8e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "074019737caac1c6e6a457e3bed7e4a30e0a5877",
+        "query": "allocate_q(",
+        "limit": 100
+      },
+      "result_sha256": "c5c9e3b272249c20055628f786e3d4ded672f0e9d60f0f46a3ef8f24aa1bd04f"
+    },
+    "call_50df7cb4f1314337a58236a4619e3cce": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "google/gemma-3-4b-it",
+        "revision": "68d0dd42f002fd8304ea8af6335c656e254697df9d260550874186f0a7975022",
+        "path": "model-00001-of-00002.safetensors",
+        "offset": 390,
+        "limit": 240
+      },
+      "result_sha256": "f0f0a2ba45752b7cbc20a09b70c1b548f9af9092292b97f85a01015fddb6f36b"
+    },
+    "call_2c2edfb56f2c49d49fae2c35f30119b4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import math\np=896//14;t=int(256**0.5);k=p//t\nprint({'patches_per_side':p,'patch_tokens':p*p,'head_dim':1152//16,'pool_kernel_stride':k,'pooled_side':(p-k)//k+1,'pooled_tokens':((p-k)//k+1)**2,'token_string_length':t*t+2,'default_padded_intermediate':math.ceil(4304/128)*128,'unpadded_intermediate':4304})\n# Scalar transcription of transpose/view/pool: channels last raster sequence.\na=[[[10000*c+64*r+s for c in range(2)] for r in range(64) for s in range(64)]]\ny=[[[sum(a[0][(4*r+i)*64+4*s+j][c] for i in range(4) for j in range(4))/16 for c in range(2)] for r in range(16) for s in range(16)]]\nassert len(y[0])==256 and y[0][0]==[97.5,10097.5] and y[0][-1]==[3997.5,13997.5]\nprint('scalar raster pooling:',len(y),len(y[0]),len(y[0][0]),y[0][0],y[0][-1])"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "293722da6e0ea30de30ba4e05506e1c03e93d5f3fb7263e1d0d0b45014798736"
+    },
+    "call_8312e945b3d748c1be16e377c0451035": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4e493719fbbb25c91142a65bfbc56791f18ccaec",
+        "max_bytes": 5000
+      },
+      "result_sha256": "e6a9cdc6ee97413297eaad2df9260443a93bfbcc422cbf740102d632b4be5615"
+    }
+  }
+}

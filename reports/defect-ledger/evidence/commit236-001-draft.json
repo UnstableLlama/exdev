@@ -1,0 +1,282 @@
+{
+  "schema_version": 5,
+  "sha": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+  "parent_shas": [
+    "ec00ef3f895212e274ae1d88588bee04b62efd63"
+  ],
+  "cutoff_date": "2025-06-03T03:10:21+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "integration",
+    "problem": [
+      {
+        "text": "The multimodal example selected only Gemma3. Selecting Mistral also needed a stop-condition branch: the existing prompt formatter supported Mistral, but get_stop_conditions did not.",
+        "basis": "source",
+        "evidence": [
+          "call_43dff8bcba374b9784921d6ea6ff2bc6",
+          "call_4f6b8d8f61a0419788a1f69cceaeea88"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The edits work together: the new default selects mistral3, its branch selects the mistral prompt format and a local Mistral Small 3.1 checkpoint, and the shared helper now returns tokenizer EOS for that format. Gemma3 remains selectable.",
+        "basis": "source",
+        "evidence": [
+          "call_7ecec67429af44e5b7079b1399ce08a2",
+          "call_4f6b8d8f61a0419788a1f69cceaeea88"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both streaming Job creation and non-streaming generate receive the new EOS list. The other discovered helper callers\u2014banned_strings.py, dynamic_gen.py, generation_loop.py and generator.py\u2014select llama3 and retain their existing results.",
+        "basis": "source",
+        "evidence": [
+          "call_6f9b181415b64adcab1304e034d17858",
+          "call_fa1c1ce048ef4bc4baec928249f159b1",
+          "call_528503d0b2e04bddb4d98433fae07319",
+          "call_537408dedcc64ac3a98859fea5bb8580",
+          "call_f7e36c0a1b984d9583d7ca3a2bd3d167",
+          "call_1d48d25878b048bd8cb1af3dd8e0b6fb"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The original multimodal entry establishes the paired image-alias/embedding flow. The original usage entry records both the missing Mistral stop branch and an extra literal 'n' in its prompt template. This change fixes the former but carries over the latter.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_c522b67789ba4950bea39898d62063ea",
+          "call_4844f7e5c21546d4b8248a58248899ca"
+        ]
+      },
+      {
+        "text": "PR #25, \u201cLanguage layers for Mistral Small 3.1 and InternVL3,\u201d discusses language-only support and concerns about preserving future multimodal components. Its relationship to this example update is contextual inference from the shared Mistral Small 3.1/component-model subject, not an explicit upstream link.",
+        "basis": "inference",
+        "evidence": [
+          "call_eeafd92f97b64aa9981219364ff7a265",
+          "call_4f6b8d8f61a0419788a1f69cceaeea88"
+        ]
+      }
+    ],
+    "limitations": [
+      "No checkpoint loading, image preprocessing, tokenization or GPU generation was executed. The local checkpoint path and its compatibility remain unverified.",
+      "The bounded execution checks the parent prompt helper only; it does not establish generated response quality or successful EOS termination."
+    ],
+    "links": [
+      "c264054b9450bd169b3b6ba2e05b20e0a66e0885",
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "multimodal",
+        "title": "Selecting Mistral3 in the image-description example",
+        "claims": [
+          {
+            "text": "The unchanged pipeline loads text and vision components from one configuration, turns each image into an embedding object, and places its text alias before the instruction. Streaming supplies the embeddings to both tokenizer.encode and Job; non-streaming passes them to generate. The 8192-token cache and 500-new-token cap remain example settings.",
+            "basis": "source",
+            "evidence": [
+              "call_6f9b181415b64adcab1304e034d17858",
+              "call_4f6b8d8f61a0419788a1f69cceaeea88"
+            ]
+          },
+          {
+            "text": "The existing Mistral3 vision implementation preprocesses images, forwards them noncausally with spatial positions and precomputed rotary frequencies, and packages projected vectors with [IMG_BREAK] row separators and [IMG_END]. Configuration requires PixtralImageProcessorFast and matching model/preprocessor patch sizes; selecting this example does not add architecture support or relax those requirements.",
+            "basis": "source",
+            "evidence": [
+              "call_7dd3fa03ceba48978f598f678ad7323f",
+              "call_4f6b8d8f61a0419788a1f69cceaeea88"
+            ]
+          },
+          {
+            "text": "Unlike the Gemma helper, the selected Mistral template includes the supplied system prompt. It also retains the literal 'n' before the image-alias/instruction string.",
+            "basis": "source",
+            "evidence": [
+              "call_43dff8bcba374b9784921d6ea6ff2bc6",
+              "call_6f9b181415b64adcab1304e034d17858"
+            ]
+          },
+          {
+            "text": "Executing the parent common.py helper with synthetic strings produced '<s>[INST] SYS\\n\\n nIMAGE\\nDescribe the image.[/INST]'; its parent Mistral stop lookup returned None.",
+            "basis": "execution",
+            "evidence": [
+              "call_617a9c74ed4c4bfdbbf74c4c98271ba6"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "mistral-template-prefix",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The newly selected Mistral prompt path carries over an unintended-looking literal 'n' before user content.",
+        "trigger": "Run multimodal.main with the new mistral3 default and reach prompt formatting.",
+        "expected_behavior": "Insert the supplied image aliases and instruction without an unrelated character prefix.",
+        "actual_behavior": "format_prompt returns a space and literal 'n' immediately before the supplied user content. This affects both generation branches; the other discovered example callers currently select llama3.",
+        "locations": [
+          {
+            "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+            "path": "examples/common.py",
+            "symbol": "format_prompt"
+          }
+        ],
+        "source_evidence": [
+          "call_43dff8bcba374b9784921d6ea6ff2bc6",
+          "call_4f6b8d8f61a0419788a1f69cceaeea88",
+          "call_6f9b181415b64adcab1304e034d17858",
+          "call_6ac8e9117b394dd38c8a1a8c440a9ede"
+        ],
+        "verification": [
+          {
+            "method": "repository_execution",
+            "description": "Executed the unchanged parent prompt formatter with synthetic system and image/instruction strings.",
+            "evidence": [
+              "call_617a9c74ed4c4bfdbbf74c4c98271ba6"
+            ],
+            "limits": "Confirms string construction only, not tokenizer behavior or model-quality impact."
+          }
+        ]
+      }
+    ],
+    "summary": "Defaults the multimodal example to Mistral3 and adds matching EOS stopping, while retaining Gemma3 selection and an inherited Mistral prompt-template typo."
+  },
+  "evidence": {
+    "call_7ecec67429af44e5b7079b1399ce08a2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "offset": 159,
+        "max_bytes": 1305
+      },
+      "result_sha256": "3ec93a6d453a0b7ac9dcd98bdad543af026d58c695b8bbcc13bebfc8b4994a24"
+    },
+    "call_4f6b8d8f61a0419788a1f69cceaeea88": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "offset": 642,
+        "max_bytes": 822
+      },
+      "result_sha256": "17524764a46e8c2c6f0277a8c74c9ed412fdfe028c072acacdf461f8146a2f24"
+    },
+    "call_43dff8bcba374b9784921d6ea6ff2bc6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "path": "examples/common.py"
+      },
+      "result_sha256": "26bd4084503b3f75a587d86ae6d70975ff2f8c959692a7b3088fc94aa726357e"
+    },
+    "call_6f9b181415b64adcab1304e034d17858": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "path": "examples/multimodal.py"
+      },
+      "result_sha256": "05912dc0ed949ab58bac3f070e0dd79349efd2395faf9e3126c9cb13126d5af4"
+    },
+    "call_fa1c1ce048ef4bc4baec928249f159b1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "query": "get_stop_conditions",
+        "limit": 100
+      },
+      "result_sha256": "f3e677c2465b082d1b96781b3f7187a4a0256169e3fb857c514dabe1c5473fbb"
+    },
+    "call_c522b67789ba4950bea39898d62063ea": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c264054b9450bd169b3b6ba2e05b20e0a66e0885",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c3d0bfe99cb8d1690f0b771f6b93106ceb305610038925695a2b7358976313c4"
+    },
+    "call_4844f7e5c21546d4b8248a58248899ca": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_1d48d25878b048bd8cb1af3dd8e0b6fb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "path": "examples/generator.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9b2c77fdad1c8db124d50d10904a1e5e9bd4fb6e2f92d4f78db0d7a787e48274"
+    },
+    "call_528503d0b2e04bddb4d98433fae07319": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "path": "examples/banned_strings.py"
+      },
+      "result_sha256": "aea8cc16c4a0dbdcaf6f9a8bf53ac82098c20cc32a721c2d6b6898ef5a53ef88"
+    },
+    "call_f7e36c0a1b984d9583d7ca3a2bd3d167": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "path": "examples/generation_loop.py"
+      },
+      "result_sha256": "77beefe271aeb16b40b9e7f3ee6c900bcf27c97b73637021cd393461d70cbebb"
+    },
+    "call_537408dedcc64ac3a98859fea5bb8580": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "path": "examples/dynamic_gen.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "206a4853a600995f68a336655064c191382acf38f6644206e7d2b7c1ffa93990"
+    },
+    "call_7dd3fa03ceba48978f598f678ad7323f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "path": "exllamav3/models/mistral3.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "79aadf702cce3b2a8d1e4225ef360497382f3943a738fb8cf5fab48e2223e3f1"
+    },
+    "call_eeafd92f97b64aa9981219364ff7a265": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "max_bytes": 16000
+      },
+      "result_sha256": "4bca876362bf2e4c3b554f64523108f72792d09a013485473b215de57e24c146"
+    },
+    "call_6ac8e9117b394dd38c8a1a8c440a9ede": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ec00ef3f895212e274ae1d88588bee04b62efd63",
+        "query": "format_prompt(",
+        "limit": 100
+      },
+      "result_sha256": "39c111ade52a1ae049f56acdeab8983354031cabab64b0d058c26b0342014d51"
+    },
+    "call_617a9c74ed4c4bfdbbf74c4c98271ba6": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import runpy\nm=runpy.run_path('examples/common.py')\nprint(repr(m['format_prompt']('mistral','SYS','IMAGE\\nDescribe the image.')))\nclass T: eos_token_id=2\nprint('parent stop:',m['get_stop_conditions']('mistral',T()))"
+        ]
+      },
+      "result_sha256": "03de479af54dc0e78853ff7db99ebe008e9beafccb94d9d838e6acc4bf44b8b0"
+    }
+  }
+}

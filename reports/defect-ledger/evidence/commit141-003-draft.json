@@ -1,0 +1,932 @@
+{
+  "schema_version": 5,
+  "sha": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+  "parent_shas": [
+    "c6aa83f7e5a5e735c079d41244cbc704eda7e54e"
+  ],
+  "cutoff_date": "2025-05-11T15:35:38+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The parent registry has no Qwen3MoeForCausalLM mapping. The change adds configuration dispatch and a model builder, but architecture recognition does not imply support for every published checkpoint format.",
+        "basis": "source",
+        "evidence": [
+          "call_5d3a4a9e4b73480495e890d0aedc5272",
+          "call_c8acbcd9188c4b83a837cfe962166888",
+          "call_66d5cd669ffb43ec9537b3f65dd5ed32"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The builder follows Qwen3's normalized-attention assembly while replacing its dense gated MLP with the existing routed BlockSparseMLP. This reuses attention, loading and conversion mechanisms rather than introducing architecture-specific kernels.",
+        "basis": "source",
+        "evidence": [
+          "call_026114a329984c96989dab5f64d014cf",
+          "call_6b02342d6630452fb3bcc5215c6277fd",
+          "call_8e055ad22ece43468677e2ff044020a1"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The ordinary BF16 reference checkpoints match the inspected naming, dimensions and supported dtype conversion. The published FP8 variants encounter an unsupported dtype; GPTQ variants lack the weight names accepted by Linear. These are source-level compatibility conclusions, not completed loading tests.",
+        "basis": "source",
+        "evidence": [
+          "call_e6c3af5517d74405b007af85164597e3",
+          "call_4c062278579043dab9f011f336ce65ac",
+          "call_76ecfc6d709c4251971cf2e098bd0b5e",
+          "call_32e16a05c3e945a0b5a835fc90c283db",
+          "call_75dcc671151544dd89abb8903eb41793",
+          "call_ace93ac624004e23b3862443b52fc171"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read ancestor entries 1db3dce and 6fc153d. The first explains Qwen3's explicit head dimensions and per-head Q/K normalization; the second establishes routed-MLP calibration and records the conditional all-expert fused-buffer mismatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_90e975c0cdd24df6beffe88798462a01",
+          "call_48c77bd348d64f808642d32791bc2bc4"
+        ]
+      },
+      {
+        "text": "Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, requests scaling automation; its connection is inferred from Qwen3 and RoPE configuration, not an explicit commit reference. The patch delegates RoPE settings to the existing helper. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d, concerns extension import failure; #34, \u201ctorch._C._LinAlgError on last layer of quant\u201d, concerns conversion factorization failure. Their inferred connection is shared config.py, linear.py and convert_model.py traceback context, not evidence that this architecture change addresses either error. PR #4, \u201cchore: update config.py\u201d, is a spelling correction.",
+        "basis": "inference",
+        "evidence": [
+          "call_664a14c6d2c944859af329793ec486df",
+          "call_c4611b3acfbe415990b3a618aa15bee0",
+          "call_7fe6e21f8fd64a7298a9c13bf5e1b6c8",
+          "call_f52db93a46bc4f6494fb9605e8311f83",
+          "call_026114a329984c96989dab5f64d014cf"
+        ]
+      }
+    ],
+    "limitations": [
+      "No checkpoint payloads, model loading, generation, conversion or CUDA kernels were executed. Header compatibility does not establish numerical correctness, resource sufficiency or performance.",
+      "Header inspection sampled layer-zero modules and head tensors, not every tensor in every shard. Claims about unused format-specific tensors describe the inspected loader's requests, not a complete checkpoint inventory.",
+      "The standard-library computation checks transcribed dimensions and routing cardinality only; it does not emulate tensor arithmetic, floating-point precision or GPU execution."
+    ],
+    "links": [
+      "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Qwen3 MoE assembly, checkpoint formats and calibration",
+        "claims": [
+          {
+            "text": "Registration adds Qwen3MoeModel to the architecture comprehension and declares Qwen3MoeConfig.arch_string = Qwen3MoeForCausalLM. Config.from_directory can therefore choose the new configuration/model pair. The configuration accepts explicit head_dim, otherwise falling back to hidden_size // num_attention_heads; KV heads default to query heads, tying defaults to false, and supplied hidden_act and norm_topk_prob must be silu and true respectively.",
+            "basis": "source",
+            "evidence": [
+              "call_c8acbcd9188c4b83a837cfe962166888",
+              "call_026114a329984c96989dab5f64d014cf",
+              "call_66d5cd669ffb43ec9537b3f65dd5ed32",
+              "call_6b908387837d467a99b397bbb68c3c6f"
+            ]
+          },
+          {
+            "text": "The model builds embedding \u2192 sequential pre-normalized TransformerBlocks \u2192 final RMSNorm \u2192 vocabulary Linear. Each block adds attention to the residual, then normalizes that updated residual for the routed MLP. Q and K receive RMSNorm after reshaping into heads and before NEOX-style RoPE; V does not. Attention defaults remain full attention with unspecified softmax scale. prepare_inputs stores input_ids and delegates to prepare_for_attn, exactly as the eight inspected existing callers do; no caller-side guard is dropped. The helper defaults to uncached FlashAttention and retains its cached-mode parameter requirements.",
+            "basis": "source",
+            "evidence": [
+              "call_026114a329984c96989dab5f64d014cf",
+              "call_56b18be17a03475da6e1922bfb8050e0",
+              "call_95d545f9d62a42d6a7ba8dcbde279a5a",
+              "call_b5c567ba735342339c807864b7e681a9",
+              "call_c397de4ce854433e9ba1f6f5526f98e6",
+              "call_5f275bf38b184da8a4fe3bb996a5462a"
+            ]
+          },
+          {
+            "text": "All seven config.json files were read. Qwen/Qwen3-235B-A22B, its FP8 variant and its GPTQ-Int4 variant each specify hidden size 4096, 64 query heads, expert width 1536 and 94 layers. Qwen/Qwen3-30B-A3B, -Base, -FP8 and -GPTQ-Int4 each specify 2048, 32, 768 and 48 respectively. Every repository specifies head_dim=128, four KV heads, 128 experts, eight experts per token, silu, normalized top-k probabilities, RMS epsilon 1e-6, untied embeddings, vocabulary 151936 and rope_theta=1000000. These explicit values agree with the builder; its dimensional fallbacks are not used.",
+            "basis": "source",
+            "evidence": [
+              "call_6b8f604172264a2990b74ff251878027",
+              "call_734095d8ad734768b4f040feb184893a",
+              "call_5655bc7ba6354b2c98659a152a13b0b1",
+              "call_e7fa356ae0724635b50252e4e5c76a11",
+              "call_bfe5361ba72d4ddc84bae04059c82106",
+              "call_7cf21e13582d425bb9ec856e2b4a87d7",
+              "call_fc322aa06f004b37851af54dfc1b79fe",
+              "call_026114a329984c96989dab5f64d014cf"
+            ]
+          },
+          {
+            "text": "Other differing configuration values are intermediate_size=12288 versus 6144 and max_window_layers=94 versus 48; the new builder reads neither, using moe_intermediate_size and full attention instead. The 30B Base has eos_token_id=151643 and max_position_embeddings=32768, versus 151645 and 40960 elsewhere; base Config reads EOS and the RoPE helper reads the position limit. GPTQ configurations change torch_dtype to float16 and transformers_version to 4.51.3 versus bfloat16 and 4.51.0; the builder does not use these fields. Quantization metadata also differs: FP8 declares dynamic e4m3 blocks of 128\u00d7128 and exclusions, while GPTQ declares four-bit, group-size-128 packing with differing metadata layouts. Neither selects a new loading path here.",
+            "basis": "source",
+            "evidence": [
+              "call_6b8f604172264a2990b74ff251878027",
+              "call_734095d8ad734768b4f040feb184893a",
+              "call_5655bc7ba6354b2c98659a152a13b0b1",
+              "call_e7fa356ae0724635b50252e4e5c76a11",
+              "call_bfe5361ba72d4ddc84bae04059c82106",
+              "call_7cf21e13582d425bb9ec856e2b4a87d7",
+              "call_fc322aa06f004b37851af54dfc1b79fe",
+              "call_66d5cd669ffb43ec9537b3f65dd5ed32",
+              "call_e6c3af5517d74405b007af85164597e3"
+            ]
+          },
+          {
+            "text": "A scalar dimension check gives Q widths 4096/8192 for the 30B/235B configurations, KV width 512 for both and eight/sixteen query heads per KV head. The fallback head dimension would be 64, not the configured 128: retaining head_dim is essential because attention width is twice residual width. These dimensions are multiples of Linear's 128-element padding unit.",
+            "basis": "execution",
+            "evidence": [
+              "call_5f275bf38b184da8a4fe3bb996a5462a"
+            ]
+          },
+          {
+            "text": "Exact layer-zero Linear prefixes are model.layers.0.self_attn.{q_proj,k_proj,v_proj,o_proj}, model.layers.0.mlp.gate, and model.layers.0.mlp.experts.0.{gate_proj,up_proj,down_proj}; the expert pattern repeats through 127. For every prefix P, Linear first tests EXL3 groups P.{sv|svh}, P.{su|suh}, P.trellis. If present it requests .scale, .su, .suh, .sv, .svh and .bias optionally, and .trellis obligatorily. Otherwise it tests P.weight and requests that tensor transposed with float2half=True, plus optional P.bias. No fused-QKV alternative is configured. SafetensorsCollection group tests append dots literally; has_tensor performs an exact-key lookup.",
+            "basis": "source",
+            "evidence": [
+              "call_026114a329984c96989dab5f64d014cf",
+              "call_95d545f9d62a42d6a7ba8dcbde279a5a",
+              "call_8e055ad22ece43468677e2ff044020a1",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_4c062278579043dab9f011f336ce65ac"
+            ]
+          },
+          {
+            "text": "Ordinary storage comprises Qwen3-235B-A22B, Qwen3-30B-A3B and Qwen3-30B-A3B-Base. In the 30B header, model.layers.0.self_attn.q_proj.weight is BF16 [4096,2048], model.layers.0.mlp.gate.weight is BF16 [128,2048], and expert-zero gate_proj.weight/up_proj.weight/down_proj.weight are BF16 [768,2048]/[768,2048]/[2048,768]. The 235B counterparts are BF16 [8192,4096], [128,4096], [1536,4096]/[1536,4096]/[4096,1536]. The Base attention/router header matches 30B. These .weight names select load_fp16; BF16 is supported and converted to half. The sampled modules supply neither biases nor EXL3 groups. No format-specific auxiliary tensor is identified as unused in these ordinary samples.",
+            "basis": "source",
+            "evidence": [
+              "call_76ecfc6d709c4251971cf2e098bd0b5e",
+              "call_c015519c2d214748858c154a8e326e09",
+              "call_32e16a05c3e945a0b5a835fc90c283db",
+              "call_74766012e7fc43ffa26ba5b3ad3d5cb1",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_4c062278579043dab9f011f336ce65ac"
+            ]
+          },
+          {
+            "text": "FP8 storage comprises both -FP8 repositories. Their attention/expert prefixes retain .weight with the same matrix shapes as ordinary storage, but dtype F8_E4M3. Each adds .weight_scale_inv in F32: for 30B Q [32,16], expert gate/up [6,16], down [16,6]; for 235B Q [64,32], gate/up [12,32], down [32,12]. Router .gate.weight remains F32 [128,2048] or [128,4096]. Linear can convert the router's F32 through float2half, but convert_dtype rejects F8_E4M3 before weight conversion. All inspected weight_scale_inv tensors are never requested by this loader; the FP8 block-size metadata does not cause dequantization.",
+            "basis": "source",
+            "evidence": [
+              "call_75dcc671151544dd89abb8903eb41793",
+              "call_8b2139cdf18d4cdbb29d429520612e57",
+              "call_2d55be4037a64aef8bdb88e2ab5efd9f",
+              "call_a0fd4b39eff14e6dac9f034ae3a3251c",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_4c062278579043dab9f011f336ce65ac"
+            ]
+          },
+          {
+            "text": "GPTQ storage comprises both -GPTQ-Int4 repositories. For 30B, Q stores .g_idx I32 [2048], .qweight I32 [256,4096], .qzeros I32 [16,512], .scales F16 [16,4096]. Expert-zero gate/up each store [2048], [256,768], [16,96], [16,768] with those respective suffixes/dtypes; down stores [768], [96,2048], [6,256], [6,2048]. Router .gate.weight is F16 [128,2048]. For 235B, Q's corresponding shapes are [4096], [512,8192], [32,1024], [32,8192]; gate/up are [4096], [512,1536], [32,192], [32,1536]; down is [1536], [192,4096], [12,512], [12,4096]; router is F16 [128,4096]. These integer/F16 dtypes are recognized by the collection, but Linear never requests these GPTQ suffixes. Neither .weight nor the EXL3 group exists for these sampled quantized projections, so Linear.load raises its unsupported-format ValueError. The router independently matches the ordinary F16 path.",
+            "basis": "source",
+            "evidence": [
+              "call_ace93ac624004e23b3862443b52fc171",
+              "call_4d3654ff40db4a2ba7dced0319fb6386",
+              "call_cbef9fd5708c4756ad279c6b9f9ed3a8",
+              "call_4d2321b4429a40d1980715b0f8ce4adc",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_4c062278579043dab9f011f336ce65ac"
+            ]
+          },
+          {
+            "text": "Module.load traverses registered submodules in order; Attention registers Q first. Consequently the inspected ordinary load path accepts embedding and normalization weights and selects load_fp16 for Q. FP8 reaches Q's get_tensor and raises ValueError('Unknown dtype F8_E4M3'); GPTQ reaches Q's Linear.load and raises 'No tensors found for model.layers.0.self_attn.q_proj matching supported quantization format.' Thus the three ordinary variants are source-compatible with this path, while the four published quantized variants cannot complete it as written, assuming earlier device/file operations succeed. Neither failure is established by repository execution.",
+            "basis": "source",
+            "evidence": [
+              "call_46be777cc0484a8ca1c4b99eef6a8b5f",
+              "call_95d545f9d62a42d6a7ba8dcbde279a5a",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_4c062278579043dab9f011f336ce65ac",
+              "call_98922d18a95645cd8c80e7941556809c",
+              "call_b5c567ba735342339c807864b7e681a9"
+            ]
+          },
+          {
+            "text": "The head condition probes bare lm_head, whereas every inspected head header stores lm_head.weight: BF16 in the three ordinary repositories, F32 in the two FP8 repositories and F16 in the two GPTQ repositories, shaped [151936,2048] or [151936,4096]. An exact lookup for the bare name does not match those stored names. All seven configurations set tie_word_embeddings=false, so short-circuit evaluation actually skips the probe and no alternate key is assigned. Linear would load lm_head.weight, with BF16/F32 converted to half; the earlier quantized-projection failures prevent reaching it during a complete load. Embedding and RMSNorm likewise append .weight and request float2half=True.",
+            "basis": "source",
+            "evidence": [
+              "call_026114a329984c96989dab5f64d014cf",
+              "call_4c062278579043dab9f011f336ce65ac",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_1369de78c93342409ca4685d83c5404e",
+              "call_504c4aa1a8294254baa20d375a58acf1",
+              "call_5406e93945aa48a0b4022ccde9e6239c",
+              "call_397d5a4aa61648c2935b65f7b05b9c39",
+              "call_291276dc724549f794e9306ec8245315",
+              "call_ace93ac624004e23b3862443b52fc171",
+              "call_76a50afbbf184ee890fa806d9051533f",
+              "call_98922d18a95645cd8c80e7941556809c",
+              "call_b5c567ba735342339c807864b7e681a9"
+            ]
+          },
+          {
+            "text": "Routing computes softmax over 128 router scores, selects eight experts and renormalizes selected probabilities. Each expert computes down(silu(gate(x)) \u00d7 up(x)); weighted outputs accumulate into token order. The builder requests half intermediate values and float MLP output. Multiple flattened tokens or non-EXL3 experts take the ordinary grouping path. One token with all expert projections EXL3 takes indexed multi-GEMM; MultiLinear additionally requires equal dimensions/bit widths within each projection group, no biases or softcaps and unit post-scale. Gate/up/down are separate calls, routing weights apply only to down, and -1 leaves kernel-shape selection automatic. Published GPTQ and FP8 storage are not EXL3 fusion formats.",
+            "basis": "source",
+            "evidence": [
+              "call_026114a329984c96989dab5f64d014cf",
+              "call_8e055ad22ece43468677e2ff044020a1",
+              "call_ca866a9a29a14f8bbfdb1654f6622bc2"
+            ]
+          },
+          {
+            "text": "Calibration labels are block.attn.input for Q/K/V, block.attn.o for O, no label for the router, block.mlp.input shared by every expert gate/up, and block.mlp.{expert_idx}.down separately for each down projection. The head uses block. Linear.capture_H accumulates X\u1d40X only for the first key sharing a label. Activating every expert makes gate/up share the normalized MLP input and supplies every down projection its own activated expert input. This is why the builder's calibration_all_experts=True complements the expert-map construction rather than being an independent inference option. Conversion captures with that flag, then recomputes reference outputs and advances states with ordinary top-eight routing. The router has no calibration map and is excluded from the mapped Linear conversion list.",
+            "basis": "source",
+            "evidence": [
+              "call_026114a329984c96989dab5f64d014cf",
+              "call_95d545f9d62a42d6a7ba8dcbde279a5a",
+              "call_8e055ad22ece43468677e2ff044020a1",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_4ec08f899de3456785a2e23146aaed64"
+            ]
+          },
+          {
+            "text": "The ancestor's all-expert fusion observation persists unchanged: the new builder enables all-expert calibration but does not modify BlockSparseMLP's dispatch or buffer sizes. Whole-parent searches found no existing architecture construction of BlockSparseMLP; TransformerBlock.forward is the new builder's direct forwarding path, while conversion supplies the flag. Ordinary unquantized calibration avoids the fused branch because its experts are not EXL3, so the conditional defect is not evidence that normal initial conversion fails.",
+            "basis": "source",
+            "evidence": [
+              "call_026114a329984c96989dab5f64d014cf",
+              "call_c1b45e6c2976436c9b9dc4839a2550ad",
+              "call_da29fee6d9024c84afff70c0aa246f8a",
+              "call_56b18be17a03475da6e1922bfb8050e0",
+              "call_8e055ad22ece43468677e2ff044020a1",
+              "call_4ec08f899de3456785a2e23146aaed64"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "published-fp8-load",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "Architecture registration does not provide a loader for the two published FP8 variants.",
+        "trigger": "Load either reference -FP8 checkpoint through the new model builder and ordinary SafetensorsCollection.",
+        "expected_behavior": "A compatible loading path would decode FP8 weights using their scale tensors.",
+        "actual_behavior": "Q's .weight passes name detection, but get_tensor calls convert_dtype, which raises ValueError('Unknown dtype F8_E4M3'). The .weight_scale_inv tensors are not requested.",
+        "locations": [
+          {
+            "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+            "path": "exllamav3/models/qwen3_moe.py",
+            "symbol": "Qwen3MoeModel.__init__"
+          },
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "convert_dtype"
+          }
+        ],
+        "source_evidence": [
+          "call_026114a329984c96989dab5f64d014cf",
+          "call_8b2139cdf18d4cdbb29d429520612e57",
+          "call_a0fd4b39eff14e6dac9f034ae3a3251c",
+          "call_e6c3af5517d74405b007af85164597e3",
+          "call_4c062278579043dab9f011f336ce65ac"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both FP8 configurations and layer-zero headers with Attention registration order, Linear.load_fp16 and collection dtype conversion.",
+            "evidence": [
+              "call_734095d8ad734768b4f040feb184893a",
+              "call_7cf21e13582d425bb9ec856e2b4a87d7",
+              "call_95d545f9d62a42d6a7ba8dcbde279a5a",
+              "call_4c062278579043dab9f011f336ce65ac"
+            ],
+            "limits": "No actual load; preceding device and filesystem operations must succeed to reach this error."
+          }
+        ]
+      },
+      {
+        "id": "published-gptq-load",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The two published GPTQ variants store names that Linear.load does not consume.",
+        "trigger": "Load either reference -GPTQ-Int4 checkpoint through Qwen3MoeModel.",
+        "expected_behavior": "A compatible loader would recognize and decode GPTQ's qweight, qzeros, scales and g_idx.",
+        "actual_behavior": "Neither the EXL3 group nor q_proj.weight matches; the first attention Linear raises 'No tensors found for model.layers.0.self_attn.q_proj matching supported quantization format.' All sampled GPTQ projection auxiliaries remain unread, although their dtypes are recognized.",
+        "locations": [
+          {
+            "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+            "path": "exllamav3/models/qwen3_moe.py",
+            "symbol": "Qwen3MoeModel.__init__"
+          },
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/modules/linear.py",
+            "symbol": "Linear.load"
+          }
+        ],
+        "source_evidence": [
+          "call_026114a329984c96989dab5f64d014cf",
+          "call_4d3654ff40db4a2ba7dced0319fb6386",
+          "call_4d2321b4429a40d1980715b0f8ce4adc",
+          "call_e6c3af5517d74405b007af85164597e3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both reference GPTQ header layouts against supported name groups and the first registered attention projection.",
+            "evidence": [
+              "call_95d545f9d62a42d6a7ba8dcbde279a5a",
+              "call_e6c3af5517d74405b007af85164597e3",
+              "call_4d3654ff40db4a2ba7dced0319fb6386",
+              "call_4d2321b4429a40d1980715b0f8ce4adc"
+            ],
+            "limits": "Source-level failure path, not execution; no claim of GPTQ support was explicitly made by the commit message."
+          }
+        ]
+      },
+      {
+        "id": "inherited-all-expert-fusion",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "All-expert routing still conflicts with the fused path's top-eight-sized output buffers.",
+        "trigger": "Forward one flattened token through a fully EXL3 Qwen3 MoE block with activate_all_experts=True.",
+        "expected_behavior": "Evaluate all 128 experts or use the ordinary all-expert-capable path.",
+        "actual_behavior": "Routing yields 128 indices, but fused buffers retain eight expert slots; the first exl3_mgemm fails its indices-dimension versus C-dimension check. TransformerBlock forwards params unchanged. Initial unquantized calibration does not take this fused branch.",
+        "locations": [
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          },
+          {
+            "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+            "path": "exllamav3/models/qwen3_moe.py",
+            "symbol": "Qwen3MoeModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_8e055ad22ece43468677e2ff044020a1",
+          "call_ca866a9a29a14f8bbfdb1654f6622bc2",
+          "call_56b18be17a03475da6e1922bfb8050e0",
+          "call_026114a329984c96989dab5f64d014cf",
+          "call_da29fee6d9024c84afff70c0aa246f8a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Rechecked the ancestor observation against unchanged parent implementation, the new builder and conversion's flag preparation.",
+            "evidence": [
+              "call_48c77bd348d64f808642d32791bc2bc4",
+              "call_8e055ad22ece43468677e2ff044020a1",
+              "call_4ec08f899de3456785a2e23146aaed64",
+              "call_ca866a9a29a14f8bbfdb1654f6622bc2"
+            ],
+            "limits": "Conditional API reach, not proof that normal conversion or generation triggers it."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed 128 all-expert indices versus eight fused expert slots for the reference configurations.",
+            "evidence": [
+              "call_5f275bf38b184da8a4fe3bb996a5462a"
+            ],
+            "limits": "Integer cardinality model only; no repository forward or kernel execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Registers Qwen3 MoE using normalized attention and routed experts, with all-expert calibration. Ordinary checkpoints match the inspected loader; published FP8/GPTQ formats do not. The inherited conditional all-expert fusion mismatch persists."
+  },
+  "evidence": {
+    "call_c8acbcd9188c4b83a837cfe962166888": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+        "offset": 157,
+        "max_bytes": 724
+      },
+      "result_sha256": "66f2382f43520ff6d6cf2bcb85d6f20b0d3f961f3fdd7d21667aada0ee84dbe7"
+    },
+    "call_026114a329984c96989dab5f64d014cf": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+        "offset": 881,
+        "max_bytes": 6513
+      },
+      "result_sha256": "bbf389dcf128a1a73462f791e6fa14f143a8eefcacbe5e35a0ca208244d69613"
+    },
+    "call_10b3cfdb6a9c445db6ea3d7aa76dd85e": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "6358ca608ec94d421de8b5007c5a92add3a4a2f730ce97eb2f89793667581346",
+      "catalog_only": true
+    },
+    "call_8e055ad22ece43468677e2ff044020a1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "06a985b2271062ad94c7a8a4407ea8d5e4903f8e79c51d7895c83308a05d5eb4"
+    },
+    "call_e6c3af5517d74405b007af85164597e3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "a0d92050bdf4de0d280646e3157cdfb3bbb5eb11b83cf527d890eb81427a30ed"
+    },
+    "call_4c062278579043dab9f011f336ce65ac": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "c533fb5752f9f382f8750e0af5f6b9da3649fa4477a618945d5062083b34453d"
+    },
+    "call_6b8f604172264a2990b74ff251878027": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "config.json"
+      },
+      "result_sha256": "b07906670c70cd59545c70d8a5a1d82a615741ac51fb1b01b21abab3f6e865cb"
+    },
+    "call_734095d8ad734768b4f040feb184893a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-FP8",
+        "revision": "bae6646ab86923752d1ae45a4bd660794daeafab",
+        "path": "config.json"
+      },
+      "result_sha256": "73b4c0097085522e22d185bb6a30d98ec92d0513306094479d474b27fa4226c5"
+    },
+    "call_5655bc7ba6354b2c98659a152a13b0b1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "revision": "db337e1a1eac79928ddea88d43615bbce753d8a7",
+        "path": "config.json"
+      },
+      "result_sha256": "ed86c55e8076d30f12fad029512b338b186a8ee3eb95dbc54b930a7afddaa749"
+    },
+    "call_e7fa356ae0724635b50252e4e5c76a11": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "config.json"
+      },
+      "result_sha256": "263a0f20cdae386b86023494b02e9237e10f0fd77ea1de3a3a1315229492d652"
+    },
+    "call_bfe5361ba72d4ddc84bae04059c82106": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-Base",
+        "revision": "89e5e822ba31507f5f79dc3422c7c5345c422737",
+        "path": "config.json"
+      },
+      "result_sha256": "716fce423a7574da5d72a30fadc937e567eb6efdfacc3899a04a6e0cb5e2d488"
+    },
+    "call_7cf21e13582d425bb9ec856e2b4a87d7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-FP8",
+        "revision": "4504c1329df104a4b299f0db05882e84da88830b",
+        "path": "config.json"
+      },
+      "result_sha256": "24a2962e36886fbfc6c6880dc34ee8f0a85d39f7c071121c9a8f72b7c872e201"
+    },
+    "call_fc322aa06f004b37851af54dfc1b79fe": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "revision": "5b78b1b5f244a39334307aed060c27aa8d21e068",
+        "path": "config.json"
+      },
+      "result_sha256": "ed7b9c01833e2ef39978c4b47c5bd4e7227680ff0acd9cdc32f51490c3e74a2a"
+    },
+    "call_0ed61944da824b7c8802b3f4068aed6f": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "968737b19e5a836fefffff71baa5be70b8de113f1c923ad6d0048df4eb94fe83",
+        "max_bytes": 6000
+      },
+      "result_sha256": "bf901bba251f61ab5b99ac95041d25040657adeba55da44f9d9584cfaa1012a7",
+      "catalog_only": true
+    },
+    "call_76ecfc6d709c4251971cf2e098bd0b5e": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "model-00001-of-00016.safetensors",
+        "limit": 410
+      },
+      "result_sha256": "0bd43b8777a98f4617efe46c48db1791c26dee2d23fd9d24809ab25c1590e023"
+    },
+    "call_75dcc671151544dd89abb8903eb41793": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-FP8",
+        "revision": "4504c1329df104a4b299f0db05882e84da88830b",
+        "path": "model-00001-of-00007.safetensors",
+        "limit": 12
+      },
+      "result_sha256": "8a01de4fec1537882b129c8aaf65103e57a053fad77788fb05065115af22e467"
+    },
+    "call_8b2139cdf18d4cdbb29d429520612e57": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-FP8",
+        "revision": "4504c1329df104a4b299f0db05882e84da88830b",
+        "path": "model-00001-of-00007.safetensors",
+        "offset": 770,
+        "limit": 14
+      },
+      "result_sha256": "5c836e0bdfa9bbf208046601a9f84842a8d5e434a96cc48181257fcfbca035ef"
+    },
+    "call_ace93ac624004e23b3862443b52fc171": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "revision": "5b78b1b5f244a39334307aed060c27aa8d21e068",
+        "path": "model.safetensors",
+        "limit": 18
+      },
+      "result_sha256": "520fdcee01ab6a745146aca4e8da5e945a87271efbcbbffe1335c6797080e454"
+    },
+    "call_4d3654ff40db4a2ba7dced0319fb6386": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "revision": "5b78b1b5f244a39334307aed060c27aa8d21e068",
+        "path": "model.safetensors",
+        "offset": 1539,
+        "limit": 22
+      },
+      "result_sha256": "700926de925c7ac274608af85a4a5959c60861219480474788384c5986e433d9"
+    },
+    "call_c015519c2d214748858c154a8e326e09": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00001-of-00118.safetensors",
+        "limit": 6
+      },
+      "result_sha256": "5102d767f556cdc7ed86f5d37c2d5d1a44fe415a221daa54f5a169205dd3c28e"
+    },
+    "call_48c77bd348d64f808642d32791bc2bc4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_90e975c0cdd24df6beffe88798462a01": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0a5dd9cf92bb8eeba77b7bda8f95a0f48b5fc9619ac7c5de0909f8b1715d9451"
+    },
+    "call_c1b45e6c2976436c9b9dc4839a2550ad": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "BlockSparseMLP",
+        "limit": 100
+      },
+      "result_sha256": "e9a5e65d2526f09ea55bcbc0a7e103678b6595fa5905d59396efca36080bbf7a"
+    },
+    "call_da29fee6d9024c84afff70c0aa246f8a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "activate_all_experts",
+        "limit": 100
+      },
+      "result_sha256": "8a36aeec7db9216b96d838ab9800934da4f33d8ed84521785d5a6aceaecf8ba1"
+    },
+    "call_95d545f9d62a42d6a7ba8dcbde279a5a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "24308e96431cabc08c436215585cc25ce0dc22b2161acc5b35fab11af0ab2a79"
+    },
+    "call_56b18be17a03475da6e1922bfb8050e0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0d3dc93f963edab7063120909cbc2f61569139f0c140144e2dc827c7073b56db"
+    },
+    "call_46be777cc0484a8ca1c4b99eef6a8b5f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "9b6975e0608cb65d65b8e36c780e5328139495f3fea96c99ba250cffafa74a17"
+    },
+    "call_b5c567ba735342339c807864b7e681a9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "95863e3d66095f96305ef5491c43a04196ba7daf242d265ba84c69619cc0b809"
+    },
+    "call_98922d18a95645cd8c80e7941556809c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/embedding.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "da4f07b218ff7eebf6bc4b652b85f6c88c9b438c2b978e47f3dfad305fdddce9"
+    },
+    "call_66d5cd669ffb43ec9537b3f65dd5ed32": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "85e3aa930f1e238a4a27c3f5eb33c55bc3541cfe16f9226b6291529db5d1ec59"
+    },
+    "call_6b908387837d467a99b397bbb68c3c6f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "norm_top",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_5d3a4a9e4b73480495e890d0aedc5272": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "Qwen3MoeForCausalLM",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c397de4ce854433e9ba1f6f5526f98e6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "prepare_for_attn(",
+        "limit": 100
+      },
+      "result_sha256": "94a788d65a2304685544940ea79e912b8920512b17e7c3b940aca2cb076ee1c6"
+    },
+    "call_5f275bf38b184da8a4fe3bb996a5462a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor p in Path('.').rglob('*.py'):\n s=p.read_text()\n if 'prepare_for_attn(input_ids, params)' in s:\n  lines=s.splitlines();print(str(p));\n  for i,l in enumerate(lines):\n   if 'prepare_for_attn(input_ids, params)' in l: print('\\n'.join(lines[max(0,i-5):i+3]))\nprint('shape arithmetic')\nfor h,q,m,l in [(2048,32,768,48),(4096,64,1536,94)]: print(h,'Q',q*128,'KV',4*128,'Q per KV',q//4,'fallback',h//q,'scale grid',(q*128//128,h//128),'experts/layer',128,'selected',8,'layers',l)\nprint('all-expert index count',1*128,'fused output expert count',8,'equal?',128==8)"
+        ]
+      },
+      "result_sha256": "7fc586536f1a853dc4e8f8a0e6d4ed6ada2471efcfb410ae7061f51dee3a886a"
+    },
+    "call_1369de78c93342409ca4685d83c5404e": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "model-00016-of-00016.safetensors",
+        "limit": 2
+      },
+      "result_sha256": "8ec31f608cf18ca55157f24f9648a7d886558957636b017147cbf05eeb8bb35d"
+    },
+    "call_397d5a4aa61648c2935b65f7b05b9c39": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-FP8",
+        "revision": "4504c1329df104a4b299f0db05882e84da88830b",
+        "path": "model-00007-of-00007.safetensors",
+        "limit": 2
+      },
+      "result_sha256": "2da2cf16296ac123981fccb64a2b8a86b3c90e5bdd7190002edcd73c60104630"
+    },
+    "call_2d55be4037a64aef8bdb88e2ab5efd9f": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-FP8",
+        "revision": "bae6646ab86923752d1ae45a4bd660794daeafab",
+        "path": "model-00001-of-00048.safetensors",
+        "limit": 8
+      },
+      "result_sha256": "e521a3b31cc04376154c360f8de59c4d09c4feaf0e204daffed4e9468fb7b4d2"
+    },
+    "call_a0fd4b39eff14e6dac9f034ae3a3251c": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-FP8",
+        "revision": "bae6646ab86923752d1ae45a4bd660794daeafab",
+        "path": "model-00001-of-00048.safetensors",
+        "offset": 770,
+        "limit": 12
+      },
+      "result_sha256": "00e367b50644b4d8cbda422fd531d871f40a9ffad01e662ef5ad3a6bc2e31d18"
+    },
+    "call_cbef9fd5708c4756ad279c6b9f9ed3a8": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "revision": "db337e1a1eac79928ddea88d43615bbce753d8a7",
+        "path": "model-00001-of-00005.safetensors",
+        "limit": 16
+      },
+      "result_sha256": "7e3ff99940e2e40e35fbe4015d5a7cba5599d491b18d88418f4fcbafbb89779f"
+    },
+    "call_81fa1440a5ff47a3b546a3d302c65c26": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00002-of-00118.safetensors",
+        "offset": 170,
+        "limit": 16
+      },
+      "result_sha256": "e2c73b9c24e3fab7fb2bd1cf1009f2c8f0495b62ec551f789421fbfebd6b0c7d"
+    },
+    "call_32e16a05c3e945a0b5a835fc90c283db": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00001-of-00118.safetensors",
+        "offset": 205,
+        "limit": 10
+      },
+      "result_sha256": "e0e52f6066e49982d3bd66347f6060d28c0f98019c7970ab590e03a3e1220d6f"
+    },
+    "call_4ec08f899de3456785a2e23146aaed64": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 10000,
+        "max_bytes": 9000
+      },
+      "result_sha256": "f01d064f61aa8a6e6557356ad384abba71750bc1716d753e1aa3df6879e569b6"
+    },
+    "call_6f7996bede704e04ab59474022fb89e7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "indices.numel",
+        "path": "exllamav3/exllamav3_ext/quant",
+        "limit": 40
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8f0c8e63a2b442bca99bdbd534e28905": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "indices",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "limit": 40
+      },
+      "result_sha256": "f47a4659e736bb031a2b13761e0d3c0f62eb54c0a4336a5478e57fdbd0abaa7d"
+    },
+    "call_ca866a9a29a14f8bbfdb1654f6622bc2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4100,
+        "max_bytes": 3200
+      },
+      "result_sha256": "13b774a38d69aef4f7f5f0172dc2555cc57fa7d269aa85b45523afa3a2df754c"
+    },
+    "call_c4611b3acfbe415990b3a618aa15bee0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7c7b4e439d9d1bc48369795c75c8283c52a9e29478d206ec8d83913a46928e61"
+    },
+    "call_7fe6e21f8fd64a7298a9c13bf5e1b6c8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "be7aca9e9874bf209f1bac584fdf7c9664503eb7ec69eaa3fb066c80988d36ef"
+    },
+    "call_f52db93a46bc4f6494fb9605e8311f83": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1f1c057cda242440d99ac6aa706bb302e350b91ab5bd678d3e809b5f174ea474"
+    },
+    "call_664a14c6d2c944859af329793ec486df": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 16000
+      },
+      "result_sha256": "3b7c749b0bab1aa0f82a8e04f4b097944f4ce4ac518c4c6da51b94ad6afd502a"
+    },
+    "call_74766012e7fc43ffa26ba5b3ad3d5cb1": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-Base",
+        "revision": "89e5e822ba31507f5f79dc3422c7c5345c422737",
+        "path": "model-00001-of-00016.safetensors",
+        "offset": 386,
+        "limit": 10
+      },
+      "result_sha256": "eb0a83e99f47fd67b70e0418f8115f7bcf8f715ecd6afc26a4b5498f983e14f1"
+    },
+    "call_4d2321b4429a40d1980715b0f8ce4adc": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "revision": "db337e1a1eac79928ddea88d43615bbce753d8a7",
+        "path": "model-00001-of-00005.safetensors",
+        "offset": 1538,
+        "limit": 21
+      },
+      "result_sha256": "1d61bc70899c897286af1150cae477e5bda5236cee4c5d004df73737b93f561a"
+    },
+    "call_5406e93945aa48a0b4022ccde9e6239c": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00118-of-00118.safetensors",
+        "limit": 1
+      },
+      "result_sha256": "d6831561a01f7c51240ab93f8e72f9e7eb4d37405c0fbe68de0c3433b2481588"
+    },
+    "call_291276dc724549f794e9306ec8245315": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-FP8",
+        "revision": "bae6646ab86923752d1ae45a4bd660794daeafab",
+        "path": "model-00048-of-00048.safetensors",
+        "limit": 1
+      },
+      "result_sha256": "30c942adc2449bfe2b6c0021d809d678d6a36c86de9cf5512f1d7b0b135cba88"
+    },
+    "call_76a50afbbf184ee890fa806d9051533f": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "revision": "db337e1a1eac79928ddea88d43615bbce753d8a7",
+        "path": "model-00005-of-00005.safetensors",
+        "limit": 1
+      },
+      "result_sha256": "6fbfe33e7d505f1fe27f6cc19c4ff181d0c82560affb0c6d8ce7a490762a330d"
+    },
+    "call_504c4aa1a8294254baa20d375a58acf1": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-Base",
+        "revision": "89e5e822ba31507f5f79dc3422c7c5345c422737",
+        "path": "model-00016-of-00016.safetensors",
+        "limit": 1
+      },
+      "result_sha256": "091f5d6ff9568399585e0f736b3daf498aea853fc484cc7f6bf6d2389bd74e43"
+    },
+    "call_6b02342d6630452fb3bcc5215c6277fd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/models/qwen3.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "7ef51eab3f8f864d0ee382c702e75349b4617b62dfe75d46ff8c9361f7c0a090"
+    },
+    "call_fba4c0200a2e4d9fa2bdb65ff801fc8c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "64a98e519cfb515731d10a5d1dd92ad84e5c0e1f5429bbff1621ba6670192fc7"
+    }
+  }
+}

@@ -1,0 +1,331 @@
+{
+  "schema_version": 5,
+  "sha": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+  "parent_shas": [
+    "002bd31f288c3bf38786ed2ab8da5d49ce064e08"
+  ],
+  "cutoff_date": "2025-06-19T17:29:21+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Mistral3 configuration accepted only the PixtralImageProcessorFast identifier and scalar patch sizes, rejecting the alternate processor identifier and square height/width dictionaries.",
+        "basis": "source",
+        "evidence": [
+          "call_62c4708a9902463a84112a1e2d233dbc",
+          "call_366a2311ee6a4c46ab303f347c4f2817"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Accepting the alternate identifier alone is insufficient: normalizing both patch-size sources preserves the scalar representation required by convolution construction, preprocessing and feature-grid arithmetic.",
+        "basis": "source",
+        "evidence": [
+          "call_62c4708a9902463a84112a1e2d233dbc",
+          "call_366a2311ee6a4c46ab303f347c4f2817"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both processor identifiers now enter the same existing image pipeline; the change does not instantiate or dispatch to either Transformers processor implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_62c4708a9902463a84112a1e2d233dbc",
+          "call_366a2311ee6a4c46ab303f347c4f2817"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the Mistral3 introduction, subsequent list-ingestion entry and chat-formatting entry. The introduction establishes the original strict processor check and spatial-merger requirements; list ingestion records sequential singleton-image processing.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_cb046d1a638541a5b58a349af95dd11f",
+          "call_1581bf4f830c4886b31373cc12d313aa",
+          "call_47298ca8a7be47b78f56a1d6e8819c06"
+        ]
+      },
+      {
+        "text": "The introduction's recorded resize-overflow mechanism has changed in the inspected parent: the helper floors scaled dimensions before patch alignment. This task leaves that helper unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_acea61288fca4f0e97f0e2301abc14f9",
+          "call_62c4708a9902463a84112a1e2d233dbc"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports an extension import failure; PR #4, \u201cchore: update config.py,\u201d corrects a spelling. Their connections here are inferred solely from config.py appearing in the traceback or title and being inspected for this change, not evidence that either motivated the Pixtral fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_9c840945dbdd4f058677339b62b1220a",
+          "call_ae604f9d14ba44df8fea8c7f184099c4",
+          "call_4976b36d4c134f7abe81442dba5cb46e"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository configuration constructor, image-library operation, checkpoint loading or GPU inference was executed; the Python check transcribed only the new normalization logic.",
+      "The reference config.json files establish model-side patch sizes, not the processor identifiers or patch-size representations in their preprocessor_config.json files.",
+      "Whole-tree literal searches do not establish external or dynamically constructed consumers."
+    ],
+    "links": [
+      "45fa5abff9001ff373a612303e48ec01d34efe42",
+      "51c2b8d2e69de43546c4a28ea6cd977800262217",
+      "7989c93b6a476a918dbfff0a0b96954a79111662"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Normalize Pixtral processor configuration",
+        "claims": [
+          {
+            "text": "Mistral3Config.__init__ admits exactly PixtralImageProcessor and PixtralImageProcessorFast. Its local unpack_patch_size helper accepts an integer or a dictionary whose height and width agree, then requires the resulting side length to be an integer. Rectangular dictionaries are rejected rather than propagated as rectangular convolution dimensions.",
+            "basis": "source",
+            "evidence": [
+              "call_62c4708a9902463a84112a1e2d233dbc"
+            ]
+          },
+          {
+            "text": "Both vision_config->patch_size and preprocessor_config.json's patch_size are read as object and normalized separately. The model-side default remains 14, a patch side length, while the preprocessor value remains required. The existing equality assertion compares normalized sides, permitting an integer in one file and an equivalent square dictionary in the other.",
+            "basis": "source",
+            "evidence": [
+              "call_62c4708a9902463a84112a1e2d233dbc",
+              "call_0067a97e8a604ba399bef719c665fb3b",
+              "call_4976b36d4c134f7abe81442dba5cb46e"
+            ]
+          },
+          {
+            "text": "Whole-parent-tree searches found Mistral3 patch-size consumers in its vision constructor, preprocess, default_load_params and get_image_embeddings. They continue to receive scalar integers: convolution duplicates the side into a square kernel, preprocessing multiplies it by spatial_merge_size, and feature-grid calculations divide image dimensions by it. Gemma3's separate patch-size reader and consumers remain unchanged. The Mistral3 class search found no additional subclass or alternate configuration builder beyond its architecture registration and local component classes.",
+            "basis": "source",
+            "evidence": [
+              "call_0e19801caa2b43589d7d383434426ffc",
+              "call_2c4a3fbbf35f431abff17f7df150b3cc",
+              "call_366a2311ee6a4c46ab303f347c4f2817"
+            ]
+          },
+          {
+            "text": "The configuration compatibility broadening has one narrower edge: read_dict previously converted integral floats such as 14.0 to int when asked for int. Reading as object bypasses that conversion, so unpack_patch_size now rejects 14.0. Integer-valued JSON numbers remain accepted.",
+            "basis": "source",
+            "evidence": [
+              "call_0067a97e8a604ba399bef719c665fb3b",
+              "call_62c4708a9902463a84112a1e2d233dbc"
+            ]
+          },
+          {
+            "text": "A standard-library transcription returned 14 for both 14 and {height:14,width:14}, and raised AssertionError for unequal sides, a missing width, an empty dictionary and 14.0. This checks normalization branches, not execution of Mistral3Config.",
+            "basis": "execution",
+            "evidence": [
+              "call_ef9aa327162e427698f90ee1b213e2bf"
+            ]
+          },
+          {
+            "text": "For mistralai/Mistral-Small-3.1-24B-Base-2503, the inspected config declares Mistral3ForConditionalGeneration, scalar patch_size=14 and spatial_merge_size=2; normalization preserves 14 without using the default. Independently, the Instruct-2503 config declares the same architecture and values and likewise remains on the scalar path. Neither config demonstrates the newly accepted dictionary representation.",
+            "basis": "source",
+            "evidence": [
+              "call_41d246d2732741b88043694b44de85b7",
+              "call_a3acc9cdf8a74150b8dabaf917c9abed",
+              "call_62c4708a9902463a84112a1e2d233dbc"
+            ]
+          },
+          {
+            "text": "The design keeps format variability at the configuration boundary instead of teaching every downstream consumer about dictionaries. Its benefit is broader input compatibility with unchanged image computation; numerical equivalence to either named Transformers processor is not established by accepting its identifier.",
+            "basis": "inference",
+            "evidence": [
+              "call_62c4708a9902463a84112a1e2d233dbc",
+              "call_366a2311ee6a4c46ab303f347c4f2817"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Broadens Mistral3's accepted Pixtral processor identifiers and normalizes square patch-size dictionaries to the scalar form required by its existing vision pipeline."
+  },
+  "evidence": {
+    "call_62c4708a9902463a84112a1e2d233dbc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a7e667c3ea3ea3350474fc975ab31be6eec75a49",
+        "offset": 209,
+        "max_bytes": 3250
+      },
+      "result_sha256": "e2ebb96881658783d380575c3a84642d536f3336f951507e57018070acd925ab"
+    },
+    "call_366a2311ee6a4c46ab303f347c4f2817": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "path": "exllamav3/models/mistral3.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "edc1e58a80d1834950783298adcffb638d6acbae9332b10a358eb4faa67e71aa"
+    },
+    "call_0e19801caa2b43589d7d383434426ffc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "query": "patch_size",
+        "limit": 200
+      },
+      "result_sha256": "7e207abc46f30fe05b123a60926fd99c108512f2924fda47d6a75730d6fb56f0"
+    },
+    "call_47298ca8a7be47b78f56a1d6e8819c06": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "max_bytes": 16384
+      },
+      "result_sha256": "fa58f8575f26193c392ab8475d24b5d5e3a4dd95b4ebf80dcf0431d824675d9b"
+    },
+    "call_1581bf4f830c4886b31373cc12d313aa": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "51c2b8d2e69de43546c4a28ea6cd977800262217",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1a94fb9fc60783397216012aa9527c6abc6359af3277211bea205091e9799d07"
+    },
+    "call_cb046d1a638541a5b58a349af95dd11f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+        "max_bytes": 16384
+      },
+      "result_sha256": "740b3dd8b9bfce6c96dd6a838ad173e90de9912222460e4398ec00ad00d8389d"
+    },
+    "call_ec89f806bc1242958160480c3d507545": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "03c3c20bb0d484bb9b2aec86300797cd6c85ea8eb733a322da8c5d489937e43d",
+      "catalog_only": true
+    },
+    "call_8a5d19e2b6cb4eb79d25e486226b4bba": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "846e965a77d47c68e5680894a01108ed1e33e0d696cc8abeeac0d2d7e3702220",
+      "catalog_only": true
+    },
+    "call_11b1ca10429842cb86da8738b3b71628": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 40960,
+        "max_bytes": 16384
+      },
+      "result_sha256": "c86b76d39e76ec2554814ed5066a4b828c93f9ff51ef06fa5c3f3fa3237310e3",
+      "catalog_only": true
+    },
+    "call_41d246d2732741b88043694b44de85b7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-Small-3.1-24B-Base-2503",
+        "revision": "db7c968753c07380364d963090b5cf8cc131a0c3",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "e5e5e6cb4f560d5dcdceb3e6ebee0f6d1ab2810ace29f84368e81e8e8078d9a5"
+    },
+    "call_a3acc9cdf8a74150b8dabaf917c9abed": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "revision": "73ce7c62b904fa83d7cb018e44c3bc06feed4d81",
+        "path": "config.json",
+        "max_bytes": 8000
+      },
+      "result_sha256": "3630f7d0c2c7a441c47b3cf33cbd2e869b70971cd85db7d13a9b1e0948a6157c"
+    },
+    "call_0067a97e8a604ba399bef719c665fb3b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_2c2fc665ffe0492685c8b26c4748ace1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "query": "Pixtral",
+        "limit": 100
+      },
+      "result_sha256": "9e92ab3b4fe0cf59b0946b42c74bbf13dea61421a4d4d35b1b3cb00fa0ed7877"
+    },
+    "call_57a6de2d03544d7bbdb49156b65bfc29": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "query": "image_processor",
+        "limit": 100
+      },
+      "result_sha256": "db5da123e22f075bfc32f10ee71aaec47e2230286507aa9fbac5d5069203a613"
+    },
+    "call_2c4a3fbbf35f431abff17f7df150b3cc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "query": "Mistral3",
+        "limit": 100
+      },
+      "result_sha256": "4b0208c281cb3e9ffaee5047ad5428840bff9784e2e653e6c0f743d15ed0ab40"
+    },
+    "call_4976b36d4c134f7abe81442dba5cb46e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "31dadc6d2dfa9f82c9444116a18c76b558264751a966842c6a76977f1360167f"
+    },
+    "call_acea61288fca4f0e97f0e2301abc14f9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "002bd31f288c3bf38786ed2ab8da5d49ce064e08",
+        "path": "exllamav3/util/vision.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "15503ef44330887f2aae1025a9a07a1f35edd0570b3f218e986ea4069223888f"
+    },
+    "call_9c840945dbdd4f058677339b62b1220a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a7d30694f583cf5a35922c7b5483095c82311c9523e96124cc38b404636b3879"
+    },
+    "call_ae604f9d14ba44df8fea8c7f184099c4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 8000
+      },
+      "result_sha256": "cdb26c0f9070372e515a2ce21f6f351c270349d70a4e86c753732b8c464cbd6b"
+    },
+    "call_ef9aa327162e427698f90ee1b213e2bf": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def unpack(p):\n if isinstance(p,dict):\n  h,w=(p.get(x) for x in ['height','width'])\n  assert w==h\n  p=h\n assert isinstance(p,int)\n return p\nfor p in [14,{'height':14,'width':14},{'height':14,'width':16},{'height':14},{},14.0]:\n try: print(repr(p),'->',unpack(p))\n except AssertionError: print(repr(p),'-> AssertionError')\nassert unpack(14)==unpack({'height':14,'width':14})\nprint('normalized equal:',14//unpack({'height':14,'width':14}))"
+        ]
+      },
+      "result_sha256": "b26377ec8b9213d7f0548f1deb0f9c3a9c40e352f3906b3fc511c3705d32109c"
+    }
+  }
+}

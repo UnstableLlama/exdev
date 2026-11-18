@@ -1,0 +1,378 @@
+{
+  "schema_version": 5,
+  "sha": "415a55cc2d7f5ff01b7029f1ee6ed2ec53f47cb2",
+  "parent_shas": [
+    "48ade457da80541cf28887c9fb1e7c7ad662e758"
+  ],
+  "cutoff_date": "2025-07-12T18:31:32+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The MMLU evaluator showed progress bars but reported accuracy and confidence only after the entire run. Subject selection was available, but there was no way to skip the first N selected subjects or cap the number of questions per subject.",
+        "basis": "source",
+        "evidence": [
+          "call_bb51b69855654726afae566258979650",
+          "call_50169d8729ee4d789221b18a02321e30"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Per-subject counters serve two purposes in separate phases. During enqueueing, each counter records how many questions have been admitted and gates the cap. Once enqueueing is complete, the same counter records how many admitted questions still need to be scored. Reaching zero after scoring triggers the subject report.",
+        "basis": "source",
+        "evidence": [
+          "call_50169d8729ee4d789221b18a02321e30"
+        ]
+      },
+      {
+        "text": "Reusing one reporting helper for subject and aggregate results keeps the metric definitions consistent. It rescans the test rows on each report rather than maintaining separate running totals, trading extra row scans for simpler bookkeeping.",
+        "basis": "source",
+        "evidence": [
+          "call_50169d8729ee4d789221b18a02321e30"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The CLI now prints a result as each evaluated subject finishes, then prints a final `all` row. The default flags preserve question selection. A positive cap changes the evaluated sample, so the resulting aggregate describes the scored subset rather than the full selected test set.",
+        "basis": "source",
+        "evidence": [
+          "call_50169d8729ee4d789221b18a02321e30",
+          "call_bb51b69855654726afae566258979650"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The introducing entry, \u201cAdd MMLU eval,\u201d describes the inherited one-token logit scoring and records the missing few-shot counter increment.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_c9dcb080caed4f3fafe52e90dc6303ff"
+        ]
+      },
+      {
+        "text": "The missing increment carries over: the parent loop starts `fewshots` at zero and never updates it, and this patch does not change that loop. The new question cap is applied later, to test jobs rather than development demonstrations.",
+        "basis": "source",
+        "evidence": [
+          "call_bb51b69855654726afae566258979650",
+          "call_50169d8729ee4d789221b18a02321e30"
+        ]
+      },
+      {
+        "text": "The whole-parent searches for `mmlu` and `main(` found the evaluator's own `__main__` block as its only identifiable in-tree direct caller. That block parses both new attributes before invoking `main`. An external caller that supplies an old-style argument object without `skip_subjects` would fail at the new slice; one lacking `max_q_per_subject` would fail when a selected test row is encountered.",
+        "basis": "source",
+        "evidence": [
+          "call_f72de34b2a17456d92d686d901b26ae9",
+          "call_92592cdc51864363ae3148becef75370",
+          "call_bb51b69855654726afae566258979650",
+          "call_50169d8729ee4d789221b18a02321e30"
+        ]
+      },
+      {
+        "text": "Closed issue #58, \u201clinalg.cholesky error converting OpenBuddy (Qwen3) 32B QAT,\u201d reports NaNs during quantization and a Cholesky failure; the reporter later said a retry succeeded without warnings.",
+        "basis": "source",
+        "evidence": [
+          "call_e48ed23bd9ae4d0ea725aaf7e19373f4"
+        ]
+      },
+      {
+        "text": "The discussion's evaluation references are to prequant evaluation and the separate `eval/model_diff.py` and `eval/compare_q.py` scripts. That explains the shared evaluation terminology, but the traceback is in conversion and the patch changes only `eval/mmlu.py`; the discussion does not establish a link to the new MMLU output.",
+        "basis": "inference",
+        "evidence": [
+          "call_e48ed23bd9ae4d0ea725aaf7e19373f4",
+          "call_50169d8729ee4d789221b18a02321e30"
+        ]
+      }
+    ],
+    "limitations": [
+      "No MMLU dataset download, tokenizer check, model inference, GPU execution, terminal rendering, or benchmark-score measurement was performed. The bounded Python checks used synthetic rows and completion events, not repository execution.",
+      "Literal caller searches cannot rule out dynamic imports or external callers."
+    ],
+    "links": [
+      "997ca85bcce1ad5da2f93c17df5f13bd77cc4800"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Report MMLU results as subjects finish",
+        "claims": [
+          {
+            "text": "`-skip` / `--skip_subjects` defaults to zero. It slices the lexicographically sorted set of valid, selected subject names before choice shuffling and preprompt construction. The slice determines membership, not reporting order: it is converted back to a set, and reports follow completion events. Negative values use ordinary slice semantics, so `-1` retains only the last selected subject.",
+            "basis": "source",
+            "evidence": [
+              "call_50169d8729ee4d789221b18a02321e30",
+              "call_bb51b69855654726afae566258979650"
+            ]
+          },
+          {
+            "text": "`-mqps` / `--max_q_per_subject` defaults to `None`; zero also disables it because the check uses truthiness. A positive cap admits the first N rows for each retained subject in test traversal order. The test list is sorted by subject, preserving order within a subject; `--shuffle` permutes choices within rows, not question order. The cap is therefore a prefix selection, not a random sample.",
+            "basis": "source",
+            "evidence": [
+              "call_50169d8729ee4d789221b18a02321e30",
+              "call_bb51b69855654726afae566258979650"
+            ]
+          },
+          {
+            "text": "A job carries its test row as the identifier and asks for one token's logits. On an EOS result, the evaluator compares the logits for the four space-prefixed A\u2013D tokens, stores argmax correctness and the correct choice's probability under a four-way softmax, and then decrements the subject counter. Only already-scored rows enter the report. The final `all` line is question-weighted, not a mean of subject percentages, and confidence is conditional on the four answer choices.",
+            "basis": "source",
+            "evidence": [
+              "call_bb51b69855654726afae566258979650",
+              "call_50169d8729ee4d789221b18a02321e30"
+            ]
+          },
+          {
+            "text": "In a bounded scalar transcription with three `a` rows and two `b` rows, cap 1 admitted one job per subject but left the progress total at five. Feeding synthetic completions in reverse order produced `b` then `a` reports. Skipping both subjects or setting cap \u22121 admitted no jobs and reproduced the aggregate's zero-denominator error.",
+            "basis": "execution",
+            "evidence": [
+              "call_f677525db49f4037acad961283590e0d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "progress-count-ignores-question-cap",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The progress bars use the count before capping instead of the number of jobs actually admitted.",
+        "trigger": "Run the MMLU CLI with a positive `--max_q_per_subject` below the available question count for any retained subject.",
+        "expected_behavior": "The Questions and Testing bars count only admitted jobs, with Testing completed work equal to admitted jobs minus outstanding jobs.",
+        "actual_behavior": "Questions updates stop short of the declared total before context exit forces completion. Testing reports `uncapped_total - outstanding_jobs`, overstating completed work by the number of omitted questions. The final score uses scored rows instead and does not use this inflated total.",
+        "locations": [
+          {
+            "commit": "415a55cc2d7f5ff01b7029f1ee6ed2ec53f47cb2",
+            "path": "eval/mmlu.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_50169d8729ee4d789221b18a02321e30",
+          "call_bb51b69855654726afae566258979650",
+          "call_43c22bdf2a384b5dab7c765dc254bfbd",
+          "call_891b9dbeb13d4209ae913ab929468b7e",
+          "call_f72de34b2a17456d92d686d901b26ae9",
+          "call_92592cdc51864363ae3148becef75370"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the pre-cap count, queue admission, pending-plus-active count, and progress wrapper. The in-tree MMLU CLI calls this function directly.",
+            "evidence": [
+              "call_50169d8729ee4d789221b18a02321e30",
+              "call_43c22bdf2a384b5dab7c765dc254bfbd",
+              "call_891b9dbeb13d4209ae913ab929468b7e"
+            ],
+            "limits": "The Rich terminal display was not exercised."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Cap 1 admitted two synthetic jobs against a progress total of five, confirming a three-job offset.",
+            "evidence": [
+              "call_f677525db49f4037acad961283590e0d"
+            ],
+            "limits": "Models counts only; does not run the generator or progress wrapper."
+          }
+        ]
+      },
+      {
+        "id": "empty-evaluation-divides-by-zero",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited unguarded aggregate denominator is reachable through the new selection flags.",
+        "trigger": "After successful model and dataset initialization, pass `--skip_subjects` at least as large as the number of selected subjects, or pass `--max_q_per_subject -1` with a nonempty selection.",
+        "expected_behavior": "Reject an invalid limit or report that no questions were evaluated without computing percentages.",
+        "actual_behavior": "Skipping all subjects removes every eligible row. A negative cap is truthy and rejects each row because its subject counter starts at zero. With no jobs scored, the unconditional `print_results(None)` divides by zero and emits no aggregate row. The CLI directly invokes `main`; no other in-tree direct caller was identified.",
+        "locations": [
+          {
+            "commit": "415a55cc2d7f5ff01b7029f1ee6ed2ec53f47cb2",
+            "path": "eval/mmlu.py",
+            "symbol": "main.print_results"
+          }
+        ],
+        "source_evidence": [
+          "call_50169d8729ee4d789221b18a02321e30",
+          "call_bb51b69855654726afae566258979650",
+          "call_f72de34b2a17456d92d686d901b26ae9",
+          "call_92592cdc51864363ae3148becef75370"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced integer parsing, empty admission, the skipped scoring loop, and the unconditional aggregate report.",
+            "evidence": [
+              "call_50169d8729ee4d789221b18a02321e30"
+            ],
+            "limits": "Assumes initialization and dataset loading succeed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Both an exhausted subject slice and a negative cap produced zero jobs and a `ZeroDivisionError` in the modeled percentage calculation.",
+            "evidence": [
+              "call_f677525db49f4037acad961283590e0d"
+            ],
+            "limits": "Does not run the CLI or model initialization."
+          }
+        ]
+      },
+      {
+        "id": "fewshot-counter-still-not-advanced",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously recorded few-shot count defect remains in the preprompt builder.",
+        "trigger": "Use the MMLU CLI with `--fewshot_examples 1` and retain a subject with more than one development example.",
+        "expected_behavior": "Include one development demonstration in that subject's preprompt.",
+        "actual_behavior": "The counter stays at zero, so every matching development row is included for any positive requested count. Zero still stops before any demonstration is appended. The CLI reaches this loop before applying the new test-question cap.",
+        "locations": [
+          {
+            "commit": "415a55cc2d7f5ff01b7029f1ee6ed2ec53f47cb2",
+            "path": "eval/mmlu.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_bb51b69855654726afae566258979650",
+          "call_50169d8729ee4d789221b18a02321e30",
+          "call_f72de34b2a17456d92d686d901b26ae9",
+          "call_92592cdc51864363ae3148becef75370"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked the parent's break condition and prompt append against the patch; neither the counter nor the loop is changed. The only identifiable direct caller is the script entry point.",
+            "evidence": [
+              "call_bb51b69855654726afae566258979650",
+              "call_50169d8729ee4d789221b18a02321e30",
+              "call_f72de34b2a17456d92d686d901b26ae9",
+              "call_92592cdc51864363ae3148becef75370"
+            ],
+            "limits": "Does not establish actual demonstration counts for a particular dataset revision."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A request for one demonstration admitted all five synthetic same-subject rows.",
+            "evidence": [
+              "call_f677525db49f4037acad961283590e0d"
+            ],
+            "limits": "No prompt tokenization or scoring was performed."
+          }
+        ]
+      }
+    ],
+    "summary": "MMLU now reports accuracy and four-choice confidence as each subject finishes, with flags to skip subjects and cap test questions. The cap is not reflected in progress totals, empty selections can divide by zero, and the inherited few-shot count defect remains."
+  },
+  "evidence": {
+    "call_50169d8729ee4d789221b18a02321e30": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "415a55cc2d7f5ff01b7029f1ee6ed2ec53f47cb2",
+        "offset": 170,
+        "max_bytes": 4255
+      },
+      "result_sha256": "b7574c64d04467d177a88b8298f55661eeb2ae5876fd54d422a56668b8193ac1"
+    },
+    "call_bb51b69855654726afae566258979650": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48ade457da80541cf28887c9fb1e7c7ad662e758",
+        "path": "eval/mmlu.py"
+      },
+      "result_sha256": "c01a39ab568e1d44627ec760438914d606111d38934314a21d2d451f064d3e08"
+    },
+    "call_c9dcb080caed4f3fafe52e90dc6303ff": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7b1096f2932ea123a028642b0d3dc79ff6a9bb7b3f6bd55888066c39a6afcb0d"
+    },
+    "call_f72de34b2a17456d92d686d901b26ae9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "48ade457da80541cf28887c9fb1e7c7ad662e758",
+        "query": "mmlu",
+        "limit": 100
+      },
+      "result_sha256": "4cfaeef3d1a36df50ede670d99ad9cec9000ac06dc3e090c60f8295e7654b6a0"
+    },
+    "call_92592cdc51864363ae3148becef75370": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "48ade457da80541cf28887c9fb1e7c7ad662e758",
+        "query": "main(",
+        "limit": 200
+      },
+      "result_sha256": "5186664e586227ce552a6213f4bdf40c819185e639829d6de094c78547cac327"
+    },
+    "call_891b9dbeb13d4209ae913ab929468b7e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48ade457da80541cf28887c9fb1e7c7ad662e758",
+        "path": "exllamav3/util/progress.py"
+      },
+      "result_sha256": "75b82471ff9e022bed8490f7349aff057f5b2708715bbcc9996e1578e77a9dd8"
+    },
+    "call_b5b0411d6291447e80b117fc7a8837d0": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 613
+      },
+      "result_sha256": "b2855a9b7fa1ff1e197c4a2c2135aa6f510dd710dba0725cf98e56e609711f0e",
+      "catalog_only": true
+    },
+    "call_e48ed23bd9ae4d0ea725aaf7e19373f4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "max_bytes": 20000
+      },
+      "result_sha256": "fd274b9d87bf8e74c07f8c0e4bdb4fdc89a70ce727237939515b484cf2fd361b"
+    },
+    "call_0518bbbda2654c0587b51417838b1541": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/util/progress.py",
+        "limit": 20
+      },
+      "result_sha256": "52861f8fe1aff0cc5bbf470256cadee7f5422d21e401c5678b45ff135511e910",
+      "catalog_only": true
+    },
+    "call_cd28cf7e71f44b6394adbcf9f0744da7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "48ade457da80541cf28887c9fb1e7c7ad662e758",
+        "query": "def num_remaining_jobs"
+      },
+      "result_sha256": "ae4a9d2770625d1ccfe792faac2148c236e460793449e4fc4ed0adae55700867"
+    },
+    "call_43c22bdf2a384b5dab7c765dc254bfbd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "48ade457da80541cf28887c9fb1e7c7ad662e758",
+        "path": "exllamav3/generator/generator.py",
+        "max_bytes": 7900
+      },
+      "result_sha256": "045809d77c54971ca88523b4ca101b3f77ef5e93a9a379bf53674240e747547d"
+    },
+    "call_f677525db49f4037acad961283590e0d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from collections import Counter\nrows=sorted(['b','a','b','a','a']); subjects={'a','b'}\nfor skip, cap in [(0,None),(0,0),(0,1),(0,2),(1,1),(-1,1),(2,None),(0,-1)]:\n s=set(sorted(subjects)[skip:]); total=sum(x in s for x in rows); remaining=dict.fromkeys(s,0); jobs=[]\n for x in rows:\n  if x not in s or (cap and remaining[x]>=cap): continue\n  jobs.append(x); remaining[x]+=1\n done=[]\n for x in reversed(jobs):\n  remaining[x]-=1\n  if remaining[x]==0: done.append(x)\n try: aggregate=100*len(jobs)/len(jobs)\n except ZeroDivisionError: aggregate='ZeroDivisionError'\n print(skip,cap,sorted(s),total,dict(Counter(jobs)),total-len(jobs),done,aggregate)\nfewshots=0; included=0\nfor _ in range(5):\n if fewshots==1: break\n included+=1\nprint('fewshot=1 included=',included)"
+        ]
+      },
+      "result_sha256": "27bb63d6699e7386e9816869593bfc0f3db04d88733dbc8df7d3573024624d6f"
+    }
+  }
+}

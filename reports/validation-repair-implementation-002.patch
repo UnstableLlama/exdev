@@ -1,0 +1,637 @@
+--- a/teacher/codex_adapter.py
++++ b/teacher/codex_adapter.py
+@@ -3,6 +3,7 @@
+ from copy import deepcopy
+ import json
+ from .editorial import output_schema, assemble_draft
++from .validation_repair import POLICY, repair_metadata, verify_final, eligible
+ 
+ LEGACY_MODEL = 'gpt-6-astra'
+ MODEL = 'gpt-6.1-sol'
+@@ -97,15 +98,21 @@
+ 
+ 
+ class CodexTeacher:
+-    def run(self, session, transport, record=None, max_calls=256, *, model=MODEL):
++    def run(self, session, transport, record=None, max_calls=256, *, model=MODEL, validation_repair=True):
+         checked_model(model)
+         session.require_authoring_context()
+         if session.used:
+             raise ValueError('A fresh authoring session cannot be reused')
+         session.used=True
+-        manifest=json.loads((session.runner.packet/'manifest.json').read_text())
++        manifest_bytes=(session.runner.packet/'manifest.json').read_bytes()
++        manifest=json.loads(manifest_bytes)
+         transcript=deepcopy(session.initial)
++        repair = None
++        repair_start = None
+         def save():
++            if repair_start is not None:
++                for message in transcript[repair_start:]:
++                    message['turn_id'] = turn
+             if record is not None:
+                 record(deepcopy(transcript))
+         transport.request('initialize',{'clientInfo':{'name':'exdev_teacher','version':'0.1.0'},
+@@ -122,7 +129,7 @@
+             'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
+             'input':[{'type':'text','text':session.initial[1]['content']}]})['turn']['id']
+         allowed={tool['name'] for tool in session.tools}
+-        seen=set(); final=None
++        seen=set(); final=None; final_index=None
+         save()
+         while True:
+             event=transport.receive()
+@@ -160,15 +167,59 @@
+                     save()  # Preserve raw model text even if JSON/schema validation later fails.
+                     if item.get('phase') in (None,'final_answer'):
+                         final=item['text']
++                        final_index=len(transcript)-1
+             elif method=='turn/completed':
+                 if params['turn']['id']!=turn or params['turn']['status']!='completed' or final is None:
+                     raise ValueError('Authoring turn did not complete successfully')
++                # Only completed final JSON/annotation refusals enter the repair path.
++                # Protocol, runtime, transport and tool-budget failures never reach it.
++                if manifest_bytes!=(session.runner.packet/'manifest.json').read_bytes():
++                    raise ValueError('Packet changed during authoring')
++                # Check transcript integrity before entering annotation-only feedback.
++                from .editorial import evidence_ledger
++                from .coverage import observed_reads
++                evidence_ledger(transcript)
++                observed_reads(transcript)
++                try:
++                    annotation=json.loads(final)
++                    entry, review=assemble_draft(annotation,manifest,transcript)
++                except ValueError as error:
++                    if not validation_repair or repair is not None or not eligible(error):
++                        raise
++                    import hashlib
++                    repair={'role':'validation', 'policy':POLICY,
++                        'refused_index':final_index, 'prefix_end':len(transcript),
++                        'refused_sha256':hashlib.sha256(final.encode()).hexdigest(),
++                        'error_type':type(error).__name__, 'error':str(error),
++                        'thread_id':thread, 'first_turn_id':turn,
++                        'repair_turn_id':None, 'selected_final_index':None, 'feedback_sent':False}
++                    transcript.append(repair)
++                    save()  # Persist refusal before attempting the feedback turn.
++                    feedback={'role':'user','content':str(error)}
++                    transcript.append(feedback)
++                    save()
++                    next_turn=transport.request('turn/start',{'threadId':thread,'model':model,
++                        'effort':session.reasoning_effort, 'environments':[],
++                        'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
++                        'input':[{'type':'text','text':str(error)}]})['turn']['id']
++                    repair['feedback_sent']=True
++                    save()
++                    if not next_turn or next_turn == turn:
++                        raise ValueError('Repair requires a distinct turn on the same thread')
++                    turn=next_turn
++                    repair['repair_turn_id']=turn
++                    repair_start=len(transcript)
++                    final=None; final_index=None
++                    save()
++                    continue
++                if repair is not None:
++                    repair['selected_final_index']=final_index
++                    save()
+                 break
+             elif method=='error':
+                 raise ValueError('Codex reported an authoring error')
+         manifest=json.loads((session.runner.packet/'manifest.json').read_text())
+-        annotation=json.loads(final)
+-        entry, review=assemble_draft(annotation,manifest,transcript)
++        entry, review=verify_final(annotation,manifest,transcript,repair_metadata(transcript))
+         return {'draft':entry,'review':review,'transcript':transcript,'published':False,
+                 'model':model,'reasoning_effort':session.reasoning_effort}
+ 
+--- a/teacher/author.py
++++ b/teacher/author.py
+@@ -8,6 +8,7 @@
+ from .codex_adapter import CodexTeacher, MODEL, TRIAL_MODEL
+ from .codex_transport import CodexTransport, SUPPORTED_VERSION
+ from .editorial import render
++from .validation_repair import repair_metadata
+ from .session import FreshSession
+ 
+ ROOT=Path(__file__).resolve().parents[1]
+@@ -19,8 +20,8 @@
+     pending.replace(path)
+ 
+ 
+-def author(packet, output, auth_file, transport_factory=CodexTransport):
+-    return _author(packet, output, auth_file, transport_factory)
++def author(packet, output, auth_file, transport_factory=CodexTransport, *, validation_repair=True):
++    return _author(packet, output, auth_file, transport_factory, validation_repair=validation_repair)
+ 
+ 
+ def author_trial(packet, output, auth_file, *, model=TRIAL_MODEL, transport_factory=CodexTransport):
+@@ -34,7 +35,7 @@
+     return _author(packet,output,auth_file,transport_factory,model=model,trial=True)
+ 
+ 
+-def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False):
++def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False, validation_repair=True):
+     packet,output=Path(packet).resolve(),Path(output).resolve()
+     if output.is_relative_to(packet):
+         raise ValueError('Draft output must be outside the immutable packet')
+@@ -60,12 +61,18 @@
+     if coverage:
+         provenance['coverage_request']={k:coverage[k] for k in ('path','sha256')}
+         provenance['reviewer_assisted']=True
++    provenance['validation_repair_enabled']=validation_repair
++    provenance.update(repair_metadata([]))
+     write_json(output/'provenance.json',provenance)
+     write_json(output/'status.json',{'status':'running','published':False})
++    def record(transcript):
++        write_json(output/'raw-transcript.json',transcript)
++        provenance.update(repair_metadata(transcript))
++        write_json(output/'provenance.json',provenance)
+     try:
+         with (transport_factory(auth_file,model=model) if trial else transport_factory(auth_file)) as transport:
+             result=CodexTeacher().run(session,transport,
+-                model=model, record=lambda transcript:write_json(output/'raw-transcript.json',transcript))
++                model=model, record=record, validation_repair=validation_repair)
+         if manifest!=(packet/'manifest.json').read_bytes():
+             raise ValueError('Packet changed during authoring')
+         write_json(output/'draft.json',result['draft'])
+--- a/teacher/ancestor_context.py
++++ b/teacher/ancestor_context.py
+@@ -8,6 +8,7 @@
+ import json
+ from pathlib import Path
+ from .author import write_json
++from .validation_repair import verify_final
+ from .editorial import assemble_draft
+ 
+ MAX_CONTEXT_BYTES = 256 * 1024
+@@ -46,7 +47,10 @@
+         raise ValueError('Original authoring packet fingerprint mismatch')
+     if provenance.get('input_mode')!='entry_analysis' or provenance.get('published') is not False:
+         raise ValueError('Run is not an unpublished historical annotation')
+-    expected,_=assemble_draft(draft['annotation'],manifest,transcript)
++    expected,_=verify_final(draft['annotation'],manifest,transcript,provenance)
++    from .editorial import render
++    if provenance.get('validation_repair_policy') and render(draft)!=read_regular(run/'draft.md').decode():
++        raise ValueError('Repair-policy draft rendering mismatch')
+     if draft!=expected or review.get('sha')!=draft['sha']:
+         raise ValueError('Draft identity or evidence differs from its recorded inputs')
+     if artifact_hashes(run)!=hashes:
+--- a/teacher/approval_policy.py
++++ b/teacher/approval_policy.py
+@@ -6,6 +6,7 @@
+ from .ancestor_context import approve_run, read_regular
+ from .author import write_json
+ from .packet import git
++from .validation_repair import verify_final
+ from .editorial import assemble_draft, render
+ from .coverage import run_coverage
+ 
+@@ -50,7 +51,8 @@
+     run,packet=Path(run),Path(packet)
+     draft=json.loads(read_regular(run/'draft.json'));m=json.loads(read_regular(packet/'manifest.json'))
+     transcript=json.loads(read_regular(run/'raw-transcript.json'))
+-    expected,_=assemble_draft(draft['annotation'],m,transcript)
++    provenance=json.loads(read_regular(run/'provenance.json'))
++    expected,_=verify_final(draft['annotation'],m,transcript,provenance)
+     if expected!=draft or render(draft)!=read_regular(run/'draft.md').decode():raise ValueError('Replay mismatch')
+     parents=git(repo,'show','-s','--format=%P',m['task_sha']).decode().split()
+     if parents!=m['task_parents']:raise ValueError('Git parent mismatch')
+@@ -61,6 +63,8 @@
+     coverage=run_coverage(packet,m,transcript)
+     if coverage!=json.loads(read_regular(run/'coverage.json')):raise ValueError('Coverage report mismatch')
+     decision=tier(parents,files,draft['annotation'],coverage['task_read_complete'])
++    if provenance.get('validation_repair'):
++        decision={'tier':'full_review','reasons':[*decision['reasons'],'validation_repair']}
+     return dict(decision,policy=POLICY,version=VERSION,sampled=sampled(m['task_sha']),changed_files=files)
+ 
+ 
+--- a/teacher/cycle.py
++++ b/teacher/cycle.py
+@@ -276,7 +276,9 @@
+         counts[result['name']] += 1
+         replayed += 1
+     cov = read(run/'coverage.json')
+-    return dict(status='validated', assessment=decision, packet_implementation_blob_hashes_verified=True,
++    from .validation_repair import disclosure
++    return dict(status='validated', assessment=decision, validation_repair_details=disclosure(transcript),
++                packet_implementation_blob_hashes_verified=True,
+                 teacher_model=provenance['model'], reasoning_effort=provenance['reasoning_effort'],
+                 reviewer_assisted=bool(coverage), tool_counts=dict(counts), identical_replayed_calls=replayed,
+                 shared_readonly_blob_links_verified=len(blobs), open_catalog_rows=len(manifest['unreferenced_discussion_catalog']),
+@@ -313,6 +315,10 @@
+     text += f"Task sections fully read: {len(v['fully_read_task_sections'])}/{v['task_sections_total']}; ancestor prose reads (report-only): {v['ancestor_prose_read_count']}.\n"
+     text += f"Tool counts: {json.dumps(v['tool_counts'],sort_keys=True)}. Runtime: {json.dumps(v['runtime'],sort_keys=True)}.\n\n"
+     text += f"Catalog: {v['open_catalog_rows']} open rows; {c['qualified_count']} closed qualify, {c['selected_count']} selected; {c['path_only_qualified_count']} by path alone, {c['path_only_selected_count']} selected by path alone. Cap {c['cap']}; truncated: {c['truncated']}; path rows cut: {len(c['path_qualified_cut'])}.\n\n"
++    repair=v.get('validation_repair_details',{})
++    text += f"Validation repair: {json.dumps(repair,sort_keys=True)}.\n"
++    if repair.get('validation_repair'):
++        text += 'AUTHOR MUST FLAG whether this is the first live repaired run; compare refused and final annotations for review.\n'
+     text += 'AUTHOR JUDGEMENT REQUIRED: explain the draft/findings, execution scope and run file reads, ledger candidates, implementation changes/tests, unusual evidence or coverage limits, and sampled mechanical handover. This skeleton is not a filed request.\n\n## SHA256\n\n'
+     return text + ''.join(f'- {p}: `{h}`\n' for p,h in summary['hashes'].items())
+ 
+--- a/teacher/README.md
++++ b/teacher/README.md
+@@ -193,3 +193,21 @@
+ rules or the session model. Discussion-history caching is a separate future change.
+ 
+ Sol adoption preserves historical Astra/medium approvals. Approval requires matching server-confirmed model/effort when recorded; legacy Astra transcripts predating runtime recording remain valid. Sol requires recorded runtime. Trial-only runs and paths under `.teacher/trials` cannot be approved. The original Astra catalog is copied byte-for-byte for Astra; Sol uses the trialled clone with only slug/display name changed.
++
++### One validator repair
++
++After implementation acceptance, a first final refused by JSON parsing or ordinary
++annotation validation may receive one additional turn on the same server thread.
++Its sole feedback is the exact validator error, with no wrapper. The teacher may
++read more evidence and returns a complete annotation; both turns share the tool
++budget. A second refusal, internal integrity error or transport failure is terminal.
++`author(..., validation_repair=False)` preserves the pre-repair rule for runs
++authorized under that rule, including 255/004.
++
++The refused final, error, transcript prefix and selected final remain bound in the
++transcript and provenance. Approval reproduces the first refusal against its
++original evidence prefix, then validates the selected final against all evidence
++and checks the rendered draft. Repaired runs require full review and requests
++disclose `validation_repair: true`, the exact error, hashes and tool counts by turn.
++Flag the first live repaired request explicitly for reviewer comparison. This is
++validator feedback, not reviewer assistance; ancestor-only scope is unchanged.
+--- /dev/null
++++ b/teacher/validation_repair.py
+@@ -0,0 +1,120 @@
++# SPDX-License-Identifier: MIT
++"""Validator-only, one-turn repair audit shared by publication and approval."""
++import hashlib
++import json
++from .editorial import assemble_draft
++
++POLICY = 'validator-only-v1'
++
++# Explicit annotation refusals only; internal integrity failures are terminal.
++ANNOTATION_ERRORS = frozenset(['Duplicate ancestor link', 'Links require approved, supplied ancestor prose', 'Chapter output does not match assigned subsystem', 'Duplicate chapter ID', 'Duplicate chapter reference', 'Claims, including inferences, need evidence anchors', 'Duplicate evidence anchor', 'Duplicate finding evidence', 'Findings require successful current-session evidence', 'Duplicate finding ID', 'Findings require inspected source evidence', 'Ancestor links require a successful nonempty prose read in this session', 'Unknown or unsuccessful evidence call', 'Ancestor-only claims require basis ancestor', 'Ancestor basis requires ancestor prose evidence', 'Execution claims require successful run evidence', 'Finding locations require repository-relative paths', 'Source inspection requires source evidence', 'Computational verification requires successful run evidence'])
++SHAPE_ERRORS = (': wrong type', ': incorrect version', ': unknown value',
++                ': missing or protected fields', ': invalid number of items',
++                ': invalid length', ': invalid format')
++
++def eligible(error):
++    message=str(error)
++    return (type(error) is json.JSONDecodeError or type(error) is ValueError and (
++        message in ANNOTATION_ERRORS or
++        (message.startswith('Exceeds the limit (') and
++         ' digits) for integer string conversion: value has ' in message and
++         message.endswith(' digits; use sys.set_int_max_str_digits() to increase the limit')) or
++        message == 'Assigned computation requires a successful run' or
++        message.startswith('Required evidence not fully read: ') or
++        message.startswith('annotation') and message.endswith(SHAPE_ERRORS)))
++
++
++
++def digest(text):
++    return hashlib.sha256(text.encode()).hexdigest()
++
++
++def repair_metadata(transcript):
++    events=[m for m in transcript if m.get('role')=='validation']
++    if not events:
++        return {'validation_repair_policy':POLICY, 'validation_repair':False}
++    if len(events)!=1:
++        raise ValueError('Exactly one validation refusal is permitted')
++    event=events[0]
++    return {'validation_repair_policy':POLICY, 'validation_repair':event['feedback_sent'],
++            'validation_repair_refused_sha256':event['refused_sha256'],
++            'validation_repair_input_sha256':digest(event['error']),
++            'validation_repair_selected_final_index':event['selected_final_index']}
++
++
++def verify_final(annotation, manifest, transcript, provenance):
++    """Historical unmarked runs retain their path; marked repairs fail closed."""
++    events=[(i,m) for i,m in enumerate(transcript) if m.get('role')=='validation']
++    marked='validation_repair_policy' in provenance or 'validation_repair' in provenance
++    if not events:
++        if marked and type(provenance.get('validation_repair')) is not bool:
++            raise ValueError('Validation repair must be a boolean')
++        if marked and provenance != {**provenance, **repair_metadata(transcript)}:
++            raise ValueError('Validation repair provenance mismatch')
++        if marked and any(k.startswith('validation_repair_') and k!='validation_repair_policy'
++                          for k in provenance):
++            raise ValueError('Unexpected repair provenance on unrepaired run')
++        return assemble_draft(annotation, manifest, transcript)
++    if not marked or type(provenance.get('validation_repair')) is not bool or len(events)!=1:
++        raise ValueError('Missing or ambiguous validation repair provenance')
++    if provenance.get('validation_repair_enabled') is False:
++        raise ValueError('Validation repair was disabled for this run')
++    i,event=events[0]
++    keys={'role','policy','refused_index','prefix_end','refused_sha256','error_type','error',
++          'thread_id','first_turn_id','repair_turn_id','selected_final_index','feedback_sent'}
++    if set(event)!=keys or event['policy']!=POLICY or event['feedback_sent'] is not True:
++        raise ValueError('Invalid validation repair event')
++    refused=event['refused_index']; chosen=event['selected_final_index']
++    if (type(refused) is not int or type(chosen) is not int or event['prefix_end']!=i
++            or not 0<=refused<i<i+1<chosen<len(transcript)
++            or any(not isinstance(event[k],str) or not event[k] for k in
++                   ('thread_id','first_turn_id','repair_turn_id'))
++            or event['first_turn_id']==event['repair_turn_id']
++            or any(m.get('role')=='assistant' and 'content' in m for m in transcript[refused+1:i])):
++        raise ValueError('Invalid repair ordering or turn identity')
++    original=transcript[refused]
++    if (set(original)!={'role','content'} or original['role']!='assistant'
++            or digest(original['content'])!=event['refused_sha256']):
++        raise ValueError('Refused annotation fingerprint mismatch')
++    if transcript[i+1]!={'role':'user','content':event['error']}:
++        raise ValueError('Repair feedback must equal the verbatim validator error')
++    for message in transcript[i+2:]:
++        if message.get('turn_id')!=event['repair_turn_id'] or message.get('role') not in ('assistant','tool'):
++            raise ValueError('Unexpected message or turn in repair transcript')
++        allowed=({'role','turn_id','calls'} if 'calls' in message else
++                 {'role','turn_id','content'} if message['role']=='assistant' else
++                 {'role','turn_id','name','call_id','content'})
++        if set(message)!=allowed:
++            raise ValueError('Unexpected repair message fields')
++    selected=transcript[chosen]
++    if (selected.get('role')!='assistant' or 'content' not in selected
++            or chosen!=len(transcript)-1):
++        raise ValueError('Ambiguous repaired final selection')
++    metadata=repair_metadata(transcript)
++    if any(provenance.get(k)!=v for k,v in metadata.items()):
++        raise ValueError('Validation repair provenance mismatch')
++    # Reproduce the refusal against ONLY evidence available at that first final.
++    try:
++        assemble_draft(json.loads(original['content']),manifest,transcript[:i])
++    except ValueError as error:
++        if not eligible(error) or type(error).__name__!=event['error_type'] or str(error)!=event['error']:
++            raise ValueError('Recorded validation refusal does not reproduce') from error
++    else:
++        raise ValueError('Recorded refused annotation was valid')
++    final=json.loads(selected['content'])
++    if final!=annotation:
++        raise ValueError('Published annotation differs from selected repaired final')
++    return assemble_draft(final,manifest,transcript)
++
++
++def disclosure(transcript):
++    """Administrative request/report fields; never supplied as historical evidence."""
++    result=repair_metadata(transcript)
++    if result['validation_repair']:
++        event=next(m for m in transcript if m.get('role')=='validation')
++        boundary=event['prefix_end']
++        counts=[sum(len(m.get('calls',[])) for m in part if m.get('role')=='assistant')
++                for part in (transcript[:boundary],transcript[boundary+2:])]
++        result.update(validator_message=event['error'],repair_count=1,
++                      tool_calls_by_turn=counts,tool_calls_total=sum(counts))
++    return result
+--- /dev/null
++++ b/tests/test_validation_repair.py
+@@ -0,0 +1,257 @@
++# SPDX-License-Identifier: MIT
++from copy import deepcopy
++from contextlib import nullcontext
++import json
++import unittest
++from unittest.mock import Mock, patch
++from teacher.author import author
++from teacher.codex_adapter import CodexTeacher
++from teacher.session import FreshSession
++from teacher.validation_repair import repair_metadata, verify_final, disclosure
++from teacher.ancestor_context import approve_run
++import test_codex_teacher as legacy
++from test_codex_teacher import FakeTransport
++from test_editorial import fixture
++
++
++class RepairTransport(FakeTransport):
++    def __init__(self, first=None, second=None, extra=None):
++        super().__init__()
++        self.events[1]['params']['item']['text']=first if first is not None else '{'
++        second=second if second is not None else json.dumps(fixture())
++        self.events += (extra or []) + [
++            {'method':'item/completed','params':{'threadId':'fresh','turnId':'repair',
++             'item':{'type':'agentMessage','phase':'final_answer','text':second}}},
++            {'method':'turn/completed','params':{'threadId':'fresh',
++             'turn':{'id':'repair','status':'completed'}}}]
++        self.turns=0
++    def request(self, method, params):
++        result=super().request(method,params)
++        if method=='turn/start':
++            self.turns+=1
++            result={'turn':{'id':'turn' if self.turns==1 else 'repair'}}
++        return result
++
++
++class ValidationRepairTests(unittest.TestCase):
++    setUp=legacy.CodexTeacherTests.setUp
++    tearDown=legacy.CodexTeacherTests.tearDown
++
++    def run_teacher(self, transport=None, **kwargs):
++        session=FreshSession(self.packet)
++        session.runner.invoke=Mock(return_value={'ok':True,'result':{'text':'TEST FIXTURE ONLY'}})
++        return CodexTeacher().run(session,transport or RepairTransport(),**kwargs)
++
++    def test_first_pass_opening_transcript_and_draft_unchanged(self):
++        transport=FakeTransport();result=self.run_teacher(transport)
++        initial=deepcopy(FreshSession(self.packet).initial)
++        initial[0]['teacher_runtime']={'model':'gpt-6.1-sol','reasoning_effort':'medium'}
++        expected=initial+[
++            {'role':'assistant','calls':[{'id':'read-1','tool':'git_show','arguments':{'commit':'a'*40}}]},
++            {'role':'tool','name':'git_show','call_id':'read-1','content':json.dumps({'ok':True,'result':{'text':'TEST FIXTURE ONLY'}})},
++            {'role':'assistant','content':json.dumps(fixture())}]
++        self.assertEqual(result['transcript'],expected)
++        starts=[p for m,p in transport.requests if m=='turn/start']
++        self.assertEqual(len(starts),1)
++        self.assertEqual(starts[0]['input'],[{'type':'text','text':initial[1]['content']}])
++        from teacher.editorial import assemble_draft
++        m=json.loads((self.packet/'manifest.json').read_text())
++        self.assertEqual(result['draft'],assemble_draft(fixture(),m,expected)[0])
++        self.assertFalse(repair_metadata(expected)['validation_repair'])
++
++    def test_one_verbatim_feedback_same_thread_and_complete_final(self):
++        transport=RepairTransport(); result=self.run_teacher(transport)
++        transcript=result['transcript'];event=next(x for x in transcript if x['role']=='validation')
++        starts=[p for m,p in transport.requests if m=='turn/start']
++        self.assertEqual(len(starts),2)
++        self.assertEqual(starts[1]['threadId'],starts[0]['threadId'])
++        self.assertEqual(starts[1]['input'],[{'type':'text','text':event['error']}])
++        self.assertNotIn('ADMIN_REVIEW_SECRET',json.dumps(starts))
++        self.assertEqual(transcript[event['refused_index']]['content'],'{')
++        self.assertEqual(disclosure(transcript)['tool_calls_by_turn'],[1,0])
++        m=json.loads((self.packet/'manifest.json').read_text())
++        self.assertEqual(verify_final(fixture(),m,transcript,repair_metadata(transcript))[0],result['draft'])
++
++    def test_invalid_annotation_and_more_tools_repair_with_prefix_validation(self):
++        a=fixture();a['problem'][0]['evidence']=['read-2']
++        extra=[{'id':101,'method':'item/tool/call','params':{'threadId':'fresh','turnId':'repair',
++                'callId':'read-2','tool':'git_show','arguments':{'commit':'a'*40}}}]
++        transport=RepairTransport(first=json.dumps(a),second=json.dumps(a),extra=extra)
++        result=self.run_teacher(transport);t=result['transcript']
++        self.assertEqual(disclosure(t)['tool_calls_by_turn'],[1,1])
++        # The same annotation becomes valid only after the later read.
++        m=json.loads((self.packet/'manifest.json').read_text())
++        verify_final(a,m,t,repair_metadata(t))
++        from teacher.editorial import assemble_draft
++        assemble_draft(a,m,t)
++        self.assertEqual(next(x for x in t if x['role']=='validation')['error'],'Unknown or unsuccessful evidence call')
++
++    def test_second_refusal_is_terminal_and_preserved(self):
++        saved=[];transport=RepairTransport(second='[')
++        with self.assertRaises(ValueError):self.run_teacher(transport,record=saved.append)
++        self.assertEqual(transport.turns,2)
++        self.assertEqual(saved[-1][-1]['content'],'[')
++        self.assertEqual(sum(x['role']=='validation' for x in saved[-1]),1)
++
++    def test_protocol_budget_and_transport_failures_never_repair(self):
++        for kind in ('foreign','failed','native','budget','internal'):
++            transport=RepairTransport()
++            if kind=='foreign':transport.events[0]['params']['threadId']='foreign'
++            elif kind=='failed':transport.events[2]['params']['turn']['status']='failed'
++            elif kind=='native':transport.events=[{'id':1,'method':'approval','params':{}}]
++            elif kind=='internal':transport.receive=Mock(side_effect=RuntimeError('transport'))
++            with self.assertRaises((ValueError,RuntimeError)):
++                self.run_teacher(transport,max_calls=0 if kind=='budget' else 256)
++            self.assertEqual(transport.turns,1)
++
++    def test_duplicate_and_budget_span_turns(self):
++        for identity,budget in [('read-1',256),('read-2',1)]:
++            extra=[{'id':101,'method':'item/tool/call','params':{'threadId':'fresh','turnId':'repair',
++                    'callId':identity,'tool':'git_show','arguments':{'commit':'a'*40}}}]
++            with self.assertRaisesRegex(ValueError,'Duplicate tool call or tool budget'):
++                self.run_teacher(RepairTransport(extra=extra),max_calls=budget)
++
++    def test_tampering_rejected_by_shared_verifier(self):
++        result=self.run_teacher();t=result['transcript'];m=json.loads((self.packet/'manifest.json').read_text())
++        i=next(i for i,x in enumerate(t) if x['role']=='validation')
++        mutations=[lambda x:x[i].update(error='hint'),lambda x:x[i+1].update(content='hint'),
++            lambda x:x[i].update(refused_sha256='0'*64),lambda x:x[i].update(refused_index=0),
++            lambda x:x[i].update(prefix_end=0),lambda x:x[i].update(repair_turn_id='turn'),
++            lambda x:x[i].update(selected_final_index=i+1),lambda x:x.append(deepcopy(x[i])),
++            lambda x:x[-1].update(turn_id='foreign')]
++        for mutate in mutations:
++            changed=deepcopy(t);mutate(changed)
++            with self.assertRaises(ValueError):verify_final(fixture(),m,changed,repair_metadata(t))
++        with self.assertRaises(ValueError):verify_final(fixture(),m,t,{})
++        with self.assertRaises(ValueError):verify_final(fixture(),m,t,{**repair_metadata(t),'validation_repair':False})
++        with self.assertRaises(ValueError):verify_final({},m,t,repair_metadata(t))
++
++    def test_author_failure_and_approval_tamper(self):
++        with patch('teacher.runner.Runner.invoke',return_value={'ok':True,'result':{'text':'TEST FIXTURE ONLY'}}):
++            out=self.root/'repaired'
++            author(self.packet,out,self.root/'unused',transport_factory=lambda _:nullcontext(RepairTransport()))
++            provenance=json.loads((out/'provenance.json').read_text())
++            self.assertTrue(provenance['validation_repair'])
++            self.assertNotIn('reviewer_assisted',provenance)
++            approved=approve_run(out,self.packet,'Fable','TEST repaired annotation')
++            self.assertFalse(approved['canonical_approved']);self.assertFalse(approved['training_eligible'])
++            bad=self.root/'failed-repair'
++            with self.assertRaises(ValueError):
++                author(self.packet,bad,self.root/'unused',transport_factory=lambda _:nullcontext(RepairTransport(second='[')))
++            self.assertEqual(json.loads((bad/'status.json').read_text())['status'],'failed')
++            self.assertTrue(json.loads((bad/'provenance.json').read_text())['validation_repair'])
++            self.assertFalse((bad/'draft.json').exists())
++
++    def test_repaired_turn_protocol_failures_and_disconnect_are_terminal(self):
++        for kind in ('thread','turn','native','failed','missing','disconnect'):
++            transport=RepairTransport()
++            if kind=='thread':transport.events[3]['params']['threadId']='wrong'
++            elif kind=='turn':transport.events[3]['params']['turnId']='wrong'
++            elif kind=='native':transport.events[3]['params']['item']['type']='commandExecution'
++            elif kind=='failed':transport.events[4]['params']['turn']['status']='failed'
++            elif kind=='missing':del transport.events[3]
++            else:
++                original=transport.receive
++                def receive():
++                    if transport.turns==2:raise RuntimeError('disconnected')
++                    return original()
++                transport.receive=receive
++            with self.assertRaises((ValueError,RuntimeError)):
++                self.run_teacher(transport)
++            self.assertEqual(transport.turns,2)
++
++    def test_internal_integrity_errors_packet_changes_and_save_failures_never_feedback(self):
++        for message in ('Duplicate evidence call ID','Unmatched evidence result',
++                        'Read metadata does not match returned bytes',
++                        'Assigned external evidence missing from packet: secret',
++                        'Unsupported editorial schema version','unexpected internal failure'):
++            transport=RepairTransport(first=json.dumps(fixture()))
++            with patch('teacher.codex_adapter.assemble_draft',side_effect=ValueError(message)):
++                with self.assertRaises(ValueError):self.run_teacher(transport)
++            self.assertEqual(transport.turns,1)
++        transport=RepairTransport()
++        def record(t):
++            if t[-1].get('content')=='{':
++                p=self.packet/'manifest.json';p.write_bytes(p.read_bytes()+b' ')
++        with self.assertRaisesRegex(ValueError,'Packet changed'):
++            self.run_teacher(transport,record=record)
++        self.assertEqual(transport.turns,1)
++        transport=RepairTransport()
++        with self.assertRaisesRegex(OSError,'save failed'):
++            self.run_teacher(transport,record=Mock(side_effect=OSError('save failed')))
++        self.assertEqual(transport.turns,1)
++
++    def test_failed_catalog_source_execution_and_coverage_gates_remain(self):
++        from teacher.editorial import assemble_draft
++        from teacher.validation_repair import eligible
++        m=json.loads((self.packet/'manifest.json').read_text())
++        t=self.run_teacher()['transcript']
++        for change in ('unknown','execution','failed','catalog','coverage'):
++            a=fixture();transcript=deepcopy(t);manifest=deepcopy(m)
++            if change=='unknown':a['problem'][0]['evidence']=['absent']
++            elif change=='execution':a['problem'][0]['basis']='execution'
++            elif change=='coverage':
++                manifest['authoring_task']={'kind':'chapter','id':'test','required_sections':[],
++                    'required_evidence':[],'execution_required':True}
++            else:
++                for msg in transcript:
++                    if msg.get('role')=='tool':
++                        if change=='failed':msg['content']=json.dumps({'ok':False,'error':'failed'})
++                        else:
++                            msg['name']='evidence_index'
++                            transcript[2]['calls'][0]['tool']='evidence_index'
++            with self.assertRaises(ValueError) as caught:assemble_draft(a,manifest,transcript)
++            self.assertTrue(eligible(caught.exception))
++
++    def test_replay_includes_both_turns_and_failed_calls(self):
++        from teacher.cycle import replay_result
++        extra=[{'id':101,'method':'item/tool/call','params':{'threadId':'fresh','turnId':'repair',
++            'callId':'read-2','tool':'git_show','arguments':{'commit':'b'*40}}}]
++        session=FreshSession(self.packet)
++        session.runner.invoke=Mock(side_effect=[{'ok':True,'result':{'text':'fixture'}},ValueError('bounded failure')])
++        result=CodexTeacher().run(session,RepairTransport(extra=extra))
++        transcript=result['transcript']
++        calls={c['id']:c for m in transcript for c in m.get('calls',[])}
++        runner=Mock();runner.invoke.side_effect=[{'ok':True,'result':{'text':'fixture'}},ValueError('bounded failure')]
++        for m in transcript:
++            if m['role']=='tool':replay_result(runner,calls[m['call_id']],m)
++        self.assertEqual(runner.invoke.call_count,2)
++        runner.invoke.side_effect=None;runner.invoke.return_value={'ok':False,'error':'different'}
++        with self.assertRaisesRegex(ValueError,'Tool replay mismatch'):
++            replay_result(runner,calls['read-2'],next(m for m in transcript if m.get('call_id')=='read-2'))
++
++    def test_fabricated_refusal_and_render_tamper_refused(self):
++        from teacher.validation_repair import digest
++        t=self.run_teacher()['transcript'];m=json.loads((self.packet/'manifest.json').read_text())
++        event=next(x for x in t if x['role']=='validation')
++        t[event['refused_index']]['content']=json.dumps(fixture())
++        event['refused_sha256']=digest(json.dumps(fixture()))
++        with self.assertRaisesRegex(ValueError,'was valid'):
++            verify_final(fixture(),m,t,repair_metadata(t))
++        with patch('teacher.runner.Runner.invoke',return_value={'ok':True,'result':{'text':'fixture'}}):
++            out=self.root/'render-tamper'
++            author(self.packet,out,self.root/'unused',transport_factory=lambda _:nullcontext(RepairTransport()))
++        (out/'draft.md').write_text('altered')
++        with self.assertRaisesRegex(ValueError,'rendering mismatch'):
++            approve_run(out,self.packet,'Fable','test')
++
++    def test_large_integer_json_refusal_and_boolean_metadata(self):
++        result=self.run_teacher(RepairTransport(first='1'*5000))
++        event=next(m for m in result['transcript'] if m['role']=='validation')
++        self.assertEqual(event['error_type'],'ValueError')
++        self.assertIn('integer string conversion',event['error'])
++        m=json.loads((self.packet/'manifest.json').read_text())
++        metadata=repair_metadata(result['transcript']);metadata['validation_repair']=1
++        with self.assertRaises(ValueError):
++            verify_final(fixture(),m,result['transcript'],metadata)
++
++    def test_explicit_legacy_rules_disable_feedback(self):
++        transport=RepairTransport()
++        with self.assertRaises(json.JSONDecodeError):
++            self.run_teacher(transport,validation_repair=False)
++        self.assertEqual(transport.turns,1)
++        transcript=self.run_teacher()['transcript']
++        manifest=json.loads((self.packet/'manifest.json').read_text())
++        provenance={**repair_metadata(transcript),'validation_repair_enabled':False}
++        with self.assertRaisesRegex(ValueError,'disabled'):
++            verify_final(fixture(),manifest,transcript,provenance)

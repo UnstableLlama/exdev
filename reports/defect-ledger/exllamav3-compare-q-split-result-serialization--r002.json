@@ -1,0 +1,192 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The new capture caller passes a split result to a serializer that recognizes lists but not tuples.",
+  "trigger": "Capture reaches save_tensor after successful forwarding, with Tensor.split returning a tuple of row tensors.",
+  "expected_behavior": "Write individually named row tensors, or write the concatenated tensor for the newly supported dense-reader path.",
+  "actual_behavior": "save_tensor falls through to save_file({'tensor': tuple}, filename), rather than constructing tensor.N entries. Successful serialization of reference tensors is therefore not established.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Whole-parent-tree search found the comparison helper's existing caller in test_ppl, which builds a list. The new main passes the split result without conversion. Conversion-module helpers with the same name are separate definitions.",
+      "evidence": [
+        "call_f984546e86804e6eaa37b80e447c66e5",
+        "call_5e4b266cc8564e1a882bc988a688a299",
+        "call_bb06310d7daf455e9ac759b6d2258528"
+      ],
+      "limits": "PyTorch's version-specific return contract and safetensors rejection were not executed or independently documented."
+    },
+    {
+      "method": "repository_execution",
+      "description": "Executed the AST-extracted parent save_tensor function with list and tuple inputs and a stub writer; the tuple was passed as a single value.",
+      "evidence": [
+        "call_6488aeb38b5f46d9aa91d4e5f2b80c7d"
+      ],
+      "limits": "Only repository Python dispatch ran; no tensors, PyTorch split, file writing or GPU code ran."
+    }
+  ],
+  "defect_id": "exllamav3-compare-q-split-result-serialization",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8ff65b874202176c1449e6a51998094ef60f94f0",
+      "status": "source_supported",
+      "rationale": "209 adds the capture caller passing the split result directly to the existing serializer."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8ff65b874202176c1449e6a51998094ef60f94f0",
+      "run": ".teacher/runs/commit-000209-001",
+      "local_id": "split-result-serialization",
+      "observer": "Astra teacher",
+      "reviewer_confirmed": true,
+      "finding": {
+        "id": "split-result-serialization",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new capture caller passes a split result to a serializer that recognizes lists but not tuples.",
+        "trigger": "Capture reaches save_tensor after successful forwarding, with Tensor.split returning a tuple of row tensors.",
+        "expected_behavior": "Write individually named row tensors, or write the concatenated tensor for the newly supported dense-reader path.",
+        "actual_behavior": "save_tensor falls through to save_file({'tensor': tuple}, filename), rather than constructing tensor.N entries. Successful serialization of reference tensors is therefore not established.",
+        "locations": [
+          {
+            "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+            "path": "eval/compare_q_logits.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+            "path": "eval/compare_q.py",
+            "symbol": "save_tensor"
+          }
+        ],
+        "source_evidence": [
+          "call_bb06310d7daf455e9ac759b6d2258528",
+          "call_5e4b266cc8564e1a882bc988a688a299",
+          "call_f984546e86804e6eaa37b80e447c66e5"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search found the comparison helper's existing caller in test_ppl, which builds a list. The new main passes the split result without conversion. Conversion-module helpers with the same name are separate definitions.",
+            "evidence": [
+              "call_f984546e86804e6eaa37b80e447c66e5",
+              "call_5e4b266cc8564e1a882bc988a688a299",
+              "call_bb06310d7daf455e9ac759b6d2258528"
+            ],
+            "limits": "PyTorch's version-specific return contract and safetensors rejection were not executed or independently documented."
+          },
+          {
+            "method": "repository_execution",
+            "description": "Executed the AST-extracted parent save_tensor function with list and tuple inputs and a stub writer; the tuple was passed as a single value.",
+            "evidence": [
+              "call_6488aeb38b5f46d9aa91d4e5f2b80c7d"
+            ],
+            "limits": "Only repository Python dispatch ran; no tensors, PyTorch split, file writing or GPU code ran."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+      "path": "eval/compare_q_logits.py",
+      "status": "source_verified",
+      "rationale": "256 wraps model_logits.split(1, dim=0) in list before passing it to save_tensor, selecting the numbered row-tensor serialization branch. Source-level fix confirmed by Fable; no tensor serialization round trip claimed."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit209-001-draft.json",
+      "sha256": "aefec15153e786f17102f2f00f2619994d48423d884e62d373606d4bf94115c7"
+    },
+    {
+      "file": "evidence/commit209-001-transcript.json",
+      "sha256": "d601aa45ecc737b6443e36f312cf1d068b4bc86b70448964ee8bf3e0ea05aac7"
+    },
+    {
+      "file": "evidence/commit209-001-verdict.md",
+      "sha256": "83834e2a825167f6361ca54d6b8bb65278ab8b8563ac4f2a28d56506c1a66aa8"
+    },
+    {
+      "file": "evidence/commit256-001-draft.json",
+      "sha256": "f33156b0042a6d1f73c0c836ac40c814ac6926eea0ec0fef0153c71b57888bbe"
+    },
+    {
+      "file": "evidence/commit256-001-transcript.json",
+      "sha256": "a8f860cb48242a8a65256910ec833815d1b16a0070574bcc1d3255b6be84b6cf"
+    },
+    {
+      "file": "evidence/commit256-001-verdict.md",
+      "sha256": "6287241adf98783b7e7c8ab20709105fcfa80a6f20011dfdaf25ac9f7e532a7c"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit209-001-draft.json",
+      "source_id": "evidence/commit209-001-draft.json",
+      "content_sha256": "aefec15153e786f17102f2f00f2619994d48423d884e62d373606d4bf94115c7",
+      "available_at": "2026-11-16T11:12:38.120821+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit209-001-transcript.json",
+      "source_id": "evidence/commit209-001-transcript.json",
+      "content_sha256": "d601aa45ecc737b6443e36f312cf1d068b4bc86b70448964ee8bf3e0ea05aac7",
+      "available_at": "2026-11-16T11:12:38.120821+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit209-001-verdict.md",
+      "source_id": "evidence/commit209-001-verdict.md",
+      "content_sha256": "83834e2a825167f6361ca54d6b8bb65278ab8b8563ac4f2a28d56506c1a66aa8",
+      "available_at": "2026-11-16T11:12:38.120821+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8ff65b874202176c1449e6a51998094ef60f94f0",
+      "available_at": "2025-05-31T01:11:56+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit256-001-draft.json",
+      "source_id": "evidence/commit256-001-draft.json",
+      "content_sha256": "f33156b0042a6d1f73c0c836ac40c814ac6926eea0ec0fef0153c71b57888bbe",
+      "available_at": "2026-11-17T05:40:32.099330+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit256-001-transcript.json",
+      "source_id": "evidence/commit256-001-transcript.json",
+      "content_sha256": "a8f860cb48242a8a65256910ec833815d1b16a0070574bcc1d3255b6be84b6cf",
+      "available_at": "2026-11-17T05:40:32.099330+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit256-001-verdict.md",
+      "source_id": "evidence/commit256-001-verdict.md",
+      "content_sha256": "6287241adf98783b7e7c8ab20709105fcfa80a6f20011dfdaf25ac9f7e532a7c",
+      "available_at": "2026-11-17T05:40:32.099330+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+      "available_at": "2026-11-17T05:40:32.099330+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "8ff65b874202176c1449e6a51998094ef60f94f0"
+    ],
+    "limits": "Only 209 established; no continuous range or tensor/library execution claimed."
+  },
+  "recorded_at": "2026-11-17T05:40:32.099330+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

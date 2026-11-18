@@ -1,0 +1,553 @@
+{
+  "schema_version": 5,
+  "sha": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+  "parent_shas": [
+    "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305"
+  ],
+  "cutoff_date": "2025-07-09T21:25:02+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Cohere2 previously left GatedMLP intermediate and output dtypes unspecified. The FP16 backend consequently defaulted its projection outputs to half precision; the change explicitly requests float32 for both.",
+        "basis": "source",
+        "evidence": [
+          "call_6106172d597c4b2b94e66486924d6b5c",
+          "call_1d50e228752a4d7eaf259b95888191e1",
+          "call_53037c84877c41e4b19051b759f648ab"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The likely purpose is to reduce overflow in Cohere2 MLP projections and gated activations. Selecting float intermediates also selects an existing activation kernel that clamps its half-precision result, so this is more than a final output cast.",
+        "basis": "inference",
+        "evidence": [
+          "call_6106172d597c4b2b94e66486924d6b5c",
+          "call_fdbfa0c3ea9449d3a39021d96718f92f",
+          "call_35e2747e928c448183ae9abe06de4f79"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Every Cohere2 decoder layer receives the new settings. Checkpoint names, dimensions, weights, attention configuration and final vocabulary projection are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_6106172d597c4b2b94e66486924d6b5c",
+          "call_a7876656e783433391ebb44a980886cd"
+        ]
+      },
+      {
+        "text": "The precision policy uses larger gate/up and down-output buffers, trading activation storage for numerical range. Neither its memory cost nor conversion or inference improvements were measured.",
+        "basis": "inference",
+        "evidence": [
+          "call_1d50e228752a4d7eaf259b95888191e1",
+          "call_53037c84877c41e4b19051b759f648ab"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the Cohere2 introduction entry, which establishes the reused parallel decoder and shared calibration labels; the component-selection entry, which records Cohere2's text-component mapping; and the architecture-default chat entry, which concerns an unrelated method in the same file.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_6707cdc666af4af9b41477ffdd9b2926",
+          "call_d14a593d5e7c425886b766d4a2f9af3e",
+          "call_a2320414d50f45d8920e1f5fce3c4b14"
+        ]
+      },
+      {
+        "text": "The padding-control entry records an inherited missing odd-element activation tail. Current source still processes pairs only, but Cohere2 retains the default 128-element projection padding, rather than exposing the entry's unpadded odd-size trigger.",
+        "basis": "source",
+        "evidence": [
+          "call_52a37d651a0f46f6a1b6a8c2cc0edcd2",
+          "call_a7876656e783433391ebb44a980886cd",
+          "call_1d50e228752a4d7eaf259b95888191e1",
+          "call_fdbfa0c3ea9449d3a39021d96718f92f"
+        ]
+      },
+      {
+        "text": "Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports Cohere2 conversion failure with infinite block.parallel.down inputs. Turboderp described possible post-activation overflow and suggested clamping. Issue #53, \u201cCommand A support,\u201d began as a support request and later reported similar conversion failures. Their relationship to this task is inferred from the matching architecture, projection path and numerical symptoms, not an explicit commit reference.",
+        "basis": "inference",
+        "evidence": [
+          "call_35e2747e928c448183ae9abe06de4f79",
+          "call_ddfa1ce99f744f65bbb99bf1db4daa46",
+          "call_b9fe0afd13804115b1ab3d79345b0820",
+          "call_6106172d597c4b2b94e66486924d6b5c"
+        ]
+      },
+      {
+        "text": "Issue #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d contains turboderp's recommendation to request float GatedMLP output for a different architecture, followed by the reporter's successful-conversion report. This is an analogous precision remedy, not validation of this Cohere2 change. Issue #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concerns Miqu and Command-R-Plus; its shared Linear path does not establish the same cause.",
+        "basis": "inference",
+        "evidence": [
+          "call_9427004cee0e4395b842928dad7c726a",
+          "call_d86797b1a2a1451cb773aa3bde0747ac",
+          "call_197ee07fb49c4125956f00d4aff5c61a"
+        ]
+      },
+      {
+        "text": "Other shared-file discussions were inspected: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d concerns extension loading; #55, \u201cPossible GLM4 32B regression,\u201d concerns fused-weight construction; and #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d concerns logits dimensions. Their inferred overlap is through imported modules or shared utility files, not evidence that this precision change remedies them.",
+        "basis": "inference",
+        "evidence": [
+          "call_292a8161146e4e2abad4aa96e791b386",
+          "call_5f14b64081014a0da0bd7171ce65dbdd",
+          "call_03b2394768064c308b5da6bee482fef8",
+          "call_197ee07fb49c4125956f00d4aff5c61a",
+          "call_8b62cf78df534ad1bb2abb548006a001"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model, checkpoint conversion, inference, PyTorch operation or CUDA kernel was executed. Numerical examples use standard-library scalar transcription, not GPU arithmetic or checkpoint values.",
+      "The source establishes buffer dtypes and selected implementations, not elimination of all infinities or NaNs, model quality, performance or successful completion of the reported conversions.",
+      "Checkpoint inspection covers representative early-layer headers, not every layer, optional tensor or quantized checkpoint. December R7B configuration identity with the historical official file remains unverified."
+    ],
+    "links": [
+      "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+      "830b6a018070a327d6d261628dff496f1303cf93",
+      "7989c93b6a476a918dbfff0a0b96954a79111662",
+      "3637103e2ff4a736544774606ddc964fc4f71362"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Cohere2 MLP precision boundaries",
+        "claims": [
+          {
+            "text": "Cohere2Model.__init__ adds interm_dtype=torch.float and out_dtype=torch.float to each GatedMLP. GatedMLP stores these independently: intermediate dtype configures gate/up Linear outputs, while output dtype configures each down projection and the returned result.",
+            "basis": "source",
+            "evidence": [
+              "call_6106172d597c4b2b94e66486924d6b5c",
+              "call_1d50e228752a4d7eaf259b95888191e1"
+            ]
+          },
+          {
+            "text": "This does not make the entire MLP float32. ParallelDecoderBlock normalizes its shared branch input to half. Gate/up now produce float outputs, but GatedMLP allocates a separate half activation buffer and computes silu(gate) * up into it. That half buffer feeds down; down outputs and any slice accumulation use the requested float dtype.",
+            "basis": "source",
+            "evidence": [
+              "call_864415ae86904791b8139ad23834f7ab",
+              "call_1d50e228752a4d7eaf259b95888191e1"
+            ]
+          },
+          {
+            "text": "The two settings protect different boundaries. interm_dtype selects silu_mul's float-input branch, which evaluates activation and multiplication in float, converts to half, then clamps to \u00b165504. The half-input branch instead uses half2 arithmetic without that clamp. out_dtype separately avoids forcing the down-projection result back into half before residual addition.",
+            "basis": "source",
+            "evidence": [
+              "call_fdbfa0c3ea9449d3a39021d96718f92f",
+              "call_1d50e228752a4d7eaf259b95888191e1",
+              "call_864415ae86904791b8139ad23834f7ab"
+            ]
+          },
+          {
+            "text": "For unquantized LinearFP16, output dtype resolves as call override, stored dtype, then half. With half input and float output, forward selects ext.hgemm rather than its same-dtype torch.matmul branch. hgemm requires half operands and uses cublasGemmEx with float output and CUBLAS_COMPUTE_32F. Thus the change requests wider projection results without changing stored weights to float32.",
+            "basis": "source",
+            "evidence": [
+              "call_53037c84877c41e4b19051b759f648ab",
+              "call_20a9d123342e44e88f66a928c1502466",
+              "call_197ee07fb49c4125956f00d4aff5c61a"
+            ]
+          },
+          {
+            "text": "Linear also forwards its stored output dtype into loaded or newly converted LinearEXL3 instances. LinearEXL3 allocates that dtype in both reconstructed-matmul and direct-quantized routes. Its existing reconstruction selection remains unchanged; this commit changes output precision, not that dispatch rule.",
+            "basis": "source",
+            "evidence": [
+              "call_197ee07fb49c4125956f00d4aff5c61a",
+              "call_f5a1acf168ed414893816edb25b77158",
+              "call_6106172d597c4b2b94e66486924d6b5c"
+            ]
+          },
+          {
+            "text": "The direct consumer, ParallelDecoderBlock.forward, adds the MLP result in place to the existing residual; the new float MLP output does not itself replace the residual with a float tensor. Its prefill shortcut still returns before executing the MLP. The explicit forward dtype override remains supported by to2 and takes priority over the configured return dtype.",
+            "basis": "source",
+            "evidence": [
+              "call_864415ae86904791b8139ad23834f7ab",
+              "call_1d50e228752a4d7eaf259b95888191e1",
+              "call_8b62cf78df534ad1bb2abb548006a001"
+            ]
+          },
+          {
+            "text": "A standard-library scalar check decoded 65504 as the largest finite binary16 value. A modeled gated product of 80000 converted to infinity in half but saturated to 65504 with the float-path clamp. A second example, gate=70000 and up=0, produced NaN after first overflowing the gate to half, versus zero when retaining the gate in wider arithmetic. These illustrate distinct projection and activation hazards; Python arithmetic does not reproduce CUDA's float32 approximations.",
+            "basis": "execution",
+            "evidence": [
+              "call_bb877c96f5a144ce99758855a1aea159"
+            ]
+          },
+          {
+            "text": "All three inspected configurations select Cohere2ForCausalLM and silu, so the unconditional settings apply model by model: CohereLabs/c4ai-command-a-03-2025 uses hidden/intermediate widths 12288/36864 and 64 layers; c4ai-command-r7b-12-2024 uses 4096/14336 and 32 layers; c4ai-command-r7b-arabic-02-2025 likewise uses 4096/14336 and 32 layers. Their declared bfloat16 checkpoint dtype does not override these constructor arguments.",
+            "basis": "source",
+            "evidence": [
+              "call_21e868c7a20a4b108598705d3c6eb99b",
+              "call_b6e4c07738014ab8bfb7ca19e4de3b08",
+              "call_98b97dc226b34086adaba0d52b897abe",
+              "call_a7876656e783433391ebb44a980886cd",
+              "call_6106172d597c4b2b94e66486924d6b5c"
+            ]
+          },
+          {
+            "text": "Representative layer-zero headers contain the unchanged model.layers.0.mlp gate_proj/up_proj weights with shapes [36864,12288] for Command A and [14336,4096] for each R7B; down_proj has the reversed dimensions. These agree with the existing output-row/input-column loading layout. The inspected MLP groups contain no biases or weight_scale_inv tensors, which Linear requests optionally; primary weights exist, so fused fallback is unnecessary. No unused stored tensor was identified in these inspected header subsets.",
+            "basis": "source",
+            "evidence": [
+              "call_9f948b2a043840efb098e22de643954a",
+              "call_4626d262dabf4538bb0f7207332c6a82",
+              "call_810ae143b6f44707a07468e8958317a1",
+              "call_197ee07fb49c4125956f00d4aff5c61a",
+              "call_a7876656e783433391ebb44a980886cd"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Requests float32 gate/up projection results and MLP outputs throughout Cohere2, selecting an existing float activation-and-clamp path while retaining half activation inputs to down projections. Numerical benefits remain unmeasured."
+  },
+  "evidence": {
+    "call_6106172d597c4b2b94e66486924d6b5c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "offset": 182,
+        "max_bytes": 684
+      },
+      "result_sha256": "1fcb5c03c1dcfcc2f7eb98e0436a50ea0de100908e30227f183509f44f3e5fe4"
+    },
+    "call_a7876656e783433391ebb44a980886cd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/models/cohere2.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "1ad3ff1d572de7bbcdd840d1887302f31db3c2e60222e7376ecc359a2013fbbc"
+    },
+    "call_1d50e228752a4d7eaf259b95888191e1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "8667cb8ae314c1d97a2c03764669d6621c1873c1022b3c8c08ee02a8f65c4dbd"
+    },
+    "call_a2320414d50f45d8920e1f5fce3c4b14": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "max_bytes": 16384
+      },
+      "result_sha256": "fa58f8575f26193c392ab8475d24b5d5e3a4dd95b4ebf80dcf0431d824675d9b"
+    },
+    "call_6707cdc666af4af9b41477ffdd9b2926": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "0ff9fd2e39f6307e54358fd1a48a50b5cf7307f8",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1b1a4f46a8e32974fdcf1922a605cf695fb23cdfbbb51526ca462c0ce658843b"
+    },
+    "call_1616a6696cf64011a14a2748111adc3c": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "68a2e647d9814d77247dd3710ad8ae7b5bca221fbc22371ed6c9320fce67c092",
+      "catalog_only": true
+    },
+    "call_43aec7e6c87d45c99959b4e7e1f18331": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "query": "interm_dtype",
+        "limit": 100
+      },
+      "result_sha256": "9d407e48e7484052e8a1b168dc0c744a9b21e23d1e9f9dafe60818fe615e4e4c"
+    },
+    "call_197ee07fb49c4125956f00d4aff5c61a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "acd24e622d2eb5c48f87aa650c8221b64c7213185f86cd7b4c92101270301220"
+    },
+    "call_c5c4e04bd8ee4ddb9461659526ec82be": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/modules/parallel_decoder.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_d647d7850376453f9509ad687951c913": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "query": "class ParallelDecoderBlock"
+      },
+      "result_sha256": "db0edaaba49e8d2fbd56832734200468d81cbbe452fd39b9e723220e40a89679"
+    },
+    "call_53037c84877c41e4b19051b759f648ab": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "808a29d5ede82c644e75f52b94480009d9fc878a311b75798053e77664405ea1"
+    },
+    "call_864415ae86904791b8139ad23834f7ab": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "467875d2c491348086b1928519621b7a30b94feb8e1f40188301a5a52f15f798"
+    },
+    "call_3e2b2b77e69d48d08db6220f2f1b91e0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "query": "silu_mul",
+        "limit": 100
+      },
+      "result_sha256": "cf9f91b17175e7f352f3d36d29721fb76a6ca65f89b9a844e08fc0c729b8d53a"
+    },
+    "call_fdbfa0c3ea9449d3a39021d96718f92f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/exllamav3_ext/activation.cu",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ce518f00251eac18f78b8598027af9007415c38e84f102e074179da14c900148"
+    },
+    "call_ddfa1ce99f744f65bbb99bf1db4daa46": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 20000
+      },
+      "result_sha256": "19fb8dae8a84d8c2240b4ae128115630dc54dfe1fc5650e3ae72dea4779e3546"
+    },
+    "call_b9fe0afd13804115b1ab3d79345b0820": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "offset": 20000,
+        "max_bytes": 12000
+      },
+      "result_sha256": "dbd0b8060d1fdcdc635a9e4b3d94be076342fd74e98b3c1c429ba3ed89f78630"
+    },
+    "call_21e868c7a20a4b108598705d3c6eb99b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-a-03-2025",
+        "revision": "8455317729a01ce5f7960986c9e876366cb9a75c1fdddb0c2bbf15dd807c3aac",
+        "path": "config.json",
+        "max_bytes": 6000
+      },
+      "result_sha256": "f8cf8d500f3211c9a2457671f89558d241b9c1825642e052f45c0a39263cf5bf"
+    },
+    "call_b6e4c07738014ab8bfb7ca19e4de3b08": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r7b-12-2024",
+        "revision": "d82b44782275d0cb6ea40c5464eb7960edfcf9b23cbacf873bb9ae42389f92a7",
+        "path": "config.json",
+        "max_bytes": 6000
+      },
+      "result_sha256": "32226ade8b321f1bcfc06f8f956ee916fdb2a0e0202979f2d265e9d5a1c86abe"
+    },
+    "call_98b97dc226b34086adaba0d52b897abe": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r7b-arabic-02-2025",
+        "revision": "3bd966bc615852da2aa9e2563a86b5beed248412743d2d7b6bdd3efe1b72c94b",
+        "path": "config.json",
+        "max_bytes": 6000
+      },
+      "result_sha256": "217baf1524c33a7af54f51693fc939f1754ad69b0bd8fb997223fe61e7ebcdb3"
+    },
+    "call_fb80c1189cc54905ae8b056c089d7af3": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-a-03-2025",
+        "revision": "8455317729a01ce5f7960986c9e876366cb9a75c1fdddb0c2bbf15dd807c3aac",
+        "path": "model-00001-of-00049.safetensors",
+        "limit": 12
+      },
+      "result_sha256": "c6a963209a63aa8a6cad4b2f5b71aa9effd30cefceef4641a024fd1da605f448"
+    },
+    "call_0d84bae7999a47d6aa49b6224e22604d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/mlp.py",
+        "limit": 10,
+        "max_bytes": 6000
+      },
+      "result_sha256": "ff481ac601db579923292e2b1d0291d6211e10465abf22ca888c058c18f50cab",
+      "catalog_only": true
+    },
+    "call_d14a593d5e7c425886b766d4a2f9af3e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7e9206989c587b27d376f2997d021ce6e95b9c2ff1b79ccc7fc39e5da68dfac1"
+    },
+    "call_f5a1acf168ed414893816edb25b77158": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "f042c9bc02cad55b4e29f28352d343401a49f2aaa1a935c2792a7f6ed80f38ec"
+    },
+    "call_bdbcc03fbc294ef98d1532030b27ea1d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "query": "void hgemm",
+        "limit": 20
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_20a9d123342e44e88f66a928c1502466": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu",
+        "max_bytes": 9000
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_292a8161146e4e2abad4aa96e791b386": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "335fa5b692c83450a8db8aa79b1cfa4206128c7e382d0892d9d1651a7c2804af"
+    },
+    "call_35e2747e928c448183ae9abe06de4f79": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 30000
+      },
+      "result_sha256": "de63f9866bed3af17e70468ff945aec58ecacbb4fc60a7030dc8cfd8453472d4"
+    },
+    "call_d86797b1a2a1451cb773aa3bde0747ac": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 20000
+      },
+      "result_sha256": "934cbaf2c990d9142f8d4e750f395a39fcfbdfcdd20523cefadd641e93d8f796"
+    },
+    "call_9427004cee0e4395b842928dad7c726a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 20000
+      },
+      "result_sha256": "cb2965da5c065908d003271416d76e54e0ac9a30b6d06060a147b939ec217dd7"
+    },
+    "call_5f14b64081014a0da0bd7171ce65dbdd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/55",
+        "max_bytes": 14000
+      },
+      "result_sha256": "26636c1255d0eded854959cd9c310c52cb098ebb61dd88328852584fe08d4e8b"
+    },
+    "call_52a37d651a0f46f6a1b6a8c2cc0edcd2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+        "max_bytes": 16384
+      },
+      "result_sha256": "48329aec0b51c6d84babbb9c843fa530c5bc78832b1f3657bc8f8c4d1b0f408f"
+    },
+    "call_bb877c96f5a144ce99758855a1aea159": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct,math\nhmax=struct.unpack('<e',bytes.fromhex('ff7b'))[0]\ndef half(x):\n try:return struct.unpack('<e',struct.pack('<e',x))[0]\n except OverflowError:return math.copysign(math.inf,x)\ng,u=400.,200.\np=g/(1+math.exp(-g))*u\nprint({'largest_finite_half':hmax,'float_product':p,'half_product':half(p),'clamped_float_path_half':max(-hmax,min(hmax,half(p)))})\ng,u=70000.,0.\nold=half(g)/(1+math.exp(-half(g)))*half(u)\nnew=g/(1+math.exp(-g))*u\nprint({'projection_overflow_half_path':str(old),'float_path':new})"
+        ]
+      },
+      "result_sha256": "d268613f5dba1a2ef0a60abbfd5d0f4e4070b6f2a5418152e92f29fa388e7a12"
+    },
+    "call_9f948b2a043840efb098e22de643954a": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-a-03-2025",
+        "revision": "8455317729a01ce5f7960986c9e876366cb9a75c1fdddb0c2bbf15dd807c3aac",
+        "path": "model-00002-of-00049.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "85145c6925cb41cb4eab9009034e395226f9629fa33d310478b3db90cf9856dd"
+    },
+    "call_4626d262dabf4538bb0f7207332c6a82": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r7b-12-2024",
+        "revision": "d82b44782275d0cb6ea40c5464eb7960edfcf9b23cbacf873bb9ae42389f92a7",
+        "path": "model-00001-of-00004.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "2cad7ceb99d1b61fb723544375b1f54f9f735df65c5f5a0de368ba7d117a116b"
+    },
+    "call_810ae143b6f44707a07468e8958317a1": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "CohereLabs/c4ai-command-r7b-arabic-02-2025",
+        "revision": "3bd966bc615852da2aa9e2563a86b5beed248412743d2d7b6bdd3efe1b72c94b",
+        "path": "model-00001-of-00004.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "a2a23d637d5febbed6c001a443f466b4bb5b788621dcb73ddd90d16827d9214f"
+    },
+    "call_dfe2aae71b2e4c3393f234fb9138015a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/models/ernie4_5_moe.py",
+        "offset": 3800,
+        "max_bytes": 4500
+      },
+      "result_sha256": "5bcea06af64f85c46b68c3b1bde41f456d229c33bcf184f3f1a5b7223ecc437d"
+    },
+    "call_8b62cf78df534ad1bb2abb548006a001": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2cf3e4c1e95b3d5bc858bda2ff56b38087be8305",
+        "path": "exllamav3/util/tensor.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "ba74803473bc8081ccdccc716939ef5a1ab32f80560705e908cb1108530d679a"
+    },
+    "call_03b2394768064c308b5da6bee482fef8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 18000
+      },
+      "result_sha256": "d517b631b8aee0c847763de9e8414820190f56f3b12512f5f264646991c0428f"
+    }
+  }
+}

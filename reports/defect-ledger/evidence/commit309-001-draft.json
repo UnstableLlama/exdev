@@ -1,0 +1,404 @@
+{
+  "schema_version": 5,
+  "sha": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+  "parent_shas": [
+    "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2"
+  ],
+  "cutoff_date": "2025-07-11T13:55:07+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The change adds a standalone MMLU evaluator, complementing the existing code-completion evaluation workflow.",
+        "basis": "source",
+        "evidence": [
+          "call_8110cb4b0e114daab558bae59d8bedbc",
+          "call_1fcbcf21a6934af4882fd8c300bb1cc5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Rather than judging generated text, the evaluator requests one token's logits and compares the four answer-token scores. Subject-specific development examples supply the prompt context.",
+        "basis": "source",
+        "evidence": [
+          "call_8110cb4b0e114daab558bae59d8bedbc"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The script reports question-weighted accuracy and mean probability assigned to the correct answer, normalized over A\u2013D only. Its few-shot count option does not correctly limit positive example counts.",
+        "basis": "source",
+        "evidence": [
+          "call_8110cb4b0e114daab558bae59d8bedbc"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root usage-evaluation entry establishes the earlier Generator/Job evaluation pattern in HumanEval; the cache documentation entry describes explicit cache namespaces and JSON-serialized arguments.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0a1e891ad84f4813bde3fd3bb9fb4fc4",
+          "call_a357d19a316247efaf2dc382b63fe42a"
+        ]
+      },
+      {
+        "text": "Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports a dimension mismatch at held_logits.append. Its relevance here is inferred from the evaluator enabling return_logits and the parent containing the same append expression; it is not an MMLU reproduction.",
+        "basis": "inference",
+        "evidence": [
+          "call_81192296ce7d4535a64c3d4e02b44438",
+          "call_4809cef82467416a828dedbe19ba352b",
+          "call_8110cb4b0e114daab558bae59d8bedbc"
+        ]
+      },
+      {
+        "text": "The inspected discussion material frames #26 as \u201cSuperior 3INST parameters,\u201d #33 as \u201cError converting model,\u201d and closed #58 as \u201clinalg.cholesky error converting OpenBuddy (Qwen3) 32B QAT.\u201d These are quantization discussions, not evidence that this MMLU addition resolves their reported problems.",
+        "basis": "source",
+        "evidence": [
+          "call_dc3453c7e97e43f9a73baab3413ff949",
+          "call_8f43eb8dd3b148be95c8a3cabe3a124f",
+          "call_255fff4c06e5493589d139bc7c9872d0",
+          "call_72f0c7f0892f43c9b78a78d05e115fc4"
+        ]
+      }
+    ],
+    "limitations": [
+      "No dataset download, model inference, tokenizer compatibility test or MMLU score measurement was performed.",
+      "The scalar checks model Python control flow and permutations; they do not execute the evaluator, Torch operations or GPU kernels.",
+      "Answer scoring requires exact vocabulary pieces for space-prefixed A\u2013D. single_id performs exact lookup; the script does not validate the resulting IDs or provide a multi-token scoring alternative.",
+      "Persistent shelf creation and serialization were inspected but not executed. The dataset revision is not pinned by the new loader."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "5498926b60c23e4dfc689f5fe2adff29436cb2ed"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Score MMLU answers through one-token generation jobs",
+        "claims": [
+          {
+            "text": "get_dataset_mmlu loads cais/mmlu's all configuration, materializes rows, and caches dev and test separately through the split argument. The shared decorator uses JSON argument keys and stores its shelf beside sys.argv[0], creating __disk_lru_cache__ there. Existing callers cache dataset text, tokenized data, storage statistics and evaluation results; the new split string and row-list return require no additional argument preparation.",
+            "basis": "source",
+            "evidence": [
+              "call_8110cb4b0e114daab558bae59d8bedbc",
+              "call_0191d3a9de0d45ffa5ccf2a5fa86e678",
+              "call_c9637d223c6d4e15b0e77d6b4e62167b"
+            ]
+          },
+          {
+            "text": "Both splits are sorted by subject. Subjects default to all development-set subjects; a comma-separated selection is checked against that set. Optional shuffling permutes only selected test questions and relocates the answer index with perm.index, leaving development demonstrations unchanged. No shuffle seed option is added.",
+            "basis": "source",
+            "evidence": [
+              "call_8110cb4b0e114daab558bae59d8bedbc"
+            ]
+          },
+          {
+            "text": "format_question labels four choices A\u2013D and ends unanswered questions at 'Answer:'. Demonstrations append the answer letter and a blank line. Each subject gets a shared preprompt encoded with BOS; each test question is encoded without BOS and concatenated to it. The default few-shot setting is five, but the demonstration loop never increments its counter.",
+            "basis": "source",
+            "evidence": [
+              "call_8110cb4b0e114daab558bae59d8bedbc"
+            ]
+          },
+          {
+            "text": "The generator is configured for at most 1024 parallel sequences, subject to available cache capacity, and max_q_size=1. Every question becomes a Job with max_new_tokens=1, return_logits=True and its row as identifier. Unlike HumanEval's text extraction and cancellation protocol, this evaluator waits for EOS events and consumes logits rather than the sampled completion.",
+            "basis": "source",
+            "evidence": [
+              "call_8110cb4b0e114daab558bae59d8bedbc",
+              "call_cf124c1b145041e4993c8aeb0b438e81",
+              "call_29164e6a0d514ead83f04e145857649c",
+              "call_1fcbcf21a6934af4882fd8c300bb1cc5"
+            ]
+          },
+          {
+            "text": "The four scores are selected using exact token IDs for ' A', ' B', ' C' and ' D'. Argmax determines correctness; softmax over those four scores supplies the correct-answer confidence. Consequently confidence is conditional on the four scored tokens, not the probability of the sampled token or a full-vocabulary confidence. Totals aggregate questions across subjects rather than averaging subject accuracies.",
+            "basis": "source",
+            "evidence": [
+              "call_8110cb4b0e114daab558bae59d8bedbc",
+              "call_b0d6041217e2457d918a5356def2a970"
+            ]
+          },
+          {
+            "text": "A bounded scalar transcription verified answer preservation for all 24 four-choice permutations and all four original answer indices: 96 cases. With five synthetic same-subject development rows, requested counts 0, 1, 2, 5, 6 and -1 included respectively 0, 5, 5, 5, 5 and 5 examples.",
+            "basis": "execution",
+            "evidence": [
+              "call_cc9b1c13083c4af180a6328bc5c58511"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "fewshot-counter-not-advanced",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The requested positive few-shot count does not limit the number of demonstrations.",
+        "trigger": "Run the new CLI with --fewshot_examples 1 or another positive count smaller than the available development examples for a selected subject.",
+        "expected_behavior": "Include only the requested number of same-subject development examples.",
+        "actual_behavior": "fewshots remains zero throughout the loop, so every matching development example is appended for any nonzero requested count. Zero exits immediately. The new __main__ block directly calls main; the whole-parent mmlu search found no existing evaluator caller, so the established reach is this new CLI and direct invocations of its main.",
+        "locations": [
+          {
+            "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+            "path": "eval/mmlu.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_8110cb4b0e114daab558bae59d8bedbc",
+          "call_2881092493584a848df0c9baba2bfd8e"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected initialization, break condition, subject filtering, prompt append and CLI invocation; no increment follows the append.",
+            "evidence": [
+              "call_8110cb4b0e114daab558bae59d8bedbc",
+              "call_2881092493584a848df0c9baba2bfd8e"
+            ],
+            "limits": "Literal parent search does not exclude external callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Reimplemented the inspected selection loop over five synthetic same-subject rows and observed all five included for requested counts one and two.",
+            "evidence": [
+              "call_cc9b1c13083c4af180a6328bc5c58511"
+            ],
+            "limits": "Did not execute repository evaluator code, tokenize prompts or measure score changes."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds cached, subject-selectable MMLU evaluation using one-token answer logits, optional choice shuffling and aggregate accuracy/confidence reporting. The few-shot counter is never advanced, so positive requested counts do not limit demonstrations."
+  },
+  "evidence": {
+    "call_8110cb4b0e114daab558bae59d8bedbc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "offset": 147,
+        "max_bytes": 6174
+      },
+      "result_sha256": "df7e9fed9f2d563467ca4132322dd061493d87767e47074fe86a640edc959481"
+    },
+    "call_d2d0ecfcecff4fcdb5bb92f9ae7df300": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "query": "return_logits",
+        "limit": 100
+      },
+      "result_sha256": "07cda0b7106a2c8ddd6a9ce0b4d14b9ccabe0b3eff8bd069e5703d0d63b7f7cc"
+    },
+    "call_74863bf3888e4173a0edd6b0e0bd59c3": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "path": "eval",
+        "limit": 100
+      },
+      "result_sha256": "81c297fb0d8a394593a52cfdc5d2e033c34b7e893c5fd0048ac6b74353b91da0"
+    },
+    "call_225ad70ac298464ea6264a4c4fda07b4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "query": "disk_lru_cache(",
+        "limit": 100
+      },
+      "result_sha256": "cb2efec73cabe41b319598d39daee0c22ccef305e302437f8a7ffc3e7ec93b3e"
+    },
+    "call_1fcbcf21a6934af4882fd8c300bb1cc5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "path": "eval/humaneval.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "a74dca5f41106408fdcb5d051b149235caf514304b9a875049d71ee7f3099aed"
+    },
+    "call_0191d3a9de0d45ffa5ccf2a5fa86e678": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_e7e6691be88a402f8637bd2ab20c4ec9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/util/file.py",
+        "limit": 20,
+        "max_bytes": 4000
+      },
+      "result_sha256": "53ccae481aff65fa8dd36d81d6947cd1281fba76ed669400e0deff0dd22c5ee8",
+      "catalog_only": true
+    },
+    "call_a357d19a316247efaf2dc382b63fe42a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5498926b60c23e4dfc689f5fe2adff29436cb2ed",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b288a59b08681f84b22d91eb928e347e036e1ac638ee0e8d3ce9c678358677be"
+    },
+    "call_4809cef82467416a828dedbe19ba352b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "path": "exllamav3/generator/job.py",
+        "offset": 21000,
+        "max_bytes": 7000
+      },
+      "result_sha256": "7fa790d5089fe1ef6e32c733d377f2c0c31740c8d9f994ce6eafd37fd2763347"
+    },
+    "call_29164e6a0d514ead83f04e145857649c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "path": "exllamav3/generator/job.py",
+        "offset": 0,
+        "max_bytes": 11500
+      },
+      "result_sha256": "a4de7c3a067aae6e42cad499951b4881204312121f2dbfd6355d61e005ec0f13"
+    },
+    "call_801bc028f0ef4770883a968dbad39470": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "eval/humaneval.py",
+        "limit": 10,
+        "max_bytes": 4000
+      },
+      "result_sha256": "b330b9f92e8215f39860f552fe5df20138e87fe19554c981e17f56cfa13ed924",
+      "catalog_only": true
+    },
+    "call_0a1e891ad84f4813bde3fd3bb9fb4fc4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_7f47001af5c04cc68afd120e6d4e6970": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "query": "single_id(",
+        "limit": 100
+      },
+      "result_sha256": "af10c9fd91143f846ae5700d2506fdec48af339499ec9283eee8d0de439a0d6c"
+    },
+    "call_b0d6041217e2457d918a5356def2a970": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "offset": 7600,
+        "max_bytes": 2300
+      },
+      "result_sha256": "416ddfdd68cc8d3fa6b0556148144d8fbabc0969b0e7435bc2fde54d325054cf"
+    },
+    "call_81192296ce7d4535a64c3d4e02b44438": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 14000
+      },
+      "result_sha256": "375c4847b912b6c4d67af6e2cb97b59c5aa1de612ad999156f852b7f46e3faf4"
+    },
+    "call_255fff4c06e5493589d139bc7c9872d0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "max_bytes": 15000
+      },
+      "result_sha256": "00de6614a91e2623c5cc842e33e383bb91b790f55f4c3ae48f36663cfcd44722"
+    },
+    "call_72f0c7f0892f43c9b78a78d05e115fc4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "offset": 15000,
+        "max_bytes": 4000
+      },
+      "result_sha256": "660e0e2d59a3caf56f18109c9e8cc1213f56eedba1f6ab08cf606b0aec12e2da"
+    },
+    "call_2881092493584a848df0c9baba2bfd8e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "query": "mmlu",
+        "limit": 100
+      },
+      "result_sha256": "6286d768bcff74de3a30b2910dd6243f41a15f0318f353ed49e1d50449a42d8f"
+    },
+    "call_cc9b1c13083c4af180a6328bc5c58511": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import itertools,json\nrows=[{'subject':'x','answer':i%4} for i in range(5)]\nr={}\nfor n in [0,1,2,5,6,-1]:\n fewshots=0; selected=[]\n for pq in rows:\n  if fewshots==n: break\n  if pq['subject']!='x': continue\n  selected.append(pq)\n r[n]=len(selected)\nchecks=0\nfor p in itertools.permutations(range(4)):\n for a in range(4):\n  assert p[p.index(a)]==a\n  checks+=1\nprint(json.dumps({'requested_to_included':r,'shuffle_label_checks':checks}))"
+        ]
+      },
+      "result_sha256": "5d4be41cb02db1a5364724b7468c034da2197392c0070b80846c1aaedb9e2f1d"
+    },
+    "call_c9637d223c6d4e15b0e77d6b4e62167b": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f in ['eval/compare_q.py','eval/compare_q_llamacpp.py','eval/model_diff.py','eval/ppl.py','eval/prequant_test.py','examples/batched_translation.py','science/kv_quant_exp.py']:\n s=Path(f).read_text().splitlines()\n for i,l in enumerate(s):\n  if '@disk_lru_cache(' in l:\n   print('\\n'+f+':'+str(i+1)+'\\n'+'\\n'.join(s[max(0,i-2):i+35]))"
+        ]
+      },
+      "result_sha256": "af5594c022118615e3630acf87c520bc5e276935b6dae2ef82c050d2ad6aeaf4"
+    },
+    "call_dc3453c7e97e43f9a73baab3413ff949": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16384
+      },
+      "result_sha256": "01e11ff9a349cee64875973513f41cc9ef351b9994c73732449f9e692f1356d8"
+    },
+    "call_8f43eb8dd3b148be95c8a3cabe3a124f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 30000
+      },
+      "result_sha256": "01c27a61b841038c2fec27e17323c6180ba4212692296288b3e33de9f2ebc886"
+    },
+    "call_1ab88537dbe74da091cea9eede739ae2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16384,
+        "max_bytes": 110000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_cf124c1b145041e4993c8aeb0b438e81": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2",
+        "path": "exllamav3/generator/generator.py",
+        "max_bytes": 13500
+      },
+      "result_sha256": "0a81389398e0a1dc97c3807d9d657a6f4e0176c4fa754b186e5dd2bd484ba891"
+    }
+  }
+}

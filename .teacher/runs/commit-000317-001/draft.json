@@ -1,0 +1,620 @@
+{
+  "schema_version": 5,
+  "sha": "c09f809876902c2cd9eedad463eecfa2c97977ed",
+  "parent_shas": [
+    "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042"
+  ],
+  "cutoff_date": "2025-07-15T20:32:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The standalone Wikitext-2 perplexity CLI let users set the number of rows, but not the number of tokens per row. Its token-window helper already accepted a width; the CLI always used the helper's 2048-token default.",
+        "basis": "source",
+        "evidence": [
+          "call_49ec2c61864f4b02ae61a06943d08e72",
+          "call_1b673ffe0b6547b79c4476c7f68b9eda"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The patch implements turboderp's stated change, \u201cppl.py: Add length argument,\u201d by forwarding the integer `-l` / `--length` value as `eval_len`. The new CLI default is the old helper default, so omitting the flag preserves the window selection. The flag changes the evaluation window, not the model's configured context capacity.",
+        "basis": "source",
+        "evidence": [
+          "call_0f26c0b599e64c18b5da145554c280d5",
+          "call_1b673ffe0b6547b79c4476c7f68b9eda",
+          "call_49ec2c61864f4b02ae61a06943d08e72"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "A different length changes both the context available to each prediction and the mix of corpus positions scored. Keep length and row count fixed when comparing model scores under the same windowing protocol; matching the row count alone does not match the number or weighting of targets.",
+        "basis": "inference",
+        "evidence": [
+          "call_49ec2c61864f4b02ae61a06943d08e72",
+          "call_1b673ffe0b6547b79c4476c7f68b9eda",
+          "call_9370f4aa012a459c93e72012573417ca"
+        ]
+      },
+      {
+        "text": "The script's parser always supplies `args.length`, but a programmatic caller passing an old namespace without `length` would now fail at the dataset call, after model initialization. Whole-parent literal searches for `get_test_tokens`, `ppl.py`, `eval.ppl`, and `import ppl` found the script's own call and separate helpers in other scripts, not an in-tree importer or external caller.",
+        "basis": "source",
+        "evidence": [
+          "call_1b673ffe0b6547b79c4476c7f68b9eda",
+          "call_49ec2c61864f4b02ae61a06943d08e72",
+          "call_8be93422adf74b158c5600ee35845211",
+          "call_2fd7cea374bc447e9190be1b7e9fbe0c",
+          "call_eff494645e114c5a994a79ebab4e61b5",
+          "call_512513cf3c39456ca9205f69db0c5924"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial preview's evaluation chapter records the original 2048-token, stride-512 Wikitext protocol and its repeated scoring of overlapping targets. The later evaluator-memory entry records in-place logit addition and earlier release of `log_probs`, not a new perplexity formula.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_b1f0ad873a7848db88fea5ae7e6d44c5",
+          "call_6d8b1a4c47be42d38c2b2d9bfe3a0112"
+        ]
+      },
+      {
+        "text": "Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d reports a TabbyAPI loading failure. Its error text matches the raise in `Model._load_autosplit`, and the discussion describes the dummy forward that the standalone evaluator also uses via the loader. That is shared loader context, not evidence that `ppl.py --length` reproduces the report.",
+        "basis": "inference",
+        "evidence": [
+          "call_42dade58b5444cf0be2de8da5ced388c",
+          "call_0c2fb9cfe8cf4661b96536a18fd044b6",
+          "call_e67ccc6dac8c42b88b557168139151f9",
+          "call_49ec2c61864f4b02ae61a06943d08e72"
+        ]
+      },
+      {
+        "text": "Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, discusses static versus per-request YaRN and quotes `override_max_position_embeddings`. That exact field is relevant to the inspected LongRoPE path, but the patch neither changes Qwen3 YaRN nor forwards the CLI length to the override.",
+        "basis": "inference",
+        "evidence": [
+          "call_b401b265ea064a838d1469cd850efb35",
+          "call_ec2857bbed7c403785aa54cdebe9ac62",
+          "call_618271708388446f8b79f42c0a57d2b8",
+          "call_1b673ffe0b6547b79c4476c7f68b9eda"
+        ]
+      },
+      {
+        "text": "PR #22, \u201cOpenAI compatible API example,\u201d proposes a chat endpoint and quotes the shared `model_init.add_args` cache option. The common parser helper explains the overlap, but this evaluator passes `cache=False`; the API discussion does not describe its new window option.",
+        "basis": "inference",
+        "evidence": [
+          "call_d47ca9a625174604855ef031da77bf2a",
+          "call_2a2bcfa7a2f844fbaedaac33dd3fdad0",
+          "call_e67ccc6dac8c42b88b557168139151f9",
+          "call_1b673ffe0b6547b79c4476c7f68b9eda"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d proposes a trellis-decoder multiplier, reports perplexity comparisons, and mentions `eval/model_diff.py` as a starting point for KLD testing. Issue #33, \u201cError converting model,\u201d reports a file-open failure during conversion compilation. Neither the evaluation-script overlap nor the conversion discussion establishes a link to the CLI length change.",
+        "basis": "inference",
+        "evidence": [
+          "call_a05ac1c924624c6eb32ba8e84f0db0b7",
+          "call_9bca9f8b93bd48f78512eda93ddae27c",
+          "call_ba3c18e2b89d40f196da19980abd0998",
+          "call_1b673ffe0b6547b79c4476c7f68b9eda"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native extension import failure and names the inspected model/config/RoPE files in its traceback. PR #4, \u201cchore: update config.py,\u201d describes a spelling correction. The shared paths do not connect either discussion to evaluation-window selection.",
+        "basis": "inference",
+        "evidence": [
+          "call_982f7b3ba1bd42079d1b49322648ddd1",
+          "call_2c674a94504542179f81ef4203607f3a",
+          "call_758ac8e592104e1481ca4b2ed4059d29",
+          "call_1b673ffe0b6547b79c4476c7f68b9eda"
+        ]
+      }
+    ],
+    "limitations": [
+      "Only window and target indexing were executed, using synthetic integer positions in standard-library Python. No Wikitext download, tokenization, PyTorch scoring, model loading, or GPU forward was run. Perplexity, VRAM usage, and supported maximum length remain unmeasured.",
+      "Literal parent-tree searches do not rule out dynamic imports or out-of-tree callers. The commit message gives no reason for leaving the loader and position settings fixed."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Choose the token window length for standalone perplexity evaluation",
+        "claims": [
+          {
+            "text": "`eval/ppl.py` tokenizes the Wikitext-2 raw test text with the loaded model's tokenizer. A window starting at token `a` contains `eval_tokens[:, a:a+L]`, where `L` is the requested length. Starts still advance by 512 tokens, and `--rows` still caps the number of windows at 100 by default. The stride is not a CLI option.",
+            "basis": "source",
+            "evidence": [
+              "call_49ec2c61864f4b02ae61a06943d08e72",
+              "call_1b673ffe0b6547b79c4476c7f68b9eda"
+            ]
+          },
+          {
+            "text": "Each row still goes through one cacheless forward pass. The scorer drops the last prediction position, crops to the actual vocabulary, takes float32 log-softmax, and gathers the following token's log probability. For a valid row of length `L`, this yields `L-1` targets. The script pools log probabilities across all rows and reports `exp(-sum_logprob / target_count)`, with no deduplication of overlapping targets. The in-place `1e-10` logit offset and per-row cleanup recorded by the memory entry remain in the parent source and are untouched by this diff.",
+            "basis": "source",
+            "evidence": [
+              "call_49ec2c61864f4b02ae61a06943d08e72",
+              "call_1b673ffe0b6547b79c4476c7f68b9eda"
+            ]
+          },
+          {
+            "text": "With 60,000 synthetic token positions and a cap of 100 rows, a Python transcription counted 51,100 target occurrences at length 512, all distinct. At length 2048 it counted 204,700 occurrences over 52,735 distinct positions, with some positions counted four times. Length 4096 raised the maximum multiplicity to eight; this is an indexing result, not evidence that 4096 runs on a model.",
+            "basis": "execution",
+            "evidence": [
+              "call_9370f4aa012a459c93e72012573417ca",
+              "call_49ec2c61864f4b02ae61a06943d08e72"
+            ]
+          },
+          {
+            "text": "`model_init.init` still receives `override_dynamic_seq_len=2048`, `max_output_size=2048`, and `max_output_factor=5`. It passes the output settings to `Model.load`; the split loader uses a default dummy chunk of 2048 tokens, narrows the dummy state at the logit layer, and allocates four extra output-shaped tensors for the factor of five. This is a load-time memory estimate, not a runtime truncation rule. `Model.forward` only narrows the logit input for `last_tokens_only`, which this evaluator does not set. The base config's dynamic-length override is a no-op; `Phi3Config` stores it for LongRoPE, which chooses long versus short factors by comparing the override to the original context limit.",
+            "basis": "source",
+            "evidence": [
+              "call_49ec2c61864f4b02ae61a06943d08e72",
+              "call_1b673ffe0b6547b79c4476c7f68b9eda",
+              "call_e67ccc6dac8c42b88b557168139151f9",
+              "call_a10b3ac0881e4e968e5726c1bf72d62b",
+              "call_0c2fb9cfe8cf4661b96536a18fd044b6",
+              "call_758ac8e592104e1481ca4b2ed4059d29",
+              "call_ec2857bbed7c403785aa54cdebe9ac62",
+              "call_618271708388446f8b79f42c0a57d2b8"
+            ]
+          },
+          {
+            "text": "`eval/model_diff.py` calls its own helper with `(tokenizer, args.rows)` and still uses length 2048. `eval/prequant_test.py` calls a separate BOS-aware helper with `(tokenizer, args.rows, bos)` and also keeps its own 2048 default. Neither call consumes the changed `ppl.py` namespace.",
+            "basis": "source",
+            "evidence": [
+              "call_8be93422adf74b158c5600ee35845211",
+              "call_ba3c18e2b89d40f196da19980abd0998",
+              "call_9e015822710b433cb7b20e7cc63a078a",
+              "call_47a828b48792442b8ff68b4061fbf9fe",
+              "call_1b673ffe0b6547b79c4476c7f68b9eda"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "length-without-next-token-targets",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new integer flag exposes window widths that cannot supply a next-token target.",
+        "trigger": "Invoke standalone `eval/ppl.py` with `--length 1`, successful model initialization, and more than one encoded corpus token. Zero and negative widths are also accepted by the parser without semantic validation.",
+        "expected_behavior": "Reject widths below two before model work, since scoring requires a token and its successor.",
+        "actual_behavior": "A one-token row reaches scoring with both prediction and target slices empty. If tensor operations succeed, the target count remains zero and the mean divides by zero. Zero and negative widths likewise reach slicing instead of getting an argument error; their downstream failures were not tested.",
+        "locations": [
+          {
+            "commit": "c09f809876902c2cd9eedad463eecfa2c97977ed",
+            "path": "eval/ppl.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_1b673ffe0b6547b79c4476c7f68b9eda",
+          "call_49ec2c61864f4b02ae61a06943d08e72",
+          "call_8be93422adf74b158c5600ee35845211"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "The slice calculation gave 100 one-token windows and zero target positions.",
+            "evidence": [
+              "call_9370f4aa012a459c93e72012573417ca"
+            ],
+            "limits": "The check did not run the tensor or model operations that precede the division."
+          }
+        ]
+      },
+      {
+        "id": "window-ending-at-corpus-boundary-skipped",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited exclusive range bound omits a complete final window and does not handle an empty window list.",
+        "trigger": "Select `--length` equal to the encoded corpus length. More generally, a valid final window is omitted when its start is on the 512-token grid and the row cap has not already been reached. A length greater than the corpus also produces no windows.",
+        "expected_behavior": "Include a full window that ends exactly at the corpus boundary, and report a clear error when no full window can fit.",
+        "actual_behavior": "The range excludes start `num_tokens - eval_len`. At equality it yields no rows, so the standalone evaluator's helper calls `torch.cat` on an empty list rather than scoring the one available full row.",
+        "locations": [
+          {
+            "commit": "c09f809876902c2cd9eedad463eecfa2c97977ed",
+            "path": "eval/ppl.py",
+            "symbol": "get_test_tokens"
+          }
+        ],
+        "source_evidence": [
+          "call_1b673ffe0b6547b79c4476c7f68b9eda",
+          "call_49ec2c61864f4b02ae61a06943d08e72",
+          "call_8be93422adf74b158c5600ee35845211"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "At length 2048, the range produced no starts for 2048 corpus tokens, one for 2560, and two for 2561.",
+            "evidence": [
+              "call_9370f4aa012a459c93e72012573417ca"
+            ],
+            "limits": "This checked the range and target counts, not the PyTorch exception."
+          }
+        ]
+      },
+      {
+        "id": "longer-window-outgrows-load-estimate",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new window width can exceed the token dimensions used to plan model placement.",
+        "trigger": "Run the standalone evaluator with a valid corpus window longer than 2048 tokens and a model that loads through the split loader.",
+        "expected_behavior": "Size the load estimate for the requested forward width, or reject widths outside the supported configuration.",
+        "actual_behavior": "Model placement is planned with the same 2048-token dummy chunk and output estimate, then `main` forwards the whole longer row and requests logits at every position. Conversely, a shorter window does not reduce the load-time estimate.",
+        "locations": [
+          {
+            "commit": "c09f809876902c2cd9eedad463eecfa2c97977ed",
+            "path": "eval/ppl.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model._load_autosplit"
+          }
+        ],
+        "source_evidence": [
+          "call_1b673ffe0b6547b79c4476c7f68b9eda",
+          "call_49ec2c61864f4b02ae61a06943d08e72",
+          "call_e67ccc6dac8c42b88b557168139151f9",
+          "call_a10b3ac0881e4e968e5726c1bf72d62b",
+          "call_0c2fb9cfe8cf4661b96536a18fd044b6"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the fixed load arguments and the variable-width forward separately. Changing the estimate would require adjusting both chunk and output size: the dummy logit width is bounded by both.",
+            "evidence": [
+              "call_49ec2c61864f4b02ae61a06943d08e72",
+              "call_1b673ffe0b6547b79c4476c7f68b9eda",
+              "call_a10b3ac0881e4e968e5726c1bf72d62b",
+              "call_0c2fb9cfe8cf4661b96536a18fd044b6"
+            ],
+            "limits": "The mismatch does not prove any particular GPU will run out of memory or that a given model accepts the longer context."
+          }
+        ]
+      },
+      {
+        "id": "length-can-cross-longrope-tier",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "On the Phi3 LongRoPE path, the evaluation width can disagree with the load-time width used to choose rotary factors.",
+        "trigger": "Use a Phi3 LongRoPE configuration and a valid evaluation length on the opposite side of its original-context threshold from 2048; for example, choose a width above the threshold when the threshold is at least 2048.",
+        "expected_behavior": "For a context-length evaluation, choose factors using the requested width, or explicitly constrain the evaluation to the intended tier.",
+        "actual_behavior": "The evaluator still passes 2048 into `Phi3Config.override_dynamic_seq_len`; LongRoPE selects its factors using that override, not the requested window width. In the example trigger it selects short factors even though the requested row exceeds the threshold.",
+        "locations": [
+          {
+            "commit": "c09f809876902c2cd9eedad463eecfa2c97977ed",
+            "path": "eval/ppl.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+            "path": "exllamav3/util/rope.py",
+            "symbol": "_rope_params_longrope"
+          }
+        ],
+        "source_evidence": [
+          "call_1b673ffe0b6547b79c4476c7f68b9eda",
+          "call_49ec2c61864f4b02ae61a06943d08e72",
+          "call_e67ccc6dac8c42b88b557168139151f9",
+          "call_4f67fc31ed4b4e38ae7bcdac009d33cf",
+          "call_ec2857bbed7c403785aa54cdebe9ac62",
+          "call_618271708388446f8b79f42c0a57d2b8"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Followed the override from the evaluator to the config field and compared it with the LongRoPE `a_override > b` condition.",
+            "evidence": [
+              "call_49ec2c61864f4b02ae61a06943d08e72",
+              "call_e67ccc6dac8c42b88b557168139151f9",
+              "call_ec2857bbed7c403785aa54cdebe9ac62",
+              "call_618271708388446f8b79f42c0a57d2b8"
+            ],
+            "limits": "This is conditional on the LongRoPE path and a crossed threshold; no checkpoint or score was tested."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds `-l` / `--length` to standalone perplexity evaluation, keeping the 2048-token default and 512-token stride. The flag changes scoring windows, but not the loader's memory estimate or LongRoPE length override, and it does not validate unusable widths."
+  },
+  "evidence": {
+    "call_1b673ffe0b6547b79c4476c7f68b9eda": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c09f809876902c2cd9eedad463eecfa2c97977ed",
+        "offset": 161,
+        "max_bytes": 818
+      },
+      "result_sha256": "e115629925668372fb88781923e29c79f675a17e1bbcc6851efe12761ec402ad"
+    },
+    "call_49ec2c61864f4b02ae61a06943d08e72": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "eval/ppl.py"
+      },
+      "result_sha256": "019092a39f34c44861dc413e2df080683b9a336832e8c6f887e5a0afc6e15f1e"
+    },
+    "call_6d8b1a4c47be42d38c2b2d9bfe3a0112": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "9849c92b3603f7f61ca169e52d3ec1ae7fac09c0"
+      },
+      "result_sha256": "07ccb539f86055efb1a349fd1f616cbbb937e2ba43e76d77d5847f8fe20e13c1"
+    },
+    "call_b1f0ad873a7848db88fea5ae7e6d44c5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation"
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_e67ccc6dac8c42b88b557168139151f9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "exllamav3/model_init.py"
+      },
+      "result_sha256": "8c4d3f4a24157d19c8746e18d20bda259442978383a484d415e83423941baaee"
+    },
+    "call_8be93422adf74b158c5600ee35845211": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "get_test_tokens",
+        "limit": 100
+      },
+      "result_sha256": "c4d74213af0b3f75c39fde062501f7acba2bcc81902c0bf6ab7c32429134040b"
+    },
+    "call_2fd7cea374bc447e9190be1b7e9fbe0c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "ppl.py",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_eff494645e114c5a994a79ebab4e61b5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "eval.ppl",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_b234e87455da483b97f5f3e1b1e5634f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "max_output_size",
+        "limit": 100
+      },
+      "result_sha256": "113a5d40edff42b12f0ab408cde8d287608a6ebb5beadf916cb2c14160fdc412"
+    },
+    "call_4f67fc31ed4b4e38ae7bcdac009d33cf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "def override_dynamic_seq_len",
+        "limit": 50
+      },
+      "result_sha256": "67f30914d657478b9e88dbdbf9160f41e48c287106d7faa00170a9c73cf53afc"
+    },
+    "call_0c2fb9cfe8cf4661b96536a18fd044b6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "exllamav3/models/model.py",
+        "offset": 4500,
+        "max_bytes": 22000
+      },
+      "result_sha256": "cbc11fee4ddfbdc0b68a32c3c099f12861ab6376f887bd394111c8f12b57b119"
+    },
+    "call_a10b3ac0881e4e968e5726c1bf72d62b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "9ad5879b0cc155cc8fc89a6a568c0d1570cd5c892f352a738b628d948602117e"
+    },
+    "call_d47ca9a625174604855ef031da77bf2a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22"
+      },
+      "result_sha256": "97f049897a98c1217e7d4168d688dcb9f72bc3d265d594dd2c290e3efd24a9bf"
+    },
+    "call_2a2bcfa7a2f844fbaedaac33dd3fdad0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 16384,
+        "max_bytes": 25000
+      },
+      "result_sha256": "1eac4e0aae9b6e7bf82d0fbce8194ccd24e25b33864ebb099ea706bf64a74e09"
+    },
+    "call_982f7b3ba1bd42079d1b49322648ddd1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7"
+      },
+      "result_sha256": "45654b44cb727b75e63e88c75c5bfb92061e66b3fc53cdc092a55b3481a95ff5"
+    },
+    "call_ba3c18e2b89d40f196da19980abd0998": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "eval/model_diff.py"
+      },
+      "result_sha256": "59fece20712df46ab674d177af01e9f23ce68b3f3e8aa02b1fb08267e9b27eab"
+    },
+    "call_9e015822710b433cb7b20e7cc63a078a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "eval/prequant_test.py",
+        "max_bytes": 2700
+      },
+      "result_sha256": "187c97505a511bf16ef141554ee8242aec9559a67f40f519dc61ed18df1dcc2f"
+    },
+    "call_8b63faf6fab34f5b945daeb6b08814b6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "bos =",
+        "path": "eval/prequant_test.py"
+      },
+      "result_sha256": "6ac6c1dae906efc371a2baa07d3cf36b58732fda9ac51c45258492ef957a43a9"
+    },
+    "call_a05ac1c924624c6eb32ba8e84f0db0b7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26"
+      },
+      "result_sha256": "0355b9a18d1361385c1ee24e042f7afd549cedf590d5bf3fe5936b152dd6709c"
+    },
+    "call_9bca9f8b93bd48f78512eda93ddae27c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33"
+      },
+      "result_sha256": "5de0dfc64c61928fd726631ba86099a0d5b5b2b50e54917d4e8eb5a4871e3204"
+    },
+    "call_512513cf3c39456ca9205f69db0c5924": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "import ppl"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_3e5d0acedc574ef4860c810eae044daf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "flash_attn_nc",
+        "limit": 25
+      },
+      "result_sha256": "25d9eaeda11f57cbbd41039954815d24d06c94d4aca3d69534cfa15b8295ae84"
+    },
+    "call_ec2857bbed7c403785aa54cdebe9ac62": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "exllamav3/models/phi3.py",
+        "max_bytes": 4900
+      },
+      "result_sha256": "d16e118e3570ca0bde1d1f1c95fe30456443f01ef6a6c347414d8f7d8a670355"
+    },
+    "call_3b5e7e3693c54d25851cbded174fffab": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "exllamav3/models/config.py",
+        "query": "def override_dynamic_seq_len"
+      },
+      "result_sha256": "0ce10c5e7bd93f2c010359d5dd058f359d7932afac3a6f988256f323323d6070"
+    },
+    "call_758ac8e592104e1481ca4b2ed4059d29": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "exllamav3/models/config.py",
+        "offset": 5500,
+        "max_bytes": 2700
+      },
+      "result_sha256": "fe0032b8ff1008702f29ee9d996c5eb9292f80d455938a7718bd5357058295d0"
+    },
+    "call_2c674a94504542179f81ef4203607f3a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4"
+      },
+      "result_sha256": "992eb81c6b6ee6ad3d411db17b248ec6facaa7b40af2545db80173d864c48547"
+    },
+    "call_9370f4aa012a459c93e72012573417ca": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from collections import Counter\nfor L in (256,512,1024,2048,4096):\n starts=list(range(0,60000-L,512))[:100]; c=Counter(i for a in starts for i in range(a+1,a+L)); print(L,len(starts),sum(c.values()),len(c),max(c.values()))\nfor N,L in ((2048,2048),(2560,2048),(2561,2048),(60000,1),(60000,0)):\n s=list(range(0,N-L,512))[:100]; print('edge',N,L,len(s),sum(len(range(N)[a:a+L][1:]) for a in s))"
+        ]
+      },
+      "result_sha256": "38c44024b9439ce38f807a7b734dc870a39159cccdfa4e8588524d3dd9d6611e"
+    },
+    "call_3d7e3c35f703451ebb35da563de01099": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "query": "override_max_position_embeddings"
+      },
+      "result_sha256": "e01dc76c1ace97612b347f2e07844a1b8cd81b85ab583b497fd0fe4030571075"
+    },
+    "call_618271708388446f8b79f42c0a57d2b8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "exllamav3/util/rope.py",
+        "offset": 5700,
+        "max_bytes": 3900
+      },
+      "result_sha256": "08d906b56120a877c5ad6e3feff07ee82c2d6545c48bc7d778ab1ae3400d6697"
+    },
+    "call_b401b265ea064a838d1469cd850efb35": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 10000
+      },
+      "result_sha256": "f39d7979581e0b4cc853920ed0c5dad0b957494957440a5dc4532d5a7892893f"
+    },
+    "call_42dade58b5444cf0be2de8da5ced388c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 20000
+      },
+      "result_sha256": "226c09ad8dfcbd8f1792e4d69d328759d1b2e6359f7d6bf8cf15af9b836fb0f3"
+    },
+    "call_47a828b48792442b8ff68b4061fbf9fe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2b3d8b54af2de96d1ca956eb95f80b3f3e5b1042",
+        "path": "eval/prequant_test.py",
+        "offset": 10000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "1c431f5803cc64d1bf968d8c8e918d0fe4aecb66bc86eede37ebffc4ae51e600"
+    },
+    "call_0f26c0b599e64c18b5da145554c280d5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "c09f809876902c2cd9eedad463eecfa2c97977ed",
+        "max_bytes": 161,
+        "offset": 0
+      },
+      "result_sha256": "63000c474c5e94ad463796eda1e096c5788fde95184d8b1021828fbce5b357ac"
+    }
+  }
+}

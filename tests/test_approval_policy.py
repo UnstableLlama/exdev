@@ -98,6 +98,28 @@ class MetricsTests(unittest.TestCase):
         provenance=json.loads((run/'provenance.json').read_text());provenance['packet_manifest_sha256']=hashlib.sha256((packet/'manifest.json').read_bytes()).hexdigest();write_json(run/'provenance.json',provenance)
         return run,packet
 
+    def test_enabled_unrepaired_run_passes_assess(self):
+        run,packet=self.mechanical_fixture()
+        p=run/'provenance.json';provenance=json.loads(p.read_text())
+        provenance.update(validation_repair_policy='validator-only-v1',
+                          validation_repair=False,validation_repair_enabled=True)
+        write_json(p,provenance)
+        self.assertEqual(assess(run,packet,self.repo)['tier'],'mechanical')
+
+    def test_unrepaired_run_rejects_other_repair_keys_and_nonboolean_enabled(self):
+        run,packet=self.mechanical_fixture()
+        p=run/'provenance.json';provenance=json.loads(p.read_text())
+        provenance.update(validation_repair_policy='validator-only-v1',
+                          validation_repair=False,validation_repair_enabled=True)
+        for extra in ({'validation_repair_refused_sha256':'0'*64},
+                      {'validation_repair_unknown':True},
+                      {'validation_repair_enabled':'true'},
+                      {'validation_repair_enabled':1}):
+            with self.subTest(extra=extra):
+                write_json(p,{**provenance,**extra})
+                with self.assertRaisesRegex(ValueError,'Unexpected repair provenance'):
+                    assess(run,packet,self.repo)
+
     def test_mechanical_approval_uses_policy_identity_and_scoped_flags(self):
         run,packet=self.mechanical_fixture()
         self.assertEqual(assess(run,packet,self.repo)['tier'],'mechanical')

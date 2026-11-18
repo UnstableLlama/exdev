@@ -1,0 +1,625 @@
+{
+  "schema_version": 5,
+  "sha": "e370ed289d76f51d62e7300a213d64a4484355f3",
+  "parent_shas": [
+    "6f77a334156dfc5d93b5acf192b7ddfc26c38900"
+  ],
+  "cutoff_date": "2025-07-08T19:52:00+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Several collection operations scanned every tensor name to select an exact prefix and its dot-separated descendants.",
+        "basis": "source",
+        "evidence": [
+          "call_b2c1b1b37440485bb48f0e0c63ea07e4"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Caching a tensor-name trie appears intended to reduce repeated prefix-search work. The source establishes the mechanism, not a measured performance improvement.",
+        "basis": "inference",
+        "evidence": [
+          "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both dependency declarations add marisa_trie, matching the helper's local import. A whole-parent-tree search for marisa found no existing occurrence; dynamic and external imports remain outside that result.",
+        "basis": "source",
+        "evidence": [
+          "call_3c9e21f6d2a0454893befc1edf6d2703",
+          "call_fadf4be3ba6b40a69aaf8aecba19caba",
+          "call_4a67ab37dc4d4a21bfeb3e05e092b6af",
+          "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root loading-tokenization entry establishes the original exact-or-dot-descendant contract. The tensor-override entry establishes main-based enumeration and wildcard source routing, and records inherited metrics incompatibilities.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_00d8de693314412ba20b77171595a5d7",
+          "call_3de2ee97a354494fb955e3787e257e96"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d reports a file-opening failure through compile_model, get_tensors and get_tensor. Its connection to this change is inference from matching functions, not evidence that trie indexing fixes that failure. Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d instead concerns tensor padding.",
+        "basis": "inference",
+        "evidence": [
+          "call_a68cb7aa0fa843939d90a068fb026a88",
+          "call_797f3df9c17b4f3c842434bf56e363b1",
+          "call_9a0ec88af1cf40eca54c290b68da2898",
+          "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository loader, marisa_trie implementation, checkpoint I/O or GPU code was executed. The Python check transcribed selection logic and modeled a cached snapshot.",
+      "Trie ordering, construction cost, memory use and measured search improvement remain unverified.",
+      "Literal caller searches do not establish external compatibility. No inspected checkpoint demonstrates an exact-prefix collision in a shipped workflow.",
+      "Only opening portions of discussions #7, #26, #33, #34, #42, #48, #52, #53, #55 and #58 were inspected; those reads do not establish this change's motivation."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d"
+    ],
+    "chapters": [
+      {
+        "id": "loading",
+        "title": "Cached tensor-name prefix indexing",
+        "claims": [
+          {
+            "text": "get_tensor_file_map_trie imports marisa_trie on demand and constructs Trie(self.tensor_file_map.keys()), retaining the result with lru_cache. The trie indexes names; filenames and metadata remain in the existing dictionaries.",
+            "basis": "source",
+            "evidence": [
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4"
+            ]
+          },
+          {
+            "text": "Ordinary list_tensors and get_tensors, plus variant get_tensor_sizes and list_tensors, now query trie.keys(prefix + '.'). Ordinary get_tensor_sizes and variant get_tensors retain their full scans. Thus the change does not uniformly replace every prefix selector.",
+            "basis": "source",
+            "evidence": [
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4"
+            ]
+          },
+          {
+            "text": "Variant queries still enumerate main's namespace and resolve each selected name through find_stc; replacement-only names remain outside bulk enumeration. The added ordinary find_stc returns self. Parent-tree find_stc references were confined to the variant implementation and supplied tensor-name strings.",
+            "basis": "source",
+            "evidence": [
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+              "call_eff620e53b4e41da937e54b6c7708898"
+            ]
+          },
+          {
+            "text": "compile_model obtains module sizes before reading each module's tensors through get_tensors(prefix, allow_bf16=True). Model.get_storage_info uses get_tensor_sizes for unloaded modules. These consumers retain string module prefixes and do not compensate for the changed selectors.",
+            "basis": "source",
+            "evidence": [
+              "call_9a0ec88af1cf40eca54c290b68da2898",
+              "call_cbc0c84b251246889f6f7539a598b56d",
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+            ]
+          },
+          {
+            "text": "The retained index introduces a coherence requirement because add_tensor_files can mutate the name map. Keeping live scans avoids that requirement; using a cached trie requires invalidation or an immutable-map contract, neither supplied by this diff.",
+            "basis": "inference",
+            "evidence": [
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+            ]
+          },
+          {
+            "text": "A Python transcription selected a filename for an exact tensor prefix and raised KeyError when using it as a tensor-map key. A separate cached-snapshot model omitted a newly added descendant that live-map enumeration included.",
+            "basis": "execution",
+            "evidence": [
+              "call_ed46dd336dbc40e78f854f595458e2c8"
+            ]
+          },
+          {
+            "text": "The inherited metrics incompatibilities are carried over: the variant constructor initializes only main and stcs, shared initialization accesses config.stc.metrics, and Model.get_load_metrics calls get_metrics, which neither collection defines. The task diff does not change these interfaces.",
+            "basis": "source",
+            "evidence": [
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+              "call_1c831e16b2714f0cbfe475066dcfb4cc",
+              "call_cbc0c84b251246889f6f7539a598b56d",
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "exact-prefix-uses-filename",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "All four rewritten selectors append the mapping value rather than the exact tensor name.",
+        "trigger": "Supply a prefix equal to a stored tensor key whose mapped filename is not itself a tensor key.",
+        "expected_behavior": "Include the exact tensor, preserving the previous equality predicate.",
+        "actual_behavior": "Metadata listing indexes the map with a filename and raises KeyError; bulk loading and variant size lookup pass the filename to required tensor lookup and raise a missing-tensor error.",
+        "locations": [
+          {
+            "commit": "e370ed289d76f51d62e7300a213d64a4484355f3",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "SafetensorsCollection.list_tensors / get_tensors; VariantSafetensorsCollection.get_tensor_sizes / list_tensors"
+          }
+        ],
+        "source_evidence": [
+          "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+          "call_b2c1b1b37440485bb48f0e0c63ea07e4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared all four replacements with map construction and downstream lookups. Whole-tree searches located direct callers; inspected compilation and storage-statistics consumers supply module prefixes.",
+            "evidence": [
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+              "call_98d9c15439e34ed3b9710912a036474f",
+              "call_c7bfe862abf14d918133c895ce1d2e79",
+              "call_db43bff873c140c2a784f9d5fd8b9faf",
+              "call_9a0ec88af1cf40eca54c290b68da2898",
+              "call_cbc0c84b251246889f6f7539a598b56d"
+            ],
+            "limits": "Conditional API reach; no concrete checkpoint collision was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed exact-prefix selection with a synthetic tensor-to-filename map and observed KeyError.",
+            "evidence": [
+              "call_ed46dd336dbc40e78f854f595458e2c8"
+            ],
+            "limits": "Did not execute repository code or marisa_trie."
+          }
+        ]
+      },
+      {
+        "id": "cached-index-after-additions",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "add_tensor_files does not invalidate the cached trie.",
+        "trigger": "Build the trie, add files containing new descendant names, then repeat a trie-backed query before cache eviction.",
+        "expected_behavior": "Include newly added names, as the previous live-map scan did.",
+        "actual_behavior": "The retained trie omits additions although dictionary-based lookup can see them.",
+        "locations": [
+          {
+            "commit": "e370ed289d76f51d62e7300a213d64a4484355f3",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "SafetensorsCollection.get_tensor_file_map_trie / add_tensor_files"
+          }
+        ],
+        "source_evidence": [
+          "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+          "call_b2c1b1b37440485bb48f0e0c63ea07e4"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared cached construction with map mutation and searched add_tensor_files callers. The evaluation helper adds overrides before model loading, so that inspected caller does not establish the problematic ordering.",
+            "evidence": [
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+              "call_1b1bef23dfca48f2a15cd9df1a7555af",
+              "call_d82ac1920b514a24ad24d97f70f4ea5e"
+            ],
+            "limits": "Public-method sequence, not a demonstrated shipped-workflow failure."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled a cached name snapshot followed by dictionary mutation.",
+            "evidence": [
+              "call_ed46dd336dbc40e78f854f595458e2c8"
+            ],
+            "limits": "Snapshot model, not trie-library execution."
+          }
+        ]
+      },
+      {
+        "id": "carried-metrics-interface",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Inherited metrics consumers remain incompatible with collection interfaces.",
+        "trigger": "Reach shared initialization's metrics block with a variant collection, or call Model.get_load_metrics.",
+        "expected_behavior": "Print or return loader metrics.",
+        "actual_behavior": "The variant lacks metrics; ordinary and variant collections lack get_metrics, producing attribute lookup failures.",
+        "locations": [
+          {
+            "commit": "e370ed289d76f51d62e7300a213d64a4484355f3",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "VariantSafetensorsCollection.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+          "call_1c831e16b2714f0cbfe475066dcfb4cc",
+          "call_cbc0c84b251246889f6f7539a598b56d",
+          "call_27fb6264a2d54ac88cdac7ff6197a9a8"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared constructors and collection APIs with both metrics consumers and the task diff. Searches found only the get_load_metrics definition and shared initialization's metrics.print call.",
+            "evidence": [
+              "call_b2c1b1b37440485bb48f0e0c63ea07e4",
+              "call_1c831e16b2714f0cbfe475066dcfb4cc",
+              "call_cbc0c84b251246889f6f7539a598b56d",
+              "call_27fb6264a2d54ac88cdac7ff6197a9a8",
+              "call_ce15c9ba92fa4df286f6c54a851c33ee",
+              "call_e6e640ed668a44908e8d0c5062f4c922"
+            ],
+            "limits": "Carried-over conditional failures, not introduced by trie indexing and not executed."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds cached trie searches and marisa_trie dependencies. Source inspection identifies incorrect exact-key selection, missing cache invalidation and unchanged metrics incompatibilities; scalar checks are reported separately."
+  },
+  "evidence": {
+    "call_27fb6264a2d54ac88cdac7ff6197a9a8": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e370ed289d76f51d62e7300a213d64a4484355f3",
+        "offset": 196,
+        "max_bytes": 3917
+      },
+      "result_sha256": "3441038eb54ad34685da87eccfd835c66effb294487e000e8b6bc563d8ee769b"
+    },
+    "call_3c9e21f6d2a0454893befc1edf6d2703": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e370ed289d76f51d62e7300a213d64a4484355f3",
+        "offset": 3383,
+        "max_bytes": 345
+      },
+      "result_sha256": "bd1ba77ce7555795ef22078b5ced4f2dd946aaa8394e8c78703437aaeb28f6b0"
+    },
+    "call_fadf4be3ba6b40a69aaf8aecba19caba": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e370ed289d76f51d62e7300a213d64a4484355f3",
+        "offset": 3728,
+        "max_bytes": 385
+      },
+      "result_sha256": "881122abc339812fef45e1b714979573e10060c2b96d06dd10d779fbbdb868f1"
+    },
+    "call_b2c1b1b37440485bb48f0e0c63ea07e4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "90ebd7e15bfe930f72c02ea5838a34567f5e116a907d8384896c223f35e49019"
+    },
+    "call_4a67ab37dc4d4a21bfeb3e05e092b6af": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": "marisa",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_89dfd0a1b80f4149a057130c4ecfd646": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": "tensor_file_map",
+        "limit": 100
+      },
+      "result_sha256": "933e1c2e90653fc6010ad311c8a9b545537275770b7b733d136fd53e2b31a7ce"
+    },
+    "call_98d9c15439e34ed3b9710912a036474f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": ".list_tensors(",
+        "limit": 100
+      },
+      "result_sha256": "d713f8187845d03f7c49d0af422cb967dd490c015c30166276f0a4a96dd8f359"
+    },
+    "call_c7bfe862abf14d918133c895ce1d2e79": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": ".get_tensors(",
+        "limit": 100
+      },
+      "result_sha256": "7beaf544709f57336181e4a6542f9201ea4c603bb788533f48c4f868c7290723"
+    },
+    "call_db43bff873c140c2a784f9d5fd8b9faf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": ".get_tensor_sizes(",
+        "limit": 100
+      },
+      "result_sha256": "59d282da535282a5e454fe6adab931107fa9bb5db8e1e927e262297b5000a4db"
+    },
+    "call_1b1bef23dfca48f2a15cd9df1a7555af": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": "add_tensor_files(",
+        "limit": 100
+      },
+      "result_sha256": "a871ad5c109e2c7eaf2007935f5d973ce1561af552aa99a975de9ee393654528"
+    },
+    "call_3de2ee97a354494fb955e3787e257e96": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "8bef6da2877d138c00be97af8f4fe2b130f05ef05bcd7f093473c74908021f80"
+    },
+    "call_e594f337822f4d93a75a68d4581e7a6b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/2",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0d302b5958d3653a1928a1da7854fb647f215b6987fd9a34dc82240d8896bfb0"
+    },
+    "call_86b9d5fc26024f9cab0fd6ec30a40c3d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1722f4b81ce98290ec7598e4c8b0f817f436b2b26a69266a1715d0da4ba0d099"
+    },
+    "call_5064f00be4894e8b81bc89dc5b8af14e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 16000
+      },
+      "result_sha256": "97e40e8d44c9efd7045575426f3337984ad32ded21178c88d21997113eb8c293"
+    },
+    "call_2c2748cc09124e15822575cb312baced": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 16000
+      },
+      "result_sha256": "c1c92b8cf0c660c23b08e6433a2c27dd27d4b293b1704c939253b467cd432893"
+    },
+    "call_797f3df9c17b4f3c842434bf56e363b1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 16000
+      },
+      "result_sha256": "bfb96d1663ee37e30ffa2af38f3ef945469fc49fa4e79c8a2bb50cdeefa1d9e7"
+    },
+    "call_a68cb7aa0fa843939d90a068fb026a88": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a034840ae88aa1016d666a616357c9192a37310ac1acb814ee1cc2df063c4c5b"
+    },
+    "call_9a0ec88af1cf40eca54c290b68da2898": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "6a117526b3c930cfc53b8ff4afdc7d48c26fb9c19b8c7c1cc0599966b4b25e14"
+    },
+    "call_924e1636b5464749bdd64355b032a92a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f, ranges in {'exllamav3/conversion/quant_config.py':[(1,45)],'exllamav3/integration/transformers.py':[(170,210)],'exllamav3/models/gemma3.py':[(380,405)],'exllamav3/models/mistral3.py':[(275,300)],'exllamav3/models/model.py':[(430,455)],'exllamav3/modules/linear.py':[(200,220)],'eval/compare_q_exllamav3.py':[(1,45)]}.items():\n s=Path(f).read_text().splitlines(); print('\\n'+f)\n for a,b in ranges:\n  print('\\n'.join(f'{i+1}: {s[i]}' for i in range(a-1,min(b,len(s)))))"
+        ]
+      },
+      "result_sha256": "6784ccedde32cf987f6cc3c345d61859463ee7c2a2d234e6da77fdf057b148a5"
+    },
+    "call_8da79c84eabe4a9da924e44c2fac4cea": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49",
+        "max_bytes": 65536
+      },
+      "result_sha256": "f9762468b7a2ab495bc9871f6cb3ca3d05e8f1383a429cdc06680515c215baf6"
+    },
+    "call_f9db8050a083437c945de583ec3d64ee": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 1500
+      },
+      "result_sha256": "c79a870048811d85fc5ad8e5d91d0ee75452f77c59e8d2ffa1c038bfa3fdc71d"
+    },
+    "call_ee9078f8a6e743a297ef2461808bd43f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 1000
+      },
+      "result_sha256": "09f15bf83b1a7901e34517fe4fb9b9f731930e7e3e984e7fb25af91b1eb14089"
+    },
+    "call_6385179b2d7249dfaf5130a02cb64386": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 1000
+      },
+      "result_sha256": "d711285c9fd8d04808805c8e4d1673fec9d654fb4903ff3a7fec7269cc54b7ed"
+    },
+    "call_cc3fed3fa6064a7e9e14c162455f765d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 1200
+      },
+      "result_sha256": "2ef602fad5131aaf2f595d872a7e1c461e3a5c99a5cc79062a784a4b6642325d"
+    },
+    "call_8bc2b874b5d5454a9ed15b33ca879d1f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 1000
+      },
+      "result_sha256": "eb058c74550b73a428b79f87db9646f7b288f16ae61021764efedae06705e412"
+    },
+    "call_fe0fa986ffe344c6804212250439dcec": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 1000
+      },
+      "result_sha256": "99aac38b7d82433454b88b311e4aa18a42710710353cc10ab33eabf6843deb5a"
+    },
+    "call_802b14bdf4684c9d93d2cd7a981e93ef": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/55",
+        "max_bytes": 1000
+      },
+      "result_sha256": "b7526a135427e2fa25587f8cd7c29cddbe77f75e054cb8d29dd86867d49902d8"
+    },
+    "call_2403266bf5d74d52a2e96a41bb1cf18b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "max_bytes": 1000
+      },
+      "result_sha256": "10abeca67a4fd2d14a830d68cc554c97731738954f93360114debe442ece51c2"
+    },
+    "call_cbb4595e976d4dd3bfe0920e0f7c503b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/loader/safetensors.py",
+        "limit": 25,
+        "max_bytes": 16000
+      },
+      "result_sha256": "67e6e6e2fdaa662952f176803270147deef62422b52df6b901afbdff5b2783ac",
+      "catalog_only": true
+    },
+    "call_00d8de693314412ba20b77171595a5d7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    },
+    "call_ed46dd336dbc40e78f854f595458e2c8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from functools import lru_cache\nm={'layer.weight':'weights.safetensors','layer.bias':'weights.safetensors','layer2.weight':'other.safetensors'}\ndef selected(prefix):\n keys=[m.get(prefix)]\n if keys[0] is None: keys=[]\n return keys+[k for k in m if k.startswith(prefix+'.')]\nfor p in ['layer','layer.weight','absent']:\n ks=selected(p); print(p,ks)\n try: print('lookup filenames:',[m[k] for k in ks])\n except KeyError as e: print(type(e).__name__,str(e))\n@lru_cache\ndef snapshot(): return tuple(m)\nsnapshot(); m['layer.new']='extra.safetensors'; print('cached descendants:',[k for k in snapshot() if k.startswith('layer.')]); print('live descendants:',[k for k in m if k.startswith('layer.')])"
+        ]
+      },
+      "result_sha256": "500472da1c457728bb5518a749cdc23762622727edff2ee7d9a68e504beda7e5"
+    },
+    "call_eff620e53b4e41da937e54b6c7708898": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": "find_stc",
+        "limit": 100
+      },
+      "result_sha256": "d1550739677ee83bff1693228fbe0ecd3d00debb093bc0b1436004c8fc7f8c80"
+    },
+    "call_ce15c9ba92fa4df286f6c54a851c33ee": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": "get_load_metrics",
+        "limit": 100
+      },
+      "result_sha256": "a986db8e88cac0819111b7ce7325977f82629205bba47e7bfe6d4b33e9aa0892"
+    },
+    "call_e6e640ed668a44908e8d0c5062f4c922": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "query": ".metrics.print()",
+        "limit": 100
+      },
+      "result_sha256": "abb39433b7f1b565af7d09a488ca225c8eceb45d7af75b35c3781551f29c4fb0"
+    },
+    "call_6da930611528454d96907a32ed5cbb1c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,a,b in [('exllamav3/model_init.py',100,153),('exllamav3/models/model.py',400,410)]:\n s=Path(f).read_text().splitlines();print(f);print('\\n'.join(f'{i+1}: {s[i]}' for i in range(a-1,b)))"
+        ]
+      },
+      "result_sha256": "275d895f343fb4aec63acd34c9fd6196be807dc49b2ebc7df7c4385b5fe730fc"
+    },
+    "call_b0e339efb7064bbaa36190239841e720": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,a,b in [('exllamav3/model_init.py',85,153),('exllamav3/models/model.py',400,410)]:\n s=Path(f).read_text().splitlines();print(f);print('\\n'.join(f'{i+1}: {s[i]}' for i in range(a-1,min(b,len(s)))))"
+        ]
+      },
+      "result_sha256": "69e631aacf10cfa3867a4eb44c7e4f1dc1c5dbfa2f29b2d301d20a9420574063"
+    },
+    "call_ea437a4757274f59b8cdc206f6c0f33b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 1200
+      },
+      "result_sha256": "5a246ee4c011c202055ec1c40670edcb45df36c7a7fd66b6666910e1134b1288"
+    },
+    "call_1c831e16b2714f0cbfe475066dcfb4cc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "path": "exllamav3/model_init.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "8c4d3f4a24157d19c8746e18d20bda259442978383a484d415e83423941baaee"
+    },
+    "call_cbc0c84b251246889f6f7539a598b56d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "path": "exllamav3/models/model.py",
+        "offset": 15000,
+        "max_bytes": 6000
+      },
+      "result_sha256": "9a099b8cc454b3bf07beaf7ef251f2677a7200acbd7d939e49666aa686466031"
+    },
+    "call_d82ac1920b514a24ad24d97f70f4ea5e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f77a334156dfc5d93b5acf192b7ddfc26c38900",
+        "path": "eval/compare_q_exllamav3.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "2a90bae250b400f6914f22bab71a42263123eb775681c9b1d67efd77388bb72a"
+    }
+  }
+}

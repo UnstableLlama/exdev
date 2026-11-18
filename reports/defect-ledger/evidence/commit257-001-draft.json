@@ -1,0 +1,344 @@
+{
+  "schema_version": 5,
+  "sha": "32d98c24c140549c879e6e4db71b27077b9e1975",
+  "parent_shas": [
+    "f02c9afd6afa617983f72cb7f79fcf35667e573b"
+  ],
+  "cutoff_date": "2025-06-08T15:41:30+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The comparison runner lacked a QTIP backend. This change adds a custom-install adapter and Llama-3.1 comparison specifications.",
+        "basis": "source",
+        "evidence": [
+          "call_2f2ed83e9b0241e48ced0213fa736a94",
+          "call_4c76296ac24d41a68685b195b21ed11e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Registering both loading and forwarding lets QTIP reuse the existing tokenization, perplexity and reference-logit comparison pipeline rather than introducing a separate evaluator.",
+        "basis": "source",
+        "evidence": [
+          "call_b8eaeed722e34ed19ec8d50a4f7bf507",
+          "call_2f2ed83e9b0241e48ced0213fa736a94"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Adds 2-, 3- and 4-bit HYB specifications for 8B and HYB-YAQA specifications for 70B, using local artifact paths, and colors QTIP plot labels teal. The 70B specification contains a trailing comma that prevents its JSON loading.",
+        "basis": "source",
+        "evidence": [
+          "call_a3b121e954b2444295913621dfb5b761",
+          "call_2034e288a3854068b2fe0acbded1f547",
+          "call_2f2ed83e9b0241e48ced0213fa736a94",
+          "call_b8eaeed722e34ed19ec8d50a4f7bf507"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the root usage-evaluation entry and the AnyPrecision adapter entry. They establish the inherited four-value loader contract, logits-returning forward interface and distinction between tensor-storage accounting and measured VRAM.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_9951b3d718e741d48ef49c6305db6c98",
+          "call_d01ef4c61e904f11944b54658d890844"
+        ]
+      },
+      {
+        "text": "The AnyPrecision entry recorded an unconditional external-import requirement. Parent source now catches ModuleNotFoundError in that adapter, and this task leaves that handling unchanged; the recorded import failure is therefore not carried over in that form.",
+        "basis": "source",
+        "evidence": [
+          "call_59a649775b764b9ea24382974d548c80",
+          "call_2f2ed83e9b0241e48ced0213fa736a94"
+        ]
+      },
+      {
+        "text": "Issue #49, \u201crunning the QTIP inference code,\u201d offers installation guidance and contains turboderp's report of running HYB/YAQA comparisons. Its relationship to this change is inferred from QTIP, HYB, YAQA and Llama-3.1-70B matches, not an explicit commit link. The discussion also questions the reported comparison results; those reports are not measurements reproduced here.",
+        "basis": "inference",
+        "evidence": [
+          "call_8d77a89bc30a4fae8d621f68162ff0b9",
+          "call_a3b121e954b2444295913621dfb5b761",
+          "call_2034e288a3854068b2fe0acbded1f547"
+        ]
+      },
+      {
+        "text": "The inspected opening of PR #26, \u201cSuperior 3INST parameters,\u201d proposes codebook-parameter changes. Its connection is only inferred from shared comparison tooling and Llama evaluation context; this task does not implement that proposal.",
+        "basis": "inference",
+        "evidence": [
+          "call_20c67b60f0754658920851da216fde22",
+          "call_2f2ed83e9b0241e48ced0213fa736a94",
+          "call_4c76296ac24d41a68685b195b21ed11e"
+        ]
+      }
+    ],
+    "limitations": [
+      "No QTIP installation, model loading, GPU forwarding or quality evaluation was executed. The adapter explicitly targets a custom package installation and says it supports only Llama.",
+      "The external model_from_hf_path implementation, QuantizedLinear inheritance, model.vocab_size attribute and storage tensor availability were not verified. The meaning and enforcement of max_mem_ratio=0.7 remain external implementation details.",
+      "The scalar check models JSON construction and illustrative storage arithmetic; it does not execute repository inference or measure checkpoint storage.",
+      "Only the opening portion of the lengthy PR #26 discussion was inspected."
+    ],
+    "links": [
+      "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "QTIP comparison adapter",
+        "claims": [
+          {
+            "text": "load_qtip calls model_from_hf_path(model_dir, max_mem_ratio=0.7), discards model_str, computes storage metadata and returns model, decoder BPW, head BPW and storage bits. Its auto and bf16 arguments are unused. fwd_qtip moves input IDs to cuda:0, calls the model and returns output.logits. Both functions disable compiler capture and use inference mode.",
+            "basis": "source",
+            "evidence": [
+              "call_4c76296ac24d41a68685b195b21ed11e"
+            ]
+          },
+          {
+            "text": "The runner consumes that tuple and logits without a new tokenizer: test_ppl obtains shared dataset IDs, selects both functions by specification keys, computes next-token likelihood and optionally compares reference logits. The new specifications require both registry additions; labels describe artifacts but do not configure their precision.",
+            "basis": "source",
+            "evidence": [
+              "call_b8eaeed722e34ed19ec8d50a4f7bf507",
+              "call_2f2ed83e9b0241e48ced0213fa736a94",
+              "call_a3b121e954b2444295913621dfb5b761",
+              "call_2034e288a3854068b2fe0acbded1f547"
+            ]
+          },
+          {
+            "text": "get_storage_info counts ordinary Linear weights first. Width at least 0.9 \u00d7 model.vocab_size identifies a presumed head; otherwise the weight contributes to decoder storage. QuantizedLinear accounting sums SU, SV, tlut and trellis bytes, excluding None values, and divides their bits by logical in_features \u00d7 out_features. The 90% cutoff is a width heuristic, not a structural head lookup.",
+            "basis": "source",
+            "evidence": [
+              "call_4c76296ac24d41a68685b195b21ed11e"
+            ]
+          },
+          {
+            "text": "Multiplication by eight converts bytes to bits. The reported total includes counted decoder tensors and the last identified head, not embeddings, normalization, biases or runtime allocations. The runner divides by eight and 1024\u00b3, so its GB-labelled value uses GiB-sized units.",
+            "basis": "source",
+            "evidence": [
+              "call_4c76296ac24d41a68685b195b21ed11e",
+              "call_b8eaeed722e34ed19ec8d50a4f7bf507"
+            ]
+          },
+          {
+            "text": "An illustrative scalar calculation with 262,144 packed bytes plus 8,192 overhead bytes for 1,048,576 logical weights yields 2.0625 BPW. Thus this accounting can exceed nominal artifact bitrate.",
+            "basis": "execution",
+            "evidence": [
+              "call_82af8146dd5d460287ce910a97f7e805"
+            ]
+          },
+          {
+            "text": "The wrapper closely follows AnyPrecision's size helpers and cuda:0 forwarding pattern, but delegates loading to QTIP. Its optional imports catch ModuleNotFoundError; there is no explicit availability check before load_qtip uses model_from_hf_path.",
+            "basis": "source",
+            "evidence": [
+              "call_59a649775b764b9ea24382974d548c80",
+              "call_4c76296ac24d41a68685b195b21ed11e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "invalid-70b-qtip-spec",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new 70B model specification is not valid JSON because its final array element has a trailing comma.",
+        "trigger": "Select eval/spec/llama3.1-70b-instruct_qtip.json directly or through a modelspec wildcard.",
+        "expected_behavior": "main loads three QTIP model specifications and proceeds to evaluation.",
+        "actual_behavior": "main passes the file to json.load before model filtering or evaluation; the trailing comma causes JSONDecodeError and stops that invocation, including other specifications selected with it.",
+        "locations": [
+          {
+            "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+            "path": "eval/spec/llama3.1-70b-instruct_qtip.json",
+            "symbol": "final array element"
+          },
+          {
+            "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+            "path": "eval/compare_q.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_a3b121e954b2444295913621dfb5b761",
+          "call_b8eaeed722e34ed19ec8d50a4f7bf507",
+          "call_cbb0b454f3bd4041a7998017c2451e8b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the added file and main's unconditional json.load loop. Whole-parent-tree compare_q search located its evaluation-script import and documentation reference; the demonstrated trigger is main's modelspec-loading path.",
+            "evidence": [
+              "call_a3b121e954b2444295913621dfb5b761",
+              "call_b8eaeed722e34ed19ec8d50a4f7bf507",
+              "call_cbb0b454f3bd4041a7998017c2451e8b"
+            ],
+            "limits": "No full evaluation invocation was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Reconstructed the three-entry arrays with their respective closing punctuation and parsed them using standard-library json: 70B failed with JSONDecodeError; 8B parsed three entries.",
+            "evidence": [
+              "call_82af8146dd5d460287ce910a97f7e805"
+            ],
+            "limits": "Checks transcribed JSON structure, not direct task-tree file execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds custom-install QTIP evaluation dispatch, storage accounting and Llama HYB/YAQA specifications; the new 70B specification has invalid trailing-comma JSON."
+  },
+  "evidence": {
+    "call_2f2ed83e9b0241e48ced0213fa736a94": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "offset": 164,
+        "max_bytes": 1033
+      },
+      "result_sha256": "c059aad553ca72fe4fe919b7480c327d63890f7da56b1f00aa7c793e740ef79a"
+    },
+    "call_4c76296ac24d41a68685b195b21ed11e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "offset": 1197,
+        "max_bytes": 2334
+      },
+      "result_sha256": "1b7be8de3fe28b11123a14970f200236056e5ea8576098108455fffe092c4fa9"
+    },
+    "call_a3b121e954b2444295913621dfb5b761": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "offset": 3531,
+        "max_bytes": 1753
+      },
+      "result_sha256": "4e84dd3ea02a9cc82fb43435ffce4bd37db57ec76b0b6440f30faae43a0ba2a8"
+    },
+    "call_2034e288a3854068b2fe0acbded1f547": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "offset": 4426,
+        "max_bytes": 858
+      },
+      "result_sha256": "4f9a91aa2d887d92f627868f212bca9d24199ade0efd67545d4c596dca4d616c"
+    },
+    "call_b8eaeed722e34ed19ec8d50a4f7bf507": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+        "path": "eval/compare_q.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "f0ebbdd7833eecce0814819b52e01805e784fef311d146b3a8cfc6864c807a1f"
+    },
+    "call_adfeebee62d34ec7b9a6de7af6f970ef": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+        "query": "get_storage_info",
+        "limit": 100
+      },
+      "result_sha256": "87bccd4ed380b4bf5b3ae312b6e2cdaf226552b1a0eba1e5cb7e854c816718f9"
+    },
+    "call_59a649775b764b9ea24382974d548c80": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+        "path": "eval/compare_q_anyprecision.py",
+        "max_bytes": 12000
+      },
+      "result_sha256": "8a8446178565afb3b54b9f343f4d17b63ed4913ba651891f4248369749305c5e"
+    },
+    "call_420a287a18af414fb875f281f8437ae5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "eval/compare_q",
+        "max_bytes": 12000,
+        "limit": 30
+      },
+      "result_sha256": "09af6c3a907be58aa49cda9bb17d6af8fbf09c9bd78d5134e7541671dce72b94",
+      "catalog_only": true
+    },
+    "call_d01ef4c61e904f11944b54658d890844": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+        "max_bytes": 16000
+      },
+      "result_sha256": "78f62937cf14653e3038c8014e3dc54b0396ae0a8b89fc51043e98ee6d299e45"
+    },
+    "call_9951b3d718e741d48ef49c6305db6c98": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_8d77a89bc30a4fae8d621f68162ff0b9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49",
+        "max_bytes": 16000
+      },
+      "result_sha256": "078c6a5e70bc46de237a677af60f2129bd45dd6bd26bba26d304a368a6a3fdf7"
+    },
+    "call_20c67b60f0754658920851da216fde22": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16384
+      },
+      "result_sha256": "a36ac61d1de73d9bba9d771420eb508bf311767187c1d62f79fe7a8962425bf2"
+    },
+    "call_aa28c5338b8e43abbc28babe94412c7a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+        "query": "qtip",
+        "limit": 100
+      },
+      "result_sha256": "d34a8d197d031a99fac7f208037ef982096064a3f840f35c9e96a2bcbe1bfe4f"
+    },
+    "call_cbb0b454f3bd4041a7998017c2451e8b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+        "query": "compare_q",
+        "limit": 100
+      },
+      "result_sha256": "2ddbdadc26c52e43c595c124f7595cdc3df71a9b2f195793534c2078232d27d0"
+    },
+    "call_44a03c6227b9438396955ab6619d1159": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+        "query": "load_fn",
+        "limit": 100
+      },
+      "result_sha256": "07447b46c9020418f152db6f918ea513b59c61dacd810932996fa2d025c88ce9"
+    },
+    "call_82af8146dd5d460287ce910a97f7e805": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nfor size,tail in [('70b',','),('8b','')]:\n rows=[{'model_dir':f'/mnt/str/models/llama3.1-{size}-instruct/qtip/{b}bit-hyb'+('-yaqa' if size=='70b' else ''),'load_fn':'qtip','fwd_fn':'qtip','label':f'QTIP {b}bit-HYB'+('-YAQA' if size=='70b' else '')} for b in (2,3,4)]\n s='[\\n'+',\\n'.join(json.dumps(r) for r in rows)+tail+'\\n]'\n try: print(size,len(json.loads(s)))\n except json.JSONDecodeError as e: print(size,type(e).__name__,e.msg)\nprint('illustrative bpw',8*(262144+8192)/1048576)"
+        ]
+      },
+      "result_sha256": "f34981690a7d21ec28bbdb976f431dbbf83db256cf0a2525c05f4317675550fc"
+    }
+  }
+}

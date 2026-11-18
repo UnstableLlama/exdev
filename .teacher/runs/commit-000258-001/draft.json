@@ -1,0 +1,284 @@
+{
+  "schema_version": 5,
+  "sha": "afa7f1e5d04950143681f32f76cfdae06d727493",
+  "parent_shas": [
+    "32d98c24c140549c879e6e4db71b27077b9e1975"
+  ],
+  "cutoff_date": "2025-06-12T00:39:40+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The parent root initializer eagerly imports the HF adapter, whose module-level imports require Transformers even when no integration is requested. Transformers is absent from setup.py's runtime requirements.",
+        "basis": "source",
+        "evidence": [
+          "call_0c390eaf8f6a48beb0fed5a8211f1e2d",
+          "call_e4cd33829aa94baba6b196623601f1b0",
+          "call_1ef5990835a64ed28806477ddb248c31",
+          "call_9f3ea0d9f41744499049e88a5d56e820"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Removing both initializer imports separates ordinary package loading from adapter loading. This is explicit opt-in isolation, not lazy registration or an exception-handling fallback.",
+        "basis": "source",
+        "evidence": [
+          "call_0c390eaf8f6a48beb0fed5a8211f1e2d",
+          "call_e4cd33829aa94baba6b196623601f1b0"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The eager integration import path is removed, but the existing integration example still requests the deleted package-level export and therefore needs its import updated.",
+        "basis": "source",
+        "evidence": [
+          "call_e4cd33829aa94baba6b196623601f1b0",
+          "call_3dc3d701ac1c4f3d9e6afc37d62e5f09"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the integration-introduction entry bcaa636f66973eac4ac071ad25ef31e8586a02dc. It records the eager undeclared dependency, omitted integration package in setup.py, and missing decoder-multiplier forwarding.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_cb51d1cf44b14d478f579de75631ed1c",
+          "call_0e7f691843e3437087ea5ed5e80f5905"
+        ]
+      },
+      {
+        "text": "The task removes the recorded eager initializer dependency. The packaging omission remains in setup.py, although ordinary root initialization no longer requests that omitted package. The unchanged adapter still creates no mcg/mul1 buffers and forwards neither argument in finalize; this task does not repair that previously recorded limitation.",
+        "basis": "source",
+        "evidence": [
+          "call_0c390eaf8f6a48beb0fed5a8211f1e2d",
+          "call_e4cd33829aa94baba6b196623601f1b0",
+          "call_9f3ea0d9f41744499049e88a5d56e820",
+          "call_1ef5990835a64ed28806477ddb248c31"
+        ]
+      },
+      {
+        "text": "Issue #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d and #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d report native-extension import failures. Their inferred overlap with this task is the traceback through exllamav3/__init__.py, not evidence that removing HF imports fixes either failure. Issue #49, \u201crunning the QTIP inference code,\u201d concerns QTIP installation and comparisons; its inferred overlap is only setup.py/requirements terminology.",
+        "basis": "inference",
+        "evidence": [
+          "call_7b049ae0652e4262a56929fc11e64447",
+          "call_d89d558bcf3747318d49a0f8d5e4b09f",
+          "call_f822cac678564653a1b141035c2cb4ac",
+          "call_0c390eaf8f6a48beb0fed5a8211f1e2d"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository import, installed distribution, Transformers registration or generation was executed; other package dependencies and native-extension failures remain possible.",
+      "Searches establish literal in-tree references, not dynamic imports or external consumers.",
+      "This import-boundary change has no numerical mechanism requiring a useful scalar computation. Third-party Transformers-version compatibility remains unestablished."
+    ],
+    "links": [
+      "bcaa636f66973eac4ac071ad25ef31e8586a02dc"
+    ],
+    "chapters": [
+      {
+        "id": "transformers-integration",
+        "title": "Make HF adapter imports explicit",
+        "claims": [
+          {
+            "text": "The root initializer loses only `from . import integration`; its model, tokenizer, cache, generator and sampler exports remain. The integration initializer becomes empty by losing its patch_transformers re-export. Together these edits stop both ordinary root import and explicit integration-package import from automatically loading integration.transformers.",
+            "basis": "source",
+            "evidence": [
+              "call_0c390eaf8f6a48beb0fed5a8211f1e2d",
+              "call_e4cd33829aa94baba6b196623601f1b0"
+            ]
+          },
+          {
+            "text": "The adapter implementation remains available in integration/transformers.py in the source tree. Its module imports Transformers eagerly, while patch_transformers itself performs the registry mutations: it installs the exl3 quantizer/config mappings and assigns QuantizationMethod.EXL3. Importing the module and calling registration are distinct operations; neither initializer previously called registration.",
+            "basis": "source",
+            "evidence": [
+              "call_1ef5990835a64ed28806477ddb248c31",
+              "call_e4cd33829aa94baba6b196623601f1b0"
+            ]
+          },
+          {
+            "text": "Whole-parent searches found the integration initializer and examples/transformers_integration.py as importers of patch_transformers, with the example its only discovered direct caller. The example imports from the now-empty package before calling registration and loading an AutoModel. An explicit import from exllamav3.integration.transformers would preserve that opt-in sequence, provided the adapter is present and its dependencies import successfully.",
+            "basis": "source",
+            "evidence": [
+              "call_3367a490e81b4069871efa65fe1d464a",
+              "call_4621329e93e343ad8c041218b00978a3",
+              "call_3dc3d701ac1c4f3d9e6afc37d62e5f09",
+              "call_e4cd33829aa94baba6b196623601f1b0"
+            ]
+          },
+          {
+            "text": "The tradeoff is a narrower default dependency boundary at the expense of the former convenience export. Retaining the package-level re-export would preserve the example while avoiding ordinary root eager loading, but would still make explicit import of the integration package load Transformers. The task instead removes both conveniences.",
+            "basis": "inference",
+            "evidence": [
+              "call_0c390eaf8f6a48beb0fed5a8211f1e2d",
+              "call_e4cd33829aa94baba6b196623601f1b0",
+              "call_1ef5990835a64ed28806477ddb248c31"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "integration-example-stale-import",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged HF integration example imports an export removed by this commit.",
+        "trigger": "Run examples/transformers_integration.py in an environment where its preceding imports succeed.",
+        "expected_behavior": "The example obtains patch_transformers and registers EXL3 before loading the model.",
+        "actual_behavior": "Its `from exllamav3.integration import patch_transformers` requests a name no longer defined by the empty initializer, preventing the subsequent registration call and main execution.",
+        "locations": [
+          {
+            "commit": "afa7f1e5d04950143681f32f76cfdae06d727493",
+            "path": "exllamav3/integration/__init__.py",
+            "symbol": "module initialization"
+          },
+          {
+            "commit": "afa7f1e5d04950143681f32f76cfdae06d727493",
+            "path": "examples/transformers_integration.py",
+            "symbol": "module-level import"
+          }
+        ],
+        "source_evidence": [
+          "call_e4cd33829aa94baba6b196623601f1b0",
+          "call_3dc3d701ac1c4f3d9e6afc37d62e5f09",
+          "call_4621329e93e343ad8c041218b00978a3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the removed re-export with the example and whole-parent patch_transformers/import searches. The example is the sole discovered direct registration caller.",
+            "evidence": [
+              "call_e4cd33829aa94baba6b196623601f1b0",
+              "call_3dc3d701ac1c4f3d9e6afc37d62e5f09",
+              "call_4621329e93e343ad8c041218b00978a3"
+            ],
+            "limits": "Not executed. Earlier dependency failures can mask this failure; external callers and dynamic references were not enumerated."
+          }
+        ]
+      }
+    ],
+    "summary": "Removes eager HF integration imports from both initializers, isolating the adapter but leaving its example on the deleted convenience export."
+  },
+  "evidence": {
+    "call_0c390eaf8f6a48beb0fed5a8211f1e2d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "afa7f1e5d04950143681f32f76cfdae06d727493",
+        "offset": 175,
+        "max_bytes": 583
+      },
+      "result_sha256": "825fcd5eabcf3722674b2825fed42281b6a4eb7a5a5a3e3380e1248b38c265c2"
+    },
+    "call_e4cd33829aa94baba6b196623601f1b0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "afa7f1e5d04950143681f32f76cfdae06d727493",
+        "offset": 758,
+        "max_bytes": 347
+      },
+      "result_sha256": "5f427bbc3b24b2de4a7642f747c2729df6e4e6140a6fda2eda8e3eaa359b7eb4"
+    },
+    "call_3367a490e81b4069871efa65fe1d464a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "query": "integration",
+        "limit": 100
+      },
+      "result_sha256": "50f0eb68a569e4315515d82801791a0c9e330d56bd55052a99c333e47be30dcd"
+    },
+    "call_4621329e93e343ad8c041218b00978a3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "query": "patch_transformers",
+        "limit": 100
+      },
+      "result_sha256": "cfbc413721de247d87bc5688e834d1bffe2d75ffa239ca99f3e65e3dd96175a7"
+    },
+    "call_1ef5990835a64ed28806477ddb248c31": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "path": "exllamav3/integration/transformers.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "26294d46a0f07e71e5328e75e0a85c1313f71f20ac8580c819b845be2791b45b"
+    },
+    "call_3dc3d701ac1c4f3d9e6afc37d62e5f09": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "path": "examples/transformers_integration.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "e86e5672a4f3d552aa26d5919567375281b53c71608aae4f93669180e6be1c28"
+    },
+    "call_cb51d1cf44b14d478f579de75631ed1c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "max_bytes": 16384
+      },
+      "result_sha256": "ac7e0084b529fcf746bc7df70010664da13e7e2152f575d5bfc938c278b6fbae"
+    },
+    "call_0e7f691843e3437087ea5ed5e80f5905": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "offset": 16384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "d3f878eb3f10d9eb0566ea826a46c007ee9a465ffc55301bf750da7141bdabc1"
+    },
+    "call_9f3ea0d9f41744499049e88a5d56e820": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "path": "setup.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fbacfdbad1d1ddf755b6c3d9c1ff376a93ef23b9a54d1b35e1b2a18f47a8145a"
+    },
+    "call_7b049ae0652e4262a56929fc11e64447": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2a0165a7a5a232a877d671fd886ad1e9c0e98ea2efeb81a314f952e4aaceb355"
+    },
+    "call_d89d558bcf3747318d49a0f8d5e4b09f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 20000
+      },
+      "result_sha256": "232c48003fc50e744db80dd55ef4149beb4573f59e9fb7e90d7af8238a2cf934"
+    },
+    "call_f822cac678564653a1b141035c2cb4ac": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49",
+        "max_bytes": 12000
+      },
+      "result_sha256": "a9b65ad41f1d4168b34a111efa8e0a1e48e1d203e9c0a1bd1e649ba0c9fab0e0"
+    },
+    "call_d50ce2dd6c524a49ab5c5642b63ba0b4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "32d98c24c140549c879e6e4db71b27077b9e1975",
+        "query": "transformers",
+        "limit": 100
+      },
+      "result_sha256": "e57af77bb2d894741bfd81e13f3cd9347902925c46d44ef2b4b942c3f02daae5"
+    }
+  }
+}

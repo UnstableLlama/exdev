@@ -1,0 +1,313 @@
+diff --git a/teacher/ancestor_context.py b/teacher/ancestor_context.py
+index 9083de4..5c88b6d 100644
+--- a/teacher/ancestor_context.py
++++ b/teacher/ancestor_context.py
+@@ -1,6 +1,7 @@
+ # SPDX-License-Identifier: MIT
+ """Trusted approval and bounded export of reviewed, strict-ancestor explanations."""
+ from .blob_store import put
++from .codex_adapter import require_approval_model
+ import argparse
+ from datetime import datetime, timezone
+ import hashlib
+@@ -36,6 +37,7 @@ def approve_run(run, packet, reviewer, note):
+     draft=json.loads(read_regular(run/'draft.json'))
+     transcript=json.loads(read_regular(run/'raw-transcript.json'))
+     provenance=json.loads(read_regular(run/'provenance.json'))
++    require_approval_model(run,provenance)
+     raw_manifest=read_regular(packet/'manifest.json')
+     manifest=json.loads(raw_manifest)
+     if manifest.get('authoring_task',{}).get('kind')=='chapter':
+diff --git a/teacher/author.py b/teacher/author.py
+index 6f9f883..a5d29a0 100644
+--- a/teacher/author.py
++++ b/teacher/author.py
+@@ -5,7 +5,7 @@ import hashlib
+ import json
+ import platform
+ from pathlib import Path
+-from .codex_adapter import CodexTeacher, MODEL
++from .codex_adapter import CodexTeacher, MODEL, TRIAL_MODEL
+ from .codex_transport import CodexTransport, SUPPORTED_VERSION
+ from .editorial import render
+ from .session import FreshSession
+@@ -20,6 +20,21 @@ def write_json(path, value):
+ 
+ 
+ def author(packet, output, auth_file, transport_factory=CodexTransport):
++    return _author(packet, output, auth_file, transport_factory)
++
++
++def author_trial(packet, output, auth_file, *, model=TRIAL_MODEL, transport_factory=CodexTransport):
++    """Supervisor-only unpublished model comparison; no CLI or walk override."""
++    base=(ROOT/'.teacher/trials/teacher-model-001').resolve()
++    packet,output=Path(packet).resolve(),Path(output).resolve()
++    manifest=json.loads((packet/'manifest.json').read_text())
++    if (model!=TRIAL_MODEL or not packet.is_relative_to(base) or not output.is_relative_to(base)
++            or manifest.get('guidance_version')!=11 or manifest.get('coverage_request')):
++        raise ValueError('Model trial requires its isolated root, guidance 11 and unassisted input')
++    return _author(packet,output,auth_file,transport_factory,model=model,trial=True)
++
++
++def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False):
+     packet,output=Path(packet).resolve(),Path(output).resolve()
+     if output.is_relative_to(packet):
+         raise ValueError('Draft output must be outside the immutable packet')
+@@ -31,12 +46,16 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
+         raise ValueError('Coverage request belongs to another attempt')
+     output.mkdir(parents=True,exist_ok=False)
+     manifest=(packet/'manifest.json').read_bytes()
+-    provenance={'model':MODEL,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
++    provenance={'model':model,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
+         'packet_manifest_sha256':hashlib.sha256(manifest).hexdigest(),
+         'input_mode':'entry_analysis','published':False,
+         'python_version':platform.python_version(),'machine_architecture':platform.machine(),'operating_system':platform.system(),
+         'implementation_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
+             for p in sorted([*(ROOT/'teacher').glob('*.py'),*(ROOT/'schema').glob('*.json')])}}
++    if trial:
++        if session.reasoning_effort!='medium':
++            raise ValueError('Model trial requires medium effort')
++        provenance['trial_only']=True
+     coverage=json.loads(manifest).get('coverage_request')
+     if coverage:
+         provenance['coverage_request']={k:coverage[k] for k in ('path','sha256')}
+@@ -44,9 +63,9 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
+     write_json(output/'provenance.json',provenance)
+     write_json(output/'status.json',{'status':'running','published':False})
+     try:
+-        with transport_factory(auth_file) as transport:
++        with (transport_factory(auth_file,model=model) if trial else transport_factory(auth_file)) as transport:
+             result=CodexTeacher().run(session,transport,
+-                record=lambda transcript:write_json(output/'raw-transcript.json',transcript))
++                model=model, record=lambda transcript:write_json(output/'raw-transcript.json',transcript))
+         if manifest!=(packet/'manifest.json').read_bytes():
+             raise ValueError('Packet changed during authoring')
+         write_json(output/'draft.json',result['draft'])
+diff --git a/teacher/codex_adapter.py b/teacher/codex_adapter.py
+index 854dea5..059d7fd 100644
+--- a/teacher/codex_adapter.py
++++ b/teacher/codex_adapter.py
+@@ -6,6 +6,18 @@ from .editorial import output_schema, assemble_draft
+ 
+ MODEL = 'gpt-6-astra'
+ EFFORT = 'medium'
++TRIAL_MODEL = 'gpt-6.1-sol'
++
++def checked_model(model):
++    if model not in (MODEL, TRIAL_MODEL):
++        raise ValueError('Unsupported teacher model')
++    return model
++
++def require_approval_model(run, provenance):
++    if (provenance.get('model') != MODEL or provenance.get('reasoning_effort') != EFFORT
++            or provenance.get('trial_only') or '.teacher/trials' in str(run.resolve())):
++        raise ValueError('Only non-trial Astra medium runs may be offered for approval')
++
+ DISABLED_FEATURES = (
+     'apps','plugins','hooks','shell_tool','unified_exec','shell_snapshot','shell_snapshot_v2',
+     'browser_use','browser_use_external','computer_use','in_app_browser','view_image',
+@@ -59,8 +71,9 @@ For a root commit links must be []. Chapters are local sections linked by the re
+ ancestor entries or mark an annotation reviewed or training eligible.'''
+ 
+ 
+-def thread_parameters(session, cwd):
+-    return {'model':MODEL,'modelProvider':'openai','allowProviderModelFallback':False,
++def thread_parameters(session, cwd, model=MODEL):
++    checked_model(model)
++    return {'model':model,'modelProvider':'openai','allowProviderModelFallback':False,
+             'ephemeral':True,'cwd':str(cwd),'runtimeWorkspaceRoots':[],
+             'environments':[],'selectedCapabilityRoots':[], 'approvalPolicy':'never',
+             'sandbox':'read-only','baseInstructions':session.initial[0]['content'],
+@@ -75,7 +88,8 @@ def thread_parameters(session, cwd):
+ 
+ 
+ class CodexTeacher:
+-    def run(self, session, transport, record=None, max_calls=256):
++    def run(self, session, transport, record=None, max_calls=256, *, model=MODEL):
++        checked_model(model)
+         session.require_authoring_context()
+         if session.used:
+             raise ValueError('A fresh authoring session cannot be reused')
+@@ -88,13 +102,14 @@ class CodexTeacher:
+         transport.request('initialize',{'clientInfo':{'name':'exdev_teacher','version':'0.1.0'},
+                                        'capabilities':{'experimentalApi':True}})
+         transport.notify('initialized',{})
+-        started=transport.request('thread/start',thread_parameters(session,transport.cwd))
+-        if started['model']!=MODEL or started.get('reasoningEffort')!=session.reasoning_effort:
++        started=transport.request('thread/start',thread_parameters(session,transport.cwd,model))
++        if started['model']!=model or started.get('reasoningEffort')!=session.reasoning_effort:
+             raise ValueError('Codex changed the selected model or reasoning effort')
+         if started.get('instructionSources'):
+             raise ValueError('Unexpected inherited instruction sources')
++        transcript[0]['teacher_runtime']={'model':started['model'], 'reasoning_effort':started['reasoningEffort']}
+         thread=started['thread']['id']
+-        turn=transport.request('turn/start',{'threadId':thread,'model':MODEL,'effort':session.reasoning_effort,
++        turn=transport.request('turn/start',{'threadId':thread,'model':model,'effort':session.reasoning_effort,
+             'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
+             'input':[{'type':'text','text':session.initial[1]['content']}]})['turn']['id']
+         allowed={tool['name'] for tool in session.tools}
+@@ -146,7 +161,7 @@ class CodexTeacher:
+         annotation=json.loads(final)
+         entry, review=assemble_draft(annotation,manifest,transcript)
+         return {'draft':entry,'review':review,'transcript':transcript,'published':False,
+-                'model':MODEL,'reasoning_effort':session.reasoning_effort}
++                'model':model,'reasoning_effort':session.reasoning_effort}
+ 
+ # Retrieval instructions are appended without changing historical saved prompts.
+ RETRIEVAL_INSTRUCTIONS = "\nWhen ancestor_read is available, the initial ancestor catalog is navigation only. Page it with mode=catalog and next_offset (byte offsets). Use mode=search with file and/or symbol substrings to find entry and chapter targets; search offsets count grouped entry/chapter targets, newest first. Each target gives match_count and up to three examples. Search results are navigation only. Empty search results do not prove absence of discussion; graph coverage is reported. Read relevant entries or chapters with mode=content; cite that current tool call ID. Old session evidence IDs and catalog pages are not evidence. Follow truncated/next_offset for complete reads. The links field may name only ancestors whose prose you successfully read in this session. For schema 4 include a concise entry-level summary.\n"
+diff --git a/teacher/codex_transport.py b/teacher/codex_transport.py
+index 77f894c..8ccb66a 100644
+--- a/teacher/codex_transport.py
++++ b/teacher/codex_transport.py
+@@ -10,13 +10,14 @@ import signal
+ import subprocess
+ import tempfile
+ import time
+-from .codex_adapter import DISABLED_FEATURES
++from .codex_adapter import DISABLED_FEATURES, MODEL, checked_model
+ 
+ SUPPORTED_VERSION = 'codex-cli 0.167.0'
+ 
+ 
+-def configuration():
+-    lines=['model = "gpt-6-astra"','model_reasoning_effort = "medium"',
++def configuration(model=MODEL):
++    checked_model(model)
++    lines=['model = '+json.dumps(model),'model_reasoning_effort = "medium"',
+            'web_search = "disabled"','project_doc_max_bytes = 0',
+            'include_environment_context = false','model_catalog_json = "/state/model.json"',
+            '[agents]','enabled = false','[skills]','include_instructions = false',
+@@ -29,7 +30,8 @@ def configuration():
+ class CodexTransport:
+     cwd='/work'
+ 
+-    def __init__(self, auth_file, executable=None, timeout=1200):
++    def __init__(self, auth_file, executable=None, timeout=1200, *, model=MODEL):
++        self.model=checked_model(model)
+         self.auth_file=Path(auth_file)
+         self.executable=Path(executable or shutil.which('codex') or '').resolve()
+         self.timeout=timeout
+@@ -46,9 +48,13 @@ class CodexTransport:
+         try:
+             state=root/'state';state.mkdir(mode=0o700)
+             auth=state/'auth.json';auth.write_bytes(self.auth_file.read_bytes());auth.chmod(0o600)
+-            (state/'config.toml').write_text(configuration())
++            (state/'config.toml').write_text(configuration() if self.model==MODEL else configuration(self.model))
+             catalog=Path(__file__).resolve().parents[1]/'schema/codex-teacher-model.json'
+-            (state/'model.json').write_bytes(catalog.read_bytes())
++            profile=json.loads(catalog.read_text())
++            if self.model != MODEL:
++                profile['models'][0]['slug']=self.model
++                profile['models'][0]['display_name']=self.model
++            (state/'model.json').write_text(json.dumps(profile))
+             command=['/usr/bin/bwrap','--unshare-all','--share-net','--die-with-parent',
+                 '--new-session','--cap-drop','ALL','--clearenv',
+                 '--setenv','HOME','/work','--setenv','CODEX_HOME','/state',
+diff --git a/teacher/cycle.py b/teacher/cycle.py
+index a6cad0f..2cc40d9 100644
+--- a/teacher/cycle.py
++++ b/teacher/cycle.py
+@@ -247,6 +247,8 @@ def validate_run(run, packet, repo, evidence, position):
+     validate_bundle(packet, Path(evidence) / f'{position:06d}-eligible.json')
+     decision = assess(run, packet, repo)
+     provenance, manifest = read(run/'provenance.json'), read(packet/'manifest.json')
++    from .codex_adapter import require_approval_model
++    require_approval_model(run,provenance)
+     if provenance['packet_manifest_sha256'] != digest(packet/'manifest.json'):
+         raise ValueError('Manifest fingerprint mismatch')
+     for file, expected in provenance['implementation_sha256'].items():
+diff --git a/tests/test_ancestor_context.py b/tests/test_ancestor_context.py
+index c90715f..a480918 100644
+--- a/tests/test_ancestor_context.py
++++ b/tests/test_ancestor_context.py
+@@ -31,6 +31,15 @@ class AncestorContextTests(unittest.TestCase):
+             (run/(name+'.json')).write_text(json.dumps(value))
+         return run,packet
+ 
++    def test_other_model_effort_and_trials_cannot_be_approved(self):
++        run,packet=self.run_fixture()
++        path=run/'provenance.json';original=json.loads(path.read_text())
++        for update in ({'model':'gpt-6.1-sol'}, {'reasoning_effort':'high'}, {'trial_only':True}):
++            path.write_text(json.dumps(dict(original,**update)))
++            with self.assertRaisesRegex(ValueError,'approval'):
++                approve_run(run,packet,'test','forbidden')
++            self.assertEqual(json.loads((run/'review.json').read_text())['status'],'pending')
++
+     def test_approval_binds_exact_artifacts_and_exports_only_safe_projection(self):
+         run,source=self.run_fixture()
+         approve_run(run,source,'TEST REVIEWER','ADMIN_REVIEW_SECRET')
+diff --git a/tests/test_author.py b/tests/test_author.py
+index 1c75c7f..6bf173b 100644
+--- a/tests/test_author.py
++++ b/tests/test_author.py
+@@ -72,3 +72,29 @@ class AuthorTests(unittest.TestCase):
+         provenance=json.loads((out/'provenance.json').read_text());review=json.loads((out/'review.json').read_text())
+         self.assertEqual(provenance['coverage_request'],{'path':str(request),'sha256':sha})
+         self.assertTrue(provenance['reviewer_assisted']);self.assertTrue(review['reviewer_assisted'])
++
++    def test_trial_gate_and_actual_model_record(self):
++        from teacher.author import author_trial
++        import shutil
++        base=self.root/'.teacher/trials/teacher-model-001'
++        packet=base/'packet';shutil.copytree(self.packet,packet)
++        manifest=json.loads((packet/'manifest.json').read_text());manifest['guidance_version']=11
++        (packet/'manifest.json').write_text(json.dumps(manifest))
++        fake=FakeTransport()
++        original=fake.request
++        def request(method,params):
++            result=original(method,params)
++            if method=='thread/start':result['model']='gpt-6.1-sol'
++            return result
++        fake.request=request
++        with patch('teacher.author.ROOT',self.root), patch('teacher.runner.Runner.invoke',return_value={'ok':True,'result':{'text':'TEST FIXTURE ONLY'}}):
++            with self.assertRaises(ValueError):author_trial(packet,self.root/'outside',self.root/'unused')
++            out=base/'run'
++            author_trial(packet,out,self.root/'unused',transport_factory=lambda _,model:nullcontext(fake))
++        provenance=json.loads((out/'provenance.json').read_text())
++        self.assertTrue(provenance['trial_only'])
++        self.assertEqual(provenance['model'],'gpt-6.1-sol')
++        transcript=json.loads((out/'raw-transcript.json').read_text())
++        self.assertEqual(transcript[0]['teacher_runtime']['model'],'gpt-6.1-sol')
++        with self.assertRaisesRegex(ValueError,'approval'):approve_run(out,packet,'test','not allowed')
++        self.assertEqual(json.loads((out/'review.json').read_text())['status'],'pending')
+diff --git a/tests/test_codex_wire.py b/tests/test_codex_wire.py
+index 3b12b98..fbdf289 100644
+--- a/tests/test_codex_wire.py
++++ b/tests/test_codex_wire.py
+@@ -34,7 +34,10 @@ class CodexWireTests(unittest.TestCase):
+     def test_retrieval_wire_has_citable_content_and_fifteen_tools(self):
+         self.exercise_wire(retrieval=True)
+ 
+-    def exercise_wire(self, retrieval=False):
++    def test_sol_trial_wire(self):
++        self.exercise_wire(model='gpt-6.1-sol')
++
++    def exercise_wire(self, retrieval=False, model='gpt-6-astra'):
+         test_teacher_graph.GraphPacketTests.prepare(self)
+         if retrieval:
+             path=self.packet/'manifest.json';manifest=json.loads(path.read_text())
+@@ -107,12 +110,12 @@ class CodexWireTests(unittest.TestCase):
+         server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+         auth=self.root/'fixture-auth.json';auth.write_text(json.dumps({'OPENAI_API_KEY':'TEST_FIXTURE_NOT_A_CREDENTIAL'}))
+-        config=f'openai_base_url="http://127.0.0.1:{server.server_port}/v1"\n'+configuration()
++        config=f'openai_base_url="http://127.0.0.1:{server.server_port}/v1"\n'+configuration(model)
+         try:
+             with patch('teacher.codex_transport.configuration',return_value=config):
+-                with CodexTransport(auth,timeout=30) as transport:
++                with CodexTransport(auth,timeout=30,model=model) as transport:
+                     try:
+-                        result=CodexTeacher().run(FreshSession(self.packet),transport)
++                        result=CodexTeacher().run(FreshSession(self.packet),transport,model=model)
+                     except Exception:
+                         transport.stderr.seek(0)
+                         raise AssertionError(transport.stderr.read(4096).decode(errors="replace"))
+@@ -124,7 +127,7 @@ class CodexWireTests(unittest.TestCase):
+             self.assertTrue(requests, 'No actual turn request captured')
+             catalogs_checked=0
+             for request in requests:
+-                self.assertEqual(request['model'],'gpt-6-astra')
++                self.assertEqual(request['model'],model)
+                 self.assertEqual(request['reasoning']['effort'],'medium')
+                 advertised=request.get('tools',[])+[t for item in request['input'] if item.get('type')=='additional_tools' for t in item['tools']]
+                 names={leaf['name'] for tool in advertised for leaf in (tool['tools'] if tool['type']=='namespace' else [tool])}

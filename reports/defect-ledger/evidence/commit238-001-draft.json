@@ -1,0 +1,286 @@
+{
+  "schema_version": 5,
+  "sha": "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+  "parent_shas": [
+    "ab875ba73053b7b6581579300af8c3cb81677c99"
+  ],
+  "cutoff_date": "2025-06-05T02:26:00+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The comparison runner had no AnyPrecision dispatch entry. This change adds an adapter and six Llama-3.1-8B-Instruct comparison specifications.",
+        "basis": "source",
+        "evidence": [
+          "call_597e675524504e5d91539563080062ce",
+          "call_371b2c143276413bac52e9073c2f64d5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The adapter preserves the runner's existing interface: loading returns the model, decoder BPW, head BPW and storage bits; forwarding returns logits. Thus AnyPrecision uses the existing dataset, scoring and plotting pipeline rather than a separate evaluator.",
+        "basis": "source",
+        "evidence": [
+          "call_597e675524504e5d91539563080062ce",
+          "call_371b2c143276413bac52e9073c2f64d5"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The new specifications select 2-, 3- and 4-bit GuidedQuant-LNQ and SqueezeLLM artifacts through local paths. Existing Llama-3.2-1B specifications move from /mnt/str/eval_models to /mnt/str/models; EXL3's lower-bitrate selections also change head labels and directories. A new HF FP16 specification supplies reference-logit output.",
+        "basis": "source",
+        "evidence": [
+          "call_597e675524504e5d91539563080062ce"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root usage-evaluation entry was read. It establishes the inherited adapter contract and explains that reported VRAM is decoder-plus-head tensor accounting, not measured peak allocation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_7c726b2bd6904414a93ae1ed9d473b4d"
+        ]
+      },
+      {
+        "text": "PR #26 is titled \u201cSuperior 3INST parameters\u201d and proposes codebook-parameter changes. Its connection here is only inferred from the shared comparison tooling and Llama evaluation context; the inspected discussion does not establish that it motivated AnyPrecision support.",
+        "basis": "inference",
+        "evidence": [
+          "call_4fad84551d6e44ea9cfbb24bb5605e4a",
+          "call_597e675524504e5d91539563080062ce"
+        ]
+      }
+    ],
+    "limitations": [
+      "No model loading, GPU forwarding, perplexity evaluation or filesystem-library execution was performed. External AnyPrecision implementation, version compatibility and default device placement remain unverified.",
+      "Storage accounting assumes the external modules expose qweight, precision and the selected lut1\u2013lut8 attribute. No checkpoint tensors were inspected to validate those assumptions.",
+      "The scalar computation illustrates the inspected accounting formula with hypothetical tensor sizes; it neither measures a checkpoint nor executes repository code.",
+      "Only the initial portion of the lengthy PR #26 discussion was inspected; no task-specific provenance is established from it."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "AnyPrecision comparison adapter and model specifications",
+        "claims": [
+          {
+            "text": "Both dispatch tables gain \u201canyprecision\u201d. load_anyprecision calls AnyPrecisionForCausalLM.from_quantized(model_dir), computes storage metadata and returns the existing four-item tuple. Its auto and bf16 parameters are unused. fwd_anyprecision moves IDs to cuda:0, invokes the model and returns output.logits; unlike the Transformers loader it does not explicitly establish model device placement or dtype.",
+            "basis": "source",
+            "evidence": [
+              "call_597e675524504e5d91539563080062ce",
+              "call_29bc6e203ad74635998c2ded3e7afa72"
+            ]
+          },
+          {
+            "text": "get_storage_info counts each AnyPrecisionLinear's qweight plus only the LUT selected by precision 1 through 8. Tensor bytes are multiplied by eight to obtain bits, then divided by the sum of logical in_features \u00d7 out_features. Consequently decoder BPW includes selected LUT overhead rather than merely reporting the nominal precision.",
+            "basis": "source",
+            "evidence": [
+              "call_597e675524504e5d91539563080062ce"
+            ]
+          },
+          {
+            "text": "Ordinary Linear modules with output width at least 90% of config.vocab_size are treated as the head; other ordinary linear weights contribute to decoder accounting. This is a width heuristic, not a structural head lookup. Embeddings, normalization tensors, biases, unused LUTs and runtime allocations are not explicitly included. The copied recursive GPU-tensor scanner is not called by this adapter.",
+            "basis": "source",
+            "evidence": [
+              "call_597e675524504e5d91539563080062ce"
+            ]
+          },
+          {
+            "text": "An illustrative standard-library calculation for 1,048,576 logical weights, 262,144 packed bytes and an 8,192-byte LUT produces 2.0625 BPW, including 0.0625 BPW LUT overhead. The runner's bits / 8 / 1024\u00b3 conversion reports GiB-sized units despite its GB label.",
+            "basis": "execution",
+            "evidence": [
+              "call_b6bbd39bfe494bc8a66751e0c987f0cf",
+              "call_371b2c143276413bac52e9073c2f64d5"
+            ]
+          },
+          {
+            "text": "The new AnyPrecision specifications rely jointly on the adapter and both registrations; their labels do not configure precision directly. The directory passed to from_quantized determines the loaded artifact. No AnyPrecision tokenizer is added: the dataset specification continues to select the shared Transformers tokenizer.",
+            "basis": "source",
+            "evidence": [
+              "call_597e675524504e5d91539563080062ce",
+              "call_371b2c143276413bac52e9073c2f64d5"
+            ]
+          },
+          {
+            "text": "For the new HF specification, main interprets out_logits as a directory, creates it if absent, appends the data-specification hash and .safetensors, and moves that model ahead of the others. test_ppl collects reference logits for the first ten rows; subsequent comparison models read the same resolved filename. This reuses existing behavior rather than introducing a new writer.",
+            "basis": "source",
+            "evidence": [
+              "call_597e675524504e5d91539563080062ce",
+              "call_371b2c143276413bac52e9073c2f64d5",
+              "call_5588ec2ac07d469d9920e4df5d1df3f9"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "unconditional-anyprecision-import",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "Adding the backend also makes its external package an import-time requirement for existing comparison workflows.",
+        "trigger": "Run compare_q.py, or import its helpers through compare_q_logits.py, in an environment without the any_precision module.",
+        "expected_behavior": "A workflow selecting only an existing backend would not need to import AnyPrecision.",
+        "actual_behavior": "compare_q.py unconditionally imports the new adapter, whose top-level imports require any_precision before model selection or argument parsing.",
+        "locations": [
+          {
+            "commit": "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+            "path": "eval/compare_q.py",
+            "symbol": "module imports"
+          },
+          {
+            "commit": "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+            "path": "eval/compare_q_anyprecision.py",
+            "symbol": "module imports"
+          }
+        ],
+        "source_evidence": [
+          "call_597e675524504e5d91539563080062ce",
+          "call_7d101eae26be4a1dbe5fc55432ccdb81",
+          "call_3498e191c00946138c550bf4fb6d1e6a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search found compare_q_logits.py importing get_test_data and save_tensor from compare_q; its source confirms the import occurs at module scope. Parent searches found no AnyPrecision or any_precision occurrences.",
+            "evidence": [
+              "call_7d101eae26be4a1dbe5fc55432ccdb81",
+              "call_3498e191c00946138c550bf4fb6d1e6a",
+              "call_0c8d1b712fe14916816095a311c3b4ca",
+              "call_fad6fcaab709417ea659edaf853142b8"
+            ],
+            "limits": "Import failure was not executed. Reach is established for these two evaluation entry points, not for unrelated package workflows or dynamic external callers."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds AnyPrecision evaluation dispatch and storage accounting, six comparison specifications, and updated Llama-3.2 paths and baseline selection; introduces an unconditional external import requirement."
+  },
+  "evidence": {
+    "call_597e675524504e5d91539563080062ce": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "162f99ab8bb032be8e4b22adbe0e5ee1f6a25425",
+        "max_bytes": 24000
+      },
+      "result_sha256": "69dfd789efa1a3062608182907c05a09c69c17c1d2bfa377335578c9803f873d"
+    },
+    "call_371b2c143276413bac52e9073c2f64d5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "path": "eval/compare_q.py",
+        "max_bytes": 55000
+      },
+      "result_sha256": "990bc765b9bb91f8786f4e689dcea9cc36198e0639453a001d0cddd4783a83cd"
+    },
+    "call_0c8d1b712fe14916816095a311c3b4ca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "query": "AnyPrecision",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_29bc6e203ad74635998c2ded3e7afa72": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "path": "eval/compare_q_transformers.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "d5d12a7348ad2aa8efabf29f150fb3cb47737edfa903327c216d07a30c3f61b8"
+    },
+    "call_e8f4905feb0a4cd1b851e4a2df880289": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "eval/compare_q_transformers.py",
+        "limit": 20
+      },
+      "result_sha256": "478344e2e10d4651e9249a1c395edc09170ad9354c3d6264e92b185722a573b9",
+      "catalog_only": true
+    },
+    "call_7c726b2bd6904414a93ae1ed9d473b4d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_5588ec2ac07d469d9920e4df5d1df3f9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "query": "out_logits",
+        "limit": 100
+      },
+      "result_sha256": "ef4e24b733320f747fb025fe7baf67d7e1ba4c6b24acfa4c67b429817ce1aa65"
+    },
+    "call_fad6fcaab709417ea659edaf853142b8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "query": "any_precision",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_4fad84551d6e44ea9cfbb24bb5605e4a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "98a5563c16ea5d1bf5952e4e43c85a4bb90ae15bcfc5993cf53ab0fb5b08c54b"
+    },
+    "call_3175d646c8f3420194cec768aa8c339d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "query": "logits_out",
+        "limit": 20
+      },
+      "result_sha256": "dfa8128a12cc5d1f2309fc8b393913e252567b82441915dca9721f9ac6b41377"
+    },
+    "call_7d101eae26be4a1dbe5fc55432ccdb81": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "query": "compare_q",
+        "limit": 100
+      },
+      "result_sha256": "c17f2b2de324fb5ba6a3d0d863803e9d1c8dfcfa4ce0b11b6d5d10b7ce6f63cd"
+    },
+    "call_3498e191c00946138c550bf4fb6d1e6a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "path": "eval/compare_q_logits.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "36ae865b71567b383dea6fd780ff8ef73cecdf7eea22265d34fabef86da62131"
+    },
+    "call_b6bbd39bfe494bc8a66751e0c987f0cf": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "n=1024*1024; qbytes=n*2//8; lutbytes=1024*4*2; bits=8*(qbytes+lutbytes); print({'illustrative_decoder_bpw':bits/n,'nominal_bits':2,'lut_overhead_bpw':8*lutbytes/n,'one_GiB_in_bits':8*1024**3})"
+        ]
+      },
+      "result_sha256": "9793302c535ed208f7d170383efce664eacbc294459a202e7aa55ca2d6614cca"
+    }
+  }
+}

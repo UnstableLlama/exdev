@@ -1,0 +1,894 @@
+{
+  "schema_version": 5,
+  "sha": "08dde73e664b997091370894072065f1f15055bf",
+  "parent_shas": [
+    "997ca85bcce1ad5da2f93c17df5f13bd77cc4800"
+  ],
+  "cutoff_date": "2025-07-11T21:29:40+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Generation had only commented-out filter integration. Token restrictions were assembled inside receive_logits and passed as blocked/allowed ID lists to CustomSampler.",
+        "basis": "source",
+        "evidence": [
+          "call_ffef006ce8514b9e9f59ba416b3c8555",
+          "call_b2d4c662eb5c4610817c51b61a81e426",
+          "call_369c3ad9ea594ca5bfda0cd7f302d487"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "A shared additive mask lets grammar constraints, minimum-length stop suppression, banned-string retries and token healing use one sampler interface. Scheduling grammar work around model.forward is intended to overlap CPU constraint computation with GPU work; no speedup was measured.",
+        "basis": "inference",
+        "evidence": [
+          "call_ffef006ce8514b9e9f59ba416b3c8555",
+          "call_b2d4c662eb5c4610817c51b61a81e426",
+          "call_369c3ad9ea594ca5bfda0cd7f302d487"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Adds public Filter and FormatronFilter exports, per-job stateful constraints, trigger-based activation and end_filter termination. Built-in sampler presets inherit the new mask interface.",
+        "basis": "source",
+        "evidence": [
+          "call_e3178f39980141e297d533bf64b5cc8e",
+          "call_44762a07b0994362b3d4709f12b86705",
+          "call_b2d4c662eb5c4610817c51b61a81e426",
+          "call_3410e5e520d047ef880eeb88a4775098"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the root generation and sampling entries and the conditional-RNG entry. They establish the existing scheduler, composable sampler and explicit-seed path, and record inherited optional-output, sorted-argmax and banned-string issues.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_82848c5c77ac487a8308333aff02316e",
+          "call_ac70901862c94ece99badde1f1ce83a2",
+          "call_bbe00b1e5e6348b590c45e6e0ed40f69",
+          "call_caf27781f0934e31a77ef10e77fe5de5"
+        ]
+      },
+      {
+        "text": "The root entry's unassigned optional-output locals are no longer present in the inspected parent: receive_logits initializes all optional outputs and computes requested probabilities. The task leaves that implementation unchanged. Sorted argmax and the two banned-string observations remain as recorded in findings.",
+        "basis": "source",
+        "evidence": [
+          "call_53006eecd9734a7a905bd7225dc4aaf3",
+          "call_2e485476e6a343228cfcf303d7336088",
+          "call_d250875a48444dd8a7bf954645850401",
+          "call_b2d4c662eb5c4610817c51b61a81e426"
+        ]
+      },
+      {
+        "text": "Related discussion #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports a 262208-versus-262272 logit-buffer mismatch. Its relationship here is inferred from the shared job.py output-buffer path, not an upstream link to this change; the task does not alter that buffer allocation.",
+        "basis": "inference",
+        "evidence": [
+          "call_3e48e8b36400450d97411241aae3e16b",
+          "call_d250875a48444dd8a7bf954645850401",
+          "call_b2d4c662eb5c4610817c51b61a81e426"
+        ]
+      },
+      {
+        "text": "Other fetched discussions concern distinct problems: #2 absolute setup paths; #6 a ROCm notification and extension-build assertion; #7 an undefined C++ symbol; #12 unsupported stop conditions resolved by selecting ChatML; #16 tokenizer truncation behind a CUDA error; #17 missing Torch during installation; #21 an unresolved Windows build failure; PR #13 missing BOS metadata; and #49 running QTIP inference code. Any relationship to this task is only inferred from shared initialization, tokenizer or dependency files, not evidence that Formatron support fixes those reports.",
+        "basis": "inference",
+        "evidence": [
+          "call_bcff94784f7c42aeab15313e09e88200",
+          "call_7a820b99c680440bb0864321a16a7784",
+          "call_3997e546510946fda6035b4ee790138f",
+          "call_24a1deae234d496a8484d42076256667",
+          "call_e856d6b0d0d94b289e079292a6de2406",
+          "call_58538c0590d045c2b6f8940403527f6f",
+          "call_b14053671c4b45bd98c9896961a796e6",
+          "call_228948cbcf0a42f698e9682e050ecccf",
+          "call_83185bb58b4946988f25bef28e8c975c",
+          "call_897c1642fc2843a186e5c19cbffb266a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository implementation, model generation, PyTorch operation, CUDA kernel or Formatron engine was executed. The standard-library checks model mask arithmetic, caching and state transitions only.",
+      "Formatron and KBNF implementation bodies were not supplied or inspected; their version-specific reset, completion and mask behavior remains externally unverified.",
+      "Whole-tree literal searches establish the inspected repository call sites, not external custom samplers, dynamically assembled calls or downstream integrations.",
+      "No latency, memory-usage or grammar-compliance measurements establish the practical benefit of background filtering."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "8b0df6910382b84fd9225353c2eb4cd2708482fb"
+    ],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Stateful Formatron constraints through additive logit masks",
+        "claims": [
+          {
+            "text": "Filter stores tokenizer, trigger token, optional prefix and completion policy. attach supplies the owning job, generator and padded vocabulary width. Job.activate attaches and resets each filter, enabling only those without triggers. receive_sample activates a matching inactive filter without feeding it the triggering token; active filters consume subsequent tokens, deactivate on completion and optionally end generation.",
+            "basis": "source",
+            "evidence": [
+              "call_05be3d4ce18e46868712d5905022aaf2",
+              "call_b2d4c662eb5c4610817c51b61a81e426"
+            ]
+          },
+          {
+            "text": "Generator.generate normalizes one prompt's filters into one list entry and requires one filter list or None per batched prompt. Direct Job construction accepts the same per-job list. AsyncJob already forwards keyword arguments to Job, so it needs no separate filter adapter. The example reuses filters sequentially but constructs separate instances for simultaneous jobs because filters carry mutable state.",
+            "basis": "source",
+            "evidence": [
+              "call_ffef006ce8514b9e9f59ba416b3c8555",
+              "call_b2d4c662eb5c4610817c51b61a81e426",
+              "call_f81759d90e9e4d21ae3e0d77e86953b8",
+              "call_4835eb1408a141618fcdcd8a6af6b4ed"
+            ]
+          },
+          {
+            "text": "FormatronFilter builds a formatter from a KBNF vocabulary and a token-decoding callback. Tokenizer.get_vocab_dict supplies raw token-string-to-ID mappings; get_original_characters converts those for KBNF tokens while the inverse mapping retains token spellings. Vocabulary construction caches ten argument combinations, an implementation capacity rather than a grammar threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_1fc2eaa85b704da686d6cbe655c9564c",
+              "call_64c3734f40244afaaf4a1f81f044baeb"
+            ]
+          },
+          {
+            "text": "The adapter computes allowed tokens and asks Formatron to mask a CPU half-precision zero vector, then adds a leading dimension. It discards the reusable zero buffer when returned storage aliases it. Despite Filter's boolean-mask docstring, this implementation and Job's consumer use additive numeric masks, not boolean selection.",
+            "basis": "source",
+            "evidence": [
+              "call_1fc2eaa85b704da686d6cbe655c9564c",
+              "call_05be3d4ce18e46868712d5905022aaf2",
+              "call_b2d4c662eb5c4610817c51b61a81e426"
+            ]
+          },
+          {
+            "text": "iterate_gen submits active background filters before model.forward, computes foreground filters afterward and joins their results in prepare_logit_mask. The first mask is copied into a lazily allocated pinned (1, padded_vocab_size) half buffer; further masks are added. Stop IDs below min_new_tokens and explored banned-string retry IDs receive negative infinity. Token healing postpones grammar masks and applies a prefix allowlist instead. A nonblocking transfer prepares the device mask before sampling.",
+            "basis": "source",
+            "evidence": [
+              "call_ffef006ce8514b9e9f59ba416b3c8555",
+              "call_b2d4c662eb5c4610817c51b61a81e426"
+            ]
+          },
+          {
+            "text": "For masks containing zero for allowed IDs and negative infinity elsewhere, addition implements intersection. A bounded standard-library check verified all 256 pairs of subsets of a four-token vocabulary. This does not test tensor broadcasting, half precision or GPU transfer ordering.",
+            "basis": "execution",
+            "evidence": [
+              "call_be3bcefbd4254d719f88cf81b3f26808"
+            ]
+          },
+          {
+            "text": "CustomSampler replaces blocked_tokens and allowed_tokens with logit_mask and adds it before its sampling steps. The old code cloned logits and assigned exclusions directly; the new path supports finite biases as well as exclusions. Sampler.forward itself remains on the old signature, so external implementations following that base declaration must adopt logit_mask: Job now supplies it even when its value is None.",
+            "basis": "source",
+            "evidence": [
+              "call_369c3ad9ea594ca5bfda0cd7f302d487",
+              "call_17f8b55bcb374847abc86ac766a51991",
+              "call_f5f0396359d5456a85b03096b2bdcb23",
+              "call_b2d4c662eb5c4610817c51b61a81e426"
+            ]
+          },
+          {
+            "text": "Whole-parent searches found the old restriction arguments only in Job, CustomSampler and the base Sampler declaration. All six built-in preset classes inherit CustomSampler.forward. The generation_loop example, gumbel_eval utility and sampler tests omit the replaced arguments; their inspected calls remain compatible, including tests using named return_state and sequence_ids.",
+            "basis": "source",
+            "evidence": [
+              "call_c28a36f8d5dd4a8baf3d2eef0c2e5250",
+              "call_ebdb73b6488040c8880bb0cd61655c45",
+              "call_6847e030ec484d09a7521db58bd056ff",
+              "call_f0f652dc57cc48e5b1a6c8c13b98af3f",
+              "call_3410e5e520d047ef880eeb88a4775098",
+              "call_8a8d8c787d994e0298e96f0f1bb91e8f",
+              "call_db67367ac31a4a739a1d798fb88814ba",
+              "call_7cd302036faf4d58aab798237cdb4596"
+            ]
+          },
+          {
+            "text": "The filter edits depend on each other: activation supplies vocabulary width before mask allocation, mask preparation supplies receive_logits' new argument, and CustomSampler consumes that argument. The new assertion rejecting filters combined with banned strings avoids rewinding a grammar engine without restoring its state.",
+            "basis": "inference",
+            "evidence": [
+              "call_05be3d4ce18e46868712d5905022aaf2",
+              "call_b2d4c662eb5c4610817c51b61a81e426",
+              "call_369c3ad9ea594ca5bfda0cd7f302d487",
+              "call_d250875a48444dd8a7bf954645850401"
+            ]
+          },
+          {
+            "text": "Requirements and setup add kbnf>=0.4.2 and formatron>=0.5.0; example requirements add pydantic. Parent-tree searches found no literal imports of these module names. The new adapter imports formatron and kbnf, and the example imports pydantic. Re-exporting the adapter through package initializers makes these runtime imports eager rather than confined to constrained-generation use.",
+            "basis": "source",
+            "evidence": [
+              "call_1d3b6759bbf545afa57f54c2f23fc9b5",
+              "call_c0b4b04df7714d0fb8893b95f167e696",
+              "call_897c1642fc2843a186e5c19cbffb266a",
+              "call_b2b18a7201174cb4b714924f2e180fea",
+              "call_54069b4d0a94449bae1c8ce523b32e35",
+              "call_6a071a1d00a447998a1f5bc95178f8b0",
+              "call_1fc2eaa85b704da686d6cbe655c9564c",
+              "call_180d4e9f638a44c2acb1a2352e954684",
+              "call_44762a07b0994362b3d4709f12b86705",
+              "call_e3178f39980141e297d533bf64b5cc8e"
+            ]
+          },
+          {
+            "text": "The example demonstrates JSON schema constraints, an additional leading-brace constraint, a Llama3.1-specific trigger ID 79579 and arithmetic grammar extraction. Its 400-token generation budget and maximum five superpowers are example choices, not engine limits. end_filter is checked after stop-token and token-budget termination, so those earlier reasons take precedence.",
+            "basis": "source",
+            "evidence": [
+              "call_4835eb1408a141618fcdcd8a6af6b4ed",
+              "call_b2d4c662eb5c4610817c51b61a81e426",
+              "call_d250875a48444dd8a7bf954645850401"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "speculative-mask-not-refreshed",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Speculative verification reuses a mask after the filter state advances.",
+        "trigger": "A filtered job accepts a draft token and proceeds to another sample in the same main-model logit batch.",
+        "expected_behavior": "Prepare constraints for the newly advanced grammar state before sampling the next position.",
+        "actual_behavior": "prepare_logit_mask runs once before the inner sampling loop. receive_sample advances filters, but subsequent receive_logits calls use the same device_logit_mask. A token legal only in the preceding state can therefore remain selectable.",
+        "locations": [
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/generator.py",
+            "symbol": "Generator.iterate_gen"
+          },
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample"
+          }
+        ],
+        "source_evidence": [
+          "call_5b5c5de06b514c06a36e9541f9d5441a",
+          "call_ffef006ce8514b9e9f59ba416b3c8555",
+          "call_b2d4c662eb5c4610817c51b61a81e426",
+          "call_8388ee8f166f4c53aa16233b49059cab"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "A two-state model with allowed sets {0} then {1} demonstrated that a frozen first mask permits a second 0 despite the advanced grammar.",
+            "evidence": [
+              "call_be3bcefbd4254d719f88cf81b3f26808"
+            ],
+            "limits": "Not a Formatron or speculative-decoding execution. The direct receive_sample caller found is iterate_gen; ordinary one-sample iterations do not exercise this stale-within-batch case."
+          }
+        ]
+      },
+      {
+        "id": "prefix-not-replayed",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Prefix acceptance is performed during construction but not replayed during activation or triggered reset.",
+        "trigger": "Construct FormatronFilter with read_prompt enabled and a nonempty prefix_str, then start its Job.",
+        "expected_behavior": "The prefix should remain accepted before generation, as the Filter parameter contract describes.",
+        "actual_behavior": "The constructor calls accept_bytes, but Job.activate immediately calls reset. FormatronFilter.reset only delegates to the formatter and does not reaccept prefix_str. If formatter reset clears accepted input, the initial prefix is lost. With prefix_str=None, the enabled constructor branch instead attempts None.encode.",
+        "locations": [
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/filter/formatron.py",
+            "symbol": "FormatronFilter.reset"
+          },
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.activate"
+          }
+        ],
+        "source_evidence": [
+          "call_1fc2eaa85b704da686d6cbe655c9564c",
+          "call_05be3d4ce18e46868712d5905022aaf2",
+          "call_b2d4c662eb5c4610817c51b61a81e426",
+          "call_ffef006ce8514b9e9f59ba416b3c8555"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared constructor acceptance with both new reset callers: job activation and trigger activation. No parent Formatron callers existed in the literal search.",
+            "evidence": [
+              "call_b2b18a7201174cb4b714924f2e180fea",
+              "call_b2d4c662eb5c4610817c51b61a81e426"
+            ],
+            "limits": "Actual formatter reset semantics and EngineGenerationConfig defaults were not inspected; prefix-loss conclusion is conditional on reset clearing accepted input."
+          }
+        ]
+      },
+      {
+        "id": "vocabulary-cache-list-argument",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The advertised list-valued vocab_processors argument cannot pass through the vocabulary cache.",
+        "trigger": "Pass any list, including [], as FormatronFilter.vocab_processors.",
+        "expected_behavior": "Forward the processors to get_original_characters and construct the vocabulary.",
+        "actual_behavior": "create_engine_vocabulary is decorated with lru_cache and receives the list unchanged, causing an unhashable-list TypeError before its body executes.",
+        "locations": [
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/filter/formatron.py",
+            "symbol": "create_engine_vocabulary"
+          }
+        ],
+        "source_evidence": [
+          "call_1fc2eaa85b704da686d6cbe655c9564c",
+          "call_b2b18a7201174cb4b714924f2e180fea"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Called a standard-library lru_cache(10) wrapper with the inspected argument structure and []; it raised TypeError: unhashable type: 'list'.",
+            "evidence": [
+              "call_be3bcefbd4254d719f88cf81b3f26808"
+            ],
+            "limits": "The new constructor is the visible direct caller. The supplied examples use the default None and do not exercise this case; no repository adapter was executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-sorted-argmax",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited sorted-argmax assignment defect persists through the sampler interface change.",
+        "trigger": "A custom sampling chain reaches SS_Argmax with sorted logits or probabilities.",
+        "expected_behavior": "Store the selected original token ID in state.sample.",
+        "actual_behavior": "Sorted branches assign to state.state, then overwrite it with DONE. If indexing succeeds, CustomSampler.forward subsequently tries to reshape the still-None sample.",
+        "locations": [
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/sampler/custom.py",
+            "symbol": "SS_Argmax.run"
+          }
+        ],
+        "source_evidence": [
+          "call_2e485476e6a343228cfcf303d7336088",
+          "call_17f8b55bcb374847abc86ac766a51991",
+          "call_369c3ad9ea594ca5bfda0cd7f302d487",
+          "call_7be8ba4b28a54ebd924110cbe3b2a503",
+          "call_3410e5e520d047ef880eeb88a4775098"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the parent branches and forward return with the task diff. Whole-parent SS_Argmax search and preset inspection show built-in greedy paths do not sort before argmax.",
+            "evidence": [
+              "call_7be8ba4b28a54ebd924110cbe3b2a503",
+              "call_3410e5e520d047ef880eeb88a4775098"
+            ],
+            "limits": "Limited to custom sorted-argmax composition; no tensor execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-banned-token-buffer",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Moving retry exclusions into prepare_logit_mask does not repair banned-string token-buffer restoration.",
+        "trigger": "A banned-string match reaches rewind_checkpoint before terminal handling.",
+        "expected_behavior": "Restore held_tokens to the saved checkpoint and exclude rejected IDs from emitted output.",
+        "actual_behavior": "rewind_checkpoint assigns the saved buffer to held_token, whereas emission reads held_tokens. Rejected token IDs can remain in the emitted buffer despite sequence rewind.",
+        "locations": [
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample.rewind_checkpoint"
+          }
+        ],
+        "source_evidence": [
+          "call_d250875a48444dd8a7bf954645850401",
+          "call_b2d4c662eb5c4610817c51b61a81e426",
+          "call_8388ee8f166f4c53aa16233b49059cab"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unchanged checkpoint assignment and emission reader with the task's relocated explored-token masking.",
+            "evidence": [
+              "call_d250875a48444dd8a7bf954645850401",
+              "call_b2d4c662eb5c4610817c51b61a81e426"
+            ],
+            "limits": "Applies to banned-string jobs without filters; the new assertion rejects combining the two features. No matcher or buffer execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-terminal-banned-bypass",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The token-budget branch still bypasses banned-string suppression.",
+        "trigger": "Without drafting, a non-stop token completes a banned string at max_new_tokens, for example a token decoding to 'bad' with banned_strings=['bad'] and max_new_tokens=1.",
+        "expected_behavior": "Check and suppress the banned text before terminal flushing.",
+        "actual_behavior": "receive_sample returns through the token-budget branch with emit_held=True before reaching banned-string matching. The task inserts filter completion after that branch but does not change this ordering.",
+        "locations": [
+          {
+            "commit": "08dde73e664b997091370894072065f1f15055bf",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample"
+          }
+        ],
+        "source_evidence": [
+          "call_d250875a48444dd8a7bf954645850401",
+          "call_b2d4c662eb5c4610817c51b61a81e426",
+          "call_8388ee8f166f4c53aa16233b49059cab"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected terminal branch ordering and the direct iterate_gen call path.",
+            "evidence": [
+              "call_d250875a48444dd8a7bf954645850401",
+              "call_5b5c5de06b514c06a36e9541f9d5441a"
+            ],
+            "limits": "Conditional on the stated token decoding; no tokenizer or native matching execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds stateful Formatron filtering and consolidates token restrictions into additive logit masks. Source inspection identifies speculative-mask refresh, prefix-reset and list-cache concerns, while inherited sampler and banned-string defects remain."
+  },
+  "evidence": {
+    "call_4835eb1408a141618fcdcd8a6af6b4ed": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 182,
+        "max_bytes": 13719
+      },
+      "result_sha256": "d12926f16b7b74c501949c01cc3df1b79eb96f7ff41ff2a929e1fa2e1c9b033a"
+    },
+    "call_e3178f39980141e297d533bf64b5cc8e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 6076,
+        "max_bytes": 619
+      },
+      "result_sha256": "de5ec6453ca45f0839ac99a9544ddcfadd730e9bbe388b3b2d4ecc6d294b55fe"
+    },
+    "call_44762a07b0994362b3d4709f12b86705": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 6695,
+        "max_bytes": 534
+      },
+      "result_sha256": "1e2afe7a2a7f37fb14e444baf52c319c148c8ed491cd1626445520fb82a39532"
+    },
+    "call_180d4e9f638a44c2acb1a2352e954684": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 7229,
+        "max_bytes": 374
+      },
+      "result_sha256": "83a4c7f8c7e92ff8e9f23197a81c1d5dcfd367e4caff19aa5f99c9e78929b8e2"
+    },
+    "call_05be3d4ce18e46868712d5905022aaf2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 7603,
+        "max_bytes": 3065
+      },
+      "result_sha256": "2c7dfa33ef7cafc9716293ca5a8189084eae5ce470d835d5c5d2e8e53ad5a975"
+    },
+    "call_1fc2eaa85b704da686d6cbe655c9564c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 10668,
+        "max_bytes": 3233
+      },
+      "result_sha256": "46b022711aeb45d858792873910765be40dc2341ab971feead7375521d692128"
+    },
+    "call_ffef006ce8514b9e9f59ba416b3c8555": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 13901,
+        "max_bytes": 7365
+      },
+      "result_sha256": "34df19daa8645674af0f65e5b081976012b83be2b91e17f2c8afc50cab9da45c"
+    },
+    "call_b2d4c662eb5c4610817c51b61a81e426": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 21266,
+        "max_bytes": 10415
+      },
+      "result_sha256": "498671c277993a84c971dd0af447aca57161c644ce6ea7d9ce985ff3f7a4ee25"
+    },
+    "call_369c3ad9ea594ca5bfda0cd7f302d487": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 31681,
+        "max_bytes": 1551
+      },
+      "result_sha256": "ec9bc2b408896633e8deb8dbda7f0710843f6be73c430f5f592d577f8201e7c8"
+    },
+    "call_64c3734f40244afaaf4a1f81f044baeb": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 33232,
+        "max_bytes": 708
+      },
+      "result_sha256": "464b5d4dbdc7ed5f5284e5fc577e7e6fbbdf60c9c243beac6af65074835590ac"
+    },
+    "call_1d3b6759bbf545afa57f54c2f23fc9b5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 33940,
+        "max_bytes": 362
+      },
+      "result_sha256": "f06da20cbadfe155152e126099aa05cd11d613aec0a316836ce0533960108c95"
+    },
+    "call_c0b4b04df7714d0fb8893b95f167e696": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 34302,
+        "max_bytes": 365
+      },
+      "result_sha256": "4a0408247b84a50c5ed80505379885a9a0fc4edf896b9555038aa1dd56cc5e25"
+    },
+    "call_897c1642fc2843a186e5c19cbffb266a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "offset": 34667,
+        "max_bytes": 413
+      },
+      "result_sha256": "bce56ffbb53948d1ed5d3a6e5553a1e3fea47d4563606db025a7fde5453b6d36"
+    },
+    "call_c28a36f8d5dd4a8baf3d2eef0c2e5250": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "blocked_tokens",
+        "limit": 100
+      },
+      "result_sha256": "fc51eb34dcf689de52b4599a9ae1f83af9c07b4fab3cee3cbfe0357706815177"
+    },
+    "call_ebdb73b6488040c8880bb0cd61655c45": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "allowed_tokens",
+        "limit": 100
+      },
+      "result_sha256": "7d5008518abe690ada4bec64c1a2e1794b16df6830e41fb9dfa7b5f8c13c79e4"
+    },
+    "call_f5f0396359d5456a85b03096b2bdcb23": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/sampler/sampler.py"
+      },
+      "result_sha256": "318a478c3947284cd3c8bcc9b8c4cfe1d0e19d18a7c18d539db4c94127200889"
+    },
+    "call_6847e030ec484d09a7521db58bd056ff": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "Sampler)",
+        "limit": 100
+      },
+      "result_sha256": "9865167c7fd3f4932d11f74b5adaa32c4dc7c584d415bd1b98e361e5048529bc"
+    },
+    "call_365cf3bcf48d4e0786c3c7ee358a1b3c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": ".forward(",
+        "path": "exllamav3/generator",
+        "limit": 100
+      },
+      "result_sha256": "e29e747b758c922a7b39299a7caa382df0dd1d68e4d49016ad6cd72e2a4bb3ee"
+    },
+    "call_b2b18a7201174cb4b714924f2e180fea": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "formatron",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_54069b4d0a94449bae1c8ce523b32e35": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "kbnf",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_6a071a1d00a447998a1f5bc95178f8b0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "pydantic",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_5b5c5de06b514c06a36e9541f9d5441a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 0,
+        "max_bytes": 26000
+      },
+      "result_sha256": "dfb0a65ee848b43b9ecd5dc248e72b27eefa4ef2294c3aed2e4d94766a4c5e28"
+    },
+    "call_ff51e4cd6bf843c7a1e8b5b9a3db6934": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "generator/sampler/custom.py",
+        "limit": 5
+      },
+      "result_sha256": "705b0e8cf92a63651e9d9fd5c7cfb180ecdd430d08121cbaf4e25d51b861cd73",
+      "catalog_only": true
+    },
+    "call_caf27781f0934e31a77ef10e77fe5de5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "8b0df6910382b84fd9225353c2eb4cd2708482fb",
+        "max_bytes": 16384
+      },
+      "result_sha256": "bededcc09d37d4011a55bcb8d748526c9597ea24b14ac8fb6ec391dc7736a930"
+    },
+    "call_bbe00b1e5e6348b590c45e6e0ed40f69": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "sampling",
+        "max_bytes": 16384
+      },
+      "result_sha256": "a66a8bcfded5188b40074dbc6b1e9660d298438e7388b5a1836808e198a2177b"
+    },
+    "call_17f8b55bcb374847abc86ac766a51991": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "offset": 14000,
+        "max_bytes": 9000
+      },
+      "result_sha256": "862a82248ba01c06e0c9057a3d625326e67cd605953b36cdf3012834a0245810"
+    },
+    "call_7be8ba4b28a54ebd924110cbe3b2a503": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "SS_Argmax",
+        "limit": 100
+      },
+      "result_sha256": "7f51755b0d5055bdc9612e37706e4bab2b4cf808082a9b8172614572105ad8aa"
+    },
+    "call_2e485476e6a343228cfcf303d7336088": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/sampler/custom.py",
+        "offset": 0,
+        "max_bytes": 4300
+      },
+      "result_sha256": "64384c649ec55585b6f9c2ddd238504a146b00f143492fa835d001eedb615067"
+    },
+    "call_3410e5e520d047ef880eeb88a4775098": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/sampler/presets.py"
+      },
+      "result_sha256": "d17d258ffab9c4706f02c3a558fb147d40cca1ed630daabfbeda0a77ae18c89c"
+    },
+    "call_3e48e8b36400450d97411241aae3e16b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 20000
+      },
+      "result_sha256": "34aa7a95dfa5724cd7b2a9c0c301b92b779d5e7112ab8721ae3e5595c087d15f"
+    },
+    "call_83185bb58b4946988f25bef28e8c975c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49",
+        "max_bytes": 20000
+      },
+      "result_sha256": "ab5ea90589990e4d35a028ecf87cf59143881839b31eb2cd470d1c6e510356af"
+    },
+    "call_3997e546510946fda6035b4ee790138f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 20000
+      },
+      "result_sha256": "0141a7cd216973b51ea596962b452e63aca7bc6c79d294a35823962074d46980"
+    },
+    "call_bcff94784f7c42aeab15313e09e88200": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/2",
+        "max_bytes": 20000
+      },
+      "result_sha256": "c7c6f89926f94003404471acbd37bee640df2452ffe569e86d6c15deec0cfc2e"
+    },
+    "call_7a820b99c680440bb0864321a16a7784": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 20000
+      },
+      "result_sha256": "2970a7a42798cbebe9380592f2c049a4f53b3d90009553ade6392ebcf82a980b"
+    },
+    "call_e15b69d2b68246abb854a5c9d10d1372": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 20000
+      },
+      "result_sha256": "a8d80f3adaec031ccf2b488e474e36167a68b0e434047d3a5839f47dd406251c"
+    },
+    "call_24a1deae234d496a8484d42076256667": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 20000,
+        "max_bytes": 20000
+      },
+      "result_sha256": "2006d2358c19c56051d1de034dd5322352ff743eccfc554417611bd3b16772a3"
+    },
+    "call_e856d6b0d0d94b289e079292a6de2406": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 24000
+      },
+      "result_sha256": "12610c9306e6a436e279315f0c6c19cb2dc4bf7e4f820d743c1f8fbd225cfe1a"
+    },
+    "call_58538c0590d045c2b6f8940403527f6f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 20000
+      },
+      "result_sha256": "f35dd921663547cbc6eb6a356aa74ff852cf23fa0dd6eb88c695df08d47d39bd"
+    },
+    "call_b14053671c4b45bd98c9896961a796e6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 24000
+      },
+      "result_sha256": "463449f2a78836a6e364f70f2cc4fb80f258c6c542d2320a6d16d6adb7c67ee4"
+    },
+    "call_228948cbcf0a42f698e9682e050ecccf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 14000
+      },
+      "result_sha256": "7577cb9c719decf3417098510da5bd9ca79d8c3737ffb5d34536d239658638b9"
+    },
+    "call_f0f652dc57cc48e5b1a6c8c13b98af3f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "sampler.forward",
+        "limit": 100
+      },
+      "result_sha256": "7e18e5e783f32e37b960b52c62bf8c1e34f616d477bf1c2255be0708a5a7ee35"
+    },
+    "call_7cd302036faf4d58aab798237cdb4596": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "tests/test_sampler.py",
+        "max_bytes": 15000
+      },
+      "result_sha256": "dc56a860b21725514e8077af2ecb36147621c188759e7db304a11066f1b6af8d"
+    },
+    "call_8a8d8c787d994e0298e96f0f1bb91e8f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "examples/generation_loop.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "77beefe271aeb16b40b9e7f3ee6c900bcf27c97b73637021cd393461d70cbebb"
+    },
+    "call_db67367ac31a4a739a1d798fb88814ba": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "science/gumbel_eval.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "446b85f83483b59a162b4b172e314fa851aac8bedf374ab851189f649dded8d7"
+    },
+    "call_8388ee8f166f4c53aa16233b49059cab": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "query": "receive_sample(",
+        "limit": 100
+      },
+      "result_sha256": "448c507735347a90844e89c479d5b33a5872f1d600effdda34f93b866f9b5f6f"
+    },
+    "call_53006eecd9734a7a905bd7225dc4aaf3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/job.py",
+        "offset": 0,
+        "max_bytes": 14000
+      },
+      "result_sha256": "6315d53eb6021757f76d51d0dbef8d1ec4175aeee044fea12719c03f8d0c78a3"
+    },
+    "call_82848c5c77ac487a8308333aff02316e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f6e224671cf1acd067e79899a1ab9164bd9529f50e19b372cfde44ee97664cc6"
+    },
+    "call_ac70901862c94ece99badde1f1ce83a2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "offset": 16384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "46408465c2ee6e58d5a9559e17e3a68044c895ae9fbc960c84151cfa7f82e6a5"
+    },
+    "call_d250875a48444dd8a7bf954645850401": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/job.py",
+        "offset": 14000,
+        "max_bytes": 24000
+      },
+      "result_sha256": "47defabf5a6a549c514cc3657221bb84574f5900ac3c9df24749b1156e0c5772"
+    },
+    "call_be3bcefbd4254d719f88cf81b3f26808": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import itertools, math, functools\nn=4; cases=0\nfor a_bits in itertools.product((False,True), repeat=n):\n for b_bits in itertools.product((False,True), repeat=n):\n  a={i for i,v in enumerate(a_bits) if v}; b={i for i,v in enumerate(b_bits) if v}\n  m=[(0.0 if i in a else -math.inf)+(0.0 if i in b else -math.inf) for i in range(n)]\n  assert {i for i,v in enumerate(m) if v==0}==a&b; cases+=1\nprint('mask intersection cases',cases)\n@functools.lru_cache(10)\ndef vocab(tokenizer, processors=None): return 'built'\ntry: vocab(object(), [])\nexcept TypeError as e: print('list processors:',str(e))\n# Model the inspected once-per-batch mask preparation with two grammar states.\nallowed=[{0},{1}]; frozen=allowed[0]; samples=[0,0]\nprint('second sample allowed by frozen mask:',samples[1] in frozen,'by advanced grammar:',samples[1] in allowed[1])\n# Constructor accepts prefix, activation resets formatter, reset does not replay prefix.\nstate=[]; state.extend(b'{'); state.clear(); print('prefix bytes after activation reset:',state)\n"
+        ]
+      },
+      "result_sha256": "3f5827f53ed2e12ca72908fcde2191a6118aeb9a8abfeb8d366d9582acd1b4df"
+    },
+    "call_f81759d90e9e4d21ae3e0d77e86953b8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "997ca85bcce1ad5da2f93c17df5f13bd77cc4800",
+        "path": "exllamav3/generator/async_generator.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "4e7749a5b3e32472bc0d6648cd876c3dc25c00ea72833797870bea2d3b32a136"
+    }
+  }
+}

@@ -1,0 +1,640 @@
+{
+  "schema_version": 5,
+  "sha": "5cb70f591b8286a7df902eb7a642f39a8fc80029",
+  "parent_shas": [
+    "4265c9e1937a735861190229a524726fbd112156"
+  ],
+  "cutoff_date": "2025-07-15T20:34:10+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The parent version of eval/model_diff.py prints layerwise and final-output diagnostics but does not save the inputs or outputs used to compute them. The patch implements the commit message\u2019s stated change: optional exports of input token IDs and each model\u2019s final logits.",
+        "basis": "source",
+        "evidence": [
+          "call_0d053c4c0f864562ba524b20d1eacf99",
+          "call_13cfd8165e5c4814a0162ea95b7884c0"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The export points reuse data already in memory. Saving IDs before the paired forward loop captures the exact batch given to both models. Saving logits after that loop captures the final states before the metrics slice off the last position for next-token scoring or turn scores into probabilities. The patch adds no extra forward pass.",
+        "basis": "source",
+        "evidence": [
+          "call_0d053c4c0f864562ba524b20d1eacf99",
+          "call_13cfd8165e5c4814a0162ea95b7884c0"
+        ]
+      },
+      {
+        "text": "Full tensors support offline analysis without rerunning either model, but are much larger than the printed summaries. A Python calculation gives 13,107,200,000 payload bytes (about 12.21 GiB) for one illustrative 100 \u00d7 2048 \u00d7 32,000 tensor at two bytes per element. This is shape arithmetic, not a measured file size or peak memory figure.",
+        "basis": "execution",
+        "evidence": [
+          "call_f790a30e44cd409cbf8e741fa7c06372",
+          "call_0d053c4c0f864562ba524b20d1eacf99",
+          "call_13cfd8165e5c4814a0162ea95b7884c0"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The three filename options are independent and default to None, so existing CLI invocations request no writes. The parser supplies all three attributes that main now reads directly. The parent-tree search found no textual model_diff references identifying another caller; a programmatic caller using a pre-change argument object would need to supply the new attributes.",
+        "basis": "source",
+        "evidence": [
+          "call_13cfd8165e5c4814a0162ea95b7884c0",
+          "call_0d053c4c0f864562ba524b20d1eacf99",
+          "call_3c7219acbd904f2cbbed872e5a1deefa"
+        ]
+      },
+      {
+        "text": "The exports are standalone artifacts, not drop-in reference files for compare_q.py. Its reference reader recognizes only tensor or a numbered tensor.0, tensor.1, \u2026 series, not the new logits key. model_diff.py adds no read-back path of its own.",
+        "basis": "source",
+        "evidence": [
+          "call_13cfd8165e5c4814a0162ea95b7884c0",
+          "call_75213686ba7a49539ffa55083f3b8b53",
+          "call_f0cfb4e100664ec590f2636b6f30b17d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial usage/evaluation entry introduces model_diff.py as a paired, layerwise divergence diagnostic. The keep_b entry documents replacement of A\u2019s state over a prefix. The deferred-loading and device-selection entries describe module-scoped loading and a shared device with a CPU-preferred branch. The final-metrics entry introduces the nested perplexity helper and records its vocabulary-axis bound issue, also noted by the later loading and device entries.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_e734641f4f09473cad3f19a1104459fd",
+          "call_e37a61b065ba4ce2b2bf47f311433ddc",
+          "call_2744c385f2ec4f67872f3743bdd114a1",
+          "call_feb52b34ff894688b1d98e7b66ab68ae",
+          "call_20109b924af645c1a5a600dc6fa7046d"
+        ]
+      },
+      {
+        "text": "The earlier compare_q.py reference-logit entry documents the numbered CPU-logit format and recorded then-existing problems with no-reference finalization and cache invalidation.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_27f275df5ff2497cb71a8c3e674e385d"
+        ]
+      },
+      {
+        "text": "In the inspected parent, compare_q.py already guards KL finalization on logits_file, initializes collect_logits outside that guard, and passes logits_file to both evaluation and cache invalidation. Those earlier observations do not describe the parent\u2019s current wiring. By contrast, the model_diff.py perplexity axis issue is carried over: the patch adds exports before the metrics and does not change the helper or its call.",
+        "basis": "source",
+        "evidence": [
+          "call_75213686ba7a49539ffa55083f3b8b53",
+          "call_cde255bcd7e842aeb912f433d6a04138",
+          "call_0d053c4c0f864562ba524b20d1eacf99",
+          "call_13cfd8165e5c4814a0162ea95b7884c0"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d proposes a decoder multiplier and discusses model_diff.py as a starting point for KL evaluation. Issue #33, \u201cError converting model,\u201d starts with a Qwen3 conversion file-open failure and later shows model_diff.py runs investigating GLM4 output. Issue #58, \u201clinalg.cholesky error converting OpenBuddy (Qwen3) 32B QAT,\u201d reports NaNs and a conversion failure that the participants later could not reproduce; turboderp posted a model_diff.py comparison and the reporter asked about compare_q.py for plotting KL divergence. The connection to this patch is inferred from those explicit script references. None of these discussions establishes why the export flags were added or verifies their behavior.",
+        "basis": "inference",
+        "evidence": [
+          "call_311e731d267c4cf6a1ed63c4af58e7a1",
+          "call_a88b8d3ef5274cfaacbea46e167310ef",
+          "call_f53de61ad8554a8a8181141b157abc4b",
+          "call_815e9f4da84b4b9497afdcaeb7599542",
+          "call_19e94f53f179437cb15245784dd39a0b",
+          "call_13cfd8165e5c4814a0162ea95b7884c0"
+        ]
+      },
+      {
+        "text": "Other discussion matches are contextual, not evidence of an export defect or motivation. Issue #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d concerns head quantization and reported padding fixes. PR #25, \u201cLanguage layers for Mistral Small 3.1 and InternVL3,\u201d discusses language-only conversion and checkpoint naming. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d and #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d report conversion failures; #53, \u201cCommand A support,\u201d starts as a request for model support. Their overlap is with inspected conversion code or terms such as logits and safetensors, not the new save sites. Issue #49, \u201crunning the QTIP inference code,\u201d discusses QTIP setup and evaluation; its requirements-file mention does not establish a connection to the added safetensors import.",
+        "basis": "inference",
+        "evidence": [
+          "call_0dbaed55ff0e4440b5dca522d88d6a7f",
+          "call_c7ced1c83b034091b8ae6d5bbf311073",
+          "call_501c4d1b32434cb9ad168d83e9693e35",
+          "call_a80c537a55634488b3fa616cbcd1b179",
+          "call_c6eec3dc4c524869af425c9513744e5f",
+          "call_3adde5def8d34d99853dce9cf1e25756",
+          "call_4d1e3f16a14f4e59a2856d1392b3b5a0",
+          "call_f0bcd462e0274e44b0745a38aca27a19",
+          "call_5c3596eecb40499cb11e083a4c47dc92",
+          "call_7b7a8800c2884a1b95fdc896a0b690c7",
+          "call_13cfd8165e5c4814a0162ea95b7884c0"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository inference, CUDA, or safetensors round trip ran. Device transfers inside the serializer, layout acceptance, missing-directory and existing-file behavior, write cost, and peak host or device memory were not established.",
+      "The scalar checks model key recognition, slice bounds, and payload arithmetic only. They do not establish Torch behavior on empty tensors or validate perplexity on a model.",
+      "Literal searches do not establish external or dynamic callers. No particular checkpoint with a vocabulary narrower than the scored sequence was verified."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "25d9388bce25b89c48a4a078bc6fc8365c661692",
+      "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+      "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+      "3873d40ae2734261f72aa85261ac06b6e307c1e4"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Save the input IDs and final logits from a model comparison",
+        "claims": [
+          {
+            "text": "Pass -si / --save_input_ids FILE to save input_ids, -sla / --save_logits_a FILE to save A\u2019s logits, and -slb / --save_logits_b FILE to save B\u2019s logits. Each requested write is a separate safetensors call. A and B use the same key, logits, in their respective files. The helper passes the filename through unchanged: it neither creates parent directories nor checks for path collisions, and it has no local write-error handler.",
+            "basis": "source",
+            "evidence": [
+              "call_13cfd8165e5c4814a0162ea95b7884c0"
+            ]
+          },
+          {
+            "text": "The shared input batch comes from model A\u2019s tokenizer applied to Wikitext-2 raw test text. The script takes 2048-token windows every 512 tokens and caps the batch at --rows (default 100). It forwards that batch through zipped module lists, without checking that they have matching lengths or that the last paired outputs are both language-model heads. The exports are the states at that boundary, not independently recomputed predictions. A positive --keep_b replaces A\u2019s state with a clone of B\u2019s over the selected prefix, so the A export reflects that replacement and can be B\u2019s output if the prefix covers every pair.",
+            "basis": "source",
+            "evidence": [
+              "call_0d053c4c0f864562ba524b20d1eacf99",
+              "call_13cfd8165e5c4814a0162ea95b7884c0"
+            ]
+          },
+          {
+            "text": "The task\u2019s save_tensor passes dictionary keys through, names list entries tensor.0 onward, and wraps a single tensor under the supplied name or tensor. All three new call sites use the single-tensor branch. They do not move values to CPU, cast dtypes, make tensors contiguous, or attach model or tokenizer metadata. Saving IDs occurs before the first paired forward; saving A then B occurs after layerwise reporting but before perplexity, top-K and KL reporting. An exception from a save therefore stops the run at that point.",
+            "basis": "source",
+            "evidence": [
+              "call_13cfd8165e5c4814a0162ea95b7884c0",
+              "call_0d053c4c0f864562ba524b20d1eacf99"
+            ]
+          },
+          {
+            "text": "The eager save_file import adds no declared package: the parent requirements already list safetensors. The analogous compare_q.py writer collects CPU logits for its first ten rows in reference-collection mode; compare_q_logits.py runs configurable batches, moves outputs to CPU, and saves a list split into single rows. Both use numbered keys. The conversion writer instead joins paths under work_dir, saves per-module dictionaries, and saves checkpoint state after creating a staging directory. Its compiler creates the output directory and explicitly makes shard tensors contiguous before writing. None of those preparation steps is added to model_diff.py\u2019s export path.",
+            "basis": "source",
+            "evidence": [
+              "call_ccab596ba519432dabb14f9dfdddf566",
+              "call_8393acc3f27c4d69af905717947a8dcb",
+              "call_49c8b46315434b1c80424ea72df00375",
+              "call_75213686ba7a49539ffa55083f3b8b53",
+              "call_9909218058b040b8967595fb21764111",
+              "call_7b7a8800c2884a1b95fdc896a0b690c7",
+              "call_17e1da41835e4d25940704ae29be883d",
+              "call_13cfd8165e5c4814a0162ea95b7884c0"
+            ]
+          },
+          {
+            "text": "A named-key reader can select logits or input_ids explicitly; using these outputs as compare_q.py references would instead require adapting the reader or repackaging logits under its accepted keys. Format compatibility alone would not align datasets: compare_q.py gets inputs from its own data specification, whereas model_diff.py uses A\u2019s tokenizer and its own windows.",
+            "basis": "inference",
+            "evidence": [
+              "call_75213686ba7a49539ffa55083f3b8b53",
+              "call_0d053c4c0f864562ba524b20d1eacf99",
+              "call_13cfd8165e5c4814a0162ea95b7884c0"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-perplexity-vocabulary-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged perplexity helper uses vocabulary width as the bound for sequence-position slices.",
+        "trigger": "A model_diff.py run reaches the per-model perplexity loop with more scored positions than vocabulary entries, for example 2047 positions and 1024 entries.",
+        "expected_behavior": "Accumulate every next-token prediction in the row once.",
+        "actual_behavior": "The loop ends at the vocabulary width and would cover only the first 1024 positions in that example. At width 32000, the same bounds cover all 2047 positions but issue three further empty sequence slices.",
+        "locations": [
+          {
+            "commit": "5cb70f591b8286a7df902eb7a642f39a8fc80029",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_0d053c4c0f864562ba524b20d1eacf99",
+          "call_13cfd8165e5c4814a0162ea95b7884c0",
+          "call_9f5938882cc544b39a366b6a59607cc2"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The only direct ppl call found is inside main\u2019s row-by-model metrics loop, after the new exports; the CLI guard calls main. The other whole-tree matches are the distinct compare_q.py test_ppl. The caller removes the final position; the helper still slices axis zero using a loop bound from axis one.",
+            "evidence": [
+              "call_9f5938882cc544b39a366b6a59607cc2",
+              "call_0d053c4c0f864562ba524b20d1eacf99",
+              "call_13cfd8165e5c4814a0162ea95b7884c0"
+            ],
+            "limits": "Reach is conditional on the script getting through the forward pass and any requested writes."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the chunk expression and Python sequence slices. With 2047 positions the slice lengths were [1024] at width 1024 and [2047, 0, 0, 0] at width 32000. The positive-width chunk expression simplifies to 10240.",
+            "evidence": [
+              "call_f790a30e44cd409cbf8e741fa7c06372"
+            ],
+            "limits": "No Torch slicing, gathering, or metric execution."
+          }
+        ]
+      },
+      {
+        "id": "named-logits-not-compatible-with-reference-reader",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The new named logits export is not recognized by the existing comparison evaluator\u2019s reference reader.",
+        "trigger": "An uncached compare_q.py evaluation with nonempty data uses a successfully written model_diff.py logits file as --logits_file for a spec without out_logits.",
+        "expected_behavior": "If used as a reference artifact, the file would provide one logit row per corresponding input row.",
+        "actual_behavior": "The reader finds neither tensor nor tensor.0, so it returns an empty list. The first reference-row lookup in test_ppl then indexes that empty list.",
+        "locations": [
+          {
+            "commit": "5cb70f591b8286a7df902eb7a642f39a8fc80029",
+            "path": "eval/model_diff.py",
+            "symbol": "main"
+          },
+          {
+            "commit": "4265c9e1937a735861190229a524726fbd112156",
+            "path": "eval/compare_q.py",
+            "symbol": "load_tensor"
+          }
+        ],
+        "source_evidence": [
+          "call_13cfd8165e5c4814a0162ea95b7884c0",
+          "call_75213686ba7a49539ffa55083f3b8b53",
+          "call_cde255bcd7e842aeb912f433d6a04138",
+          "call_f0cfb4e100664ec590f2636b6f30b17d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent-tree search found compare_q.py\u2019s test_ppl as the direct caller of its load_tensor; main passes through an explicit --logits_file. The conversion load_tensor is a separate checkpoint reader under work_dir and is not connected to the export.",
+            "evidence": [
+              "call_f0cfb4e100664ec590f2636b6f30b17d",
+              "call_75213686ba7a49539ffa55083f3b8b53",
+              "call_cde255bcd7e842aeb912f433d6a04138",
+              "call_7b7a8800c2884a1b95fdc896a0b690c7"
+            ],
+            "limits": "This is an interoperability boundary, not a documented promise of the export flags or a failure when using a reader that selects logits explicitly."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library model of the reader\u2019s key tests recognized tensor and tensor.0 but selected no entries for logits or input_ids.",
+            "evidence": [
+              "call_f790a30e44cd409cbf8e741fa7c06372"
+            ],
+            "limits": "No safetensors file was opened or written."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds three opt-in safetensors exports to model_diff.py: the shared input IDs and each model\u2019s final logits. The exports reuse the comparison\u2019s tensors without changing its metrics. The named logits files are not directly readable as compare_q.py references, and the inherited perplexity axis-bound issue remains."
+  },
+  "evidence": {
+    "call_13cfd8165e5c4814a0162ea95b7884c0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "5cb70f591b8286a7df902eb7a642f39a8fc80029",
+        "offset": 182,
+        "max_bytes": 2496
+      },
+      "result_sha256": "12a6575ddeab6ed49ba10cf5af6a5071a023c28d6397aaefce28c2c64839d521"
+    },
+    "call_0d053c4c0f864562ba524b20d1eacf99": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "eval/model_diff.py"
+      },
+      "result_sha256": "59fece20712df46ab674d177af01e9f23ce68b3f3e8aa02b1fb08267e9b27eab"
+    },
+    "call_d6709b61297e4b7a8d54ffaed6589c3f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "eval/model_diff.py"
+      },
+      "result_sha256": "ed344e0c79b644c5ab8eb464cb4c5ee77577ab63fcfb326216e79f836f2eea04",
+      "catalog_only": true
+    },
+    "call_e734641f4f09473cad3f19a1104459fd": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_feb52b34ff894688b1d98e7b66ab68ae": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+        "max_bytes": 12000
+      },
+      "result_sha256": "3f0f85a7fe57c865bb1607512e5e9fc84d615e379125d5115a37a73980402cdf"
+    },
+    "call_9f5938882cc544b39a366b6a59607cc2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "query": "ppl("
+      },
+      "result_sha256": "cc635ff046ed4541011757b502a179238fe9e916495374c29e997f23f5605a66"
+    },
+    "call_3c7219acbd904f2cbbed872e5a1deefa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "query": "model_diff"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8393acc3f27c4d69af905717947a8dcb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "query": "save_file",
+        "limit": 40
+      },
+      "result_sha256": "49800f43a96cea14d505b0ac52c16dee7aac7080f493662b5cf2dbfc5e37d4e3"
+    },
+    "call_75213686ba7a49539ffa55083f3b8b53": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "eval/compare_q.py",
+        "max_bytes": 8500
+      },
+      "result_sha256": "c66dab91616caec5a051e3d771cebe72df314eee6d902ca82abc1f7f34072262"
+    },
+    "call_f0cfb4e100664ec590f2636b6f30b17d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "query": "load_tensor("
+      },
+      "result_sha256": "d82b3dcb2fabf8db84697583e1dc93d0bda716c923fa338bd8037dcc9f95c7e4"
+    },
+    "call_cde255bcd7e842aeb912f433d6a04138": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "eval/compare_q.py",
+        "offset": 8500,
+        "max_bytes": 10000
+      },
+      "result_sha256": "6feed599fe43f3b74cb39db00fd25914e6c8b7c2bd264acda123ac66dc4cfedb"
+    },
+    "call_311e731d267c4cf6a1ed63c4af58e7a1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 20000
+      },
+      "result_sha256": "3cc27a6d1c51a77c1bc01ff0f8a48c4439c53c34fba9e2e829b0e9f8697d33b2"
+    },
+    "call_a88b8d3ef5274cfaacbea46e167310ef": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 24000
+      },
+      "result_sha256": "40dad0721a1e452616db7188f45749b32a3810c379760fd87d9ed9f67b0509e7"
+    },
+    "call_f53de61ad8554a8a8181141b157abc4b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 35000,
+        "max_bytes": 12000
+      },
+      "result_sha256": "078cb062a55b05881cb0ff1d75db67303088b1d24db988c404dba887c969234e"
+    },
+    "call_7ec3d5a3856a4a5bb009583210ec9e78": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 1697
+      },
+      "result_sha256": "3197e04de6d096e670500a3460272e68153f2176753a65705a036c361de17f84",
+      "catalog_only": true
+    },
+    "call_815e9f4da84b4b9497afdcaeb7599542": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "max_bytes": 12000
+      },
+      "result_sha256": "4e366e67cf9c9dd369b5b502339380b2164b039f964d0290da4f48b5f8f1cc9b"
+    },
+    "call_19e94f53f179437cb15245784dd39a0b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "offset": 12000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "4ef0acc5c124003fb47d50d236c888a48984c8ec575a759f99a009d9dac3e1a8"
+    },
+    "call_0dbaed55ff0e4440b5dca522d88d6a7f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 7000
+      },
+      "result_sha256": "5b98b9210dceed01c0f6373ab719d82955566a793d6e369886268ef7152d7ac0"
+    },
+    "call_c7ced1c83b034091b8ae6d5bbf311073": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "offset": 7000,
+        "max_bytes": 5500
+      },
+      "result_sha256": "111549a7cce91beb98d03dfb82ff328aa723e5014647f0e37b1301112f215b35"
+    },
+    "call_501c4d1b32434cb9ad168d83e9693e35": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "max_bytes": 5000
+      },
+      "result_sha256": "6d65a6ce8530bec75c4282ede451c4ed42b081cd2782f569326158f7bfbccc83"
+    },
+    "call_a80c537a55634488b3fa616cbcd1b179": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/25",
+        "offset": 5000,
+        "max_bytes": 1300
+      },
+      "result_sha256": "d32e745d2c09263e6589ad35325cde8977774081c00dca33ff74ea20f87f3616"
+    },
+    "call_49c8b46315434b1c80424ea72df00375": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "query": "save_tensor("
+      },
+      "result_sha256": "ddd6f0ff42962d7f492b117e128745ac2837557932830d00ac66c54ff53c3563"
+    },
+    "call_9909218058b040b8967595fb21764111": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "eval/compare_q_logits.py"
+      },
+      "result_sha256": "e08036566d0421b4d1a99c1aed989745f7ce83126c410a5e6301f6dc466beacd"
+    },
+    "call_88a4ad5eb98e4afe89acfd83f31ebf9a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "query": "safetensors",
+        "path": "requirements",
+        "limit": 12
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_ccab596ba519432dabb14f9dfdddf566": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "requirements.txt"
+      },
+      "result_sha256": "34e8af070b9aaa0acdb1eb9d7ba85335fd53b7d1427ae9c6194583508fbe84ca"
+    },
+    "call_01241770607741c48ba2462cb922d03e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "query": "import safe_open",
+        "limit": 30
+      },
+      "result_sha256": "3fe2a102f3b8978303b87101e92b328c0c0ee2f4570a9e69b1ecd794e18f2930"
+    },
+    "call_35ce3f58294146d3a5272b69c0f0909a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "exllamav3/conversion/convert_model.py",
+        "max_bytes": 3750
+      },
+      "result_sha256": "63605ea3d61a9ed089d89d11c7628fd8fa38dca99394e6c84c495055fb311c28"
+    },
+    "call_7b7a8800c2884a1b95fdc896a0b690c7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 3740,
+        "max_bytes": 23500
+      },
+      "result_sha256": "8bba789f042970801a5fe9053b201c4e3c12be1f27e45393fa92db172469adcd"
+    },
+    "call_c6eec3dc4c524869af425c9513744e5f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 2500
+      },
+      "result_sha256": "157e619387bcf0b92d84cedbddf3994575fec327f17b8c72f49bf2861faa75e7"
+    },
+    "call_3adde5def8d34d99853dce9cf1e25756": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 1700
+      },
+      "result_sha256": "cdfb2bcf7f9e43f4d35463752a75eb21e8ead923fef61a6f177efee24f9fad85"
+    },
+    "call_4d1e3f16a14f4e59a2856d1392b3b5a0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 2200
+      },
+      "result_sha256": "de2bddb40c875e0795e282ace7903b434af2003fa3e926d6b2c2aef4c6c3e12a"
+    },
+    "call_f0bcd462e0274e44b0745a38aca27a19": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 2700
+      },
+      "result_sha256": "201f634dfb0f5b1c9be3c76cbfa2b168a5e31cb0e9f7b58bafecc61d6fbd20de"
+    },
+    "call_09db7b391bf24fe384d7662452172cf7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "exllamav3/conversion/compile.py",
+        "query": "save_file("
+      },
+      "result_sha256": "a36080304bae75dd3f3937440cde77b21cdbb912c3afad2de87778a09b117890"
+    },
+    "call_17e1da41835e4d25940704ae29be883d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "4265c9e1937a735861190229a524726fbd112156",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 5500
+      },
+      "result_sha256": "84d201be896f215de3f07bc3fb02862bf1e474f0b9f257678fe23397cfed529e"
+    },
+    "call_f790a30e44cd409cbf8e741fa7c06372": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def chunks(t,v):\n b=0; counts=[]\n while b<v:\n  a,b=b,min(b+v*10240//v,v)\n  counts.append(len(range(t)[a:b]))\n return counts\nprint({v:chunks(2047,v) for v in (1024,32000)})\ndef compare_q_keys(keys):\n if 'tensor' in keys: return ['tensor']\n out=[]\n while f'tensor.{len(out)}' in keys: out.append(f'tensor.{len(out)}')\n return out\nprint({k:compare_q_keys({k}) for k in ('input_ids','logits','tensor','tensor.0')})\nprint(100*2048*32000*2,100*2048*32000*2/2**30)"
+        ]
+      },
+      "result_sha256": "36ab824744f6e48f759a7c69e135090c981f2b738c1a0a358336ca47ebcedf12"
+    },
+    "call_2744c385f2ec4f67872f3743bdd114a1": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+        "max_bytes": 10000
+      },
+      "result_sha256": "1932323578771ad869fbdb89da364983453b39775913bd94e7735c85ab0b668c"
+    },
+    "call_20109b924af645c1a5a600dc6fa7046d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+        "max_bytes": 12000
+      },
+      "result_sha256": "9074ff680208193b56d7a0f8296f7897f41a0eda1be10d33026d0152b41a2d7a"
+    },
+    "call_e37a61b065ba4ce2b2bf47f311433ddc": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "25d9388bce25b89c48a4a078bc6fc8365c661692",
+        "max_bytes": 10000
+      },
+      "result_sha256": "b7276ce3791638d914689c9bffe337a8f3dcf3a47a603af361914863652f677f"
+    },
+    "call_a6a381c0ca8540a5ad613b8068837584": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "eval/compare_q.py",
+        "limit": 20
+      },
+      "result_sha256": "4778e9c1f17c8237de83cf3171eb6fb44755165213bd03923633ab71af13a3c0"
+    },
+    "call_27f275df5ff2497cb71a8c3e674e385d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "3873d40ae2734261f72aa85261ac06b6e307c1e4",
+        "max_bytes": 11000
+      },
+      "result_sha256": "fdd50e0bca94673d562e0a01317b52c798a2f49ea297cb6146fbd4b2dfcdc723"
+    },
+    "call_5c3596eecb40499cb11e083a4c47dc92": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49",
+        "max_bytes": 4500
+      },
+      "result_sha256": "df01f466c710b307dc2a459295971ba0050dac2ef6dcf9f1975b17fcd341a95e"
+    }
+  }
+}

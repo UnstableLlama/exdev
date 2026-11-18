@@ -1,0 +1,421 @@
+{
+  "schema_version": 5,
+  "sha": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+  "parent_shas": [
+    "1be81eed6839845877d192b2ac1fc84f66f569f6"
+  ],
+  "cutoff_date": "2025-07-15T20:42:36+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "integration",
+    "problem": [
+      {
+        "text": "Both installation routes declared `flash_attn>=2.7.4.post1`. They agreed on a minimum version, but neither constrained dependency resolution to that release.",
+        "basis": "source",
+        "evidence": [
+          "call_b19b82933dd749aaad377308d9b6d0c9",
+          "call_187dc0a8f350495e94e41442d933415a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The diff matches turboderp\u2019s commit message: it replaces `>=` with `==` in both `requirements.txt` and `setup.py`\u2019s `install_requires`. Changing both declarations keeps installation from the requirements file and installation through package metadata aligned on FlashAttention.",
+        "basis": "source",
+        "evidence": [
+          "call_f339723c6c9f4acc8fe14c644c057a56",
+          "call_a6ed683b2701476aa88254878d270c8c"
+        ]
+      },
+      {
+        "text": "The pin removes variation between FlashAttention releases at the cost of excluding newer releases that the old minimum would have allowed. It narrows a dependency choice without choosing a wheel or locking the rest of the environment.",
+        "basis": "inference",
+        "evidence": [
+          "call_f339723c6c9f4acc8fe14c644c057a56",
+          "call_a6ed683b2701476aa88254878d270c8c",
+          "call_b19b82933dd749aaad377308d9b6d0c9",
+          "call_187dc0a8f350495e94e41442d933415a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "No runtime import or attention dispatch changes. `exllamav3/modules/attn.py` still imports both FlashAttention functions at module load, so selecting the existing `sdpa_nc` branch does not bypass that import. The KV-quantization experiment in `science/kv_quant_exp.py` still imports and calls `flash_attn_func` directly.",
+        "basis": "source",
+        "evidence": [
+          "call_353f8ef682884dcfaaaea56875b997a2",
+          "call_8619597d314248ca9a00063abf6360ce",
+          "call_0f31cdbf6fb4475e94b9a179311226eb",
+          "call_f339723c6c9f4acc8fe14c644c057a56",
+          "call_a6ed683b2701476aa88254878d270c8c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial installation chapter records that `requirements.txt` already named `2.7.4.post1` as the minimum while `setup.py` omitted FlashAttention. The later \u201cFix requirements\u201d entry records adding the same minimum to `install_requires` and retaining the Torch-availability check and `EXLLAMA_NOCOMPILE` switch. The Formatron entry records later additions of `kbnf` and `formatron` to both lists.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_6665ce0d9c6344d2aa25b29e8343e0d8",
+          "call_e80fb51423ca40168e712e809ae6a6c4",
+          "call_64b6da7c01c94664ac3169face95c27a"
+        ]
+      },
+      {
+        "text": "Issue #17, \u201cModuleNotFoundError: No module named 'torch' when installing requirements.txt,\u201d quotes the old requirement verbatim. The reporter describes missing Torch and a Windows wheel build that appeared to hang; a reply from `turboderp` suggests installing PyTorch first and points to a Windows wheel for `2.7.4.post1`.",
+        "basis": "source",
+        "evidence": [
+          "call_f120dd881cdb4691aed2fa403a862c6a"
+        ]
+      },
+      {
+        "text": "Issue #17 is relevant installation context because its quoted line is the one this diff replaces, but it does not establish why the release was pinned or that the pin fixes the report. The diff changes neither how Torch is obtained nor whether a compatible FlashAttention wheel is available.",
+        "basis": "inference",
+        "evidence": [
+          "call_f120dd881cdb4691aed2fa403a862c6a",
+          "call_f339723c6c9f4acc8fe14c644c057a56",
+          "call_a6ed683b2701476aa88254878d270c8c"
+        ]
+      },
+      {
+        "text": "Issue #2, \u201cError: setup script specifies an absolute path,\u201d reports a wheel-build rejection, and PR #3 explicitly names that issue. Issue #21, \u201cBuild Failure on Windows: CUDA 12.4 / PyTorch 2.7.0+cu126 / VS 2022,\u201d reports ExLlamaV3 extension compiler errors and was closed without a reported solution.",
+        "basis": "source",
+        "evidence": [
+          "call_dfe467fa1d2c45d1a65ccbc4d5395b97",
+          "call_dca0550caa1a48cf827ecbef19c08f8e",
+          "call_f96762d3f0104527af903b74c6fdd855"
+        ]
+      },
+      {
+        "text": "The earlier source-path fix entry describes making the native extension\u2019s source paths relative to `setup.py`, rather than changing its dependencies.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_50a89bc143b84d77a88bb34ccb3f5d48"
+        ]
+      },
+      {
+        "text": "Issues #2 and #21 overlap with this change through `setup.py` and the installation workflow, not through the reported failures. The inspected parent already uses relative native-source paths, and the pin changes neither source-path construction nor compiler configuration.",
+        "basis": "inference",
+        "evidence": [
+          "call_dfe467fa1d2c45d1a65ccbc4d5395b97",
+          "call_f96762d3f0104527af903b74c6fdd855",
+          "call_187dc0a8f350495e94e41442d933415a",
+          "call_a6ed683b2701476aa88254878d270c8c"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d shows `decode_flash_attn_nc` in the conversion traceback, with the error reported during linear Hessian capture. The discussion attributes the failure to tokenizer truncation. Issue #49, \u201crunning the QTIP inference code,\u201d discusses installing QTIP and a `fast-hadamard-transform`/Ninja blocker.",
+        "basis": "source",
+        "evidence": [
+          "call_160c6e2dceb141cc95bc00ca5dcc512d",
+          "call_e4a1452e55f849a8b72a97842f4e8616"
+        ]
+      },
+      {
+        "text": "Issue #16 shares the attention path that consumes FlashAttention, while #49 mentions requirements and setup files in its QTIP instructions. Neither match is evidence that the pin addresses the reported problem.",
+        "basis": "inference",
+        "evidence": [
+          "call_160c6e2dceb141cc95bc00ca5dcc512d",
+          "call_8619597d314248ca9a00063abf6360ce",
+          "call_e4a1452e55f849a8b72a97842f4e8616",
+          "call_f339723c6c9f4acc8fe14c644c057a56",
+          "call_a6ed683b2701476aa88254878d270c8c"
+        ]
+      },
+      {
+        "text": "Issue #27, \u201cAttention Backend,\u201d requests FlashInfer alongside FlashAttention for comparison. Issue #44, \u201cPlease Switch to Flash-Infer,\u201d reports inability to run EXL3 quants on RTX 2000-series GPUs and attributes it to FlashAttention\u2019s Turing support.",
+        "basis": "source",
+        "evidence": [
+          "call_2fed37eadd774f86aca1473981e26252",
+          "call_c03e60e45ed24463981b30c2191120e6"
+        ]
+      },
+      {
+        "text": "Both backend discussions concern the library used by the inspected attention module, but the pin neither registers a different backend nor establishes support for additional hardware.",
+        "basis": "inference",
+        "evidence": [
+          "call_2fed37eadd774f86aca1473981e26252",
+          "call_c03e60e45ed24463981b30c2191120e6",
+          "call_8619597d314248ca9a00063abf6360ce",
+          "call_f339723c6c9f4acc8fe14c644c057a56",
+          "call_a6ed683b2701476aa88254878d270c8c"
+        ]
+      }
+    ],
+    "limitations": [
+      "The evidence does not identify a newer FlashAttention release, regression, or platform incompatibility that motivated the pin.",
+      "The execution check compared declarations only. It did not run pip, setuptools, a wheel build, an import, or GPU attention. Resolver behavior for particular wheel variants and compatibility with specific Python, Torch, CUDA, and GPU combinations were not established.",
+      "The parent-tree search covered literal package and module spellings; it does not establish dynamically constructed imports or downstream use."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+      "08dde73e664b997091370894072065f1f15055bf",
+      "5567364846845473185e60bb7c4dd0aea786574a"
+    ],
+    "chapters": [
+      {
+        "id": "packaging",
+        "title": "Pin FlashAttention in both installation declarations",
+        "claims": [
+          {
+            "text": "`requirements.txt` and `setup.py` declare the same `flash_attn==2.7.4.post1` constraint. The setup edit is confined to `install_requires`; the separate Torch check and `EXLLAMA_NOCOMPILE` logic still govern whether ExLlamaV3 configures its own native extension for precompilation.",
+            "basis": "source",
+            "evidence": [
+              "call_f339723c6c9f4acc8fe14c644c057a56",
+              "call_a6ed683b2701476aa88254878d270c8c",
+              "call_187dc0a8f350495e94e41442d933415a"
+            ]
+          },
+          {
+            "text": "The existing no-cache decoder passes projected Q, K, and V to `flash_attn_func`. The cached decoder obtains the cache tensors, passes them with the block table and sequence lengths to `flash_attn_with_kvcache`, then calls `cache.update_layer`. The pin changes which dependency release is requested, not either call interface.",
+            "basis": "source",
+            "evidence": [
+              "call_8619597d314248ca9a00063abf6360ce",
+              "call_f339723c6c9f4acc8fe14c644c057a56",
+              "call_a6ed683b2701476aa88254878d270c8c"
+            ]
+          },
+          {
+            "text": "A standard-library check read the parent files and applied the inspected replacement in memory. Comparing requirements lines and the AST-extracted `install_requires` list found exactly one changed declaration in each, leaving 12 and 11 entries unchanged, respectively.",
+            "basis": "execution",
+            "evidence": [
+              "call_19229d9840ca40c8ac239a10ad1059f9"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Pins FlashAttention to `2.7.4.post1` in both installation declarations. The patch narrows dependency resolution without changing attention dispatch or native build logic; the reason for choosing that release is unverified."
+  },
+  "evidence": {
+    "call_f339723c6c9f4acc8fe14c644c057a56": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "offset": 163,
+        "max_bytes": 311
+      },
+      "result_sha256": "2ebf41cb53a325999f191be775f14faad5dca19d900209ec1954eef97c74ccc0"
+    },
+    "call_a6ed683b2701476aa88254878d270c8c": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "offset": 474,
+        "max_bytes": 403
+      },
+      "result_sha256": "de7295aafc197f3cbc3270935a6030c3c9907e680f58a433faced17a7cb6e077"
+    },
+    "call_353f8ef682884dcfaaaea56875b997a2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6",
+        "query": "flash_attn",
+        "limit": 100
+      },
+      "result_sha256": "f53e3f5cbc64744969a4403a1d470371e947187c57aa013085f2fef77e8c181b"
+    },
+    "call_9c0cd5cd0756485c9dfea8bbea57a64c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6",
+        "query": "flash-attn",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8619597d314248ca9a00063abf6360ce": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "f039e692513034cd605e4a6e6075b9d20cc3909bf5e07798ed3429b15ffbc6b1"
+    },
+    "call_0f31cdbf6fb4475e94b9a179311226eb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "d6b7c53d2ed2d625adc7b9bd925b2541f6b66e9890dee7e77232ee521ebd3a5a"
+    },
+    "call_520c8b3198d84d64b526add22080ba32": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6",
+        "query": "2.7.4.post1",
+        "limit": 100
+      },
+      "result_sha256": "341bfa096c9fdaa49b30cc81db68247592974151582c9861698fb864386075f8"
+    },
+    "call_187dc0a8f350495e94e41442d933415a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6",
+        "path": "setup.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "f68e31fe6352e979ddd20fb592b8d6bc90015f82ea95c0185233c35b7e8cb38c"
+    },
+    "call_b19b82933dd749aaad377308d9b6d0c9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1be81eed6839845877d192b2ac1fc84f66f569f6",
+        "path": "requirements.txt"
+      },
+      "result_sha256": "34e8af070b9aaa0acdb1eb9d7ba85335fd53b7d1427ae9c6194583508fbe84ca"
+    },
+    "call_b255cce816d445f28da0bc967c4b5f1d": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 2081
+      },
+      "result_sha256": "e9334ba932e18bb60305462bdb849d0d93ac35c035de9f21b75352a6baff4008",
+      "catalog_only": true
+    },
+    "call_f120dd881cdb4691aed2fa403a862c6a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/17",
+        "max_bytes": 16384
+      },
+      "result_sha256": "8bba753ae01ae6223a71c8c5adbff338a3a6fc8fc6f5ddbf92f3dad0ef2f18be"
+    },
+    "call_dfe467fa1d2c45d1a65ccbc4d5395b97": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/2",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9c813847d614d938697615c84f9e6c9a949aba3c0b99fc7d680f22267986fbc4"
+    },
+    "call_160c6e2dceb141cc95bc00ca5dcc512d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 26000
+      },
+      "result_sha256": "a953559a8c81c6f24113d2b802752c109636df7ac7e95c440cf588405113d181"
+    },
+    "call_f96762d3f0104527af903b74c6fdd855": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/21",
+        "max_bytes": 26000
+      },
+      "result_sha256": "cf3963bfcee9f12845db0dadddc5ce5464665e96a79a4f4cbe70090fad794bd1"
+    },
+    "call_e4a1452e55f849a8b72a97842f4e8616": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/49",
+        "max_bytes": 20000
+      },
+      "result_sha256": "544cd9fbec5be54e29debb5f237ee5da1fb61776cecabf9dbe289f8187af9d32"
+    },
+    "call_c03e60e45ed24463981b30c2191120e6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/44",
+        "max_bytes": 16000
+      },
+      "result_sha256": "d8ff403a683ae5907a8f47ccb4e176ea9374b4181235d5274ff15540f6c4fbe0"
+    },
+    "call_2fed37eadd774f86aca1473981e26252": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/27",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f15f0ccf0c9b91984b930d9fc48b84d182fdcc38a3f423e3eefc6467869bc397"
+    },
+    "call_fd3666a71f024bac8fa48208deacdd83": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "setup.py",
+        "limit": 30
+      },
+      "result_sha256": "d9a2198948301a518d0834cfb616607a319b310faaddc57de3c4c93247db376d",
+      "catalog_only": true
+    },
+    "call_6665ce0d9c6344d2aa25b29e8343e0d8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_64b6da7c01c94664ac3169face95c27a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "08dde73e664b997091370894072065f1f15055bf",
+        "max_bytes": 16384
+      },
+      "result_sha256": "af7537f69b51ce62025e8816d84fbc764ea57edb4bb44df71ab485f475e8e95d"
+    },
+    "call_759b796e056d4517b079af25f661ab75": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "setup.py",
+        "limit": 20
+      },
+      "result_sha256": "3a973f0f85c3ac49e8e6b23e47da42292bb1701718df0fc451d5a6d0eb78d3c0"
+    },
+    "call_e80fb51423ca40168e712e809ae6a6c4": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+        "max_bytes": 16384
+      },
+      "result_sha256": "dd01f96f499b1db164a3591664c1e3ec55790ee19ecbe40454dd6ecfaa5bc708"
+    },
+    "call_8ad2ea8269f24fc1b52dcf55e76b3726": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "2f12246ec32a231a5f9bde18db1a69ed6e40c29e",
+        "max_bytes": 7000
+      },
+      "result_sha256": "b37d42e624fddf9841db3e51a34de393209ba18a8cf5fc7edc1f1afb48a12948"
+    },
+    "call_50a89bc143b84d77a88bb34ccb3f5d48": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5567364846845473185e60bb7c4dd0aea786574a",
+        "max_bytes": 16384
+      },
+      "result_sha256": "eca4460c402243f089df559cc664e79d95eaf245ef4fb3be81e4fb21048a11db"
+    },
+    "call_dca0550caa1a48cf827ecbef19c08f8e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/3",
+        "max_bytes": 16384
+      },
+      "result_sha256": "dacdbcd04890aac4a44e5ede27f81dd6850155def1d29d431312aa7c97c4211e"
+    },
+    "call_19229d9840ca40c8ac239a10ad1059f9": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast\nfrom pathlib import Path\nold='flash_attn>=2.7.4.post1'\nnew='flash_attn==2.7.4.post1'\nr=Path('requirements.txt').read_text()\ns=Path('setup.py').read_text()\ndef setup_reqs(text):\n    calls=[n for n in ast.walk(ast.parse(text)) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='setup']\n    assert len(calls)==1\n    return ast.literal_eval(next(k.value for k in calls[0].keywords if k.arg=='install_requires'))\nfor label,text,extract in [('requirements.txt',r,str.splitlines),('setup.py install_requires',s,setup_reqs)]:\n    assert text.count(old)==1\n    before,after=extract(text),extract(text.replace(old,new,1))\n    changes=[(a,b) for a,b in zip(before,after) if a!=b]\n    assert len(before)==len(after) and changes==[(old,new)]\n    print(label,changes,'unchanged entries:',len(before)-1)"
+        ]
+      },
+      "result_sha256": "65f23627d60dac4df72ddda0e2150ded2ae965af30b326f4cd7dfff87e39d580"
+    }
+  }
+}

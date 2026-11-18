@@ -1,0 +1,271 @@
+{
+  "schema_version": 5,
+  "sha": "ab875ba73053b7b6581579300af8c3cb81677c99",
+  "parent_shas": [
+    "9a24e0ce520af941a309765338bf291f3d2b9e97"
+  ],
+  "cutoff_date": "2025-06-04T23:34:42+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "GGUF accounting incorrectly counted token_embd.weight as decoder storage when output.weight appeared first. The change also excludes weights whose names end in norm.weight.",
+        "basis": "source",
+        "evidence": [
+          "call_a7cb1b826645441a9516dfdfc179f7ac",
+          "call_7f681514ebf7453e81d7217e83529c87"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Explicitly excluding the embedding from the aggregate removes its dependence on whether the head has already been found, while preserving embedding-as-head fallback when no output.weight exists.",
+        "basis": "source",
+        "evidence": [
+          "call_a7cb1b826645441a9516dfdfc179f7ac",
+          "call_7f681514ebf7453e81d7217e83529c87"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Fresh llama.cpp accounting changes decoder BPW and decoder-plus-head storage used by compare_q reporting and plots. It does not change model loading or inference; the reported storage is not measured runtime VRAM.",
+        "basis": "source",
+        "evidence": [
+          "call_7f681514ebf7453e81d7217e83529c87",
+          "call_c17bebed103d409daad3a7f4ec56437b",
+          "call_a7cb1b826645441a9516dfdfc179f7ac"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the initial usage-evaluation entry and the subsequent broader-weight-accounting entry. They establish the original embedding fallback and later .weight aggregation; the latter records both tensor-order sensitivity and stale disk-cache results.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_961eb2833e57413e9d97c58d5a303d8b",
+          "call_21da4d5462fb4cfbbdfe97939fc16d91"
+        ]
+      },
+      {
+        "text": "Source comparison shows that this change removes the recorded embedding-order problem but carries over the unchanged storage-cache namespace and cache-hit bypass.",
+        "basis": "source",
+        "evidence": [
+          "call_a7cb1b826645441a9516dfdfc179f7ac",
+          "call_50e3b6cda6984b589602e81a76f9baeb",
+          "call_7f681514ebf7453e81d7217e83529c87"
+        ]
+      }
+    ],
+    "limitations": [
+      "Validation used synthetic metadata and a scalar transcription, not GGUFReader, real model files, llama.cpp inference or GPU allocation measurements.",
+      "The naming filter establishes exclusion only for the literal embedding name and norm.weight suffix; coverage of every GGUF architecture's naming conventions is unestablished.",
+      "Persistent cache and filesystem-library behavior were inspected but not executed."
+    ],
+    "links": [
+      "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Order-independent GGUF storage accounting",
+        "claims": [
+          {
+            "text": "get_storage_info sums n_bytes \u00d7 8 and n_elements for eligible decoder weights, returning their ratio as element-weighted BPW. Eight converts bytes to bits. Head storage is accounted separately as head_numel \u00d7 head_bpw; output.weight overrides an earlier embedding fallback.",
+            "basis": "source",
+            "evidence": [
+              "call_7f681514ebf7453e81d7217e83529c87",
+              "call_a7cb1b826645441a9516dfdfc179f7ac"
+            ]
+          },
+          {
+            "text": "Previously, an embedding encountered after a positive-BPW output head failed the head condition and entered the generic .weight branch. The new branch excludes it explicitly. Normalization-suffix exclusion is a separate accounting refinement: it removes those tensors from both numerator and denominator even when embedding order was already favorable.",
+            "basis": "source",
+            "evidence": [
+              "call_a7cb1b826645441a9516dfdfc179f7ac",
+              "call_7f681514ebf7453e81d7217e83529c87"
+            ]
+          },
+          {
+            "text": "A standard-library scalar transcription used embedding/head/projection/norm metadata of respectively 200/100/50/20 bytes and 100/100/100/10 elements. Before the change, swapping embedding and head changed storage from 1360 to 2960 bits. Afterward all 24 permutations returned (decoder BPW 4, head BPW 8, storage 1200 bits). Without an explicit head, the embedding still supplied head BPW 16 and total storage 2000 bits.",
+            "basis": "execution",
+            "evidence": [
+              "call_e2359b8691f441a7995029af2e2cd7e1"
+            ]
+          },
+          {
+            "text": "The direct caller is load_llamacpp; compare_q selects it through its llamacpp loader registry. test_ppl converts returned bits by dividing by 8 and 1024\u00b3, stores the result as vram_gb, and plotting selects that value or layer_bpw as its horizontal coordinate. The tuple interface remains unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_e5b32cf5ec304c4da20ca481830b9f6b",
+              "call_a43913dd4f4d40ac88d6486ad74daf7e",
+              "call_7f681514ebf7453e81d7217e83529c87",
+              "call_c17bebed103d409daad3a7f4ec56437b"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "cached-accounting",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Previously cached storage results can bypass this correction.",
+        "trigger": "The same model argument already has an entry under lcpp_get_storage_info from before the change.",
+        "expected_behavior": "Recomputed comparison results reflect the corrected embedding and normalization exclusions.",
+        "actual_behavior": "The unchanged decorator returns the stored tuple without executing the modified function. compare_q's clear-cache option invalidates test_ppl entries only, leaving the storage entry reusable.",
+        "locations": [
+          {
+            "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+            "path": "eval/compare_q_llamacpp.py",
+            "symbol": "get_storage_info"
+          }
+        ],
+        "source_evidence": [
+          "call_a7cb1b826645441a9516dfdfc179f7ac",
+          "call_7f681514ebf7453e81d7217e83529c87",
+          "call_50e3b6cda6984b589602e81a76f9baeb",
+          "call_c17bebed103d409daad3a7f4ec56437b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected argument-only cache keys, the cache-hit return, and CLI invalidation. Whole-tree caller searches locate load_llamacpp as the direct caller and compare_q's registry as the broader entry point.",
+            "evidence": [
+              "call_e5b32cf5ec304c4da20ca481830b9f6b",
+              "call_a43913dd4f4d40ac88d6486ad74daf7e",
+              "call_50e3b6cda6984b589602e81a76f9baeb",
+              "call_c17bebed103d409daad3a7f4ec56437b"
+            ],
+            "limits": "No persistent cache was exercised. Fresh storage-cache keys run the corrected loop; this finding does not apply to every evaluation backend."
+          }
+        ]
+      }
+    ],
+    "summary": "Makes fresh GGUF storage estimates independent of embedding/head order and excludes normalization weights; existing cached estimates can remain stale."
+  },
+  "evidence": {
+    "call_a7cb1b826645441a9516dfdfc179f7ac": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ab875ba73053b7b6581579300af8c3cb81677c99",
+        "offset": 219,
+        "max_bytes": 980
+      },
+      "result_sha256": "723d3208e1a3dbda9518806bb2f6be203915bb65b25a0439d5c3e828b78f413a"
+    },
+    "call_7f681514ebf7453e81d7217e83529c87": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "path": "eval/compare_q_llamacpp.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "19cba7ad142d635d122a55b8f0c091d02aae826602756c3a36ea02f2a63e8d5f"
+    },
+    "call_e5b32cf5ec304c4da20ca481830b9f6b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "query": "get_storage_info",
+        "limit": 100
+      },
+      "result_sha256": "06fac723c7540e9518381c4f623164913197eb5480ba04039455596f49cfa617"
+    },
+    "call_3e96c2d09070476a9505620d4d55dcb6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "query": "GGUF",
+        "limit": 100
+      },
+      "result_sha256": "a946c4db3ed7b6034d3742178657a124c0850876f76cb6142f2381a5c606697a"
+    },
+    "call_21da4d5462fb4cfbbdfe97939fc16d91": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1cca514f4a7605b25200c50afdb26339bddddb70ffe485e19e2cd282e00ecfaf"
+    },
+    "call_50e3b6cda6984b589602e81a76f9baeb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "path": "exllamav3/util/file.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "e5d2685d802048d2ded1e010175e1340cfc47ed57c0089e2a61bb44705a413e3"
+    },
+    "call_c17bebed103d409daad3a7f4ec56437b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "path": "eval/compare_q.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "990bc765b9bb91f8786f4e689dcea9cc36198e0639453a001d0cddd4783a83cd"
+    },
+    "call_961eb2833e57413e9d97c58d5a303d8b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_954a3fd3082e44cb8ec520c9e3a75b06": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "032b6cba3ee1c634932ec8dd1afc5f25c8ccc5984346d8137012fb62e9232512"
+    },
+    "call_722a060c630b48c5a3ae1b48ef234f92": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16000,
+        "max_bytes": 110000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_a12e385e873a4c00afbe3b2cb6cd547b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 2000
+      },
+      "result_sha256": "10912662b8d65ebaa411fc3e26c7300ba47a7d8ac8cba632b4f72a5f5f79c463"
+    },
+    "call_a43913dd4f4d40ac88d6486ad74daf7e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "9a24e0ce520af941a309765338bf291f3d2b9e97",
+        "query": "load_llamacpp",
+        "limit": 100
+      },
+      "result_sha256": "e35277c027411f0f3fb57eb89c370b2d2a7c9256d102817f31a3d285f6089153"
+    },
+    "call_e2359b8691f441a7995029af2e2cd7e1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import itertools\nE=('token_embd.weight',200,100); H=('output.weight',100,100); W=('blk.0.attn_q.weight',50,100); N=('blk.0.attn_norm.weight',20,10)\ndef calc(ts,new):\n s=n=h=hn=0\n for name,b,e in ts:\n  if (name=='token_embd.weight' and h==0) or name=='output.weight': h=b*8/e; hn=e\n  elif name.endswith('.weight') and (not new or (name!='token_embd.weight' and not name.endswith('norm.weight'))): s+=b*8;n+=e\n return s/n,h,hn*h+s\nfor ts in [(E,H,W,N),(H,E,W,N),(E,W,N)]:print([x[0] for x in ts],calc(ts,False),calc(ts,True))\nprint('new results across 24 permutations:',set(calc(p,True) for p in itertools.permutations([E,H,W,N])))"
+        ]
+      },
+      "result_sha256": "6f42733f8b66d774685d8999d3cf2e1e65ad2618232d1900a9c5ea88cf614ecb"
+    }
+  }
+}

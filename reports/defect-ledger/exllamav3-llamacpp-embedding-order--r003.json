@@ -1,0 +1,217 @@
+{
+  "origin": "authoring_observation",
+  "status": "suspected",
+  "classification": "defect",
+  "description": "The new fallback branch makes decoder accounting sensitive to embedding/head tensor order.",
+  "trigger": "A positive-sized output.weight precedes token_embd.weight in GGUFReader.tensors.",
+  "expected_behavior": "Reordering identical tensor metadata should not change decoder BPW or decoder-plus-head storage.",
+  "actual_behavior": "Once output.weight sets head_bpw, token_embd.weight fails the head condition and falls into the new .weight aggregate. With embedding first it is excluded instead. The synthetic check changes the result from (5.333333333333333, 16, 3200) to (8, 16, 4800).",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Whole-tree caller search identifies load_llamacpp as this helper's direct caller; compare_q dispatches to that loader through its llamacpp registry entry. The observation concerns fresh accounting on that path, not every evaluation backend.",
+      "evidence": [
+        "call_0b1d5bc396dd40c1af1bd7445cddef7e",
+        "call_7a261e185ae349279f5a570d31ffbde5",
+        "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+      ],
+      "limits": "No actual GGUF ordering was inspected."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Executed Python versions of the old and changed classification loops on synthetic metadata, then swapped head and embedding order.",
+      "evidence": [
+        "call_a3be7d745a0b4047a4c5885a9e56a47a"
+      ],
+      "limits": "This does not execute GGUFReader or the repository helper."
+    }
+  ],
+  "defect_id": "exllamav3-llamacpp-embedding-order",
+  "revision_id": "r003",
+  "supersedes": "r002",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+      "paths": [
+        "eval/compare_q_llamacpp.py"
+      ],
+      "status": "source_supported",
+      "rationale": "172 newly lets token_embd.weight enter the decoder aggregate when output.weight has already set head_bpw; the parent whitelist never counts it."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+      "run": ".teacher/runs/commit-000172-001",
+      "finding_id": "embedding-order",
+      "run_status": "approved_for_ancestor_retrieval",
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+      "run": ".teacher/runs/commit-000172-001",
+      "local_id": "embedding-order",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "embedding-order",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new fallback branch makes decoder accounting sensitive to embedding/head tensor order.",
+        "trigger": "A positive-sized output.weight precedes token_embd.weight in GGUFReader.tensors.",
+        "expected_behavior": "Reordering identical tensor metadata should not change decoder BPW or decoder-plus-head storage.",
+        "actual_behavior": "Once output.weight sets head_bpw, token_embd.weight fails the head condition and falls into the new .weight aggregate. With embedding first it is excluded instead. The synthetic check changes the result from (5.333333333333333, 16, 3200) to (8, 16, 4800).",
+        "locations": [
+          {
+            "commit": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+            "path": "eval/compare_q_llamacpp.py",
+            "symbol": "get_storage_info"
+          }
+        ],
+        "source_evidence": [
+          "call_4616113e9a824c6f91521ab5cfe4dd02",
+          "call_0b1d5bc396dd40c1af1bd7445cddef7e",
+          "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-tree caller search identifies load_llamacpp as this helper's direct caller; compare_q dispatches to that loader through its llamacpp registry entry. The observation concerns fresh accounting on that path, not every evaluation backend.",
+            "evidence": [
+              "call_0b1d5bc396dd40c1af1bd7445cddef7e",
+              "call_7a261e185ae349279f5a570d31ffbde5",
+              "call_68a74a8a5ce44291a9cab509c1a0e9ca"
+            ],
+            "limits": "No actual GGUF ordering was inspected."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Executed Python versions of the old and changed classification loops on synthetic metadata, then swapped head and embedding order.",
+            "evidence": [
+              "call_a3be7d745a0b4047a4c5885a9e56a47a"
+            ],
+            "limits": "This does not execute GGUFReader or the repository helper."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ab875ba73053b7b6581579300af8c3cb81677c99",
+      "status": "source_supported",
+      "rationale": "237 explicitly excludes token_embd.weight from the fallback decoder aggregate regardless of head order; approved source and synthetic checks, no real GGUF execution."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "evidence/commit172-001-draft.json",
+      "sha256": "d63e7b792fc1d7dba2a2a36caab16ccff11189036e85f41ba191fc3ea469930d"
+    },
+    {
+      "file": "evidence/commit172-001-transcript.json",
+      "sha256": "bd6d0efcba42e20b8480b2f10a74927ea665250bb8b022026b1cf77e2f639b02"
+    },
+    {
+      "file": "evidence/commit172-001-verdict.md",
+      "sha256": "dc27c9449ff1241042504a9a48e4db966112654f6f5ce769b18dc475d6b53de6"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000172-001__draft.json",
+      "sha256": "d63e7b792fc1d7dba2a2a36caab16ccff11189036e85f41ba191fc3ea469930d"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000172-001.md",
+      "sha256": "dc27c9449ff1241042504a9a48e4db966112654f6f5ce769b18dc475d6b53de6"
+    },
+    {
+      "file": "evidence/commit237-001-draft.json",
+      "sha256": "f7aab421a39053fd0073f3caf4509b5eefd47b08d3225a454ee4c761f4fa58a8"
+    },
+    {
+      "file": "evidence/commit237-001-transcript.json",
+      "sha256": "8abb9b7bc9edc4f73452cdd8cdfcbc6cbe5ea66332cfae015dde68d0e8826f44"
+    },
+    {
+      "file": "evidence/commit237-001-verdict.md",
+      "sha256": "b0afb0754a6c977e95462bf99ef2c770346d0a7f2e5c2d2fa3bbb98d23168e7e"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "07ffea7f89c5a701130e48fd0aeaefe52a660210",
+      "available_at": "2025-05-17T22:19:59Z"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit172-001-draft.json",
+      "source_id": "evidence/commit172-001-draft.json",
+      "content_sha256": "d63e7b792fc1d7dba2a2a36caab16ccff11189036e85f41ba191fc3ea469930d",
+      "available_at": "2026-11-16T04:32:41.018612+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit172-001-transcript.json",
+      "source_id": "evidence/commit172-001-transcript.json",
+      "content_sha256": "bd6d0efcba42e20b8480b2f10a74927ea665250bb8b022026b1cf77e2f639b02",
+      "available_at": "2026-11-16T04:32:41.018612+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit172-001-verdict.md",
+      "source_id": "evidence/commit172-001-verdict.md",
+      "content_sha256": "dc27c9449ff1241042504a9a48e4db966112654f6f5ce769b18dc475d6b53de6",
+      "available_at": "2026-11-16T04:32:41.018612+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000172-001/draft.json",
+      "source_id": ".teacher/runs/commit-000172-001/draft.json",
+      "content_sha256": "d63e7b792fc1d7dba2a2a36caab16ccff11189036e85f41ba191fc3ea469930d",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000172-001.md",
+      "source_id": "reviews/verdicts/commit-000172-001.md",
+      "content_sha256": "dc27c9449ff1241042504a9a48e4db966112654f6f5ce769b18dc475d6b53de6",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit237-001-draft.json",
+      "source_id": "evidence/commit237-001-draft.json",
+      "content_sha256": "f7aab421a39053fd0073f3caf4509b5eefd47b08d3225a454ee4c761f4fa58a8",
+      "available_at": "2026-11-16T17:22:24.092626+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit237-001-transcript.json",
+      "source_id": "evidence/commit237-001-transcript.json",
+      "content_sha256": "8abb9b7bc9edc4f73452cdd8cdfcbc6cbe5ea66332cfae015dde68d0e8826f44",
+      "available_at": "2026-11-16T17:22:24.092626+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit237-001-verdict.md",
+      "source_id": "evidence/commit237-001-verdict.md",
+      "content_sha256": "b0afb0754a6c977e95462bf99ef2c770346d0a7f2e5c2d2fa3bbb98d23168e7e",
+      "available_at": "2026-11-16T17:22:24.092626+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "ab875ba73053b7b6581579300af8c3cb81677c99",
+      "available_at": "2026-11-16T17:22:24.092626+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T17:22:24.092626+00:00",
+  "reviewed_at": "2026-11-16T17:22:24.092626+00:00",
+  "reviewer": "Fable (237 finding/fix accepted; r003 serialization pending review)",
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "07ffea7f89c5a701130e48fd0aeaefe52a660210"
+    ],
+    "limits": "Exact revision only; source-supported, no real GGUF/model/cache execution or continuous range established."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "cutoff_note": "Administrative only, never teacher input. Suspected status retained; synthetic arithmetic does not establish real GGUF ordering."
+}

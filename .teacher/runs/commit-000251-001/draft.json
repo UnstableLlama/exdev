@@ -1,0 +1,272 @@
+{
+  "schema_version": 5,
+  "sha": "dbbeccfb63ee50c8de7feff6e45001b98406958f",
+  "parent_shas": [
+    "7ea95598374edd2f1eec4ea2349c6196b0a56679"
+  ],
+  "cutoff_date": "2025-06-07T05:09:26+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Safetensors metadata exposed only a stringified Torch dtype, not the dtype object returned by convert_dtype.",
+        "basis": "source",
+        "evidence": [
+          "call_57fcbb695bfc427483cf5fafa254f735"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change separates runtime metadata from JSON-ready metadata: list_tensors retains the existing dtype string and optionally adds torch_dtype. The quantization inventory explicitly opts out of the object-valued field before JSON serialization.",
+        "basis": "source",
+        "evidence": [
+          "call_7b753810cfbb4e959fecf57099ec4344",
+          "call_5b0ad603bc7e4efa92645a8ef1ee7434",
+          "call_9a161ee696234c1f811a9ed96eb36a30"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Existing calls receive richer metadata by default; quantization_config.json retains its previous tensor-record fields. Tensor loading and its dtype conversions are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_7b753810cfbb4e959fecf57099ec4344",
+          "call_5b0ad603bc7e4efa92645a8ef1ee7434",
+          "call_57fcbb695bfc427483cf5fafa254f735"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier inventory entry establishes that list_tensors and the sidecar exporter were introduced together, using header metadata rather than loading tensor payloads.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ad23cfb46cf24ab7b25a1e7e9d9cfc4d"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d reports file-opening failures and later GLM sampling trouble. Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports a padding/sliced-layer size mismatch. Their relationship to this task is only an inferred shared-loader context: neither discussion establishes a motivation for retaining dtype objects.",
+        "basis": "inference",
+        "evidence": [
+          "call_36c2f4e15aef40cf9c5c99ae0f3dee0c",
+          "call_c17a1d1cb31f43f09b6a0ec01867c201",
+          "call_f7dc7b86c11b45b9a2c8237464512a5f",
+          "call_7b753810cfbb4e959fecf57099ec4344"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository implementation, Torch dtype serialization, tensor loading or end-to-end conversion was executed. The bounded Python check modeled the new dictionary branch using a nonserializable sentinel.",
+      "Whole-parent-tree literal searches establish the inspected in-repository callers, not dynamic or external consumers."
+    ],
+    "links": [
+      "b73e159bc81f0b4bf0f2a2413e223919622e6ff9"
+    ],
+    "chapters": [
+      {
+        "id": "loading-tokenization",
+        "title": "Retain native dtype objects without changing exported metadata",
+        "claims": [
+          {
+            "text": "list_tensors still selects an exact prefix or dot-delimited descendants, requires new_tensors to be None, and derives shape and payload byte count from cached headers. convert_dtype supplies the native Torch dtype; the new torch_dtype field stores that object without replacing the existing dtype string. only_serializable defaults to False and suppresses only the new field when true.",
+            "basis": "source",
+            "evidence": [
+              "call_57fcbb695bfc427483cf5fafa254f735",
+              "call_7b753810cfbb4e959fecf57099ec4344"
+            ]
+          },
+          {
+            "text": "The exporter change supplies a necessary companion to the richer default. create_quantization_config_json places each listing under stored_tensors, eventually passed to json.dumps; its new only_serializable=True argument preserves the prior record structure instead of exporting native objects.",
+            "basis": "source",
+            "evidence": [
+              "call_9a161ee696234c1f811a9ed96eb36a30",
+              "call_5b0ad603bc7e4efa92645a8ef1ee7434"
+            ]
+          },
+          {
+            "text": "Whole-tree searches found one list_tensors definition and three caller functions. The exporter opts out. Gemma3VisionModel.get_additional_compiled_tensors and the corresponding Mistral3 method retain their old calls, so both now return the additional field. Their inspected consumer, compile_model, reads n_bytes for shard allocation and then loads tensors by key; it neither serializes these metadata dictionaries nor consumes torch_dtype. These paths therefore tolerate the added field without requiring it.",
+            "basis": "source",
+            "evidence": [
+              "call_e3f75c26dcc14fb0876e8478230f5516",
+              "call_18c6786fa5aa4a4090feed424ee729dd",
+              "call_5aad5ce3fdf34859ac18b5543b420a6f",
+              "call_51caf6bd396d4e81857b918748a243cb",
+              "call_6f8f5079868842adbc6810cc86ab02ce",
+              "call_d5450842b3dd44bca95d73d05f0142b7"
+            ]
+          },
+          {
+            "text": "A standard-library transcription verified object identity retention, equality of the remaining record fields, and JSON round-tripping of the serializable branch. The object-bearing sentinel branch raised TypeError; this models the serialization boundary rather than testing Torch or the repository implementation.",
+            "basis": "execution",
+            "evidence": [
+              "call_41450ec82b5741a69eed19250551e3db"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds native Torch dtype objects to Safetensors listings by default, while explicitly preserving JSON-ready listings for quantization metadata export."
+  },
+  "evidence": {
+    "call_5b0ad603bc7e4efa92645a8ef1ee7434": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "dbbeccfb63ee50c8de7feff6e45001b98406958f",
+        "offset": 172,
+        "max_bytes": 628
+      },
+      "result_sha256": "00fef5853c71f8466f865ed76d7106990469a6e11098b4a6da7387b7dfcd08f3"
+    },
+    "call_7b753810cfbb4e959fecf57099ec4344": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "dbbeccfb63ee50c8de7feff6e45001b98406958f",
+        "offset": 800,
+        "max_bytes": 1096
+      },
+      "result_sha256": "13d675e80e7ede0ca18df3be054d7c6ce8e9479719b9f37713a890b516af7488"
+    },
+    "call_57fcbb695bfc427483cf5fafa254f735": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "path": "exllamav3/loader/safetensors.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "f4dcf0e9744dc2120017cc8a979cfd1e16dfb6c9903934e165d0c82e8dfe0687"
+    },
+    "call_e3f75c26dcc14fb0876e8478230f5516": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "query": "list_tensors",
+        "limit": 100
+      },
+      "result_sha256": "e5ecb371a486a7c841e1cf0e3e74f730eb2c69896d50621a81f13a2a9d881ec8"
+    },
+    "call_b1d93706846840adadc19f93d901df61": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "query": "stored_tensors",
+        "limit": 100
+      },
+      "result_sha256": "68b10e9d7fe84ae974fa47cda79813dd258258b6ba405e78b9da3b678dd8bf01"
+    },
+    "call_9a161ee696234c1f811a9ed96eb36a30": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "path": "exllamav3/conversion/quant_config.py"
+      },
+      "result_sha256": "18e29cb8199124030c4e23e910178fc11d14f4412a80e8016bdddc6f9be766eb"
+    },
+    "call_18c6786fa5aa4a4090feed424ee729dd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 12500,
+        "max_bytes": 7000
+      },
+      "result_sha256": "ad7c3f1856876eb091dc8354b40e3b98d5681c8f9ad752979ff77a2d3619f82e"
+    },
+    "call_5aad5ce3fdf34859ac18b5543b420a6f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 10300,
+        "max_bytes": 2800
+      },
+      "result_sha256": "0820bdd4e186e3d582e1a83087207c929d769db95498e587e03d468b11b63213"
+    },
+    "call_51caf6bd396d4e81857b918748a243cb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "query": "get_additional_compiled_tensors",
+        "limit": 100
+      },
+      "result_sha256": "c72b1fdd786a19e93c595d68d887f4a51965ec5fb0fad5f8bbdfd234fbec2f76"
+    },
+    "call_6f8f5079868842adbc6810cc86ab02ce": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "path": "exllamav3/conversion/compile.py",
+        "max_bytes": 17000
+      },
+      "result_sha256": "881cbc5859b7e835e6f47a900b4319bb17bd528d06753e59a61094e1af2f39e6"
+    },
+    "call_44d11b1c676b41e9bc4d6bf66939bb95": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "loader/safetensors.py",
+        "limit": 30,
+        "max_bytes": 12000
+      },
+      "result_sha256": "51a43667e3796eccdf63267645bd5ac55c2c7a48061fe5b4ae968df7d707af16",
+      "catalog_only": true
+    },
+    "call_ad23cfb46cf24ab7b25a1e7e9d9cfc4d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b73e159bc81f0b4bf0f2a2413e223919622e6ff9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "23fbfb8bfa68c3565e19f2dfbf0ebad245f4b6c077a86dcdcd3e57b3200c638a"
+    },
+    "call_36c2f4e15aef40cf9c5c99ae0f3dee0c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16384
+      },
+      "result_sha256": "d157b124c8c69326c91870ebb1f5584ef47b768d66e37e579578bee79627cdd7"
+    },
+    "call_c17a1d1cb31f43f09b6a0ec01867c201": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16384,
+        "max_bytes": 32000
+      },
+      "result_sha256": "a1c96a59518a123b551957288c94ae3bb065d050713bfb3b9266aa0da8bbaf13"
+    },
+    "call_f7dc7b86c11b45b9a2c8237464512a5f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 22000
+      },
+      "result_sha256": "83bb3e59e72840ed87eff4bdf75e5b89e2ec4ae20eab8d821f87fc3e6a22067b"
+    },
+    "call_d5450842b3dd44bca95d73d05f0142b7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "7ea95598374edd2f1eec4ea2349c6196b0a56679",
+        "query": "torch_dtype",
+        "limit": 100
+      },
+      "result_sha256": "98dba7f989160c69508ff09a464fdd0873429bebf06821959180905238a0be7b"
+    },
+    "call_41450ec82b5741a69eed19250551e3db": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nsentinel=object()\ndef listing(serializable=False):\n    result={'layer.weight':{'shape':[2,3],'n_bytes':12,'dtype':'torch.float16'}}\n    if not serializable: result['layer.weight']['torch_dtype']=sentinel\n    return result\nrich=listing(); plain=listing(True)\nassert rich['layer.weight']['torch_dtype'] is sentinel\nassert {k:v for k,v in rich['layer.weight'].items() if k!='torch_dtype'}==plain['layer.weight']\nassert json.loads(json.dumps(plain))==plain\ntry: json.dumps(rich)\nexcept TypeError: print('Rich metadata retains object identity; serializable branch preserves prior fields and JSON round-trips; rich sentinel metadata raises TypeError.')\nelse: raise AssertionError('expected non-JSON object')"
+        ]
+      },
+      "result_sha256": "ba6a9e008e603afbf228b4797d900d259c17b716eb5e71d3e4b762a5426245aa"
+    }
+  }
+}

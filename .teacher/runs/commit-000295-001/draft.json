@@ -1,0 +1,307 @@
+{
+  "schema_version": 5,
+  "sha": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+  "parent_shas": [
+    "6f9928b3acee3b52f5064a1ce8ef436b2442ea52"
+  ],
+  "cutoff_date": "2025-07-08T15:58:02+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The FP32-input gated-activation kernel converted activation(x)*y directly to FP16, allowing large products to overflow the output representation.",
+        "basis": "source",
+        "evidence": [
+          "call_71664dc1b6f248a08ebaafbbcc831ea5",
+          "call_2c29573b73d445499fb48bfc7967e932"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Clamp the converted half2 pair before storing it. This preserves FP32 activation and multiplication while bounding the FP16 result; it does not clamp inputs or intermediate arithmetic.",
+        "basis": "source",
+        "evidence": [
+          "call_2c29573b73d445499fb48bfc7967e932",
+          "call_71664dc1b6f248a08ebaafbbcc831ea5"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change covers both SiLU and GELU specializations with FP32 inputs. The FP16-input kernel and PyTorch-based non-gated MLP activations remain unchanged, so the commit message is broader than the implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_2c29573b73d445499fb48bfc7967e932",
+          "call_71664dc1b6f248a08ebaafbbcc831ea5",
+          "call_943a2748badd426489f658292ab6560c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The FP32-activation ancestor entry records the mixed-precision output contract, incompatible in-place FP32 callers and an omitted odd-element tail.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_c3b68455aa53434e9072b29eb1b7a5c7"
+        ]
+      },
+      {
+        "text": "Current source retains the GatedMLP destination mismatch and odd-element tail. Unlike the earlier entry's account, the parent BlockSparseMLP ordinary path now supplies a separate half destination when needed; its fused path also supplies a half destination.",
+        "basis": "source",
+        "evidence": [
+          "call_943a2748badd426489f658292ab6560c",
+          "call_159670c1fcb0427593ff8a12c5b5ec12",
+          "call_71664dc1b6f248a08ebaafbbcc831ea5",
+          "call_2c29573b73d445499fb48bfc7967e932"
+        ]
+      },
+      {
+        "text": "The inspected discussions concern different failures: \u201cTypeError with presence penalty\u201d reports argument incompatibility, while \u201chumaneval.py: fix top_k type, remove rep_p, add qwen3\u201d discusses evaluation, penalty-kernel NaNs and prompting. Neither establishes the motivation for this activation clamp.",
+        "basis": "source",
+        "evidence": [
+          "call_39cb293a37cf4ffda04c25f932b79b5c",
+          "call_29b0383aa75b4730bc505861e3763f1c"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA build, kernel execution, model evaluation or performance measurement was performed.",
+      "The scalar check models binary16 rounding and saturation, not CUDA intrinsic execution or NaN handling.",
+      "Whole-tree literal caller searches do not establish the behavior of dynamic or external callers."
+    ],
+    "links": [
+      "d97bfdf1f402326f25773143dbe07751493758c1"
+    ],
+    "chapters": [
+      {
+        "id": "runtime",
+        "title": "Saturate FP32 gated-activation outputs at the FP16 store",
+        "claims": [
+          {
+            "text": "act_mul_kernel_f loads float2 pairs, applies SiLU or the tanh-based GELU approximation per lane, multiplies by the corresponding y lanes, then rounds to half2. The new helper applies an upper bound followed by a lower bound to that converted pair before the store.",
+            "basis": "source",
+            "evidence": [
+              "call_71664dc1b6f248a08ebaafbbcc831ea5",
+              "call_2c29573b73d445499fb48bfc7967e932"
+            ]
+          },
+          {
+            "text": "The bounds \u00b165504 are binary16's finite extrema: (2\u22122^-10)\u00d72^15 = 65504. A standard-library scalar model retained ordinary rounded values and saturated modeled overflow: 65000 became 64992, while \u00b170000 became \u00b165504 after conversion and clamping.",
+            "basis": "execution",
+            "evidence": [
+              "call_579ecb8b6b6e41c0854fe62d807350c1"
+            ]
+          },
+          {
+            "text": "Placing the clamp after conversion allows the existing half2 min/max operations to bound overflowed output lanes without widening the destination. This trades extreme-value magnitude for a bounded representation; it does not recover precision lost during conversion or establish that earlier arithmetic was finite.",
+            "basis": "inference",
+            "evidence": [
+              "call_2c29573b73d445499fb48bfc7967e932",
+              "call_71664dc1b6f248a08ebaafbbcc831ea5"
+            ]
+          },
+          {
+            "text": "silu_mul and gelu_mul dispatch on x.dtype(), require matching input dtypes and always require a half destination. Their FP32 branches share the changed kernel; the half-input branches still store __hmul2 directly without this clamp.",
+            "basis": "source",
+            "evidence": [
+              "call_71664dc1b6f248a08ebaafbbcc831ea5",
+              "call_2c29573b73d445499fb48bfc7967e932"
+            ]
+          },
+          {
+            "text": "Whole-tree searches locate the exported operations in GatedMLP and BlockSparseMLP. BlockSparseMLP's ordinary expert path allocates half a when interm_dtype is not half, and its fused path uses half interm_a. These paths can reach the clamp with FP32 gate/up results. GatedMLP instead passes u as both input and destination, so FP32 u fails validation before reaching it.",
+            "basis": "source",
+            "evidence": [
+              "call_7d5b049484c24d2f996272265d7dd4ff",
+              "call_552e0615c42b41d68dc5dd84896d66b7",
+              "call_5bdffbfb5c3749cfbde15f1ba19e63b2",
+              "call_943a2748badd426489f658292ab6560c",
+              "call_159670c1fcb0427593ff8a12c5b5ec12",
+              "call_71664dc1b6f248a08ebaafbbcc831ea5"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-fp32-gated-destination",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "GatedMLP retains an in-place destination incompatible with the FP32-input activation contract.",
+        "trigger": "GatedMLP.forward receives FP32 gate/up projection results.",
+        "expected_behavior": "Supply a half activation destination so the supported FP32-input kernel can run.",
+        "actual_behavior": "activation_fn_call(g, u, u) supplies FP32 z; the wrapper rejects z before launching the newly clamped kernel. Both BlockSparseMLP activation paths prepare half destinations instead.",
+        "locations": [
+          {
+            "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.forward"
+          },
+          {
+            "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "silu_mul / gelu_mul"
+          }
+        ],
+        "source_evidence": [
+          "call_943a2748badd426489f658292ab6560c",
+          "call_71664dc1b6f248a08ebaafbbcc831ea5",
+          "call_2c29573b73d445499fb48bfc7967e932"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared whole-tree activation caller matches, destination preparation and unchanged wrapper checks.",
+            "evidence": [
+              "call_5bdffbfb5c3749cfbde15f1ba19e63b2",
+              "call_159670c1fcb0427593ff8a12c5b5ec12",
+              "call_943a2748badd426489f658292ab6560c",
+              "call_71664dc1b6f248a08ebaafbbcc831ea5"
+            ],
+            "limits": "Conditional on FP32 projection results; no model execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-odd-activation-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The clamp does not repair the inherited omission of an odd final element.",
+        "trigger": "Call either exported activation with otherwise suitable buffers and an odd element count.",
+        "expected_behavior": "Write activation(x)*y for every output element.",
+        "actual_behavior": "Both kernels process only numel/2 complete pairs. The final destination element remains untouched; wrappers have neither an evenness check nor a scalar tail.",
+        "locations": [
+          {
+            "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "act_mul_kernel_f / act_mul_kernel_h"
+          }
+        ],
+        "source_evidence": [
+          "call_71664dc1b6f248a08ebaafbbcc831ea5",
+          "call_2c29573b73d445499fb48bfc7967e932",
+          "call_7d5b049484c24d2f996272265d7dd4ff",
+          "call_552e0615c42b41d68dc5dd84896d66b7"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated the inspected launch and pair-index arithmetic. Lengths 1, 3, 129 and 513 each omitted their final index; 128 and 512 were fully covered.",
+            "evidence": [
+              "call_579ecb8b6b6e41c0854fe62d807350c1",
+              "call_71664dc1b6f248a08ebaafbbcc831ea5"
+            ],
+            "limits": "Index model only, not kernel execution. Exported calls expose the case; this does not establish that normal padded model workloads produce odd lengths."
+          }
+        ]
+      }
+    ],
+    "summary": "Bounds FP32-input SiLU/GELU gated products at the FP16 store using \u00b165504; half-input arithmetic and inherited caller/tail limitations remain unchanged."
+  },
+  "evidence": {
+    "call_2c29573b73d445499fb48bfc7967e932": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+        "offset": 187,
+        "max_bytes": 931
+      },
+      "result_sha256": "53d5f912aa483d08aa0ac58b5c6cf00cbb8e9ae1ab0b3fe0b37a8207a516bc02"
+    },
+    "call_71664dc1b6f248a08ebaafbbcc831ea5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+        "path": "exllamav3/exllamav3_ext/activation.cu",
+        "max_bytes": 18000
+      },
+      "result_sha256": "de87cdd5347e4fc6ea39a38ccdf482965956b845099372ef418b6fcb5230a435"
+    },
+    "call_7d5b049484c24d2f996272265d7dd4ff": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+        "query": "silu_mul",
+        "limit": 100
+      },
+      "result_sha256": "280d811dcc24c1ab752fc335dbb9ae6383775a88694772eb08d8e50ca937978f"
+    },
+    "call_552e0615c42b41d68dc5dd84896d66b7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+        "query": "gelu_mul",
+        "limit": 100
+      },
+      "result_sha256": "148dc2ff0f80c7e6851f1abd3539e7e49ea5ac4e24f1227a50896fbaea60b261"
+    },
+    "call_c3b68455aa53434e9072b29eb1b7a5c7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d97bfdf1f402326f25773143dbe07751493758c1",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9ecb7a615947f0cb00a59f81fe129cd999b512fe6d4bca76e42a2b8922fadab6"
+    },
+    "call_943a2748badd426489f658292ab6560c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "2a43d94df209576cbc7e93ff9ba543337b993f297f25726bf663d86be73aed95"
+    },
+    "call_159670c1fcb0427593ff8a12c5b5ec12": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "3a8d53c88c1c2cd8b6c2e705f9adbb5e282ebb30f817672bea87ac2c074b0aac"
+    },
+    "call_39cb293a37cf4ffda04c25f932b79b5c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/31",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8254fd60673bc14bcf9bcdd4291fd469763790b5978358470eda6d2d2730acbd"
+    },
+    "call_29b0383aa75b4730bc505861e3763f1c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/35",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0c9daf9464211b8a993e0fa6c080ccafde5be67edc03e599efdcc7e7c1ee5171"
+    },
+    "call_579ecb8b6b6e41c0854fe62d807350c1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import struct, math\nm=struct.unpack('>e',bytes.fromhex('7bff'))[0]\nprint('binary16 maximum',m,'formula',(2-2**-10)*2**15)\nfor v in [65000.,65504.,65519.,65520.,70000.,-70000.]:\n try: h=struct.unpack('e',struct.pack('e',v))[0]\n except OverflowError: h=math.copysign(math.inf,v)\n print(v,h,max(-m,min(h,m)))\nfor n in [1,3,128,129,512,513]:\n written=[2*i+j for i in range(((n+511)//512)*256) if i<n//2 for j in [0,1]]\n print('n',n,'unwritten',sorted(set(range(n))-set(written)))"
+        ]
+      },
+      "result_sha256": "b508ec80518e314c0fd84eb2170de02d966046ea07b1c20d7b1e91d5a21a6e7d"
+    },
+    "call_5bdffbfb5c3749cfbde15f1ba19e63b2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6f9928b3acee3b52f5064a1ce8ef436b2442ea52",
+        "query": "activation_fn_call",
+        "limit": 100
+      },
+      "result_sha256": "0fedeb0de84cba2eab6cdf064ffdf36f4af9bfde14192583bf882da61bd2fa18"
+    }
+  }
+}

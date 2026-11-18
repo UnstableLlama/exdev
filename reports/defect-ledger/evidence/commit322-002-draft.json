@@ -1,0 +1,834 @@
+{
+  "schema_version": 5,
+  "sha": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+  "parent_shas": [
+    "ba4304a44b267e88f3c882136302fd1e25c5384e"
+  ],
+  "cutoff_date": "2025-07-15T21:13:39+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "TransformerBlock already allowed callers to omit either input normalizer, but a present branch still consumed the local variable y. Without an attention norm, attention read an unassigned y. Without an MLP norm, the MLP either read an unassigned y when attention was absent or reused the attention branch result instead of the updated residual.",
+        "basis": "source",
+        "evidence": [
+          "call_f8108594c73a445fa2f8558a32dcc1c2",
+          "call_a6812e014dd140699d98b8634761887a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Each present branch now gets its own input: the normalizer's requested FP16 output when a norm exists, or x.half() when it does not. Casting the branch input, rather than reassigning x, preserves the residual stream's dtype while keeping the same input precision at the attention or MLP boundary. The fallback does not normalize, apply learned weights, or require a placeholder module.",
+        "basis": "source",
+        "evidence": [
+          "call_a6812e014dd140699d98b8634761887a",
+          "call_f8108594c73a445fa2f8558a32dcc1c2",
+          "call_cd03ed4ec44642a392ce60739f5784a5",
+          "call_09e1604589214f979006c4e376ccb0b0"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "This fixes the shared sequential block for an active attention or feed-forward branch without a pre-norm. The inspected in-tree builders do not select that combination: they supply both norms, except DeciLM, which omits a norm only when it also omits that branch. The change does not register an architecture, alter checkpoint loading, or add the same fallback to ParallelDecoderBlock.",
+        "basis": "source",
+        "evidence": [
+          "call_a6812e014dd140699d98b8634761887a",
+          "call_be8e0790b42a4a14b9f12954f53f35c4",
+          "call_8c663ef99e5a43f0b7358b0346b4a8c5",
+          "call_08d215a58de34109a304488c78d26a73"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial modules entry describes the FP16 branch inputs, in-place residual additions, and attention-only prefill shortcut. The optional-branches entry records the missing-y defect and an empty-block allocation defect. The parallel-decoder entry documents the separate shared-input design and its unconditional dereferences.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_aea052e9c6964a9485edd2ef5deb87e8",
+          "call_c6d020af4f14404abba1acb42fb078c3",
+          "call_d0acb787447542c082d5c9e73b4f8137"
+        ]
+      },
+      {
+        "text": "The parent still has the missing-y defect recorded by the optional-branches entry, and this diff removes it from TransformerBlock.forward. The earlier empty-block allocation failure is already absent in the parent: allocate_q returns an empty strategy and the incoming surplus before calling the allocator. The parallel block's missing-component behavior and plural projection access remain unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_f8108594c73a445fa2f8558a32dcc1c2",
+          "call_a6812e014dd140699d98b8634761887a",
+          "call_7def27cb18f643f4875d35e258fa1327"
+        ]
+      },
+      {
+        "text": "Closed issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d reports a conversion failure on a 3060. Its traceback contains the exact attention call retained by this patch, but it proceeds into the projection's Hessian capture and the logged Llama blocks have RMSNorms. In the discussion, turboderp attributes the failure to tokenizer truncation and reports overriding that setting. The matching frame shows shared execution, not evidence that the norm fallback fixes the reported error.",
+        "basis": "inference",
+        "evidence": [
+          "call_9e66c47b3cff44d7898c61bdbb9aaa8a",
+          "call_a6812e014dd140699d98b8634761887a",
+          "call_be8e0790b42a4a14b9f12954f53f35c4"
+        ]
+      },
+      {
+        "text": "Other matched discussions describe different operations: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d fails loading the extension before any block forward; PR #26, \u201cSuperior 3INST parameters,\u201d proposes a codebook multiplier; #33, \u201cError converting model,\u201d reports a file-open failure during compilation; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d and #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d report Cholesky failures in quantization. Conversion or its imports are the overlap, not a matching missing-norm failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_27d349bdd591461eaeb7e99eb98cb1e3",
+          "call_ad6a58a6b521409abb991b6387bc91ea",
+          "call_9f2252b34cf44e329dc041b28f6b47cf",
+          "call_f12ee8086ea1477a9abe4975fa83b6ae",
+          "call_8e8638b2bf904a508b46fd858475f294",
+          "call_64a3289f2f9c487a852181133dc6e17a",
+          "call_a6812e014dd140699d98b8634761887a"
+        ]
+      },
+      {
+        "text": "The other overlaps do not identify a use of the new fallback: PR #4, \u201cchore: update config.py,\u201d is a typo correction; #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports a logits buffer width mismatch, while both inspected Gemma 3 builders supply norms; #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d matches the autosplit error string, not the branch-input failure. #51, \u201cdots.llm1 support,\u201d discusses adding that model, whose parent builder supplies both norms. #53, \u201cCommand A support,\u201d asks about availability of Command A quants and points to Cohere2, which uses the unchanged parallel block.",
+        "basis": "inference",
+        "evidence": [
+          "call_b6b6e709fd9b4b5f828712916a532c32",
+          "call_ff51c7d69fcc4ae7bcca62f94b495e64",
+          "call_b182fc5f54874a378fada5790318e2d6",
+          "call_d7bfb825354b4635bf6fb0a54252735c",
+          "call_5826e29914ae47cb9cac65ba8285d66b",
+          "call_be8e0790b42a4a14b9f12954f53f35c4",
+          "call_22c21761b10042c7a6efae99a82d1b7a"
+        ]
+      }
+    ],
+    "limitations": [
+      "The bounded Python check executed isolated versions of the forward method with stand-ins. It did not import ExLlamaV3 or exercise PyTorch tensor aliasing, dtype promotion, actual normalization, GPU attention, cache writes, quantization, or model loading. It establishes branch order and argument selection, not model accuracy or performance.",
+      "No named in-tree builder was found that selects an active branch without its norm. The literal searches and constructor inspection do not cover external callers or dynamically assembled or modified blocks. The commit does not identify a motivating checkpoint."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a",
+      "a2ae48308aa813c67058c01f21bd4ab656a21d7a"
+    ],
+    "chapters": [
+      {
+        "id": "modules",
+        "title": "Feed FP16 residual activations to branches without a pre-norm",
+        "claims": [
+          {
+            "text": "In ordinary sequential execution, attention consumes the incoming residual, optionally after pre-normalization; its result can pass through a separate post-norm before being added to x. The MLP independently prepares its input from that updated x, not from attention's output alone. If attention is absent, the MLP uses the incoming x. Both fallbacks are local to their own branch; neither depends on the other.",
+            "basis": "source",
+            "evidence": [
+              "call_f8108594c73a445fa2f8558a32dcc1c2",
+              "call_a6812e014dd140699d98b8634761887a"
+            ]
+          },
+          {
+            "text": "The FP16 handoff feeds Attention's Q/K/V projections, plain MLP's up projection, GatedMLP's gate and up projections, or BlockSparseMLP's reshaping and expert routing. The patch changes the supplied activation, not the branch's projection, activation, routing, or attention-backend selection.",
+            "basis": "source",
+            "evidence": [
+              "call_a6812e014dd140699d98b8634761887a",
+              "call_531b726faecf43eba4eafc356f399b75",
+              "call_20ee14cbe1eb46288c6dd852dc601967",
+              "call_7798481680f440dc914039c5eac1e962",
+              "call_af84127f018d4815a47e80a5b62a61d6"
+            ]
+          },
+          {
+            "text": "Sequential prefill still calls attention before returning x, bypassing attention post-normalization, both residual additions, the MLP, and final dtype conversion. There is no early return on this flag in a block without attention. Model.prefill sets it only for the last cache-affecting module and stops there. Cohere and Cohere2 use a different block: it normalizes once, supplies that same input to both branches, and adds the attention result before its prefill return.",
+            "basis": "source",
+            "evidence": [
+              "call_f8108594c73a445fa2f8558a32dcc1c2",
+              "call_a6812e014dd140699d98b8634761887a",
+              "call_22c21761b10042c7a6efae99a82d1b7a",
+              "call_be8e0790b42a4a14b9f12954f53f35c4"
+            ]
+          },
+          {
+            "text": "Builder inspection found explicit RMSNorm at both inputs in Llama, Phi3, Mixtral, GLM4, Gemma2, Gemma3 text, both Mistral3 construction sites, Qwen3, Qwen3 MoE, Dots1, Ernie 4.5, Ernie 4.5 MoE, and SmolLM3. Gemma3 vision supplies two LayerNorms. DeciLM independently pairs each no-op branch with a missing norm, so its absent norms are skipped by the existing outer branch checks. Generic dispatch can reach the patched forward from Model.forward, Model.prefill, the autosplit dummy forward, conversion calibration/reference/state advancement, and the inspected evaluation and KV experiment loops, if such a block is installed and reached.",
+            "basis": "source",
+            "evidence": [
+              "call_a51932857c75465ba46a925025d94c24",
+              "call_be8e0790b42a4a14b9f12954f53f35c4",
+              "call_8c663ef99e5a43f0b7358b0346b4a8c5",
+              "call_628ded0ed52841ac976a7a41925d19ee",
+              "call_22c21761b10042c7a6efae99a82d1b7a"
+            ]
+          },
+          {
+            "text": "An isolated before/after check extracted the parent forward body and applied the two diff additions in memory, using stub branches and standard-library binary16 rounding for half(). The parent raised UnboundLocalError for normless attention-only and MLP-only cases. With normalized attention producing 3 and the incoming residual at 10.001, the normless MLP received 3 before the patch and the FP16-rounded updated residual, 13.0, afterward. In the patched prefill case only attention ran and the stand-in residual returned as 10.001.",
+            "basis": "execution",
+            "evidence": [
+              "call_de2ee1003d4d49b880256380bfccb988",
+              "call_a6812e014dd140699d98b8634761887a",
+              "call_f8108594c73a445fa2f8558a32dcc1c2"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "kv-sampler-still-requires-attention-norm",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The KV research sampler reconstructs the pre-attention path directly and does not inherit TransformerBlock.forward's fallback.",
+        "trigger": "Use sample_qkv on a model whose targeted TransformerBlock has active attention but attn_norm=None, and reach that target rather than returning cached samples.",
+        "expected_behavior": "If the sampler is to accept this block shape, it should project from the same FP16 residual input as the block.",
+        "actual_behavior": "It calls module.attn_norm.forward directly and would raise AttributeError before projecting or reaching module.forward.",
+        "locations": [
+          {
+            "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+            "path": "science/kv_quant_exp.py",
+            "symbol": "sample_qkv"
+          }
+        ],
+        "source_evidence": [
+          "call_753685cb3bb44a70aeb5279cce60720c",
+          "call_c2efcac45b744aca835dc2d3df4d13b8",
+          "call_a6812e014dd140699d98b8634761887a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Located the direct norm reader and traced the script's top-level sample_qkv call and target-layer branch.",
+            "evidence": [
+              "call_753685cb3bb44a70aeb5279cce60720c",
+              "call_c2efcac45b744aca835dc2d3df4d13b8"
+            ],
+            "limits": "The script targets a Llama checkpoint by default, and the inspected Llama builder supplies the norm. No failure is established for that default."
+          }
+        ]
+      },
+      {
+        "id": "parallel-block-still-dereferences-missing-components",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "ParallelDecoderBlock still accepts None components at construction but does not handle them in forward.",
+        "trigger": "Construct a parallel block without its input norm, attention, or MLP and reach the corresponding call; for the MLP, the prefill shortcut must not be taken.",
+        "expected_behavior": "Reject unsupported omissions during construction or handle them deliberately during forward.",
+        "actual_behavior": "The block calls .forward on None; omitting the input norm fails before either branch can execute.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "ParallelDecoderBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_f8108594c73a445fa2f8558a32dcc1c2",
+          "call_a6812e014dd140699d98b8634761887a",
+          "call_08d215a58de34109a304488c78d26a73"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared constructor defaults with unchanged forward calls, searched named constructors, and checked generic module dispatch.",
+            "evidence": [
+              "call_f8108594c73a445fa2f8558a32dcc1c2",
+              "call_08d215a58de34109a304488c78d26a73",
+              "call_be8e0790b42a4a14b9f12954f53f35c4",
+              "call_22c21761b10042c7a6efae99a82d1b7a"
+            ],
+            "limits": "Both named builders, Cohere and Cohere2, supply all three components. Reach is conditional on direct construction or installation of a differently assembled block."
+          }
+        ]
+      },
+      {
+        "id": "plain-mlp-allocation-still-expects-plural-projections",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The sequential and parallel block allocators still assume a plural projection interface even though both constructors accept a plain MLP.",
+        "trigger": "Call either block's allocate_q on a block containing a plain MLP with a valid quantization budget.",
+        "expected_behavior": "Pass the plain MLP's up and down projections to allocation or explicitly reject the unsupported block configuration.",
+        "actual_behavior": "The allocator reads .ups and .downs, but plain MLP exposes .up and .down. Argument preparation fails with AttributeError before allocate_transformer runs.",
+        "locations": [
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.allocate_q"
+          },
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "ParallelDecoderBlock.allocate_q"
+          }
+        ],
+        "source_evidence": [
+          "call_f8108594c73a445fa2f8558a32dcc1c2",
+          "call_7def27cb18f643f4875d35e258fa1327",
+          "call_a6812e014dd140699d98b8634761887a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked the allocator and projection definitions, the conversion loop's generic allocate_q call, and the Gemma3 vision constructor that supplies a plain MLP.",
+            "evidence": [
+              "call_6e7b1269369743748c0a2ee11bc3e348",
+              "call_b773298964ac4fd0a7050d15cdd20ae7",
+              "call_05640e36b5d545b0a05d3ee3426dc69f",
+              "call_1ea347f82a074ff492ba0b6785a7e5db",
+              "call_1b3b692f17f64bc1b5a8997b48fbecbe"
+            ],
+            "limits": "The inspected converter selects the text component by default, so the Gemma3 vision construction alone does not establish a failure in ordinary conversion. The named parallel builders use gated MLPs."
+          }
+        ]
+      },
+      {
+        "id": "prefill-flag-can-leak-into-ordinary-forward",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited prefill shortcut still depends on mutable caller parameters that Model.prefill leaves set.",
+        "trigger": "After Model.prefill reaches its last cache-affecting module, reuse the same params dictionary for ordinary Model.forward without removing or resetting prefill, and reach a TransformerBlock with attention.",
+        "expected_behavior": "An ordinary forward should apply the residual and feed-forward computations rather than the last-cache-layer shortcut.",
+        "actual_behavior": "Model.forward does not reset the flag. The sequential block returns immediately after attention with the incoming residual, skipping the attention residual update and MLP. The new FP16 fallback does not change this.",
+        "locations": [
+          {
+            "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.prefill"
+          },
+          {
+            "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_22c21761b10042c7a6efae99a82d1b7a",
+          "call_f8108594c73a445fa2f8558a32dcc1c2",
+          "call_a6812e014dd140699d98b8634761887a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the parameter mutation and generic dispatch, searched prefill call sites, and checked that the minimal generation example supplies a fresh dictionary for normal forward.",
+            "evidence": [
+              "call_9e705bab9a8a47c5bbb0c613a36f4500",
+              "call_628ded0ed52841ac976a7a41925d19ee",
+              "call_22c21761b10042c7a6efae99a82d1b7a",
+              "call_7c5cb12f981640c1b7df999e027deb00"
+            ],
+            "limits": "The direct API reuse scenario is conditional; this is not evidence that the bundled generator or example reuses the dictionary."
+          }
+        ]
+      }
+    ],
+    "summary": "Fixes sequential TransformerBlock branches without a pre-norm by casting the current residual to FP16 at each branch boundary. Existing normalized paths and prefill ordering stay unchanged; the fallback does not extend to the parallel decoder or the KV research sampler."
+  },
+  "evidence": {
+    "call_a6812e014dd140699d98b8634761887a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "offset": 179,
+        "max_bytes": 989
+      },
+      "result_sha256": "2886342f4291053017d9ad196ea87df877468f9d4fbfc9696855955eda81bc25"
+    },
+    "call_f8108594c73a445fa2f8558a32dcc1c2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "467875d2c491348086b1928519621b7a30b94feb8e1f40188301a5a52f15f798"
+    },
+    "call_a51932857c75465ba46a925025d94c24": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "TransformerBlock",
+        "limit": 100
+      },
+      "result_sha256": "47383128953a13cf2a8dc5d2ec54cde91123465db5c3b7e5a0cd2c1222ff05db"
+    },
+    "call_42b5916d34ea40cba65cfbca9062de23": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "_norm =",
+        "path": "exllamav3/models",
+        "limit": 160
+      },
+      "result_sha256": "ba8a853a4ffabd229073d8608e5d2a68a1779c020af6a57c817165293f1292d2"
+    },
+    "call_8c663ef99e5a43f0b7358b0346b4a8c5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/models/decilm.py"
+      },
+      "result_sha256": "b769d9b51552614fa0fc7b929327c0c8c117854d29ad9a8e6653ec86ff063834"
+    },
+    "call_aea052e9c6964a9485edd2ef5deb87e8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_6ccf9400ec824d14ad4681b6e182ce95": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/modules/transformer.py",
+        "limit": 20
+      },
+      "result_sha256": "ffedeaf458e36ba083cc03905b368267a2a2abc2783632272b8c67e99d6147c4"
+    },
+    "call_c6d020af4f14404abba1acb42fb078c3": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "89f6401d65d965d22fbd6d3fece1f5bb8ba8598a"
+      },
+      "result_sha256": "be51116f6301334620090f865d98b48628827369d5e03bb443c2fc71ebe731ad"
+    },
+    "call_9e66c47b3cff44d7898c61bdbb9aaa8a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 18000
+      },
+      "result_sha256": "dc3f8032c336fe97deb00261359fe93c2398d84253db1323661a6581d6c7148c"
+    },
+    "call_628ded0ed52841ac976a7a41925d19ee": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "module.forward(",
+        "limit": 100
+      },
+      "result_sha256": "b08bd25cc862b174ed2f0df914928ca1b962bec30f2d27c660bdbdd8ebdc690a"
+    },
+    "call_08d215a58de34109a304488c78d26a73": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "ParallelDecoderBlock",
+        "limit": 100
+      },
+      "result_sha256": "7c497f3311fe6584db3f97fbaf851cfcdac8cec43d95754aa14ae00949fb624c"
+    },
+    "call_5e19914d2d4342c1948b7039058ddd7c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "def forward(",
+        "path": "exllamav3/modules",
+        "limit": 65
+      },
+      "result_sha256": "8ccd6304ae0d60a0ad67b28729e8151a0177df3c73f30c0bb9c5b35ee2b5408a"
+    },
+    "call_854fd91d81e84c998c7290296b371159": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "prefill",
+        "path": "exllamav3/models/model.py",
+        "limit": 30
+      },
+      "result_sha256": "25f6fdec70cbfcdfe18c3a3dadd21b453d1a6caa925b79e8192962dbb12da587"
+    },
+    "call_22c21761b10042c7a6efae99a82d1b7a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/models/model.py",
+        "offset": 1900,
+        "max_bytes": 6900
+      },
+      "result_sha256": "9a01771458f70470fab2b7bbd95eac7c7b6b487c3a66a1a84270b07b10142d85"
+    },
+    "call_531b726faecf43eba4eafc356f399b75": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 9000,
+        "max_bytes": 5700
+      },
+      "result_sha256": "e5f3db6199d1302b6287a0f690759758823e65471d8f622500afb24fb7d632b2"
+    },
+    "call_20ee14cbe1eb46288c6dd852dc601967": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 1300,
+        "max_bytes": 2400
+      },
+      "result_sha256": "0291641bb666a0e0ef826630376d34b5eb2ce636bdf9ee18cfb74a7758daeecf"
+    },
+    "call_813adcfebc8248bdbac4267db9310147": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 7900,
+        "max_bytes": 5000
+      },
+      "result_sha256": "5e255804ca22a48677c85317f45562f435e39252c9b3625a844be1d8d6360dca"
+    },
+    "call_7798481680f440dc914039c5eac1e962": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 6300,
+        "max_bytes": 1693
+      },
+      "result_sha256": "172250f3a4edecfc983a2fa5b1d2017d1a7af5458d340f14f71847eee1c4b201"
+    },
+    "call_f7e0da3dad10460f96b007c2bbd20d5a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 12900,
+        "max_bytes": 4800
+      },
+      "result_sha256": "9f83638d24d310f833fdc0e58e42967ba5d07ada406fd73b83b5a484fa2445ba"
+    },
+    "call_af84127f018d4815a47e80a5b62a61d6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 10900,
+        "max_bytes": 2050
+      },
+      "result_sha256": "7e05c8eb9122b773c34126d9fc678fb542e5805a7bd7d718dc3c67eea3799710"
+    },
+    "call_be8e0790b42a4a14b9f12954f53f35c4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nfor p in pathlib.Path('exllamav3/models').glob('*.py'):\n t=p.read_text(); ls=t.splitlines();\n for n in ast.walk(ast.parse(t)):\n  if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id in ('TransformerBlock','ParallelDecoderBlock'):\n   print(p,n.lineno,[(k.arg,ast.unparse(k.value).split('(')[0]) for k in n.keywords if k.arg in ('attn_norm','mlp_norm','input_norm','attn','mlp')]); print('context:', ' | '.join(ls[n.lineno-5:n.lineno-1]))\nfor f,nums in {'exllamav3/conversion/convert_model.py':[351,359,476],'eval/compare_q_logits.py':[39],'eval/prequant_test.py':[306],'science/kv_quant_exp.py':[59,78]}.items():\n l=pathlib.Path(f).read_text().splitlines();\n for j in nums: print(f,j,'\\n'+'\\n'.join(l[j-6:j+4]))"
+        ]
+      },
+      "result_sha256": "459bf56304779dcc784adac220115af4ec9f584b406a614c3b1a6ea860dce1e0"
+    },
+    "call_753685cb3bb44a70aeb5279cce60720c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": ".attn_norm",
+        "limit": 100
+      },
+      "result_sha256": "61fb57442e1d6d9cce763024b42ddf961e48dd4eb6f9e50c0e7e972db03f928e"
+    },
+    "call_c2efcac45b744aca835dc2d3df4d13b8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 4900
+      },
+      "result_sha256": "39d1e733a2bbd7f2b490dd4d388838f515f97f9a7f562308cff2e39847ce8c77"
+    },
+    "call_1ff9452cde144249b5b30e04dd246169": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": ".half()",
+        "path": "exllamav3/modules",
+        "limit": 90
+      },
+      "result_sha256": "f664f9e688bded06c239dfd0366e522376309d9bb01e4ec20bcec3aba318ab23"
+    },
+    "call_27d349bdd591461eaeb7e99eb98cb1e3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 14000
+      },
+      "result_sha256": "c3825c3367f0a5357054f57a3424a9bf02eee50bb7c4f97263fefd2c15ba9d6d"
+    },
+    "call_ad6a58a6b521409abb991b6387bc91ea": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26"
+      },
+      "result_sha256": "99643dd221556fdcd61c68487c0f5ab845513d8117286b4dfc73b18e0619c309"
+    },
+    "call_9f2252b34cf44e329dc041b28f6b47cf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 10000
+      },
+      "result_sha256": "7ad86384f4cd4ff60638041aef88e695d9161270be25b7e32ea38d5906cbb5eb"
+    },
+    "call_f12ee8086ea1477a9abe4975fa83b6ae": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 12500
+      },
+      "result_sha256": "0ffa637d2ff4410937db1377e1b869f24c4977cef214b80d282dc524d24958a5"
+    },
+    "call_8e8638b2bf904a508b46fd858475f294": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 6000
+      },
+      "result_sha256": "780a6cd1d07ed51e511c10d1998b5ab30627d7d38d9cdf9d24246f9376da222e"
+    },
+    "call_ff51c7d69fcc4ae7bcca62f94b495e64": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 9000
+      },
+      "result_sha256": "00aa1f5c919afb55bd7a30f3d3c5a2a1a6cb7ba43f573eeef7331da1a8f433a1"
+    },
+    "call_64a3289f2f9c487a852181133dc6e17a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 5500
+      },
+      "result_sha256": "6aeece8f2d82e346a13da81fce6bacf663b628538bcdeef65843e51aaa9aae22"
+    },
+    "call_5826e29914ae47cb9cac65ba8285d66b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 5000
+      },
+      "result_sha256": "9ca2f40dbcdc80c414f17bb6657536cb153f88e26cc75fe99db9993bb904015a"
+    },
+    "call_de2ee1003d4d49b880256380bfccb988": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfrom types import SimpleNamespace as NS\nimport ast,struct\nsrc=Path('exllamav3/modules/transformer.py').read_text()\ndef extract(s):\n c=next(n for n in ast.parse(s).body if isinstance(n,ast.ClassDef) and n.name=='TransformerBlock'); f=next(n for n in c.body if isinstance(n,ast.FunctionDef) and n.name=='forward'); f.decorator_list=[]; env={'torch':NS(Tensor=object,dtype=object,half='fp16'),'to2':lambda x,*_:x}; exec(compile(ast.Module(body=[f],type_ignores=[]),'<isolated forward>','exec'),env); return env['forward']\nnew=src\nfor name in ('attn','mlp'):\n old=f'                y = self.{name}_norm.forward(x, params, out_dtype = torch.half)\\n'; assert new.count(old)==1; new=new.replace(old,old+'            else:\\n                y = x.half()\\n')\nclass T:\n def __init__(self,v,d='fp32'): self.v,self.d=v,d\n def half(self): return T(struct.unpack('e',struct.pack('e',self.v))[0],'fp16')\n def __iadd__(self,y): self.v+=y.v; return self\ndef test(f,att,an,ml,mn,p):\n trace=[]\n def br(name,v):\n  def go(x,_): trace.append((name,x.v,x.d)); return T(v)\n  return NS(forward=go)\n norm=NS(forward=lambda x,params,out_dtype:x.half())\n b=NS(attn=br('A',3) if att else None,attn_norm=norm if an else None,mlp=br('M',2) if ml else None,mlp_norm=norm if mn else None,attn_post_norm=None,mlp_post_norm=None,out_dtype=None)\n try:\n  y=f(b,T(10.001),{'prefill':p}); return trace,round(y.v,3),y.d\n except UnboundLocalError: return trace,'UnboundLocalError'\na,b=extract(src),extract(new)\nfor label,args in [('attention only/no norm',(1,0,0,0,0)),('MLP only/no norm',(0,0,1,0,0)),('normalized attention + normless MLP',(1,1,1,0,0)),('both normless',(1,0,1,0,0)),('both normalized',(1,1,1,1,0)),('prefill/both normless',(1,0,1,0,1)),('both absent',(0,0,0,0,0))]: print(label,test(a,*args),'->',test(b,*args))"
+        ]
+      },
+      "result_sha256": "f2fb1567f77c6cf25706e63157cc2cc146a6c3277c0b214b19dbd4779d1314e3"
+    },
+    "call_d0acb787447542c082d5c9e73b4f8137": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a2ae48308aa813c67058c01f21bd4ab656a21d7a",
+        "max_bytes": 12000
+      },
+      "result_sha256": "b360eecac3af276d2a24220bdcdf4c523a7baac4cc80e0222089da27b37c2003"
+    },
+    "call_6e7b1269369743748c0a2ee11bc3e348": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": ".allocate_q(",
+        "limit": 90
+      },
+      "result_sha256": "4c0e6b037289b64ec5aa1c192b923f9adf2e279ee7152f0133a13fdb08cd2fdd"
+    },
+    "call_7def27cb18f643f4875d35e258fa1327": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 1480
+      },
+      "result_sha256": "9c287083e0e6af434a3592bdd3db15be290d4d49a2d121eee17acb6f25835160"
+    },
+    "call_7dbf32299e184c3299eafb0b3f1dd608": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/module.py",
+        "offset": 1000,
+        "max_bytes": 2800
+      },
+      "result_sha256": "40022464203f5b8202edbb7c2951e31866d8e9ed1f4f17fe2c4215153cfa6767"
+    },
+    "call_9e705bab9a8a47c5bbb0c613a36f4500": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": ".prefill(",
+        "limit": 70
+      },
+      "result_sha256": "34cecd126d8106c502a33b3287d51d17d5812e0cf973632be9fa74810e5cd2fd"
+    },
+    "call_7c5cb12f981640c1b7df999e027deb00": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "examples/generation_loop.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "77beefe271aeb16b40b9e7f3ee6c900bcf27c97b73637021cd393461d70cbebb"
+    },
+    "call_1ea347f82a074ff492ba0b6785a7e5db": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "Model.from_config",
+        "path": "exllamav3/conversion/convert_model.py"
+      },
+      "result_sha256": "a564a063df1e7e1ab992a414a1751f9bd55f7b444d46fffd299c4409c82bd8a8"
+    },
+    "call_b773298964ac4fd0a7050d15cdd20ae7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 11000,
+        "max_bytes": 3400
+      },
+      "result_sha256": "ee3555cbda91b5be08528a4a42ba0ebd8e5da1f344cf6d7f4c0f77aab0311c6a"
+    },
+    "call_cd03ed4ec44642a392ce60739f5784a5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "offset": 1700,
+        "max_bytes": 3500
+      },
+      "result_sha256": "62296654837d09f173f62b3898c898cafe857296458f84cd3cde5015810747a7"
+    },
+    "call_09e1604589214f979006c4e376ccb0b0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/modules/layernorm.py",
+        "offset": 2500,
+        "max_bytes": 4000
+      },
+      "result_sha256": "0e09b4ae92c8ed24b35af82d5e12ad35540bca4ed7b1546a102a0e75dc1adcb3"
+    },
+    "call_de418357963b487482e9d79a6cd6f849": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": ".half()",
+        "limit": 130
+      },
+      "result_sha256": "b7c2486ca0a4f54db8a162a58787b839790ea2b4ee4d25f939fa3c6010423b8b"
+    },
+    "call_0afe3d6434fd44bfbdda731bff6bf948": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ff21ee46edb9ba74d709257f482c809a7bd406d0",
+        "offset": 0,
+        "max_bytes": 179
+      },
+      "result_sha256": "c4e397bea1546a73fa0b3a636ebd4494e92bb0e485ec988a29c15bfdac8c634a"
+    },
+    "call_f1515f8f907c4ac8904244763bc3e943": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 0,
+        "max_bytes": 4096
+      },
+      "result_sha256": "ec3e888ce4c50e8e7dc8b74c201e6a86c5b79511bc34d0b6bf5e4c1fb21e83a6",
+      "catalog_only": true
+    },
+    "call_b6b6e709fd9b4b5f828712916a532c32": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 4500
+      },
+      "result_sha256": "3c22bc51e3e35147303fce8b46b1d1def7e76e651941253f13872a733888c17f"
+    },
+    "call_05640e36b5d545b0a05d3ee3426dc69f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 14200,
+        "max_bytes": 3700
+      },
+      "result_sha256": "d20f781abe1c8197237c310a59751658a4ca19e225818dd6d4f093b84f9364c5"
+    },
+    "call_f584b4a3e4244504b6010d363ce56f42": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "def from_config",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "e5a63a92e8a3305e4b0e9ec63df173902f20a86afbc66293bd1dd2b3c22d5fa7"
+    },
+    "call_1b3b692f17f64bc1b5a8997b48fbecbe": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/models/model.py",
+        "offset": 1215,
+        "max_bytes": 800
+      },
+      "result_sha256": "f07366316c13bef1e78eac9971acca8689de0a57331ea56abdc5862e713e29a8"
+    },
+    "call_116b11d2107c4de794cb7550099bee3b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 7450,
+        "max_bytes": 1500
+      },
+      "result_sha256": "1407bc829141255dab8f1da57c343b2c91b1f0d8c60f148b42c2721698aef98e"
+    },
+    "call_49206b34159d413fbafdb06edfba450e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": "inv_freq[",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 30
+      },
+      "result_sha256": "1fe663bf444442aecf6bfe3df107c983ffa548833475c3a07483e2ea93245b5a"
+    },
+    "call_8e5b72e206254d70afeacf1f6c67136e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "offset": 1000,
+        "max_bytes": 3400
+      },
+      "result_sha256": "0313d8279ecd1f9dfa04b986e4241e66c99d9a30effabb6ac6f1fe487f48cc52"
+    },
+    "call_4238db64766649aea071ec85e4749772": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ba4304a44b267e88f3c882136302fd1e25c5384e",
+        "query": ".mlp_norm",
+        "limit": 80
+      },
+      "result_sha256": "48adae75df163ed0465550fb5c9c26347a2b29a67b09aa2cf54c82e7a53b8dc1"
+    },
+    "call_b182fc5f54874a378fada5790318e2d6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 8000
+      },
+      "result_sha256": "103c946c6da6f90851879cb4902ae707aac7dc4ca69ee62961fcbe8ecd143cda"
+    },
+    "call_d7bfb825354b4635bf6fb0a54252735c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/51",
+        "max_bytes": 5000
+      },
+      "result_sha256": "794063dfae2bb8f2aa8549f9a987be26e430763e086de59b209180e9845c76f3"
+    }
+  }
+}

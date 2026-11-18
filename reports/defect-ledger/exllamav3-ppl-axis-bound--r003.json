@@ -1,0 +1,469 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The new perplexity helper uses vocabulary size as the bound while slicing the sequence axis.",
+  "trigger": "The number of prediction positions exceeds vocabulary size; larger vocabularies instead produce unnecessary trailing empty slices.",
+  "expected_behavior": "Accumulate every next-token prediction exactly once by iterating over logits_.shape[0].",
+  "actual_behavior": "The loop stops at logits_.shape[1]. For 2047 prediction positions and vocabulary size 1024, its bounds cover only 1024 targets.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "The diff shows logits shaped by selecting one row and removing the final sequence position, then ppl slicing axis zero while bounding on axis one. Its only direct call in the diff is main\u2019s per-model loop. Whole-parent-tree searches found no model_diff references and no pre-existing caller of this new nested helper; the inspected script directly invokes main from its CLI guard.",
+      "evidence": [
+        "call_1f069327b60e4cc0aad5426bfaba02a0",
+        "call_720aa966d66b46c09d89e9b19fb93456",
+        "call_3c44f91fc66d4090a5c92b3ecd31e431",
+        "call_cfc9d1fa954e4b45afa2a962c1daa5fa"
+      ],
+      "limits": "Text searches do not establish external or dynamic callers."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "A standard-library bounds model counted 1024 of 2047 positions for vocabulary 1024; vocabulary 32000 covered all 2047 positions but required four iterations.",
+      "evidence": [
+        "call_77d5a97c5d9e4724825f5dd54e82f577"
+      ],
+      "limits": "This models slicing bounds only; it does not execute the repository helper or establish Torch behavior on empty tensors."
+    },
+    {
+      "method": "source_inspection",
+      "description": "The only direct ppl call found is inside main\u2019s row-by-model metrics loop, after the new exports; the CLI guard calls main. The other whole-tree matches are the distinct compare_q.py test_ppl. The caller removes the final position; the helper still slices axis zero using a loop bound from axis one.",
+      "evidence": [
+        "call_9f5938882cc544b39a366b6a59607cc2",
+        "call_0d053c4c0f864562ba524b20d1eacf99",
+        "call_13cfd8165e5c4814a0162ea95b7884c0"
+      ],
+      "limits": "Reach is conditional on the script getting through the forward pass and any requested writes."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Modeled the chunk expression and Python sequence slices. With 2047 positions the slice lengths were [1024] at width 1024 and [2047, 0, 0, 0] at width 32000. The positive-width chunk expression simplifies to 10240.",
+      "evidence": [
+        "call_f790a30e44cd409cbf8e741fa7c06372"
+      ],
+      "limits": "No Torch slicing, gathering, or metric execution."
+    }
+  ],
+  "defect_id": "exllamav3-ppl-axis-bound",
+  "revision_id": "r003",
+  "supersedes": "r002",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+      "paths": [
+        "eval/model_diff.py"
+      ],
+      "status": "source_supported",
+      "rationale": "Approved finding introduction, or root attribution verified by reviewer; no runtime execution."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+      "run": ".teacher/runs/commit-000127-001",
+      "finding_id": "ppl-vocabulary-bound"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "run": ".teacher/runs/commit-000154-001",
+      "finding_id": "inherited-ppl-axis-bound"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+      "run": ".teacher/runs/commit-000127-001",
+      "local_id": "ppl-vocabulary-bound",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "ppl-vocabulary-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new perplexity helper uses vocabulary size as the bound while slicing the sequence axis.",
+        "trigger": "The number of prediction positions exceeds vocabulary size; larger vocabularies instead produce unnecessary trailing empty slices.",
+        "expected_behavior": "Accumulate every next-token prediction exactly once by iterating over logits_.shape[0].",
+        "actual_behavior": "The loop stops at logits_.shape[1]. For 2047 prediction positions and vocabulary size 1024, its bounds cover only 1024 targets.",
+        "locations": [
+          {
+            "commit": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_1f069327b60e4cc0aad5426bfaba02a0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The diff shows logits shaped by selecting one row and removing the final sequence position, then ppl slicing axis zero while bounding on axis one. Its only direct call in the diff is main\u2019s per-model loop. Whole-parent-tree searches found no model_diff references and no pre-existing caller of this new nested helper; the inspected script directly invokes main from its CLI guard.",
+            "evidence": [
+              "call_1f069327b60e4cc0aad5426bfaba02a0",
+              "call_720aa966d66b46c09d89e9b19fb93456",
+              "call_3c44f91fc66d4090a5c92b3ecd31e431",
+              "call_cfc9d1fa954e4b45afa2a962c1daa5fa"
+            ],
+            "limits": "Text searches do not establish external or dynamic callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library bounds model counted 1024 of 2047 positions for vocabulary 1024; vocabulary 32000 covered all 2047 positions but required four iterations.",
+            "evidence": [
+              "call_77d5a97c5d9e4724825f5dd54e82f577"
+            ],
+            "limits": "This models slicing bounds only; it does not execute the repository helper or establish Torch behavior on empty tensors."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "run": ".teacher/runs/commit-000154-001",
+      "local_id": "inherited-ppl-axis-bound",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-ppl-axis-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited perplexity helper bounds sequence slicing by vocabulary size; this change leaves it intact.",
+        "trigger": "The number of prediction positions exceeds the vocabulary size.",
+        "expected_behavior": "Accumulate every next-token prediction exactly once.",
+        "actual_behavior": "With 2047 prediction positions and vocabulary size 1024, the loop covers only 1024 positions. Larger vocabularies can instead cause trailing empty slices.",
+        "locations": [
+          {
+            "commit": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_0fe00079c22144258410593fe80c740f",
+          "call_b9d29b07e3c6416d925c2ad1bee977cd",
+          "call_580ce6ac52af472293306bcbab3a3ab2"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The nested helper slices axis zero but bounds its loop with shape[1]. Whole-parent-tree search found its direct call in main's per-model metrics loop; the other matches name the distinct test_ppl function. The inspected CLI guard invokes main. The task diff changes only loading and closure.",
+            "evidence": [
+              "call_580ce6ac52af472293306bcbab3a3ab2",
+              "call_0fe00079c22144258410593fe80c740f",
+              "call_b9d29b07e3c6416d925c2ad1bee977cd"
+            ],
+            "limits": "Reach is established for the script's two-model metrics loop, not external or dynamic callers."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A Python integer-bound model covered 1024 of 2047 positions for vocabulary 1024, and all 2047 positions in four iterations for vocabulary 32000.",
+            "evidence": [
+              "call_633af64282284d17af3a782557b7ef83"
+            ],
+            "limits": "This did not execute the repository helper or Torch operations."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+      "run": ".teacher/runs/commit-000203-001",
+      "local_id": "inherited-perplexity-axis-bound",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-perplexity-axis-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged nested perplexity helper bounds sequence slices using vocabulary size.",
+        "trigger": "The metrics loop receives more prediction positions than vocabulary entries, for example 2047 positions and vocabulary size 1024.",
+        "expected_behavior": "Accumulate every next-token prediction once.",
+        "actual_behavior": "The loop stops at logits_.shape[1], covering only 1024 of those 2047 positions. Larger vocabularies can instead produce trailing empty slices.",
+        "locations": [
+          {
+            "commit": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_7c8efe0985b74e34b1fde27f7fbc3795",
+          "call_8efe5d23d5a94f6bbfdbbd2c7abaec29",
+          "call_f0a5dc3ba99344a29ba2c73caa133838"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-tree search located the helper's direct call in main's per-model metrics loop; other matches are the separately named test_ppl. The CLI invokes main, and the task patch leaves this helper and call unchanged.",
+            "evidence": [
+              "call_f0a5dc3ba99344a29ba2c73caa133838",
+              "call_7c8efe0985b74e34b1fde27f7fbc3795",
+              "call_8efe5d23d5a94f6bbfdbbd2c7abaec29"
+            ],
+            "limits": "Reach is established for the script's metrics loop, conditional on reaching it successfully."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A standard-library model of the inspected loop covered 1024 of 2047 positions for vocabulary 1024; vocabulary 32000 covered all 2047 positions over four iterations.",
+            "evidence": [
+              "call_2627494bdb1f48cc97c39e501f1ce12f"
+            ],
+            "limits": "This models integer bounds, not repository execution or Torch empty-slice behavior."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5cb70f591b8286a7df902eb7a642f39a8fc80029",
+      "run": ".teacher/runs/commit-000319-001",
+      "local_id": "inherited-perplexity-vocabulary-bound",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-perplexity-vocabulary-bound",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged perplexity helper uses vocabulary width as the bound for sequence-position slices.",
+        "trigger": "A model_diff.py run reaches the per-model perplexity loop with more scored positions than vocabulary entries, for example 2047 positions and 1024 entries.",
+        "expected_behavior": "Accumulate every next-token prediction in the row once.",
+        "actual_behavior": "The loop ends at the vocabulary width and would cover only the first 1024 positions in that example. At width 32000, the same bounds cover all 2047 positions but issue three further empty sequence slices.",
+        "locations": [
+          {
+            "commit": "5cb70f591b8286a7df902eb7a642f39a8fc80029",
+            "path": "eval/model_diff.py",
+            "symbol": "main.ppl"
+          }
+        ],
+        "source_evidence": [
+          "call_0d053c4c0f864562ba524b20d1eacf99",
+          "call_13cfd8165e5c4814a0162ea95b7884c0",
+          "call_9f5938882cc544b39a366b6a59607cc2"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The only direct ppl call found is inside main\u2019s row-by-model metrics loop, after the new exports; the CLI guard calls main. The other whole-tree matches are the distinct compare_q.py test_ppl. The caller removes the final position; the helper still slices axis zero using a loop bound from axis one.",
+            "evidence": [
+              "call_9f5938882cc544b39a366b6a59607cc2",
+              "call_0d053c4c0f864562ba524b20d1eacf99",
+              "call_13cfd8165e5c4814a0162ea95b7884c0"
+            ],
+            "limits": "Reach is conditional on the script getting through the forward pass and any requested writes."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the chunk expression and Python sequence slices. With 2047 positions the slice lengths were [1024] at width 1024 and [2047, 0, 0, 0] at width 32000. The positive-width chunk expression simplifies to 10240.",
+            "evidence": [
+              "call_f790a30e44cd409cbf8e741fa7c06372"
+            ],
+            "limits": "No Torch slicing, gathering, or metric execution."
+          }
+        ]
+      }
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit127-draft.json",
+      "sha256": "fa0dce9b896c1121e6b6dffff7c60925b70f0bc015bdc336b2ffcce21f2e2f3f"
+    },
+    {
+      "file": "evidence/commit127-transcript.json",
+      "sha256": "6416cb7334490343e2431cc5f76048810ceec8a46bfb033976080d4cf8d77f88"
+    },
+    {
+      "file": "evidence/commit127-verdict.md",
+      "sha256": "41e9cbc032b12f73476081b2c8674f0497d4d0d0d48d7428c8992430faeb1cc7"
+    },
+    {
+      "file": "evidence/commit154-draft.json",
+      "sha256": "000c24dbbedd9cae94c72b9de9e9c728ef54b7e56a03e5d8eab176a3f7a56825"
+    },
+    {
+      "file": "evidence/commit154-transcript.json",
+      "sha256": "6e1fe2943781e7df874451f185ee3dbab9684628c9d5c74c81fc1b0b0f4610c1"
+    },
+    {
+      "file": "evidence/commit154-verdict.md",
+      "sha256": "f390c6e559ce02c60cdd9a7d1c23dee0f1f0d103d72ba7f72b203b023adf6944"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000127-001__draft.json",
+      "sha256": "fa0dce9b896c1121e6b6dffff7c60925b70f0bc015bdc336b2ffcce21f2e2f3f"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000127-001.md",
+      "sha256": "41e9cbc032b12f73476081b2c8674f0497d4d0d0d48d7428c8992430faeb1cc7"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000154-001__draft.json",
+      "sha256": "000c24dbbedd9cae94c72b9de9e9c728ef54b7e56a03e5d8eab176a3f7a56825"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000154-001.md",
+      "sha256": "f390c6e559ce02c60cdd9a7d1c23dee0f1f0d103d72ba7f72b203b023adf6944"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000203-001__draft.json",
+      "sha256": "8e595b6688c587ba9c58b4a3f4ef615ab18dadba80f5ffd2be7573f02d2feae2"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000203-001.md",
+      "sha256": "b5bfef2d87b626e45d9a43b2524d9c3dc5e6f7a90a18139fe6df08312c2459f2"
+    },
+    {
+      "file": "evidence/commit319-001-draft.json",
+      "sha256": "a3369b62a1a83a45c7a117693a9a4a3844a1e1e29883ae962c0e49803e04a287"
+    },
+    {
+      "file": "evidence/commit319-001-transcript.json",
+      "sha256": "0c266b066f37f051cc943b315248575710718fa933d15ea8d381e9d0a996c27e"
+    },
+    {
+      "file": "evidence/commit319-001-verdict.md",
+      "sha256": "906e21f9894e715ceb5238d2146e2fcfbce151ffddfe839fb257320cd16e7d1b"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+      "available_at": "2025-05-06T20:23:47+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit127-draft.json",
+      "source_id": "evidence/commit127-draft.json",
+      "content_sha256": "fa0dce9b896c1121e6b6dffff7c60925b70f0bc015bdc336b2ffcce21f2e2f3f",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit127-transcript.json",
+      "source_id": "evidence/commit127-transcript.json",
+      "content_sha256": "6416cb7334490343e2431cc5f76048810ceec8a46bfb033976080d4cf8d77f88",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit127-verdict.md",
+      "source_id": "evidence/commit127-verdict.md",
+      "content_sha256": "41e9cbc032b12f73476081b2c8674f0497d4d0d0d48d7428c8992430faeb1cc7",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "available_at": "2025-05-12T21:23:48+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-draft.json",
+      "source_id": "evidence/commit154-draft.json",
+      "content_sha256": "000c24dbbedd9cae94c72b9de9e9c728ef54b7e56a03e5d8eab176a3f7a56825",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-transcript.json",
+      "source_id": "evidence/commit154-transcript.json",
+      "content_sha256": "6e1fe2943781e7df874451f185ee3dbab9684628c9d5c74c81fc1b0b0f4610c1",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit154-verdict.md",
+      "source_id": "evidence/commit154-verdict.md",
+      "content_sha256": "f390c6e559ce02c60cdd9a7d1c23dee0f1f0d103d72ba7f72b203b023adf6944",
+      "available_at": "2026-11-16T00:39:38.022897+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000127-001/draft.json",
+      "source_id": ".teacher/runs/commit-000127-001/draft.json",
+      "content_sha256": "fa0dce9b896c1121e6b6dffff7c60925b70f0bc015bdc336b2ffcce21f2e2f3f",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000127-001.md",
+      "source_id": "reviews/verdicts/commit-000127-001.md",
+      "content_sha256": "41e9cbc032b12f73476081b2c8674f0497d4d0d0d48d7428c8992430faeb1cc7",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000154-001/draft.json",
+      "source_id": ".teacher/runs/commit-000154-001/draft.json",
+      "content_sha256": "000c24dbbedd9cae94c72b9de9e9c728ef54b7e56a03e5d8eab176a3f7a56825",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000154-001.md",
+      "source_id": "reviews/verdicts/commit-000154-001.md",
+      "content_sha256": "f390c6e559ce02c60cdd9a7d1c23dee0f1f0d103d72ba7f72b203b023adf6944",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000203-001/draft.json",
+      "source_id": ".teacher/runs/commit-000203-001/draft.json",
+      "content_sha256": "8e595b6688c587ba9c58b4a3f4ef615ab18dadba80f5ffd2be7573f02d2feae2",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000203-001.md",
+      "source_id": "reviews/verdicts/commit-000203-001.md",
+      "content_sha256": "b5bfef2d87b626e45d9a43b2524d9c3dc5e6f7a90a18139fe6df08312c2459f2",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+      "available_at": "2025-05-30T19:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "5cb70f591b8286a7df902eb7a642f39a8fc80029",
+      "available_at": "2025-07-15T20:34:10+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "4265c9e1937a735861190229a524726fbd112156",
+      "available_at": "2025-07-15T20:33:42+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit319-001-draft.json",
+      "source_id": "evidence/commit319-001-draft.json",
+      "content_sha256": "a3369b62a1a83a45c7a117693a9a4a3844a1e1e29883ae962c0e49803e04a287",
+      "available_at": "2026-11-18T00:24:37.763229+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit319-001-transcript.json",
+      "source_id": "evidence/commit319-001-transcript.json",
+      "content_sha256": "0c266b066f37f051cc943b315248575710718fa933d15ea8d381e9d0a996c27e",
+      "available_at": "2026-11-18T00:24:37.763229+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit319-001-verdict.md",
+      "source_id": "evidence/commit319-001-verdict.md",
+      "content_sha256": "906e21f9894e715ceb5238d2146e2fcfbce151ffddfe839fb257320cd16e7d1b",
+      "available_at": "2026-11-18T00:24:37.763229+00:00"
+    }
+  ],
+  "recorded_at": "2026-11-18T00:24:37.763229+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "9575f7d8b2afce94122bcf6141a63bfc01f207f2",
+      "5c3ff204c4c5c64dc2bd897582143b116a82b767",
+      "f8dc9975fe88c79fcf1a12f2160974b5442695dd",
+      "5cb70f591b8286a7df902eb7a642f39a8fc80029"
+    ],
+    "limits": "Exact source-supported observations only; no continuous affected range or runtime effects asserted. The 319 checks used source and scalar slices only. The narrow-vocabulary example does not establish that a checkpoint reaches the scorer with that shape."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "No effect for real vocabularies of 2047 or more under the inspected bound; 203 remains affected."
+  ]
+}

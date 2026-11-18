@@ -1,0 +1,621 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The new CUDA BF16 conversion covers pairs only and has no scalar tail, leaving the final element of an odd-length deferred BF16 tensor unconverted.",
+  "trigger": "A file-backed BF16 tensor with an odd element count is loaded to CUDA through the deferred path with allow_bf16 false.",
+  "expected_behavior": "Every BF16 element should be converted to FP16 before the destination is consumed.",
+  "actual_behavior": "inplace_bf16_to_fp16_cuda passes numel / 2 to a kernel that converts two elements per thread. An odd final element retains BF16 bits in storage treated as FP16. A one-element final chunk also computes zero launch blocks; its runtime handling was not tested.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "The parent-tree search finds no pre-existing conversion helper. The task introduces its direct caller in stloader_deferred_cuda, reached through end_deferred_load. Parent get_tensor call sites include embedding, normalization and linear loading; automatic splitting supplies the new broader lifecycle. The finding is conditional on odd-sized BF16 CUDA data, not a claim that every model reaches it.",
+      "evidence": [
+        "call_166786c681a8427990778ecae94733af",
+        "call_c177abcc1f4a4b86a007970300fcb5bb",
+        "call_224f301938ae469187458cff3877948c",
+        "call_6630d3e98d2e43369ae27dc16b6c877d"
+      ],
+      "limits": "No affected model checkpoint or GPU execution was demonstrated."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Python modeled the inspected chunking and pair-count expressions. Counts 1, 3, 2049 and 4194305 each leave one element uncovered, while 2 leaves none. Interpreting the illustrative BF16-one bit pattern 0x3f80 as binary16 yields 1.875 instead of 1.0.",
+      "evidence": [
+        "call_224f301938ae469187458cff3877948c",
+        "call_2f06887d239a406ebdfa34a455e54be0"
+      ],
+      "limits": "This checks finite integer indexing and bit interpretation, not the repository kernel, CUDA launch behavior or floating-point conversion implementation."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Reinspected the conversion kernel and its stloader_deferred_cuda caller after reading the ancestor observation. The loader data flow remains unchanged.",
+      "evidence": [
+        "call_1e7c77d94c5e44168a2b1657ae01b219",
+        "call_973a0b1e042c46c4b3fbf84022b66056",
+        "call_6f3da642e21c497fbd598fac540b3aec"
+      ],
+      "limits": "No newly affected checkpoint or GPU execution demonstrated."
+    }
+  ],
+  "defect_id": "exllamav3-deferred-bf16-odd-tail",
+  "revision_id": "r004",
+  "supersedes": "r003",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "paths": [
+        "exllamav3/exllamav3_ext/stloader.cu",
+        "exllamav3/exllamav3_ext/stloader.cpp"
+      ],
+      "status": "source_supported",
+      "rationale": "Approved finding introduction, or root attribution verified by reviewer; no runtime execution."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "run": ".teacher/runs/commit-000119-001",
+      "finding_id": "deferred-bf16-odd-tail"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "run": ".teacher/runs/commit-000140-001",
+      "finding_id": "inherited-deferred-bf16-tail"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "run": ".teacher/runs/commit-000119-001",
+      "local_id": "deferred-bf16-odd-tail",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "deferred-bf16-odd-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new CUDA BF16 conversion covers pairs only and has no scalar tail, leaving the final element of an odd-length deferred BF16 tensor unconverted.",
+        "trigger": "A file-backed BF16 tensor with an odd element count is loaded to CUDA through the deferred path with allow_bf16 false.",
+        "expected_behavior": "Every BF16 element should be converted to FP16 before the destination is consumed.",
+        "actual_behavior": "inplace_bf16_to_fp16_cuda passes numel / 2 to a kernel that converts two elements per thread. An odd final element retains BF16 bits in storage treated as FP16. A one-element final chunk also computes zero launch blocks; its runtime handling was not tested.",
+        "locations": [
+          {
+            "commit": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+            "path": "exllamav3/exllamav3_ext/stloader.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          },
+          {
+            "commit": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+            "path": "exllamav3/exllamav3_ext/stloader.cpp",
+            "symbol": "stloader_deferred_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_224f301938ae469187458cff3877948c",
+          "call_166786c681a8427990778ecae94733af",
+          "call_c177abcc1f4a4b86a007970300fcb5bb",
+          "call_6630d3e98d2e43369ae27dc16b6c877d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent-tree search finds no pre-existing conversion helper. The task introduces its direct caller in stloader_deferred_cuda, reached through end_deferred_load. Parent get_tensor call sites include embedding, normalization and linear loading; automatic splitting supplies the new broader lifecycle. The finding is conditional on odd-sized BF16 CUDA data, not a claim that every model reaches it.",
+            "evidence": [
+              "call_166786c681a8427990778ecae94733af",
+              "call_c177abcc1f4a4b86a007970300fcb5bb",
+              "call_224f301938ae469187458cff3877948c",
+              "call_6630d3e98d2e43369ae27dc16b6c877d"
+            ],
+            "limits": "No affected model checkpoint or GPU execution was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Python modeled the inspected chunking and pair-count expressions. Counts 1, 3, 2049 and 4194305 each leave one element uncovered, while 2 leaves none. Interpreting the illustrative BF16-one bit pattern 0x3f80 as binary16 yields 1.875 instead of 1.0.",
+            "evidence": [
+              "call_224f301938ae469187458cff3877948c",
+              "call_2f06887d239a406ebdfa34a455e54be0"
+            ],
+            "limits": "This checks finite integer indexing and bit interpretation, not the repository kernel, CUDA launch behavior or floating-point conversion implementation."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+      "run": ".teacher/runs/commit-000120-001",
+      "local_id": "inherited-bf16-odd-tail",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-bf16-odd-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited pair-only CUDA BF16 conversion remains in the changed deferred-loading path.",
+        "trigger": "Deferred loading of an odd-element BF16 tensor to CUDA with allow_bf16 false.",
+        "expected_behavior": "Convert every source element to FP16 before consumption.",
+        "actual_behavior": "The helper passes floor(numel/2) pairs to its kernel, leaving the final odd element as BF16 bits in FP16 storage. The smaller even-sized chunk limit does not remove this tail.",
+        "locations": [
+          {
+            "commit": "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+            "path": "exllamav3/exllamav3_ext/stloader.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_a8f73c298780442f9f7b2a62359f4114",
+          "call_95b49ebea2ec4608821f0c7bbd1e7879",
+          "call_4f1d73052e3243d387b71c24e0fdde88"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The parent-tree search finds the direct native caller in stloader_deferred_cuda, reached from end_deferred_load. The complete task diff retains that call and does not modify the conversion kernel, so this observation is carried over rather than corrected.",
+            "evidence": [
+              "call_3d714cc5b1be4ddcbab876077398e314",
+              "call_66901708f7614f119119a1c1e62d2b15",
+              "call_d4081dced3134f3d9c2e3a3e558a7e12",
+              "call_95b49ebea2ec4608821f0c7bbd1e7879"
+            ],
+            "limits": "Conditional reach through deferred CUDA conversion; no affected checkpoint or GPU execution demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Python modeled 2 MiB chunking and pair coverage: element counts 1, 3 and 1,048,577 each leave one element uncovered; count 2 leaves none.",
+            "evidence": [
+              "call_53acfe44b35e41ae95931ad63816d94e"
+            ],
+            "limits": "Integer coverage model only; it does not execute the repository kernel or establish zero-block launch behavior."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "run": ".teacher/runs/commit-000140-001",
+      "local_id": "inherited-deferred-bf16-tail",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-deferred-bf16-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged deferred CUDA BF16 converter processes pairs only; adopting it for explicit-device loading extends exposure to its missing odd-element tail.",
+        "trigger": "An eligible module requests a file-backed, odd-element BF16 tensor on CUDA through mt_fread with conversion to FP16 enabled and without no_defer.",
+        "expected_behavior": "Every element is converted to FP16 before consumption.",
+        "actual_behavior": "The helper launches conversion for numel / 2 pairs, leaving the final odd element unconverted. A one-element final chunk computes zero launch blocks; runtime handling is untested.",
+        "locations": [
+          {
+            "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          },
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model._load_single"
+          }
+        ],
+        "source_evidence": [
+          "call_5f5d7e6c54f04b58a5449d7862302067",
+          "call_301d3610813b40cda9ac838d9aa2e0f2",
+          "call_a38a5c0f8fc349a999d3a32bb1867258"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Whole-parent-tree search locates the direct call in stloader_deferred_cuda. Inspection traces it through end_deferred_load and the newly bracketed _load_single. The task changes only model.py, carrying over the converter unchanged.",
+            "evidence": [
+              "call_8b45474ccd6946f78c292046c4e001ba",
+              "call_301d3610813b40cda9ac838d9aa2e0f2",
+              "call_ff8a603cda5d4425b6bb66288a150492",
+              "call_a38a5c0f8fc349a999d3a32bb1867258"
+            ],
+            "limits": "Conditional reach only; no affected checkpoint was demonstrated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Standard-library Python modeled the inspected 2 MiB chunking and integer pair counts for even, odd and multi-chunk tensors.",
+            "evidence": [
+              "call_6bc1f94f9a9f48d7a63674640f696900"
+            ],
+            "limits": "Not execution of the repository kernel; bounded integer arithmetic does not test GPU conversion or synchronization."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "run": ".teacher/runs/commit-000153-002",
+      "local_id": "retained-deferred-bf16-tail",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "retained-deferred-bf16-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Single-device deferral inherits the pair-only BF16 conversion tail gap.",
+        "trigger": "Eligible file-backed odd-element BF16 tensor loaded on CUDA through deferred mt_fread with BF16-to-FP16 conversion enabled.",
+        "expected_behavior": "Convert every element before consumption.",
+        "actual_behavior": "The CUDA helper launches numel/2 pairs, leaving the final odd element unconverted. A one-element chunk gives zero blocks. Source traces the direct stloader_deferred_cuda call through end_deferred_load to the newly bracketed model loader; no affected checkpoint was demonstrated.",
+        "locations": [
+          {
+            "commit": "70056fef5f1f841612023027f6abe6f2b295ce57",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_5eba0d3b8af34399bc4095dee958ad38",
+          "call_179609bb0dac4d47823700351a87f2d1",
+          "call_78169ba73cd64472912ea9e907c6973b",
+          "call_af98f461862b401b8caee485c9e871b0",
+          "call_bddfe1708ffe49e3a7232186e6fd5249",
+          "call_adfe3bf10ce740de8dc57c96f17d565f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected unchanged converter and its deferred-loading call chain.",
+            "evidence": [
+              "call_78169ba73cd64472912ea9e907c6973b",
+              "call_af98f461862b401b8caee485c9e871b0",
+              "call_bddfe1708ffe49e3a7232186e6fd5249"
+            ],
+            "limits": "No GPU conversion or zero-block launch was executed."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+      "run": ".teacher/runs/commit-000266-001",
+      "local_id": "inherited-deferred-bf16-tail",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "inherited-deferred-bf16-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously recorded odd-element deferred BF16 conversion omission persists.",
+        "trigger": "Deferred CUDA loading converts an odd-sized BF16 tensor to FP16.",
+        "expected_behavior": "Convert every element before destination consumption.",
+        "actual_behavior": "The wrapper launches conversion for numel / 2 pairs; an odd final element remains unconverted. The task does not alter this loader implementation.",
+        "locations": [
+          {
+            "commit": "ddf260767d5e31b04d1e0cd660ef4188071d809a",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_973a0b1e042c46c4b3fbf84022b66056",
+          "call_6f3da642e21c497fbd598fac540b3aec"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Reinspected the conversion kernel and its stloader_deferred_cuda caller after reading the ancestor observation. The loader data flow remains unchanged.",
+            "evidence": [
+              "call_1e7c77d94c5e44168a2b1657ae01b219",
+              "call_973a0b1e042c46c4b3fbf84022b66056",
+              "call_6f3da642e21c497fbd598fac540b3aec"
+            ],
+            "limits": "No newly affected checkpoint or GPU execution demonstrated."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+      "run": ".teacher/runs/commit-000297-001",
+      "local_id": "inherited-deferred-bf16-tail",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "inherited-deferred-bf16-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The forwarded deferred-loading path retains pair-only CUDA BF16 conversion.",
+        "trigger": "Deferred CUDA loading of an odd-element BF16 tensor with allow_bf16 false.",
+        "expected_behavior": "Convert every element to FP16.",
+        "actual_behavior": "The helper converts floor(numel/2) pairs, leaving an odd final element unconverted.",
+        "locations": [
+          {
+            "commit": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_f4e29b158bf34a9f9412a298d783e785",
+          "call_4b28f2dc53a146df94ec621fc5e64141",
+          "call_b2b96b609b624b048fe27ee1efa18c48",
+          "call_eb5f8b3812474d3488c2f50cff9831df"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Located the native callers, inspected the deferred CUDA caller and conversion helper, and compared the unchanged Python deferred mechanism with the wrapper's new forwarding.",
+            "evidence": [
+              "call_493a788ee49e48e298ffd0111d09168c",
+              "call_4b28f2dc53a146df94ec621fc5e64141",
+              "call_f4e29b158bf34a9f9412a298d783e785",
+              "call_b2b96b609b624b048fe27ee1efa18c48",
+              "call_eb5f8b3812474d3488c2f50cff9831df"
+            ],
+            "limits": "No affected checkpoint or GPU execution established."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Python pair-coverage arithmetic leaves one uncovered element for counts 1, 3 and 1048577, and none for count 2.",
+            "evidence": [
+              "call_100f8dbe53f54c7193daa5a0f1a3342d"
+            ],
+            "limits": "Arithmetic model only; it does not execute the kernel or establish launch behavior."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit119-draft.json",
+      "sha256": "792fcc397f23c30698f69ad0f1e7e5284c0b6e2e5bd2e2b7ea8dc8cbb52fd1ed"
+    },
+    {
+      "file": "evidence/commit119-transcript.json",
+      "sha256": "977cb8f45da70b234b8609a0403f000ee8afd4d8827fabd34fecd43cc1c82e66"
+    },
+    {
+      "file": "evidence/commit119-verdict.md",
+      "sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8"
+    },
+    {
+      "file": "evidence/commit140-draft.json",
+      "sha256": "73c6cfb246e2f136326a7c6a44638aee140731867aa4867cd7c9473fd2088427"
+    },
+    {
+      "file": "evidence/commit140-transcript.json",
+      "sha256": "442bc674e5b63b37010a48efe55b23b9c49d90471739dd0647968c91e0fc7b3a"
+    },
+    {
+      "file": "evidence/commit140-verdict.md",
+      "sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000119-001__draft.json",
+      "sha256": "792fcc397f23c30698f69ad0f1e7e5284c0b6e2e5bd2e2b7ea8dc8cbb52fd1ed"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000119-001.md",
+      "sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000120-001__draft.json",
+      "sha256": "476d8d7a17849a1d7f636d1e5045dc1721374c39db09e4cdf29c4c29e9268b79"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000120-001.md",
+      "sha256": "f6d5b6ee4edb430f0cb260c9559b93ef61399ac7e4dd4f6fd1bf02e84b9c31bc"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000140-001__draft.json",
+      "sha256": "73c6cfb246e2f136326a7c6a44638aee140731867aa4867cd7c9473fd2088427"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000140-001.md",
+      "sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000153-002__draft.json",
+      "sha256": "b6284fd2bc6d18a2caddf2e7deff6f48918edc938e8bdaa11af00c42d6a39bad"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000153-002.md",
+      "sha256": "1ed558b6edb6c31262812a5466b9162561d82f24cc183ea72278ffc055814815"
+    },
+    {
+      "file": "evidence/commit266-001-draft.json",
+      "sha256": "fb9fd3e0767d97eeb1b521be857fb5b0ef2eabfdad144e679422360491120578"
+    },
+    {
+      "file": "evidence/commit266-001-transcript.json",
+      "sha256": "77d5993a682d49f456ede27d7c01ddece7d5b473198fc1e7713a1eecf3b0b4eb"
+    },
+    {
+      "file": "evidence/commit266-001-verdict.md",
+      "sha256": "6efb39fd685d32dccae7cd353f3e68ea4e5cb121f1a308d31d3cab3c0dbd375b"
+    },
+    {
+      "file": "evidence/commit297-001-draft.json",
+      "sha256": "2bcf0a553781b59425bd5c32b3118535c32c3662579f5f5f19c303a3e29f6fc3"
+    },
+    {
+      "file": "evidence/commit297-001-transcript.json",
+      "sha256": "0ca31de0c43607231849aa077d663e8ba82d9ab1a437e79563552df0b81150cb"
+    },
+    {
+      "file": "evidence/commit297-001-verdict.md",
+      "sha256": "c8398b675ffcf093a10da0a150d0ca056c148827490f8845f6e7301f2f07ab15"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "available_at": "2025-05-03T06:43:44+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit119-draft.json",
+      "source_id": "evidence/commit119-draft.json",
+      "content_sha256": "792fcc397f23c30698f69ad0f1e7e5284c0b6e2e5bd2e2b7ea8dc8cbb52fd1ed",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit119-transcript.json",
+      "source_id": "evidence/commit119-transcript.json",
+      "content_sha256": "977cb8f45da70b234b8609a0403f000ee8afd4d8827fabd34fecd43cc1c82e66",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit119-verdict.md",
+      "source_id": "evidence/commit119-verdict.md",
+      "content_sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "available_at": "2025-05-11T15:35:09+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit140-draft.json",
+      "source_id": "evidence/commit140-draft.json",
+      "content_sha256": "73c6cfb246e2f136326a7c6a44638aee140731867aa4867cd7c9473fd2088427",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit140-transcript.json",
+      "source_id": "evidence/commit140-transcript.json",
+      "content_sha256": "442bc674e5b63b37010a48efe55b23b9c49d90471739dd0647968c91e0fc7b3a",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit140-verdict.md",
+      "source_id": "evidence/commit140-verdict.md",
+      "content_sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7",
+      "available_at": "2026-11-15T06:44:29.495535+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000119-001/draft.json",
+      "source_id": ".teacher/runs/commit-000119-001/draft.json",
+      "content_sha256": "792fcc397f23c30698f69ad0f1e7e5284c0b6e2e5bd2e2b7ea8dc8cbb52fd1ed",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000119-001.md",
+      "source_id": "reviews/verdicts/commit-000119-001.md",
+      "content_sha256": "c4815cd7a5d1d8f9ca89ed8188b3b51907761616b6927a75c22a9ebd56a9fdf8",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000120-001/draft.json",
+      "source_id": ".teacher/runs/commit-000120-001/draft.json",
+      "content_sha256": "476d8d7a17849a1d7f636d1e5045dc1721374c39db09e4cdf29c4c29e9268b79",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000120-001.md",
+      "source_id": "reviews/verdicts/commit-000120-001.md",
+      "content_sha256": "f6d5b6ee4edb430f0cb260c9559b93ef61399ac7e4dd4f6fd1bf02e84b9c31bc",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000140-001/draft.json",
+      "source_id": ".teacher/runs/commit-000140-001/draft.json",
+      "content_sha256": "73c6cfb246e2f136326a7c6a44638aee140731867aa4867cd7c9473fd2088427",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000140-001.md",
+      "source_id": "reviews/verdicts/commit-000140-001.md",
+      "content_sha256": "8d2148d666b0bbb2786668cd9f416fc3a9f7b8c257643d172b671922d2de27e7",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000153-002/draft.json",
+      "source_id": ".teacher/runs/commit-000153-002/draft.json",
+      "content_sha256": "b6284fd2bc6d18a2caddf2e7deff6f48918edc938e8bdaa11af00c42d6a39bad",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000153-002.md",
+      "source_id": "reviews/verdicts/commit-000153-002.md",
+      "content_sha256": "1ed558b6edb6c31262812a5466b9162561d82f24cc183ea72278ffc055814815",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+      "available_at": "2025-05-04T05:15:00+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "available_at": "2025-05-12T12:38:08-04:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+      "available_at": "2025-06-14T15:21:35+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit266-001-draft.json",
+      "source_id": "evidence/commit266-001-draft.json",
+      "content_sha256": "fb9fd3e0767d97eeb1b521be857fb5b0ef2eabfdad144e679422360491120578",
+      "available_at": "2026-11-17T07:35:15.412660+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit266-001-transcript.json",
+      "source_id": "evidence/commit266-001-transcript.json",
+      "content_sha256": "77d5993a682d49f456ede27d7c01ddece7d5b473198fc1e7713a1eecf3b0b4eb",
+      "available_at": "2026-11-17T07:35:15.412660+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit266-001-verdict.md",
+      "source_id": "evidence/commit266-001-verdict.md",
+      "content_sha256": "6efb39fd685d32dccae7cd353f3e68ea4e5cb121f1a308d31d3cab3c0dbd375b",
+      "available_at": "2026-11-17T07:35:15.412660+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit297-001-draft.json",
+      "source_id": "evidence/commit297-001-draft.json",
+      "content_sha256": "2bcf0a553781b59425bd5c32b3118535c32c3662579f5f5f19c303a3e29f6fc3",
+      "available_at": "2026-11-17T17:33:13.650467+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit297-001-transcript.json",
+      "source_id": "evidence/commit297-001-transcript.json",
+      "content_sha256": "0ca31de0c43607231849aa077d663e8ba82d9ab1a437e79563552df0b81150cb",
+      "available_at": "2026-11-17T17:33:13.650467+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit297-001-verdict.md",
+      "source_id": "evidence/commit297-001-verdict.md",
+      "content_sha256": "c8398b675ffcf093a10da0a150d0ca056c148827490f8845f6e7301f2f07ab15",
+      "available_at": "2026-11-17T17:33:13.650467+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+      "available_at": "2025-07-08T18:58:43+02:00"
+    }
+  ],
+  "recorded_at": "2026-11-17T17:33:13.650467+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+      "8d3477648f0a0e4ad7b305491244faa1a2e1dcb9",
+      "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+      "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d"
+    ],
+    "limits": "Exact source-supported observations only; no continuous affected range or runtime effects asserted. At commit297, the wrapper forwards the same deferred path; the odd-element BF16 conversion condition is source-supported only, without checkpoint or GPU execution."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 from .ancestor_context import approve_run, read_regular
 from .author import write_json
 from .packet import git
+from .validation_repair import verify_final
 from .editorial import assemble_draft, render
 from .coverage import run_coverage
 
@@ -50,7 +51,8 @@ def assess(run, packet, repo):
     run,packet=Path(run),Path(packet)
     draft=json.loads(read_regular(run/'draft.json'));m=json.loads(read_regular(packet/'manifest.json'))
     transcript=json.loads(read_regular(run/'raw-transcript.json'))
-    expected,_=assemble_draft(draft['annotation'],m,transcript)
+    provenance=json.loads(read_regular(run/'provenance.json'))
+    expected,_=verify_final(draft['annotation'],m,transcript,provenance)
     if expected!=draft or render(draft)!=read_regular(run/'draft.md').decode():raise ValueError('Replay mismatch')
     parents=git(repo,'show','-s','--format=%P',m['task_sha']).decode().split()
     if parents!=m['task_parents']:raise ValueError('Git parent mismatch')
@@ -61,6 +63,8 @@ def assess(run, packet, repo):
     coverage=run_coverage(packet,m,transcript)
     if coverage!=json.loads(read_regular(run/'coverage.json')):raise ValueError('Coverage report mismatch')
     decision=tier(parents,files,draft['annotation'],coverage['task_read_complete'])
+    if provenance.get('validation_repair'):
+        decision={'tier':'full_review','reasons':[*decision['reasons'],'validation_repair']}
     return dict(decision,policy=POLICY,version=VERSION,sampled=sampled(m['task_sha']),changed_files=files)
 
 

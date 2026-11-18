@@ -1,0 +1,142 @@
+{
+  "defect_id": "exllamav3-tokenizer-decode-filtering",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "confirmed",
+  "description": "From the root revision, Tokenizer.decode_ removes EOS before testing for it and filters extended IDs outside the backend vocabulary before special rendering; both behaviors persist unchanged at commit 40fb78f.",
+  "trigger": "Decode a sequence containing EOS followed by ordinary tokens, or request special rendering of a mapped extended ID at or above the backend vocabulary size.",
+  "expected_behavior": "The explicit EOS truncation branch discards the suffix, and mapped extended tokens survive to special rendering.",
+  "actual_behavior": "EOS is removed before the truncation test, so suffix tokens remain; the vocabulary-bound filter discards out-of-backend extended IDs before dictionary rendering.",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "path": "exllamav3/tokenizer/tokenizer.py",
+      "status": "source_verified_introduction",
+      "scope": "Both filtering orders are present in the root tree."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+      "run": ".teacher/runs/commit-000031-001",
+      "finding_id": "inherited-decode-filtering",
+      "source": "Commit 31 authoring finding and independent Fable mailbox review.",
+      "reach": "decode_ is called by both rank-one and rank-two branches of public decode.",
+      "limits": "Broader generation workflows were not traced and no backend decode ran."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "64ef2a379213f88671e04d71a45f18ae8590e079",
+      "run": ".teacher/runs/commit-000243-001",
+      "local_id": "inherited-eos-filter",
+      "finding": {
+        "id": "inherited-eos-filter",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The touched decode_ path carries over the earlier entry's ineffective EOS truncation.",
+        "trigger": "decode receives ordinary tokens both before and after EOS with special rendering disabled.",
+        "expected_behavior": "The explicit EOS-truncation branch would discard tokens after EOS.",
+        "actual_behavior": "Filtering removes EOS first, making that branch unreachable; post-EOS tokens remain. Only the vocabulary-size query changes in this commit. Direct callers are the rank-one and rank-two branches of decode; Job also uses decode for incomplete-character recovery, but this does not establish that its stop handling reaches this trigger.",
+        "locations": [
+          {
+            "commit": "64ef2a379213f88671e04d71a45f18ae8590e079",
+            "path": "exllamav3/tokenizer/tokenizer.py",
+            "symbol": "Tokenizer.decode_"
+          }
+        ],
+        "source_evidence": [
+          "call_c63c8e37f42f452e9f1c1a514ab559d7",
+          "call_d380f428399c423d86ad9b05de1c76bc",
+          "call_fb95b995600f4552be90295a36bf5f39",
+          "call_1de7019ddd034b63a6110648956f7409"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Applied the inspected filter to [11,2,12,0,99] with EOS 2, PAD 0 and vocabulary size 50; result was [11,12].",
+            "evidence": [
+              "call_84774abb51104d59b9d8d4b620be95b1"
+            ],
+            "limits": "Filtering only; no backend decoding or generation execution."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "verification": {
+    "method": "source_inspection",
+    "repository_execution": false,
+    "tree_scope": "Root introduction and commit 40fb78f persistence.",
+    "limits": [
+      "No repository tokenizer, tensor code or backend decoding was executed.",
+      "A scalar list-filter transcription in the authoring run is not repository execution.",
+      "External callers were not inventoried."
+    ]
+  },
+  "evidence": [
+    {
+      "file": "evidence/root-and-commit31-tokenizer-decode-source-scan.json",
+      "sha256": "1aa1f40d3b2d4aee41b02e0e46af5d57db280e6f5e06f4d817b95a5e01688a22",
+      "source": {
+        "repository": "https://github.com/turboderp-org/exllamav3",
+        "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "artifact": "Root and commit-31 tokenizer decode source scan"
+      },
+      "retrieved_at": "2026-11-11T21:39:12Z"
+    },
+    {
+      "file": "evidence/commit243-001-draft.json",
+      "sha256": "36fae9d849e8d0a5c840f5d8e85e3891b930694ac2b443d9cf639450714f5fce",
+      "retrieved_at": "2026-11-16T19:05:30.840485+00:00"
+    },
+    {
+      "file": "evidence/commit243-001-transcript.json",
+      "sha256": "6c9cfcccbe839a57b1239cf057a1641cd6d1c31b9bdc7cca2eee2cce005d4697",
+      "retrieved_at": "2026-11-16T19:05:30.840485+00:00"
+    },
+    {
+      "file": "evidence/commit243-001-verdict.md",
+      "sha256": "a257b29e98c743daa9d16c253584f6be94e67ae5e70f605b89ba332e2484d073",
+      "retrieved_at": "2026-11-16T19:05:30.840485+00:00"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "available_at": "2025-04-06T14:42:49+02:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+      "available_at": "2025-04-11T01:49:34+02:00"
+    }
+  ],
+  "recorded_at": "2026-11-16T19:05:30.840485+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "40fb78fa4cc156e8b8a79d7470bc5062a02ea29c",
+      "64ef2a379213f88671e04d71a45f18ae8590e079"
+    ],
+    "unaffected_checked_shas": []
+  },
+  "impact": {
+    "level": "medium",
+    "domain": "tokenizer_correctness",
+    "rationale": "The source order defeats an explicit truncation branch and can discard wrapper-known tokens, but runtime reach beyond public decode was not inventoried."
+  },
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_review_status": "243 EOS persistence confirmed by Fable; this observation revision awaits review. Prior extended-ID observation retained without claiming re-verification at243."
+}

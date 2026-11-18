@@ -1,0 +1,461 @@
+{
+  "schema_version": 5,
+  "sha": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+  "parent_shas": [
+    "2d1ce8910339ce3f10b3c46ee0b92cff23df71da"
+  ],
+  "cutoff_date": "2025-06-14T18:00:27+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The default BlockSparseMLP route supplied five arguments to a native function declared, implemented and bound with four parameters.",
+        "basis": "source",
+        "evidence": [
+          "call_4fe7f9c7606741fbb0abae986c908a1b",
+          "call_1ce9fed7d73246388a9a6cc3e21f1645",
+          "call_d0d382ff63034220bf89a3197c9b85b1",
+          "call_7a3f6621e1fd434ca79b4947736c868f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Removing the trailing False restores the existing native interface rather than introducing a new routing option. The native implementation reads activate_all_experts from params.",
+        "basis": "source",
+        "evidence": [
+          "call_4fe7f9c7606741fbb0abae986c908a1b",
+          "call_d0d382ff63034220bf89a3197c9b85b1"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Mixtral and Qwen3 MoE use the default native route and therefore benefit from the repaired call. Dots1 explicitly selects the separate single-group Dots router, so this edit does not change its routing call.",
+        "basis": "source",
+        "evidence": [
+          "call_9c8c59743f5b4bf797cf149d6b5c4b38",
+          "call_db7d0d84c39c433caa6b47c2121c56cd",
+          "call_fdb5e32bb15d4f47b8dd5bf27b31f20d",
+          "call_e5b969b808f247e38d3cf80adfea8878",
+          "call_4fe7f9c7606741fbb0abae986c908a1b"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the BlockSparseMLP introduction, native-routing optimization and correction-biased-routing entries. They establish the fusion preconditions, four-argument native interface and previously recorded argument mismatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_1ad9d4eedc714d7cbe67c8893f8628c6",
+          "call_33a2395a1305486daa293943b378e412",
+          "call_94c3541cd9194f598f4ceecf7f51dcef"
+        ]
+      }
+    ],
+    "limitations": [
+      "No extension invocation, GPU inference or performance measurement was performed. Interface agreement is established by source inspection, not a successful runtime test.",
+      "The change is an argument-count repair with no numerical algorithm change; a scalar computation would not validate native argument binding.",
+      "Caller searches cover literal occurrences in the parent repository, not external callers or dynamic dispatch."
+    ],
+    "links": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+      "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+      "b8c830c17f53cf0d4caf7b774fe458b2f31cb85c"
+    ],
+    "chapters": [
+      {
+        "id": "block-sparse-mlp",
+        "title": "Restore the native routing call contract",
+        "claims": [
+          {
+            "text": "The entire edit removes one positional False from BlockSparseMLP.forward. Whole-parent search finds this as the sole Python call to blocksparse_mlp_routing; its declaration and binding remain unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_4fe7f9c7606741fbb0abae986c908a1b",
+              "call_aadac5dbd51f47e093fcd87ea5b0aae0",
+              "call_1ce9fed7d73246388a9a6cc3e21f1645",
+              "call_7a3f6621e1fd434ca79b4947736c868f"
+            ]
+          },
+          {
+            "text": "The native router multiplies flattened token rows by the gate matrix, selects expert logits and softmax-normalizes the selected values. One token without all-expert activation reuses configured output buffers; other cases allocate results and select either the configured expert count or every expert. It returns indices followed by weights.",
+            "basis": "source",
+            "evidence": [
+              "call_d0d382ff63034220bf89a3197c9b85b1"
+            ]
+          },
+          {
+            "text": "Routing occurs before the ordinary-versus-fused expert dispatch, so the argument repair applies to both paths. The ordinary path handles multiple flattened tokens or non-fully-EXL3 experts; the fused path handles one token with fully EXL3 experts. The threshold 1 is a token-count dispatch condition, not a newly tuned performance threshold.",
+            "basis": "source",
+            "evidence": [
+              "call_e5b969b808f247e38d3cf80adfea8878",
+              "call_4fe7f9c7606741fbb0abae986c908a1b"
+            ]
+          },
+          {
+            "text": "Repository construction sites are Mixtral, Qwen3 MoE and Dots1. TransformerBlock forwards params to its MLP and immediately consumes the result in residual addition. ParallelDecoderBlock has another generic MLP call, but its declared constructor types exclude BlockSparseMLP; this is not evidence of a registered sparse-model workflow there.",
+            "basis": "source",
+            "evidence": [
+              "call_630a4b1e94f14d0e9e8574a13c508db5",
+              "call_9c8c59743f5b4bf797cf149d6b5c4b38",
+              "call_db7d0d84c39c433caa6b47c2121c56cd",
+              "call_fdb5e32bb15d4f47b8dd5bf27b31f20d",
+              "call_8bf8287596514c09b56db8bd6d102d26"
+            ]
+          },
+          {
+            "text": "The author's \u201cFix regression\u201d description is consistent with restoring the previously documented native interface. It does not imply that all conditional BlockSparseMLP paths now succeed: grouped routing, optional Dots inputs and fused-output contracts remain unchanged.",
+            "basis": "inference",
+            "evidence": [
+              "call_4fe7f9c7606741fbb0abae986c908a1b",
+              "call_33a2395a1305486daa293943b378e412",
+              "call_e5b969b808f247e38d3cf80adfea8878"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-all-expert-fusion-count",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The repair removes the argument mismatch but carries over the all-expert fused-buffer mismatch.",
+        "trigger": "One flattened token, fully EXL3 experts, activate_all_experts=True and num_experts different from num_experts_per_tok.",
+        "expected_behavior": "Evaluate all experts with compatible storage or select the ordinary path.",
+        "actual_behavior": "Routing produces num_experts indices while fused buffers retain num_experts_per_tok planes. The first multi-GEMM checks index count against output planes and rejects the mismatch. TransformerBlock forwards params, establishing conditional API reach, not that ordinary conversion reaches this combination.",
+        "locations": [
+          {
+            "commit": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_e5b969b808f247e38d3cf80adfea8878",
+          "call_d0d382ff63034220bf89a3197c9b85b1",
+          "call_7ffa9b1b807c418ca95fbf4b3448dda6",
+          "call_8bf8287596514c09b56db8bd6d102d26",
+          "call_4fe7f9c7606741fbb0abae986c908a1b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared router cardinality, persistent allocation, dispatch and native shape validation.",
+            "evidence": [
+              "call_e5b969b808f247e38d3cf80adfea8878",
+              "call_d0d382ff63034220bf89a3197c9b85b1",
+              "call_7ffa9b1b807c418ca95fbf4b3448dda6"
+            ],
+            "limits": "No CUDA execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-grouped-routing-unassigned",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Grouped routing remains disabled without rejecting unsupported configurations.",
+        "trigger": "Enable deepseekv3_routing with n_group or topk_group different from 1.",
+        "expected_behavior": "Compute routing results or explicitly reject the configuration.",
+        "actual_behavior": "The grouped call remains commented out, leaving selected_experts and routing_weights unassigned before expert evaluation. None of the three located model constructors selects this unsupported combination.",
+        "locations": [
+          {
+            "commit": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_e5b969b808f247e38d3cf80adfea8878",
+          "call_4fe7f9c7606741fbb0abae986c908a1b",
+          "call_630a4b1e94f14d0e9e8574a13c508db5",
+          "call_fdb5e32bb15d4f47b8dd5bf27b31f20d"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced routing assignments and inspected all located sparse-model constructors.",
+            "evidence": [
+              "call_e5b969b808f247e38d3cf80adfea8878",
+              "call_9c8c59743f5b4bf797cf149d6b5c4b38",
+              "call_db7d0d84c39c433caa6b47c2121c56cd",
+              "call_fdb5e32bb15d4f47b8dd5bf27b31f20d"
+            ],
+            "limits": "Conditional API path; not executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-dots-required-inputs",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "The Dots router still requires values that the enclosing API permits to be absent.",
+        "trigger": "Select single-group Dots routing with missing correction bias or routed_scaling_factor=None.",
+        "expected_behavior": "Validate required routing inputs or supply supported defaults.",
+        "actual_behavior": "routing_dots unconditionally performs arithmetic with both values. Its sole located caller is BlockSparseMLP.forward. Dots1 supplies a scaling value, but loading the correction bias remains optional.",
+        "locations": [
+          {
+            "commit": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "routing_dots"
+          }
+        ],
+        "source_evidence": [
+          "call_e5b969b808f247e38d3cf80adfea8878",
+          "call_fdb5e32bb15d4f47b8dd5bf27b31f20d",
+          "call_4fe7f9c7606741fbb0abae986c908a1b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared constructor defaults and optional loading with unconditional router arithmetic.",
+            "evidence": [
+              "call_e5b969b808f247e38d3cf80adfea8878"
+            ],
+            "limits": "No tensor operations executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-fused-output-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "The fused path retains its workspace-backed output and ignored per-call dtype override.",
+        "trigger": "Retain a fused result across another fused call, or request out_dtype different from the load-time output dtype.",
+        "expected_behavior": "An independent result honoring the per-call dtype, as recorded for the earlier implementation.",
+        "actual_behavior": "The returned view shares cfg.out_d and uses its load-time dtype; subsequent fused calls overwrite that workspace. Inspected decoder callers omit the override and consume results immediately, so they do not demonstrate either incompatibility.",
+        "locations": [
+          {
+            "commit": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_e5b969b808f247e38d3cf80adfea8878",
+          "call_8bf8287596514c09b56db8bd6d102d26",
+          "call_33a2395a1305486daa293943b378e412",
+          "call_4fe7f9c7606741fbb0abae986c908a1b"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the returned view to persistent allocation and compared immediate decoder consumers.",
+            "evidence": [
+              "call_e5b969b808f247e38d3cf80adfea8878",
+              "call_8bf8287596514c09b56db8bd6d102d26"
+            ],
+            "limits": "No output-lifetime or dtype test."
+          }
+        ]
+      }
+    ],
+    "summary": "Removes an extra argument from BlockSparseMLP's native routing call, restoring its four-parameter interface for Mixtral and Qwen3 MoE without changing routing algorithms or inherited conditional limitations."
+  },
+  "evidence": {
+    "call_4fe7f9c7606741fbb0abae986c908a1b": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "39ded1b7b83ccb63a7893e2c25160225ffd3a7b3",
+        "offset": 148,
+        "max_bytes": 833
+      },
+      "result_sha256": "d056e2ee9415779aa390065451d06a4b0881621886a4b74e88a10aa6a7118c82"
+    },
+    "call_e5b969b808f247e38d3cf80adfea8878": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 28000
+      },
+      "result_sha256": "1778656e2dfe8bb05eadbed76594b979f90a6265151ead8120cbb2046e2c178b"
+    },
+    "call_aadac5dbd51f47e093fcd87ea5b0aae0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "query": "blocksparse_mlp_routing",
+        "limit": 100
+      },
+      "result_sha256": "f1de6050d1606e275a5b4aa66788929572ad3db2401dd012655cc65cc32d3d2d"
+    },
+    "call_94c3541cd9194f598f4ceecf7f51dcef": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b8c830c17f53cf0d4caf7b774fe458b2f31cb85c",
+        "max_bytes": 16000
+      },
+      "result_sha256": "58ba4e3f115450e71bfa8097a74ff0c38cd276881019cb9904dc9b2636e13337"
+    },
+    "call_d0d382ff63034220bf89a3197c9b85b1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/exllamav3_ext/libtorch/blocksparse_mlp.cpp",
+        "max_bytes": 10000
+      },
+      "result_sha256": "349576a32bdf686a1452916572c9d1ad0ce9ec71ded3824ec0d1d81bd7a79c69"
+    },
+    "call_630a4b1e94f14d0e9e8574a13c508db5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "query": "BlockSparseMLP",
+        "limit": 100
+      },
+      "result_sha256": "b51022b1a437b3bfdc6b159c0bee63144e3b0ae67304104a34cf310652cbb40a"
+    },
+    "call_9c8c59743f5b4bf797cf149d6b5c4b38": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/models/mixtral.py",
+        "offset": 3400,
+        "max_bytes": 5000
+      },
+      "result_sha256": "0616e28ad39f8255687363e1c6170b8adb3c1bc32ee1911eac4eac0f7199d788"
+    },
+    "call_db7d0d84c39c433caa6b47c2121c56cd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "offset": 4000,
+        "max_bytes": 3300
+      },
+      "result_sha256": "6f55b62441f65ed0d3242fbbf568f05fc065b8b1368cc8332357b0471949f031"
+    },
+    "call_fdb5e32bb15d4f47b8dd5bf27b31f20d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/models/dots1.py",
+        "offset": 4900,
+        "max_bytes": 3900
+      },
+      "result_sha256": "cef3c6244b6f5b728052c1c455af82a29ea603f902f74c82befce0db602c648b"
+    },
+    "call_4dd90d40239a49cab5ef25e2e6451c84": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "blocksparse_mlp.cpp",
+        "limit": 10,
+        "max_bytes": 4000
+      },
+      "result_sha256": "f8849db9782d40add22655e3412cde9393588185156b914900cd40efaa52da15",
+      "catalog_only": true
+    },
+    "call_33a2395a1305486daa293943b378e412": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "8357593c39b444f9e7e46bd90d385b6dcd7e1c62",
+        "max_bytes": 16000
+      },
+      "result_sha256": "07071ff3f533c9f4caa95b2493679ad66b33b7844407a0858c0319083d73452a"
+    },
+    "call_8bf8287596514c09b56db8bd6d102d26": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "467875d2c491348086b1928519621b7a30b94feb8e1f40188301a5a52f15f798"
+    },
+    "call_a33253fadc394b5881dbe7fd827ea594": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "query": "B_idx.size",
+        "limit": 30
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c25009caf8e54cf1a12986ad6bc31e7f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "query": "std::tuple<at::Tensor, at::Tensor> blocksparse",
+        "limit": 20
+      },
+      "result_sha256": "ef94784ddee247440784de6aca850e06b848486f32e9a0ba7477cdc0da2ee5c0"
+    },
+    "call_1ce9fed7d73246388a9a6cc3e21f1645": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/exllamav3_ext/libtorch/blocksparse_mlp.h",
+        "max_bytes": 2000
+      },
+      "result_sha256": "1b90bd1d83829d64c7000c008193efa33564adeacfb65328d37edb89a7a8f0bb"
+    },
+    "call_0744b69b722748c6960698c54788faa1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "query": "void exl3_mgemm",
+        "limit": 10
+      },
+      "result_sha256": "0923cd2d263e211cc5fb02f2b8471de34d04ed55a7101c73fab33bc3f8b21e16"
+    },
+    "call_b7ae195e6a2c4d179cfd0ea66c7391fc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "query": "exl3_mgemm(",
+        "limit": 20
+      },
+      "result_sha256": "a263c4ce5f6f238bf3a5cdecee0289afe311d7756aa4664a033dbe2bed79d52c"
+    },
+    "call_16a46408facf4f6fb65d8b94d813f555": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "query": "exl3_mgemm",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 30
+      },
+      "result_sha256": "5a387d0433d330b8955b53a22486298563df50db7ddf90aac8a54f171dd4af42"
+    },
+    "call_7ffa9b1b807c418ca95fbf4b3448dda6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4900,
+        "max_bytes": 4500
+      },
+      "result_sha256": "020896c8d18bf6a0e15b1a7ab54b812208c488e7ad990190dc2eb6400307474f"
+    },
+    "call_7a3f6621e1fd434ca79b4947736c868f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "2d1ce8910339ce3f10b3c46ee0b92cff23df71da",
+        "path": "exllamav3/exllamav3_ext/bindings.cpp",
+        "offset": 3200,
+        "max_bytes": 2400
+      },
+      "result_sha256": "e165dddeb0f06d173980b5ba2f2b15c80c620728c41c727b2a1cc5db8ef1560d"
+    },
+    "call_1ad9d4eedc714d7cbe67c8893f8628c6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    }
+  }
+}

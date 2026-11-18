@@ -1,0 +1,553 @@
+{
+  "schema_version": 5,
+  "sha": "51e9922b5bb7ff036ea6b5bbe0a86c0923d8199a",
+  "parent_shas": [
+    "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f"
+  ],
+  "cutoff_date": "2025-07-10T15:39:06+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "performance",
+    "problem": [
+      {
+        "text": "Queued jobs eagerly reserved optional output storage and sampling-history buffers. The change defers those allocations; its comment specifically reports excessive virtual-memory commitment and possible Windows crashes.",
+        "basis": "source",
+        "evidence": [
+          "call_a62a02905c824e389c6dfe3aad0c7b01",
+          "call_dcf0c0f84bb24f3e96cd3cc30284e880",
+          "call_87cb9136071b4bde82f8513b707488b5"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The edits address different lifetimes: SeqTensor delays backing storage until data access, Job delays pinned history until preparation for sampling, and UTF-32 caching reuses encoded stop/banned-string collections.",
+        "basis": "source",
+        "evidence": [
+          "call_a62a02905c824e389c6dfe3aad0c7b01",
+          "call_dcf0c0f84bb24f3e96cd3cc30284e880"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Unused optional output buffers can remain unallocated, but prompt SeqTensors still allocate immediately through from_tensor. Storage already allocated is retained by clear and truncate.",
+        "basis": "source",
+        "evidence": [
+          "call_aa7e8b4fa6d145f6b5f5552ee6c96296",
+          "call_dcf0c0f84bb24f3e96cd3cc30284e880",
+          "call_4e0d7df9817d40f7b19b2b8b9c31234c"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the founding runtime and generation entries. They establish the original SeqTensor capacity/view contract and job buffering lifecycle, and record inherited generation defects; they are historical context rather than fresh execution evidence.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_02a0dc8157724366ab09dcf293aff898",
+          "call_ac4139d0781647d8ad490bb38a51fa91",
+          "call_b7cac618d0474e4fb2601a94e1da4563"
+        ]
+      },
+      {
+        "text": "Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reports a 262208-versus-262272 mismatch at held_logits.append and SeqTensor.copy_. Its connection to this task is inferred from those exact source operations and the two shared paths, not an upstream linkage. Lazy allocation preserves the configured initial width and does not introduce width reconciliation.",
+        "basis": "inference",
+        "evidence": [
+          "call_5d7b83759dac4e1f81422513a166ef25",
+          "call_87cb9136071b4bde82f8513b707488b5",
+          "call_aa7e8b4fa6d145f6b5f5552ee6c96296",
+          "call_dcf0c0f84bb24f3e96cd3cc30284e880"
+        ]
+      },
+      {
+        "text": "Issue #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d concerns chat-template selection; its inferred source connection is the unchanged constructor error immediately before UTF-32 conversion. Issue #39, \u201cGemma 3 architecture not in list?\u201d, concerns architecture availability and later discusses frontend formatting and GPU budgeting. Neither discussion establishes this change's virtual-memory motivation.",
+        "basis": "inference",
+        "evidence": [
+          "call_59492648b75a44f884ac3587a18cd1d0",
+          "call_8ec723926e8c4bcea835c0e88dd4c785",
+          "call_550a612cd9a14e6795fc88d4b5fad6b6",
+          "call_aed377b140f34020a697261c5948b897"
+        ]
+      },
+      {
+        "text": "Whole-parent Windows search also found extension/build handling, a gallery mouse-wheel comment and calibration text; those occurrences do not independently explain the reported allocation crash.",
+        "basis": "source",
+        "evidence": [
+          "call_009ffdf8d620423e8e2a4a93d3c8d4c2"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch allocation, model generation, native matcher, Windows crash reproduction or memory benchmark was executed. Actual virtual-memory savings and allocator behavior remain unmeasured.",
+      "The standard-library check models encoding, cache reuse and capacity arithmetic; it does not execute NumPy conversion, tensor copying or pinned-memory allocation.",
+      "The inspected source does not explain the tuning rationale for cache capacity 100, growth quantum 256 or the pinned-history allowance of eight IDs.",
+      "Issue #48's reported checkpoint/head-width mismatch was not independently reproduced or traced through model loading."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "generation",
+        "title": "Allocate generation buffers only when needed",
+        "claims": [
+          {
+            "text": "SeqTensor construction now records init_shape, dtype and device while leaving tensor=None. _ensure_init creates the original-capacity tensor, and append, torch and torch_slice call it before accessing storage. This initialization is a necessary companion to removing eager construction, not an independent cleanup.",
+            "basis": "source",
+            "evidence": [
+              "call_dcf0c0f84bb24f3e96cd3cc30284e880",
+              "call_aa7e8b4fa6d145f6b5f5552ee6c96296"
+            ]
+          },
+          {
+            "text": "Logical length, truth testing and capacity calculation remain independent of allocation. The default capacity is 256 sequence slots; explicit capacities round to the next strictly larger multiple of 256. Appending at an exact boundary still grows with torch.cat. Even append(None), torch() on an empty sequence, or cloning an empty sequence now forces initialization; clear and truncate do not free storage.",
+            "basis": "source",
+            "evidence": [
+              "call_aa7e8b4fa6d145f6b5f5552ee6c96296",
+              "call_dcf0c0f84bb24f3e96cd3cc30284e880"
+            ]
+          },
+          {
+            "text": "Whole-parent searches located SeqTensor construction only in its own factory methods, Job.prepare_for_queue and Sequence.__init__, with no subclass or external direct backing-tensor reader found. Sequence's prompt buffers use from_tensor and immediately append, so remain eager in practice. Job creates five empty held buffers; conditional appends and truth-guarded emission permit unused probability, top-token and logits buffers to remain lazy. Banned-string checkpointing clones all held buffers, so can allocate otherwise-unused optional storage.",
+            "basis": "source",
+            "evidence": [
+              "call_d5b77e78f0884ae6935149b6c8f87032",
+              "call_e633eb8d142a4b3a90f21f3ec3166453",
+              "call_4e0d7df9817d40f7b19b2b8b9c31234c",
+              "call_87cb9136071b4bde82f8513b707488b5",
+              "call_aa7e8b4fa6d145f6b5f5552ee6c96296"
+            ]
+          },
+          {
+            "text": "Job now always initializes pinned_ids=None. prepare_sampling_past_ids retains its reqs_past_ids guard, allocates once using the current maximum sequence length plus max_new_tokens plus eight, then exposes and copies the first sequence's current history. The sole direct caller is Generator.iterate_gen: after scheduling model.forward it prepares every active job, including jobs not yet ready when another job enables that generation round. Thus this is later allocation, not strictly allocation only for the job currently sampling.",
+            "basis": "source",
+            "evidence": [
+              "call_a62a02905c824e389c6dfe3aad0c7b01",
+              "call_e34c7087338c4fa0b47be2f91eeb4ceb",
+              "call_ebd3beffc1ef4f66830eaadddf9657e0",
+              "call_b73fd8aa306e44a582e3cebebc882b16"
+            ]
+          },
+          {
+            "text": "_strings_to_utf32 gains lru_cache(100) and accepts tuples. Both discovered callers are updated together: stop strings become a tuple from their set, while banned strings become a tuple after lowercasing. Tuple conversion supplies hashable cache keys. The unchanged encoder concatenates UTF-32-LE bytes and byte offsets; the native matcher reads these buffers without modifying them. Identical ordered tuples can share encoded arrays, although stop-set order is not canonicalized and the cache bounds entry count rather than bytes.",
+            "basis": "source",
+            "evidence": [
+              "call_a62a02905c824e389c6dfe3aad0c7b01",
+              "call_bf5b18db6aba40a5b6631a78ffa80947",
+              "call_aed377b140f34020a697261c5948b897",
+              "call_85ea6c084c3b4bce8fc0e3a55bb4af17"
+            ]
+          },
+          {
+            "text": "A standard-library transcription encoded ('A', '\ud83d\ude00') into eight bytes with offsets (0,4,8), reused the cached result object and bounded retained entries at 100. Capacity arithmetic gave 256,256,512,512 slots for explicit capacities 0,255,256,257. For an illustrative logits width of 262208, the initial 256-slot float32 buffer represents 268500992 payload bytes, or 256.0625 MiB; this is arithmetic, not measured allocation.",
+            "basis": "execution",
+            "evidence": [
+              "call_2c6485c54ad74d59b48700f7436fc288"
+            ]
+          },
+          {
+            "text": "Against the founding generation entry, the inspected parent has replaced the old unassigned optional-output branches with initialized results and probability calculations; this task does not change them. The checkpoint token-restoration typo, terminal banned-string bypass and multi-sequence enqueue undercount remain in the inspected parent and are untouched by this diff, as detailed in findings.",
+            "basis": "source",
+            "evidence": [
+              "call_aed377b140f34020a697261c5948b897",
+              "call_87cb9136071b4bde82f8513b707488b5",
+              "call_a62a02905c824e389c6dfe3aad0c7b01",
+              "call_dcf0c0f84bb24f3e96cd3cc30284e880"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-checkpoint-token-restoration",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Banned-string rewind still restores held_token rather than held_tokens; lazy SeqTensor storage does not repair this inherited mismatch.",
+        "trigger": "A full banned-string match reaches rewind_checkpoint before a terminal branch.",
+        "expected_behavior": "Restore the saved held_tokens buffer and expose rejected IDs only as suppressed tokens.",
+        "actual_behavior": "The singular attribute receives the saved buffer, while emit_held reads the unchanged plural buffer and can emit rejected IDs. The inspected direct caller is Generator.iterate_gen through receive_sample; reach is limited to its banned-string branch.",
+        "locations": [
+          {
+            "commit": "51e9922b5bb7ff036ea6b5bbe0a86c0923d8199a",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample.rewind_checkpoint"
+          }
+        ],
+        "source_evidence": [
+          "call_87cb9136071b4bde82f8513b707488b5",
+          "call_5713ce55ab7e4441bd49bf800d52690e",
+          "call_4746571c28984ce888896ba67905f40d",
+          "call_a62a02905c824e389c6dfe3aad0c7b01"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared checkpoint assignment, emission reader, direct caller and task diff.",
+            "evidence": [
+              "call_87cb9136071b4bde82f8513b707488b5",
+              "call_4746571c28984ce888896ba67905f40d"
+            ],
+            "limits": "No tokenizer, matcher or repository generation execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-terminal-banned-bypass",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The terminal output-budget branch still precedes banned-string matching.",
+        "trigger": "A non-stop token completes a banned string when new_tokens reaches max_new_tokens minus num_draft_tokens.",
+        "expected_behavior": "Check banned-string suppression before terminal output is flushed.",
+        "actual_behavior": "receive_sample returns with emit_held=True before matching. For example, a first token decoding to 'bad' with banned_strings=['bad'], max_new_tokens=1 and no drafting is flushed. Generator.iterate_gen is the sole discovered direct receive_sample caller.",
+        "locations": [
+          {
+            "commit": "51e9922b5bb7ff036ea6b5bbe0a86c0923d8199a",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.receive_sample"
+          }
+        ],
+        "source_evidence": [
+          "call_87cb9136071b4bde82f8513b707488b5",
+          "call_5713ce55ab7e4441bd49bf800d52690e",
+          "call_4746571c28984ce888896ba67905f40d",
+          "call_a62a02905c824e389c6dfe3aad0c7b01"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked terminal branch ordering against the matcher and caller.",
+            "evidence": [
+              "call_87cb9136071b4bde82f8513b707488b5",
+              "call_4746571c28984ce888896ba67905f40d"
+            ],
+            "limits": "The illustrative token decoding was not executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-multisequence-enqueue-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Enqueue validation still counts private pages only from the last sequence.",
+        "trigger": "A multi-sequence job's aggregate private-page demand exceeds cache capacity while context hashes plus the last sequence's demand fit.",
+        "expected_behavior": "Reject the impossible job during enqueue using every sequence's private-page requirement.",
+        "actual_behavior": "prepare_for_queue uses seq.new_unique_pages after the loop rather than the accumulated count. Admission subsequently sums all sequences and cannot start the job. Generator.enqueue is the sole discovered direct caller; the task leaves this validation unchanged.",
+        "locations": [
+          {
+            "commit": "51e9922b5bb7ff036ea6b5bbe0a86c0923d8199a",
+            "path": "exllamav3/generator/job.py",
+            "symbol": "Job.prepare_for_queue"
+          }
+        ],
+        "source_evidence": [
+          "call_87cb9136071b4bde82f8513b707488b5",
+          "call_7b884b65e86e48eeaeb95cb0fcc5de3f",
+          "call_1082115c740b4e37903b8af500490b11",
+          "call_4746571c28984ce888896ba67905f40d",
+          "call_a62a02905c824e389c6dfe3aad0c7b01"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared enqueue validation, direct caller and admission calculation with the unchanged task context.",
+            "evidence": [
+              "call_87cb9136071b4bde82f8513b707488b5",
+              "call_1082115c740b4e37903b8af500490b11",
+              "call_4746571c28984ce888896ba67905f40d"
+            ],
+            "limits": "No scheduler execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Defers SeqTensor backing storage and pinned sampling history, and caches UTF-32 string buffers. The source supports reduced eager allocation, not measured memory savings or Windows crash resolution."
+  },
+  "evidence": {
+    "call_a62a02905c824e389c6dfe3aad0c7b01": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "51e9922b5bb7ff036ea6b5bbe0a86c0923d8199a",
+        "offset": 193,
+        "max_bytes": 2771
+      },
+      "result_sha256": "db538c64f852b56094aa28fe211b64e962e16596261b6c1103d067267af1ed65"
+    },
+    "call_dcf0c0f84bb24f3e96cd3cc30284e880": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "51e9922b5bb7ff036ea6b5bbe0a86c0923d8199a",
+        "offset": 2964,
+        "max_bytes": 2233
+      },
+      "result_sha256": "e24047e9976e68b55cf988364d566978a5fcdb67a4f6cbd27d8dd9465a80047d"
+    },
+    "call_aa7e8b4fa6d145f6b5f5552ee6c96296": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/util/tensor.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "ba74803473bc8081ccdccc716939ef5a1ab32f80560705e908cb1108530d679a"
+    },
+    "call_d5b77e78f0884ae6935149b6c8f87032": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "SeqTensor",
+        "limit": 200
+      },
+      "result_sha256": "4e7c29c2b90e088385b05d263a645e852a8e379b9e6828f3ec10e6d1a386ecd5"
+    },
+    "call_1c1b80454e4a4a11b218e3c02360ddcf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": ".tensor",
+        "limit": 200,
+        "path": "exllamav3/generator"
+      },
+      "result_sha256": "0b59b9da019c92336c1575755a1f87262261ae4cc97b608e2b44712ddfdb9d1b"
+    },
+    "call_bf5b18db6aba40a5b6631a78ffa80947": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "_strings_to_utf32",
+        "limit": 100
+      },
+      "result_sha256": "bcd8f7711eaaa42b1ecc5a369804f24b3cb59ac44145b325e138b515a90a482d"
+    },
+    "call_aed377b140f34020a697261c5948b897": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/generator/job.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "42137143eab1a0e997ac5b5a7e28a977aa22bde92a75a9828bdae0a8a30e127c"
+    },
+    "call_87cb9136071b4bde82f8513b707488b5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/generator/job.py",
+        "offset": 18000,
+        "max_bytes": 22000
+      },
+      "result_sha256": "3474453d7941e5cb985f0b1d9854b17c7a4880d34ac9ec005e6dddf7a19f2734"
+    },
+    "call_009ffdf8d620423e8e2a4a93d3c8d4c2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "Windows",
+        "limit": 100
+      },
+      "result_sha256": "9c760e629f40d245f408413f2b71313043ab6e6aaec1a8f7ca7bd43eebcd0aff"
+    },
+    "call_32b8f5fb9b7941e0a6fac9108d5e8725": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "util/tensor.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "74778d2881d38d3325d9675dec80479becc4114680c991d44d8676122c6256a4",
+      "catalog_only": true
+    },
+    "call_02a0dc8157724366ab09dcf293aff898": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "runtime",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de1b97ae94bf13488b4bad98c6eb3de8b285753d46b56295711c375be802464"
+    },
+    "call_ac4139d0781647d8ad490bb38a51fa91": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f6e224671cf1acd067e79899a1ab9164bd9529f50e19b372cfde44ee97664cc6"
+    },
+    "call_b7cac618d0474e4fb2601a94e1da4563": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "offset": 16384,
+        "max_bytes": 6000
+      },
+      "result_sha256": "46408465c2ee6e58d5a9559e17e3a68044c895ae9fbc960c84151cfa7f82e6a5"
+    },
+    "call_e34c7087338c4fa0b47be2f91eeb4ceb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "prepare_sampling_past_ids",
+        "limit": 100
+      },
+      "result_sha256": "2e71aa66bf1cfb83f1ba0c3f792cbbb672aac15caa60016c0750a45313830d4e"
+    },
+    "call_ebd3beffc1ef4f66830eaadddf9657e0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "pinned_ids",
+        "limit": 100
+      },
+      "result_sha256": "a2d1d9121a6ef5059c56f2613478fd5784d7f56b6d5661b56ec79de9fa8ba716"
+    },
+    "call_4746571c28984ce888896ba67905f40d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 16000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "eef16764d5aa43d686617c369297605380722bc38cc160ccb8771ed9b4519317"
+    },
+    "call_b73fd8aa306e44a582e3cebebc882b16": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 13000,
+        "max_bytes": 3100
+      },
+      "result_sha256": "dc997a0d57442668f8c0f027cb59ab7d63fc21355b8e0a1a3568dea1c6f04973"
+    },
+    "call_4e0d7df9817d40f7b19b2b8b9c31234c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/generator/pagetable.py",
+        "offset": 4500,
+        "max_bytes": 4000
+      },
+      "result_sha256": "5971d1e8ba7dcb8c5c5c905f620feff34e7b51202d693e965b351d17b9e10412"
+    },
+    "call_5d7b83759dac4e1f81422513a166ef25": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 16000
+      },
+      "result_sha256": "80a8c98ab5716376c8e00d82ce61db250092af61149a10dbef57db3b51c3bf4c"
+    },
+    "call_59492648b75a44f884ac3587a18cd1d0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fe4520fd0804623bd3d102eeb121eeb54b9b37ea0b51615042d1fec78142f13e"
+    },
+    "call_8ec723926e8c4bcea835c0e88dd4c785": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 16000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "e5f95659d9a30f344bb955d3a6b12f1a1f1b9d50be8f87da1f87750295d90012"
+    },
+    "call_e633eb8d142a4b3a90f21f3ec3166453": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": ".tensor",
+        "limit": 200
+      },
+      "result_sha256": "62c8e3d76487073e2673ffaa03524ebc761cdb5bb543736d09946fd4086d2f67"
+    },
+    "call_8748d21ffdfa4f2f877375ac9ace3cc3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "partial_strings_match",
+        "limit": 100
+      },
+      "result_sha256": "f2371c232f079a3b9a2a780ad1bbec79f2477321c0e61761c35b0ff921c93b8b"
+    },
+    "call_85ea6c084c3b4bce8fc0e3a55bb4af17": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/exllamav3_ext/generator/strings.cpp",
+        "max_bytes": 12000
+      },
+      "result_sha256": "04ab1765b6ce5ff24eb3a2c7dde69a45437d9e8c310b63f21b64127604667480"
+    },
+    "call_2c6485c54ad74d59b48700f7436fc288": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from functools import lru_cache\nimport struct\n@lru_cache(100)\ndef pack(ss):\n    parts=[s.encode('utf-32-le') for s in ss]; offsets=[0]\n    for p in parts: offsets.append(offsets[-1]+len(p))\n    return bytearray(b''.join(parts)),struct.pack('<'+'i'*len(offsets),*offsets)\na=pack(('A','\ud83d\ude00')); b=pack(('A','\ud83d\ude00'))\nprint('utf32_bytes',len(a[0]),'offsets',struct.unpack('<3i',a[1]),'shared_identity',a is b)\nfor i in range(101): pack((str(i),))\nprint('cache_entries',pack.cache_info().currsize)\nprint('capacity_for_explicit_0_255_256_257',[(n,(n//256+1)*256) for n in (0,255,256,257)])\nprint('initial_logits_float32_bytes_for_width_262208',256*262208*4)\nprint('same_MiB',256*262208*4/2**20)"
+        ]
+      },
+      "result_sha256": "2c9cada548459b38071912b3c150e553b1d32c6e91b6e19d9e88a6d803fd5740"
+    },
+    "call_550a612cd9a14e6795fc88d4b5fad6b6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/39",
+        "max_bytes": 10000
+      },
+      "result_sha256": "26b6d9b590d4106e30143b8fa821ed4960da53961a30dce83fe553cb347c996b"
+    },
+    "call_5713ce55ab7e4441bd49bf800d52690e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "receive_sample(",
+        "limit": 100
+      },
+      "result_sha256": "7d0664b005d468dcf61c493d69c82d249da7524cd75525e3c1aabca0a96737b2"
+    },
+    "call_7b884b65e86e48eeaeb95cb0fcc5de3f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "query": "prepare_for_queue(",
+        "limit": 100
+      },
+      "result_sha256": "c62d0b141865687e2b85da96d4a2488382e989f6a7390c5ec1296d951eb27379"
+    },
+    "call_50123537dfc740a98680fa2a4f12b478": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 6200,
+        "max_bytes": 2200
+      },
+      "result_sha256": "f6157b1ee34161277737eafcd75bad32f5a1b21418b70a2cb50bdf0485bc1c01"
+    },
+    "call_1082115c740b4e37903b8af500490b11": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "50d7dfd94b8fed3d61c9dc4822008e8033f8ac6f",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 4800,
+        "max_bytes": 1450
+      },
+      "result_sha256": "c1fdd5915527d256cf037511bdb8cd05205ec4b6180d91ec1b90f8579ae0f630"
+    }
+  }
+}

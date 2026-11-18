@@ -25,7 +25,7 @@ class AuthorTests(unittest.TestCase):
             author(self.packet,out,self.root/'unused',transport_factory=lambda _:nullcontext(FakeTransport()))
         self.assertEqual(json.loads((out/'status.json').read_text())['status'],'draft')
         self.assertFalse(json.loads((out/'review.json').read_text())['training_eligible'])
-        self.assertEqual(json.loads((out/'provenance.json').read_text())['model'],'gpt-6-astra')
+        self.assertEqual(json.loads((out/'provenance.json').read_text())['model'],'gpt-6.2-sol')
         provenance=json.loads((out/'provenance.json').read_text())
         self.assertEqual(provenance['machine_architecture'],platform.machine())
         self.assertEqual(provenance['operating_system'],platform.system())
@@ -72,3 +72,29 @@ class AuthorTests(unittest.TestCase):
         provenance=json.loads((out/'provenance.json').read_text());review=json.loads((out/'review.json').read_text())
         self.assertEqual(provenance['coverage_request'],{'path':str(request),'sha256':sha})
         self.assertTrue(provenance['reviewer_assisted']);self.assertTrue(review['reviewer_assisted'])
+
+    def test_trial_gate_and_actual_model_record(self):
+        from teacher.author import author_trial
+        import shutil
+        base=self.root/'.teacher/trials/teacher-model-001'
+        packet=base/'packet';shutil.copytree(self.packet,packet)
+        manifest=json.loads((packet/'manifest.json').read_text());manifest['guidance_version']=11
+        (packet/'manifest.json').write_text(json.dumps(manifest))
+        fake=FakeTransport()
+        original=fake.request
+        def request(method,params):
+            result=original(method,params)
+            if method=='thread/start':result['model']='gpt-6.2-sol'
+            return result
+        fake.request=request
+        with patch('teacher.author.ROOT',self.root), patch('teacher.runner.Runner.invoke',return_value={'ok':True,'result':{'text':'TEST FIXTURE ONLY'}}):
+            with self.assertRaises(ValueError):author_trial(packet,self.root/'outside',self.root/'unused')
+            out=base/'run'
+            author_trial(packet,out,self.root/'unused',transport_factory=lambda _,model:nullcontext(fake))
+        provenance=json.loads((out/'provenance.json').read_text())
+        self.assertTrue(provenance['trial_only'])
+        self.assertEqual(provenance['model'],'gpt-6.2-sol')
+        transcript=json.loads((out/'raw-transcript.json').read_text())
+        self.assertEqual(transcript[0]['teacher_runtime']['model'],'gpt-6.2-sol')
+        with self.assertRaisesRegex(ValueError,'approval'):approve_run(out,packet,'test','not allowed')
+        self.assertEqual(json.loads((out/'review.json').read_text())['status'],'pending')

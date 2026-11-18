@@ -1,0 +1,592 @@
+{
+  "schema_version": 5,
+  "sha": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+  "parent_shas": [
+    "3254aa071a8960a3ffee8a63193e5d9d51249f2a"
+  ],
+  "cutoff_date": "2025-06-14T15:30:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "Expert down projections hard-coded half output despite BlockSparseMLP accepting out_dtype. The ordinary expert path also reused FP32 intermediates as the activation destination, although the native activation requires a half destination.",
+        "basis": "source",
+        "evidence": [
+          "call_3d66b702a6ee480bbd95944ec4cd6e93",
+          "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+          "call_aa48198966f0407d8f03be22a2931208"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The edits establish separate precision boundaries: gate/up results may be FP32, the activated product must be FP16 for the down projection, and the down projection may produce the configured output dtype. Changing down output alone would not repair the incompatible activation destination.",
+        "basis": "source",
+        "evidence": [
+          "call_3d66b702a6ee480bbd95944ec4cd6e93",
+          "call_aa48198966f0407d8f03be22a2931208",
+          "call_8626b9c13b1c4c7abe0308c601fdf79d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Mixtral explicitly requests half intermediates and half output, so its configured precision remains unchanged. Qwen3Moe requests half intermediates and float output; its ordinary down projections now honor that float setting. Neither constructor supplies shared experts.",
+        "basis": "source",
+        "evidence": [
+          "call_acea9b63efe545bcbaa9fc51dd8662b6",
+          "call_350694fd7450481fbb844b87a49e055c",
+          "call_3d66b702a6ee480bbd95944ec4cd6e93"
+        ]
+      },
+      {
+        "text": "The ordinary path still accumulates into zeros_like(input), without adapting that buffer to the down-output dtype. Successful FP32-output execution through that path is therefore not established by this change.",
+        "basis": "source",
+        "evidence": [
+          "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+          "call_3d66b702a6ee480bbd95944ec4cd6e93"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The original BlockSparseMLP entry records the all-expert fused-buffer mismatch. The shared-expert entry records an unreachable fused shared contribution. The mixed-mode activation entry records the incompatible FP32 in-place activation caller.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_3419605fe6ee4d05a28c1c5cf0400aae",
+          "call_f72aac4358fa43fbb2d64e6843b2c75a",
+          "call_0283eb6ad0a34184ad7ebda737e91ffd"
+        ]
+      },
+      {
+        "text": "Issue #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,\u201d reports invalid calibration states and Cholesky failure. Its association here is inference from the Qwen3 sparse model and BlockSparseMLP log, not evidence that this commit addresses that report.",
+        "basis": "inference",
+        "evidence": [
+          "call_2d412db67dc94eb89f013032fc771e46",
+          "call_3ea6598891054f10993a4a95d3f44752",
+          "call_350694fd7450481fbb844b87a49e055c"
+        ]
+      },
+      {
+        "text": "Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d concern numerical conversion failures. Their association is only inferred shared Linear conversion-source context; neither establishes this change's motivation or successful remediation.",
+        "basis": "inference",
+        "evidence": [
+          "call_8ddc89ebe2fd4ed3be9b3f1d0687270e",
+          "call_05440f583b114fc49a60a035442deb10",
+          "call_f21342d1b1d04f528ec17def3fd09afc"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository tensor operation, extension build, CUDA kernel, model inference, accuracy test or benchmark was executed.",
+      "The standard-library check reconstructed changed statements and modeled allocation and cardinality arithmetic; it does not establish GPU behavior or index_add_ runtime acceptance.",
+      "Literal whole-tree searches establish the inspected built-in constructors and consumers, not dynamic or external callers."
+    ],
+    "links": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+      "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+      "d97bfdf1f402326f25773143dbe07751493758c1"
+    ],
+    "chapters": [
+      {
+        "id": "block-sparse-mlp",
+        "title": "Separate intermediate, activation and down-output precision",
+        "claims": [
+          {
+            "text": "Each expert's down Linear now stores self.out_dtype rather than torch.half. Linear passes that setting into LinearFP16 and LinearEXL3. Both forward methods prioritize a per-call override, then the stored dtype, then half; the expert call supplies no override.",
+            "basis": "source",
+            "evidence": [
+              "call_3d66b702a6ee480bbd95944ec4cd6e93",
+              "call_f21342d1b1d04f528ec17def3fd09afc",
+              "call_1190cdadead44f5da8348d3ef9125100",
+              "call_9777c3b7293944b0a188ec90b795493a"
+            ]
+          },
+          {
+            "text": "For half gate/up intermediates, the ordinary expert helper continues overwriting u. Otherwise it allocates a half tensor a, calls activation(g,u,a), then feeds a to down. Both native activations accept matching half or float inputs but require half output. Their float kernel computes the activation-product in float before converting each pair to half.",
+            "basis": "source",
+            "evidence": [
+              "call_3d66b702a6ee480bbd95944ec4cd6e93",
+              "call_aa48198966f0407d8f03be22a2931208"
+            ]
+          },
+          {
+            "text": "The new preparation follows the existing fused path, whose load method already creates a separate half interm_a for non-half intermediates. GatedMLP's other located activation caller remains activation(g,u,u), so this repair is local to BlockSparseMLP.",
+            "basis": "source",
+            "evidence": [
+              "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+              "call_4b93f3b0ce17435bb4d1e82a2d4fb75d",
+              "call_3d66b702a6ee480bbd95944ec4cd6e93"
+            ]
+          },
+          {
+            "text": "For unquantized down projections, half input with float output selects ext.hgemm rather than torch.matmul. The native callee requires half operands and supports float output through cublasGemmEx with FP32 compute. This does not preserve FP32 activations through the entire expert.",
+            "basis": "source",
+            "evidence": [
+              "call_1190cdadead44f5da8348d3ef9125100",
+              "call_8626b9c13b1c4c7abe0308c601fdf79d",
+              "call_3d66b702a6ee480bbd95944ec4cd6e93"
+            ]
+          },
+          {
+            "text": "Dispatch is unchanged: bsz counts flattened tokens; more than one token or any non-EXL3 expert projection selects ordinary execution. One token with fully EXL3 projections selects fusion. MultiLinear reads dimensions and tensor pointers, not stored out_dtype; fused output already uses cfg.out_d allocated with self.out_dtype or half.",
+            "basis": "source",
+            "evidence": [
+              "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+              "call_f22d9367a9c24eba8edb6bb45ccd749c",
+              "call_3d66b702a6ee480bbd95944ec4cd6e93"
+            ]
+          },
+          {
+            "text": "TransformerBlock allocation continues consuming the unchanged projection lists. Its forward method requests half output from mlp_norm and passes that tensor to the MLP. Combined with Qwen3Moe's float down-output setting, this exposes the ordinary path's input-typed accumulator to differently typed expert results.",
+            "basis": "source",
+            "evidence": [
+              "call_6e174d2c562744e389dc5e28bf5dad2f",
+              "call_350694fd7450481fbb844b87a49e055c",
+              "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+              "call_3d66b702a6ee480bbd95944ec4cd6e93"
+            ]
+          },
+          {
+            "text": "A standard-library reconstruction confirmed that the fused tail's first return still precedes the shared-expert addition. The scalar allocation model reports no extra activation destination for half intermediates and two additional destination bytes per element for float intermediates, excluding allocator overhead.",
+            "basis": "execution",
+            "evidence": [
+              "call_df5478919f644df8bf59a332f372151e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "ordinary-output-accumulator-dtype",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "FP32 expert results reach an input-typed accumulation buffer without conversion.",
+        "trigger": "Use half input, out_dtype=torch.float, and ordinary execution. Qwen3Moe supplies that output setting, TransformerBlock supplies half normalized input, and multiple flattened tokens select ordinary execution.",
+        "expected_behavior": "Accumulate routed float results into a compatible buffer and return the requested output dtype.",
+        "actual_behavior": "The changed down projection produces float current_state, while zeros_like(y) leaves final_hidden_states half for this caller. These are passed directly to index_add_ without reconciling dtypes. Runtime rejection is suspected but was not executed.",
+        "locations": [
+          {
+            "commit": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_3d66b702a6ee480bbd95944ec4cd6e93",
+          "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+          "call_350694fd7450481fbb844b87a49e055c",
+          "call_6e174d2c562744e389dc5e28bf5dad2f",
+          "call_1190cdadead44f5da8348d3ef9125100"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the task's down-output change with the unchanged accumulator, inspected both sparse-model constructors, and traced TransformerBlock's normalized input into the MLP.",
+            "evidence": [
+              "call_3d66b702a6ee480bbd95944ec4cd6e93",
+              "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+              "call_acea9b63efe545bcbaa9fc51dd8662b6",
+              "call_350694fd7450481fbb844b87a49e055c",
+              "call_6e174d2c562744e389dc5e28bf5dad2f",
+              "call_1190cdadead44f5da8348d3ef9125100"
+            ],
+            "limits": "No PyTorch execution or eligible library documentation establishes the exact runtime diagnostic."
+          }
+        ]
+      },
+      {
+        "id": "carried-fused-shared-return",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The ancestor-recorded unreachable fused shared-expert addition persists unchanged.",
+        "trigger": "Supply shared_experts and forward one flattened token with fully EXL3 routed projections.",
+        "expected_behavior": "Include the shared contribution as ordinary execution does.",
+        "actual_behavior": "The fused branch returns final_hidden_states.view(x.shape) before its shared call. Neither inspected built-in constructor supplies shared experts, so demonstrated reach is conditional API use through the generic decoder dispatch.",
+        "locations": [
+          {
+            "commit": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+          "call_3d66b702a6ee480bbd95944ec4cd6e93",
+          "call_acea9b63efe545bcbaa9fc51dd8662b6",
+          "call_350694fd7450481fbb844b87a49e055c",
+          "call_6e174d2c562744e389dc5e28bf5dad2f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the early return, subsequent shared call, branch condition, decoder dispatch and both built-in construction sites; the task diff changes none of those statements.",
+            "evidence": [
+              "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+              "call_3d66b702a6ee480bbd95944ec4cd6e93",
+              "call_6e174d2c562744e389dc5e28bf5dad2f",
+              "call_acea9b63efe545bcbaa9fc51dd8662b6",
+              "call_350694fd7450481fbb844b87a49e055c"
+            ],
+            "limits": "No tensor or CUDA execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Reconstructed the changed source and checked fused-tail AST statement order.",
+            "evidence": [
+              "call_df5478919f644df8bf59a332f372151e"
+            ],
+            "limits": "Static reconstruction, not execution of forward."
+          }
+        ]
+      },
+      {
+        "id": "carried-all-expert-fused-cardinality",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited all-expert routing versus fused-buffer cardinality mismatch remains.",
+        "trigger": "One flattened token, fully EXL3 projections, activate_all_experts=True, and num_experts different from num_experts_per_tok.",
+        "expected_behavior": "Allocate compatible all-expert buffers or choose ordinary execution.",
+        "actual_behavior": "Native routing returns num_experts indices, but fused outputs retain num_experts_per_tok entries. exl3_mgemm checks these dimensions for equality. Decoder forwarding permits the parameter; default conversion reaching this combination was not established.",
+        "locations": [
+          {
+            "commit": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+          "call_3d66b702a6ee480bbd95944ec4cd6e93",
+          "call_a758e23a9d8b45218f1d41294271a427",
+          "call_894137de06164d2d90b7cab6f19f3cfd",
+          "call_6e174d2c562744e389dc5e28bf5dad2f"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared native routing cardinality with Python buffer allocation and dispatch, native multi-GEMM shape validation, and decoder parameter forwarding; checked that the task diff leaves these unchanged.",
+            "evidence": [
+              "call_a758e23a9d8b45218f1d41294271a427",
+              "call_f441f743f32d49d6b3d6bcbf6dc94e70",
+              "call_894137de06164d2d90b7cab6f19f3cfd",
+              "call_6e174d2c562744e389dc5e28bf5dad2f",
+              "call_3d66b702a6ee480bbd95944ec4cd6e93"
+            ],
+            "limits": "Conditional source failure path; no CUDA reproduction."
+          }
+        ]
+      }
+    ],
+    "summary": "Honors configured expert down-output precision and repairs BlockSparseMLP's FP32 activation destination, while leaving an ordinary-path accumulation dtype mismatch and inherited fused-path limitations."
+  },
+  "evidence": {
+    "call_3d66b702a6ee480bbd95944ec4cd6e93": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "13fa9ca2cf41d1383e00ff2775cb4683d6db15ea",
+        "offset": 191,
+        "max_bytes": 1248
+      },
+      "result_sha256": "dc0dc097e2c7669e6527beaba1df0fbd9b5275dfa055592a665f14205f475dac"
+    },
+    "call_f441f743f32d49d6b3d6bcbf6dc94e70": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 26000
+      },
+      "result_sha256": "6267177df50845b05a21c1ce067ef056ae3e114ba9e469685d1e9f2445b0c78e"
+    },
+    "call_f72aac4358fa43fbb2d64e6843b2c75a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "max_bytes": 16000
+      },
+      "result_sha256": "611a63a5c8dc72ccbda2cd545673a969167133c3cd1398d16cc85e8209986670"
+    },
+    "call_0283eb6ad0a34184ad7ebda737e91ffd": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d97bfdf1f402326f25773143dbe07751493758c1",
+        "max_bytes": 14000
+      },
+      "result_sha256": "9ecb7a615947f0cb00a59f81fe129cd999b512fe6d4bca76e42a2b8922fadab6"
+    },
+    "call_ec5710b96f4846298a6e0379a264b767": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "BlockSparseMLP",
+        "limit": 100
+      },
+      "result_sha256": "affa0581abe3721211789416347c49f3ed4b1669cc5e3aa0a33b6297562c8c1c"
+    },
+    "call_f21342d1b1d04f528ec17def3fd09afc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/modules/linear.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "281730f75995b2e75e810ae969dc0a7ee900a98de49f112c56c3ed1bd3ef4890"
+    },
+    "call_acea9b63efe545bcbaa9fc51dd8662b6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/models/mixtral.py",
+        "offset": 3600,
+        "max_bytes": 4800
+      },
+      "result_sha256": "0e7e5a9ea5e247a8c40533c2a84681e80e81467c81478fbb3d48d9151072ddb9"
+    },
+    "call_350694fd7450481fbb844b87a49e055c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "offset": 3800,
+        "max_bytes": 2500
+      },
+      "result_sha256": "367df6cdebf6583809b581a5ca8a83abe2d6ad6f7e8743b97b4aa2043bb6c4ea"
+    },
+    "call_6e174d2c562744e389dc5e28bf5dad2f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 11000
+      },
+      "result_sha256": "467875d2c491348086b1928519621b7a30b94feb8e1f40188301a5a52f15f798"
+    },
+    "call_aa48198966f0407d8f03be22a2931208": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/exllamav3_ext/activation.cu",
+        "max_bytes": 15000
+      },
+      "result_sha256": "de87cdd5347e4fc6ea39a38ccdf482965956b845099372ef418b6fcb5230a435"
+    },
+    "call_955a76c84b494ddda7fc32647e019491": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "activation_fn_call",
+        "limit": 100
+      },
+      "result_sha256": "f4f2c35040cb6d19af2955a8745c361072fc0bc2d6cc017d49baff5db904a579"
+    },
+    "call_1190cdadead44f5da8348d3ef9125100": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/modules/quant/fp16.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "808a29d5ede82c644e75f52b94480009d9fc878a311b75798053e77664405ea1"
+    },
+    "call_2d412db67dc94eb89f013032fc771e46": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 14000
+      },
+      "result_sha256": "9fa8119f85a9ccf1871d953a36bccc0b228f38409d5e56944942bd4408b87d70"
+    },
+    "call_3ea6598891054f10993a4a95d3f44752": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "offset": 14000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "9e664233ef892b5dc4f090f06c9f9164631e4f7ea715be7803849e650ab7c3fa"
+    },
+    "call_8ddc89ebe2fd4ed3be9b3f1d0687270e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16000
+      },
+      "result_sha256": "098c3ae4079c42df645d0f4f676aba6d22bcfa25194850e035a2f3f2a0394390"
+    },
+    "call_05440f583b114fc49a60a035442deb10": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0582b1c5fd4b4db41def6807a5d0832533381c9336bc4675fd6781a8a971b428"
+    },
+    "call_8592c0c5d16f4ce7927e6acd7c346df3": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 998,
+        "max_bytes": 2000
+      },
+      "result_sha256": "d2f15aaabf47a75bbd14b083046cb844cefe0202ffba211112cd4dc8b5b823d6",
+      "catalog_only": true
+    },
+    "call_4b93f3b0ce17435bb4d1e82a2d4fb75d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 6800,
+        "max_bytes": 4200
+      },
+      "result_sha256": "b26095b7188b4ad4ec3eac73998d64d19d3034803f9a3c3c3d6a8468c0a63be9"
+    },
+    "call_9777c3b7293944b0a188ec90b795493a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "f042c9bc02cad55b4e29f28352d343401a49f2aaa1a935c2792a7f6ed80f38ec"
+    },
+    "call_3419605fe6ee4d05a28c1c5cf0400aae": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_40143d803c4040f79a41f05e7fc72dda": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "indices.size(1)",
+        "limit": 20
+      },
+      "result_sha256": "f7f49765334f9d179c4fe5da22545d39baceedbcf20482f3e23afa2b3be5e728"
+    },
+    "call_83ea14aeb05f40a387f465fdf419a5e6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "void exl3_mgemm",
+        "limit": 10
+      },
+      "result_sha256": "0923cd2d263e211cc5fb02f2b8471de34d04ed55a7101c73fab33bc3f8b21e16"
+    },
+    "call_3f025a059fe349cb98fbda0f26cf4ad0": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "exl3_mgemm(",
+        "limit": 20
+      },
+      "result_sha256": "7072b90bcca26b2c706fe36de949d509b6389fc896422a1c5a04d6a8178a3061"
+    },
+    "call_fa5aca61e8484619a5ed3d0fba70dbdc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "exl3_mgemm",
+        "path": "exllamav3/exllamav3_ext",
+        "limit": 30
+      },
+      "result_sha256": "5a387d0433d330b8955b53a22486298563df50db7ddf90aac8a54f171dd4af42"
+    },
+    "call_894137de06164d2d90b7cab6f19f3cfd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4800,
+        "max_bytes": 7000
+      },
+      "result_sha256": "2379f3a37337dc91a1086eb1237ce959ec6bfa0ae5aa6b3c5ef2c2dda9553c03"
+    },
+    "call_66e83f3037d044668919ea420bfa4e54": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "activate_all_experts",
+        "limit": 30
+      },
+      "result_sha256": "1bf180e4d77fa04552ee44ea9d030e7cc235a130d16b1f751df76d527fc1cbe3"
+    },
+    "call_a758e23a9d8b45218f1d41294271a427": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/exllamav3_ext/libtorch/blocksparse_mlp.cpp",
+        "max_bytes": 6000
+      },
+      "result_sha256": "349576a32bdf686a1452916572c9d1ad0ce9ec71ded3824ec0d1d81bd7a79c69"
+    },
+    "call_978239725b5542f89bb1611d01d5ace8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": ".downs",
+        "limit": 100
+      },
+      "result_sha256": "580f5e6208aac5f357487eaeb81b246520f1d85e96cb45295968694ed4791a4d"
+    },
+    "call_f22d9367a9c24eba8edb6bb45ccd749c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/modules/multilinear.py",
+        "max_bytes": 8500
+      },
+      "result_sha256": "41d7a294e913bf7780e6e589e7c40f9efc902b870f76d70fd954d21e8ee28816"
+    },
+    "call_b113fd719c034b03a1792266f45011ec": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "void hgemm",
+        "limit": 10
+      },
+      "result_sha256": "61ff09e536f119352169bb92e716e09c3f0065bf176891c0806068a1069bc98a"
+    },
+    "call_8626b9c13b1c4c7abe0308c601fdf79d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "path": "exllamav3/exllamav3_ext/hgemm.cu",
+        "max_bytes": 6500
+      },
+      "result_sha256": "3e15bdba1206eea4c430d0333acc47cf019ce733e4ef3a96bb75768d4bc5fc65"
+    },
+    "call_df5478919f644df8bf59a332f372151e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\np=Path('exllamav3/modules/block_sparse_mlp.py').read_text()\nold='                self.activation_fn_call(g, u, u)\\n                return self.downs[exp_i].forward(u, params)'\nnew='                a = u if self.interm_dtype == torch.half else torch.empty_like(u, dtype = torch.half)\\n                self.activation_fn_call(g, u, a)\\n                return self.downs[exp_i].forward(a, params)'\nassert p.count(old)==1\np=p.replace(old,new).replace('out_dtype = torch.half,\\n                allow_input_padding','out_dtype = self.out_dtype,\\n                allow_input_padding')\nt=ast.parse(p)\nf=next(n for n in ast.walk(t) if isinstance(n,ast.FunctionDef) and n.name=='forward')\nb=next(n for n in f.body if isinstance(n,ast.If))\nprint('reconstructed fused tail:',[type(n).__name__ for n in b.orelse[-5:]])\nfor dtype in ['half','float']:\n print('intermediate',dtype,'activation destination half; aliases up:',dtype=='half','additional destination bytes per element:',0 if dtype=='half' else 2)\nfor tokens in [1,2]:\n for quantized in [False,True]:\n  print('tokens',tokens,'fully_quantized',quantized,'ordinary',tokens>1 or not quantized)\nprint('all-expert cardinality example: indices=8, buffer=2, equal=',8==2)\n"
+        ]
+      },
+      "result_sha256": "3b86c4e42ce0226e5d91d93f8eafed7d17119f84652f15684ae59b06f3057fe8"
+    },
+    "call_e0ea9a80ad0146e0807b75933ec561dd": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3254aa071a8960a3ffee8a63193e5d9d51249f2a",
+        "query": "self.mlp.forward",
+        "limit": 40
+      },
+      "result_sha256": "52ca53719eb591be6958501de002ab104ad42a603871e21ff182f4f579493b69"
+    }
+  }
+}

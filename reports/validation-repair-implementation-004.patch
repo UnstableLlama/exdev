@@ -1,0 +1,220 @@
+--- a/teacher/validation_repair.py
++++ b/teacher/validation_repair.py
+@@ -1,10 +1,20 @@
+ # SPDX-License-Identifier: MIT
+-"""Validator-only, one-turn repair audit shared by publication and approval."""
++"""Policy-bound, one-turn repair audit shared by publication and approval."""
+ import hashlib
+ import json
+ from .editorial import assemble_draft
+ 
+-POLICY = 'validator-only-v1'
++LEGACY_POLICY = 'validator-only-v1'
++POLICY = 'validator-keep-rest-v2'
++KEEP_REST_SENTENCE = ('Correct only the issue named in the validator message and return '
++                      'the rest of the annotation unchanged.')
++
++def repair_feedback(error, policy=POLICY):
++    if policy == LEGACY_POLICY:
++        return error
++    if policy == POLICY:
++        return error + '\n' + KEEP_REST_SENTENCE
++    raise ValueError('Unknown validation repair policy')
+ 
+ # Explicit annotation refusals only; internal integrity failures are terminal.
+ ANNOTATION_ERRORS = frozenset(['Duplicate ancestor link', 'Links require approved, supplied ancestor prose', 'Chapter output does not match assigned subsystem', 'Duplicate chapter ID', 'Duplicate chapter reference', 'Claims, including inferences, need evidence anchors', 'Duplicate evidence anchor', 'Duplicate finding evidence', 'Findings require successful current-session evidence', 'Duplicate finding ID', 'Findings require inspected source evidence', 'Ancestor links require a successful nonempty prose read in this session', 'Unknown or unsuccessful evidence call', 'Ancestor-only claims require basis ancestor', 'Ancestor basis requires ancestor prose evidence', 'Execution claims require successful run evidence', 'Finding locations require repository-relative paths', 'Source inspection requires source evidence', 'Computational verification requires successful run evidence'])
+@@ -29,16 +39,18 @@
+     return hashlib.sha256(text.encode()).hexdigest()
+ 
+ 
+-def repair_metadata(transcript):
++def repair_metadata(transcript, policy=POLICY):
++    repair_feedback('', policy)  # Validate even when no repair occurred.
+     events=[m for m in transcript if m.get('role')=='validation']
+     if not events:
+-        return {'validation_repair_policy':POLICY, 'validation_repair':False}
++        return {'validation_repair_policy':policy, 'validation_repair':False}
+     if len(events)!=1:
+         raise ValueError('Exactly one validation refusal is permitted')
+     event=events[0]
+-    return {'validation_repair_policy':POLICY, 'validation_repair':event['feedback_sent'],
++    feedback=repair_feedback(event['error'], event['policy'])
++    return {'validation_repair_policy':event['policy'], 'validation_repair':event['feedback_sent'],
+             'validation_repair_refused_sha256':event['refused_sha256'],
+-            'validation_repair_input_sha256':digest(event['error']),
++            'validation_repair_input_sha256':digest(feedback),
+             'validation_repair_selected_final_index':event['selected_final_index']}
+ 
+ 
+@@ -49,7 +61,7 @@
+     if not events:
+         if marked and type(provenance.get('validation_repair')) is not bool:
+             raise ValueError('Validation repair must be a boolean')
+-        if marked and provenance != {**provenance, **repair_metadata(transcript)}:
++        if marked and provenance != {**provenance, **repair_metadata(transcript, provenance.get('validation_repair_policy'))}:
+             raise ValueError('Validation repair provenance mismatch')
+         if marked and (('validation_repair_enabled' in provenance and
+                         type(provenance['validation_repair_enabled']) is not bool) or
+@@ -65,7 +77,7 @@
+     i,event=events[0]
+     keys={'role','policy','refused_index','prefix_end','refused_sha256','error_type','error',
+           'thread_id','first_turn_id','repair_turn_id','selected_final_index','feedback_sent'}
+-    if set(event)!=keys or event['policy']!=POLICY or event['feedback_sent'] is not True:
++    if set(event)!=keys or event['policy'] not in (LEGACY_POLICY, POLICY) or event['feedback_sent'] is not True:
+         raise ValueError('Invalid validation repair event')
+     refused=event['refused_index']; chosen=event['selected_final_index']
+     if (type(refused) is not int or type(chosen) is not int or event['prefix_end']!=i
+@@ -79,8 +91,8 @@
+     if (set(original)!={'role','content'} or original['role']!='assistant'
+             or digest(original['content'])!=event['refused_sha256']):
+         raise ValueError('Refused annotation fingerprint mismatch')
+-    if transcript[i+1]!={'role':'user','content':event['error']}:
+-        raise ValueError('Repair feedback must equal the verbatim validator error')
++    if transcript[i+1]!={'role':'user','content':repair_feedback(event['error'], event['policy'])}:
++        raise ValueError('Repair feedback must exactly match its recorded policy')
+     for message in transcript[i+2:]:
+         if message.get('turn_id')!=event['repair_turn_id'] or message.get('role') not in ('assistant','tool'):
+             raise ValueError('Unexpected message or turn in repair transcript')
+@@ -110,9 +122,9 @@
+     return assemble_draft(final,manifest,transcript)
+ 
+ 
+-def disclosure(transcript):
++def disclosure(transcript, policy=POLICY):
+     """Administrative request/report fields; never supplied as historical evidence."""
+-    result=repair_metadata(transcript)
++    result=repair_metadata(transcript, policy)
+     if result['validation_repair']:
+         event=next(m for m in transcript if m.get('role')=='validation')
+         boundary=event['prefix_end']
+--- a/teacher/codex_adapter.py
++++ b/teacher/codex_adapter.py
+@@ -3,7 +3,7 @@
+ from copy import deepcopy
+ import json
+ from .editorial import output_schema, assemble_draft
+-from .validation_repair import POLICY, repair_metadata, verify_final, eligible
++from .validation_repair import POLICY, repair_metadata, verify_final, eligible, repair_feedback
+ 
+ LEGACY_MODEL = 'gpt-6-astra'
+ MODEL = 'gpt-6.1-sol'
+@@ -195,13 +195,13 @@
+                         'repair_turn_id':None, 'selected_final_index':None, 'feedback_sent':False}
+                     transcript.append(repair)
+                     save()  # Persist refusal before attempting the feedback turn.
+-                    feedback={'role':'user','content':str(error)}
++                    feedback={'role':'user','content':repair_feedback(str(error))}
+                     transcript.append(feedback)
+                     save()
+                     next_turn=transport.request('turn/start',{'threadId':thread,'model':model,
+                         'effort':session.reasoning_effort, 'environments':[],
+                         'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
+-                        'input':[{'type':'text','text':str(error)}]})['turn']['id']
++                        'input':[{'type':'text','text':feedback['content']}]})['turn']['id']
+                     repair['feedback_sent']=True
+                     save()
+                     if not next_turn or next_turn == turn:
+--- a/teacher/cycle.py
++++ b/teacher/cycle.py
+@@ -276,8 +276,8 @@
+         counts[result['name']] += 1
+         replayed += 1
+     cov = read(run/'coverage.json')
+-    from .validation_repair import disclosure
+-    return dict(status='validated', assessment=decision, validation_repair_details=disclosure(transcript),
++    from .validation_repair import disclosure, LEGACY_POLICY
++    return dict(status='validated', assessment=decision, validation_repair_details=disclosure(transcript, provenance.get('validation_repair_policy', LEGACY_POLICY)),
+                 packet_implementation_blob_hashes_verified=True,
+                 teacher_model=provenance['model'], reasoning_effort=provenance['reasoning_effort'],
+                 reviewer_assisted=bool(coverage), tool_counts=dict(counts), identical_replayed_calls=replayed,
+--- a/teacher/README.md
++++ b/teacher/README.md
+@@ -198,7 +198,11 @@
+ 
+ After implementation acceptance, a first final refused by JSON parsing or ordinary
+ annotation validation may receive one additional turn on the same server thread.
+-Its sole feedback is the exact validator error, with no wrapper. The teacher may
++Its feedback under `validator-keep-rest-v2` is the exact validator error, one
++newline, and this fixed sentence: "Correct only the issue named in the validator
++message and return the rest of the annotation unchanged." No other text is added.
++Historical `validator-only-v1` runs retain their verbatim-error-only replay path;
++provenance binds the policy and the hash of the complete feedback. The teacher may
+ read more evidence and returns a complete annotation; both turns share the tool
+ budget. A second refusal, internal integrity error or transport failure is terminal.
+ `author(..., validation_repair=False)` preserves the pre-repair rule for runs
+--- a/tests/test_validation_repair.py
++++ b/tests/test_validation_repair.py
+@@ -7,7 +7,7 @@
+ from teacher.author import author
+ from teacher.codex_adapter import CodexTeacher
+ from teacher.session import FreshSession
+-from teacher.validation_repair import repair_metadata, verify_final, disclosure
++from teacher.validation_repair import repair_metadata, verify_final, disclosure, repair_feedback, POLICY, LEGACY_POLICY, KEEP_REST_SENTENCE, digest
+ from teacher.ancestor_context import approve_run
+ import test_codex_teacher as legacy
+ from test_codex_teacher import FakeTransport
+@@ -42,6 +42,55 @@
+         session.runner.invoke=Mock(return_value={'ok':True,'result':{'text':'TEST FIXTURE ONLY'}})
+         return CodexTeacher().run(session,transport or RepairTransport(),**kwargs)
+ 
++    def test_feedback_exact_constant_and_provenance(self):
++        self.assertEqual(KEEP_REST_SENTENCE, 'Correct only the issue named in the validator message and return the rest of the annotation unchanged.')
++        message='annotation.x: wrong type\nverbatim detail'
++        self.assertEqual(repair_feedback(message), message+'\n'+KEEP_REST_SENTENCE)
++        result=self.run_teacher()
++        transcript=result['transcript']
++        event=next(m for m in transcript if m.get('role')=='validation')
++        metadata=repair_metadata(transcript)
++        self.assertEqual(metadata['validation_repair_policy'], POLICY)
++        self.assertEqual(metadata['validation_repair_input_sha256'], digest(repair_feedback(event['error'])))
++
++    def test_legacy_repaired_transcript_still_validates(self):
++        transcript=self.run_teacher()['transcript']
++        i=next(i for i,m in enumerate(transcript) if m.get('role')=='validation')
++        transcript[i]['policy']=LEGACY_POLICY
++        transcript[i+1]['content']=transcript[i]['error']
++        metadata=repair_metadata(transcript)
++        self.assertEqual(metadata['validation_repair_input_sha256'], digest(transcript[i]['error']))
++        verify_final(fixture(), json.loads((self.packet/'manifest.json').read_text()), transcript, metadata)
++
++    def test_legacy_unrepaired_transcript_still_validates(self):
++        transcript=self.run_teacher(FakeTransport())['transcript']
++        metadata=repair_metadata(transcript, LEGACY_POLICY)
++        self.assertEqual(metadata['validation_repair_policy'], LEGACY_POLICY)
++        self.assertEqual(disclosure(transcript, LEGACY_POLICY), metadata)
++        verify_final(fixture(), json.loads((self.packet/'manifest.json').read_text()), transcript, metadata)
++
++    def test_feedback_rejects_hints_and_cross_policy_text(self):
++        original=self.run_teacher()['transcript']
++        i=next(i for i,m in enumerate(original) if m.get('role')=='validation')
++        for policy in (LEGACY_POLICY, POLICY):
++            for text in (original[i]['error']+'\nextra hint', 'hint\n'+repair_feedback(original[i]['error'],policy),
++                         repair_feedback(original[i]['error'], POLICY if policy==LEGACY_POLICY else LEGACY_POLICY)):
++                transcript=deepcopy(original)
++                transcript[i]['policy']=policy
++                transcript[i+1]['content']=text
++                with self.assertRaises(ValueError):
++                    verify_final(fixture(), json.loads((self.packet/'manifest.json').read_text()), transcript, repair_metadata(transcript))
++
++    def test_unknown_or_mismatched_policy_rejected(self):
++        with self.assertRaises(ValueError): repair_feedback('error','unknown')
++        transcript=self.run_teacher()['transcript']
++        provenance=repair_metadata(transcript)
++        provenance['validation_repair_policy']=LEGACY_POLICY
++        with self.assertRaises(ValueError): verify_final(fixture(),json.loads((self.packet/'manifest.json').read_text()),transcript,provenance)
++        transcript= self.run_teacher(FakeTransport())['transcript']
++        with self.assertRaises(ValueError):
++            verify_final(fixture(),json.loads((self.packet/'manifest.json').read_text()),transcript,{'validation_repair_policy':'unknown','validation_repair':False})
++
+     def test_first_pass_opening_transcript_and_draft_unchanged(self):
+         transport=FakeTransport();result=self.run_teacher(transport)
+         initial=deepcopy(FreshSession(self.packet).initial)
+@@ -65,7 +114,7 @@
+         starts=[p for m,p in transport.requests if m=='turn/start']
+         self.assertEqual(len(starts),2)
+         self.assertEqual(starts[1]['threadId'],starts[0]['threadId'])
+-        self.assertEqual(starts[1]['input'],[{'type':'text','text':event['error']}])
++        self.assertEqual(starts[1]['input'],[{'type':'text','text':repair_feedback(event['error'])}])
+         self.assertNotIn('ADMIN_REVIEW_SECRET',json.dumps(starts))
+         self.assertEqual(transcript[event['refused_index']]['content'],'{')
+         self.assertEqual(disclosure(transcript)['tool_calls_by_turn'],[1,0])

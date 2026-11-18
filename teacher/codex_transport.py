@@ -10,13 +10,14 @@ import signal
 import subprocess
 import tempfile
 import time
-from .codex_adapter import DISABLED_FEATURES
+from .codex_adapter import DISABLED_FEATURES, MODEL, LEGACY_MODEL, checked_model
 
 SUPPORTED_VERSION = 'codex-cli 0.167.0'
 
 
-def configuration():
-    lines=['model = "gpt-6-astra"','model_reasoning_effort = "medium"',
+def configuration(model=MODEL):
+    checked_model(model)
+    lines=['model = '+json.dumps(model),'model_reasoning_effort = "medium"',
            'web_search = "disabled"','project_doc_max_bytes = 0',
            'include_environment_context = false','model_catalog_json = "/state/model.json"',
            '[agents]','enabled = false','[skills]','include_instructions = false',
@@ -29,7 +30,8 @@ def configuration():
 class CodexTransport:
     cwd='/work'
 
-    def __init__(self, auth_file, executable=None, timeout=1200):
+    def __init__(self, auth_file, executable=None, timeout=1200, *, model=MODEL):
+        self.model=checked_model(model)
         self.auth_file=Path(auth_file)
         self.executable=Path(executable or shutil.which('codex') or '').resolve()
         self.timeout=timeout
@@ -46,9 +48,15 @@ class CodexTransport:
         try:
             state=root/'state';state.mkdir(mode=0o700)
             auth=state/'auth.json';auth.write_bytes(self.auth_file.read_bytes());auth.chmod(0o600)
-            (state/'config.toml').write_text(configuration())
+            (state/'config.toml').write_text(configuration() if self.model==MODEL else configuration(self.model))
             catalog=Path(__file__).resolve().parents[1]/'schema/codex-teacher-model.json'
-            (state/'model.json').write_bytes(catalog.read_bytes())
+            if self.model == LEGACY_MODEL:
+                (state/'model.json').write_bytes(catalog.read_bytes())
+            else:
+                profile=json.loads(catalog.read_text())
+                profile['models'][0]['slug']=self.model
+                profile['models'][0]['display_name']=self.model
+                (state/'model.json').write_text(json.dumps(profile))
             command=['/usr/bin/bwrap','--unshare-all','--share-net','--die-with-parent',
                 '--new-session','--cap-drop','ALL','--clearenv',
                 '--setenv','HOME','/work','--setenv','CODEX_HOME','/state',

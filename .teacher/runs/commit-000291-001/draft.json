@@ -1,0 +1,245 @@
+{
+  "schema_version": 5,
+  "sha": "e1484296dd5878d85f782d4b9b36c2917cf2dbcb",
+  "parent_shas": [
+    "6735462a21fc889267373011b5867868e57c14f8"
+  ],
+  "cutoff_date": "2025-07-07T04:17:07+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The commit addresses special-token omission while constructing the base decoded-piece vocabulary. Previously, the single-token decoding branch did not specify skip_special_tokens; the change explicitly passes False.",
+        "basis": "source",
+        "evidence": [
+          "call_873190af280a4c3082a67593223d0a5a"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "This fixes vocabulary construction rather than changing the public decode API: retaining special-token text in the underlying table also makes it available to table consumers that do not request the extended special-token overlay.",
+        "basis": "inference",
+        "evidence": [
+          "call_873190af280a4c3082a67593223d0a5a",
+          "call_32ee9cb24fa44ae08d5b3814c459d80f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The change preserves vocabulary indexing and the list-of-strings interface, but can change strings observed by generation, reverse lookup, prefix matching and image-search token masks.",
+        "basis": "source",
+        "evidence": [
+          "call_32ee9cb24fa44ae08d5b3814c459d80f",
+          "call_21d27d81480c424d94fc31d8b559f2a0",
+          "call_a3227088785d4502a62db84dfb402ec9",
+          "call_9adf3f84ecf84c4b8d9cafde1ed20710"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root loading-tokenization entry was read. It establishes the earlier design of eagerly cached piece tables and the whitespace-prefix probe on which this change relies.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_0bf7675ea94d4122b80f697fe5443094"
+        ]
+      },
+      {
+        "text": "PR #13, \u201cFix a tokenizer issue while converting models without a bos_token_id defined,\u201d reports a different initialization failure. Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d discusses tokenizer truncation during conversion. Their relationship to this task is only inferred from the shared tokenizer implementation; neither discussion establishes the motivation for this particular decode_batch change.",
+        "basis": "inference",
+        "evidence": [
+          "call_762bead62049406ba531bf63a43a7fde",
+          "call_4f4b11083e0d444fb8313050b2d8bba9",
+          "call_873190af280a4c3082a67593223d0a5a"
+        ]
+      }
+    ],
+    "limitations": [
+      "No real Hugging Face tokenizer or model was executed. The backend's version-specific default and special-token rendering behavior were not independently established.",
+      "The alternate whitespace-prefix branch still omits skip_special_tokens. The task therefore does not explicitly enforce special-token retention in both branches.",
+      "The bounded check uses an assumed backend default and synthetic token strings; it does not demonstrate checkpoint-specific output or generation behavior."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "tokenizer",
+        "title": "Retain special-token pieces in the base vocabulary",
+        "claims": [
+          {
+            "text": "get_fixed_vocab probes the encoding of ' t'. When that produces exactly one token whose decoded text has length two, it batch-decodes each vocabulary ID independently. The constants one and two describe this probe, not vocabulary-size or performance thresholds. Only this branch gains skip_special_tokens=False.",
+            "basis": "source",
+            "evidence": [
+              "call_32ee9cb24fa44ae08d5b3814c459d80f",
+              "call_873190af280a4c3082a67593223d0a5a"
+            ]
+          },
+          {
+            "text": "The alternate branch prepends the first token encoding a space, decodes each pair, then removes the decoded prefix length. That whitespace-preserving preparation remains unchanged, including its decode_batch arguments.",
+            "basis": "source",
+            "evidence": [
+              "call_32ee9cb24fa44ae08d5b3814c459d80f",
+              "call_873190af280a4c3082a67593223d0a5a"
+            ]
+          },
+          {
+            "text": "Whole-tree search finds get_id_to_piece_list as the sole direct caller of get_fixed_vocab. Initialization eagerly builds both piece-table variants and the reverse dictionary. The ordinary table takes the fixed vocabulary and appends extended IDs; the special variant copies it and overwrites entries from extended_id_to_piece. Consequently, an existing overlay can already supply a special spelling, whereas this edit repairs the underlying selected-branch decoding.",
+            "basis": "source",
+            "evidence": [
+              "call_5cf48b29717e4a9f8c53d013f144c4ec",
+              "call_32ee9cb24fa44ae08d5b3814c459d80f"
+            ]
+          },
+          {
+            "text": "Inspected consumers remain structurally compatible: get_piece_to_id_dict reverses strings into IDs; prefix helpers inspect those strings; generation_loop indexes the ordinary table after checking stop conditions; imgsearch builds startswith masks; generator/job.py selects a table using decode_special_tokens and indexes it for output text. In particular, a False selection no longer guarantees empty special-token pieces in the changed branch. Public decode and decode_ are not modified.",
+            "basis": "source",
+            "evidence": [
+              "call_d92dcd1dd72841929e99f689d8ab7b78",
+              "call_b6b01643a88445e68683e91bca957cea",
+              "call_32ee9cb24fa44ae08d5b3814c459d80f",
+              "call_a3227088785d4502a62db84dfb402ec9",
+              "call_9adf3f84ecf84c4b8d9cafde1ed20710",
+              "call_21d27d81480c424d94fc31d8b559f2a0",
+              "call_873190af280a4c3082a67593223d0a5a"
+            ]
+          },
+          {
+            "text": "A bounded check extracted get_fixed_vocab and applied the changed keyword against a stub backend assuming a True default. Its two-entry output changed from ['', ' t'] to ['<special>', ' t'], retaining length and position. This demonstrates argument propagation under that assumption, not actual backend decoding.",
+            "basis": "execution",
+            "evidence": [
+              "call_90ebe9b4fdec416092592e2350943991"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Explicitly retains special-token text in one base-vocabulary decoding branch, affecting cached piece-table consumers without changing the public decode API."
+  },
+  "evidence": {
+    "call_873190af280a4c3082a67593223d0a5a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e1484296dd5878d85f782d4b9b36c2917cf2dbcb",
+        "offset": 184,
+        "max_bytes": 691
+      },
+      "result_sha256": "29850aa6d3cdf4753f96cab1ba17e67c51ad7804512c3e6a55a85a9c37a2aa57"
+    },
+    "call_32ee9cb24fa44ae08d5b3814c459d80f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6735462a21fc889267373011b5867868e57c14f8",
+        "path": "exllamav3/tokenizer/tokenizer.py",
+        "max_bytes": 40000
+      },
+      "result_sha256": "dee832aa747845430c78362d2a94a1036cc1752a3f991d978659b3bc1fa12139"
+    },
+    "call_69616d4caaec4db1a5ed09dc34f52143": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/tokenizer/tokenizer.py",
+        "max_bytes": 6000
+      },
+      "result_sha256": "b01d7f74fb90817959cf9a87c1e6f19932ad4d0aad4d34d0b0257e4f1c69e55d",
+      "catalog_only": true
+    },
+    "call_0bf7675ea94d4122b80f697fe5443094": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "loading-tokenization",
+        "max_bytes": 16384
+      },
+      "result_sha256": "b3a430a29f166ad218efb78ecf1d5ade5ea0fac6a4f596236200b23aa549038b"
+    },
+    "call_5cf48b29717e4a9f8c53d013f144c4ec": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6735462a21fc889267373011b5867868e57c14f8",
+        "query": "get_fixed_vocab",
+        "limit": 100
+      },
+      "result_sha256": "16ac5899d40380848e959cd16be2fc5462c4805a006760c111455df7402ffc62"
+    },
+    "call_d92dcd1dd72841929e99f689d8ab7b78": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6735462a21fc889267373011b5867868e57c14f8",
+        "query": "get_id_to_piece_list",
+        "limit": 100
+      },
+      "result_sha256": "01b0b9ebad1a86c17099ae3c4b409619937affad36acb6cac933c4e580c8609a"
+    },
+    "call_b6b01643a88445e68683e91bca957cea": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6735462a21fc889267373011b5867868e57c14f8",
+        "query": ".id_to_piece",
+        "limit": 100
+      },
+      "result_sha256": "c54e5ccdb19e8ba9d2e1b002edecadd60afff6b335df70c68385d6d0795656a4"
+    },
+    "call_21d27d81480c424d94fc31d8b559f2a0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6735462a21fc889267373011b5867868e57c14f8",
+        "path": "exllamav3/generator/job.py",
+        "offset": 18000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "ce8220e91aa4c6df41296ecb5a64d8798ab363c0e4ec2dd16441de8ef647ae9a"
+    },
+    "call_762bead62049406ba531bf63a43a7fde": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/13",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8c0e77b1fd58cd27f79fea1b2b564cc490f75072348ed94ff9be4a90b3bf699e"
+    },
+    "call_4f4b11083e0d444fb8313050b2d8bba9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "336064c49a1df65c4f752a652c4abb9ca681f89ef260ecd675ea64087284efd3"
+    },
+    "call_a3227088785d4502a62db84dfb402ec9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6735462a21fc889267373011b5867868e57c14f8",
+        "path": "examples/generation_loop.py",
+        "max_bytes": 8000
+      },
+      "result_sha256": "77beefe271aeb16b40b9e7f3ee6c900bcf27c97b73637021cd393461d70cbebb"
+    },
+    "call_9adf3f84ecf84c4b8d9cafde1ed20710": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6735462a21fc889267373011b5867868e57c14f8",
+        "path": "examples/imgsearch.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "a7494d85557b4ad1e55ffa4a40e8262ddba127cbb920af89fe394aa4c272072a"
+    },
+    "call_90ebe9b4fdec416092592e2350943991": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\np=pathlib.Path('exllamav3/tokenizer/tokenizer.py'); tree=ast.parse(p.read_text()); cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='Tokenizer'); f=next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='get_fixed_vocab'); f.decorator_list=[]\nclass Enc:\n ids=[1]\nclass Backend:\n def encode(self,*a,**k): return Enc()\n def decode(self,ids): return ' t'\n def decode_batch(self,ids,skip_special_tokens=True): return [('' if skip_special_tokens else '<special>') if i==[0] else ' t' for i in ids]\nclass Obj:\n tokenizer=Backend()\n def raw_vocab_size(self): return 2\nns={};exec(compile(ast.Module(body=[f],type_ignores=[]),'<extracted>','exec'),ns); before=ns['get_fixed_vocab'](Obj()); call=next(n for n in ast.walk(f) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='decode_batch');call.keywords.append(ast.keyword(arg='skip_special_tokens',value=ast.Constant(False)));ast.fix_missing_locations(f);exec(compile(ast.Module(body=[f],type_ignores=[]),'<patched>','exec'),ns);after=ns['get_fixed_vocab'](Obj());assert before==['',' t'] and after==['<special>',' t'];print({'before':before,'after':after,'lengths':(len(before),len(after)),'backend':'stub assumes skip_special_tokens default True; not Hugging Face execution'})"
+        ]
+      },
+      "result_sha256": "da5743b3edbc43b9937d9d7596383a18c0a965ccad42dac5bc1c552c66d993a2"
+    }
+  }
+}

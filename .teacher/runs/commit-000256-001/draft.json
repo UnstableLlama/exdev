@@ -1,0 +1,211 @@
+{
+  "schema_version": 5,
+  "sha": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+  "parent_shas": [
+    "bcaa636f66973eac4ac071ad25ef31e8586a02dc"
+  ],
+  "cutoff_date": "2025-06-08T15:37:41+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The capture script passed its split result directly to save_tensor, whose multi-tensor branch accepts lists, not tuples. Tuple input instead reaches the single-value writer branch.",
+        "basis": "source",
+        "evidence": [
+          "call_9f4a4c36bdb5421a9f4fd042af578c74",
+          "call_1ad62a17268843668cf4e8f5ece891d8"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Converting the split result to a list adapts the producer to the existing serializer contract without broadening the shared helper's accepted containers.",
+        "basis": "source",
+        "evidence": [
+          "call_9f4a4c36bdb5421a9f4fd042af578c74",
+          "call_1ad62a17268843668cf4e8f5ece891d8"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Captured rows now select the tensor.0, tensor.1, \u2026 serialization branch, matching the existing reader and the comparison evaluator's list-based producer.",
+        "basis": "source",
+        "evidence": [
+          "call_9f4a4c36bdb5421a9f4fd042af578c74",
+          "call_1ad62a17268843668cf4e8f5ece891d8"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The introduction entry records the split-result serialization mismatch. This task removes that specific mismatch by explicitly constructing a list.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_7eac4314860e4797ac7a873932e05938"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d proposes codebook changes and also discusses saved reference logits and their file-size limits. Its contextual connection is inference based on the matching compare_q reference-logit workflow, not an established link to this fix.",
+        "basis": "inference",
+        "evidence": [
+          "call_023cbd75d8844f24b82f03681e9df716",
+          "call_46eb9e46ec3241bcb18e94a2a93bc413",
+          "call_1ad62a17268843668cf4e8f5ece891d8"
+        ]
+      }
+    ],
+    "limitations": [
+      "No PyTorch split operation, model inference or safetensors round trip was executed. The installed split return contract and exact writer rejection behavior were not independently verified.",
+      "The dispatch check used ordinary Python objects and a stub writer; it establishes container routing and reference preservation, not tensor contiguity, storage compatibility or successful filesystem output."
+    ],
+    "links": [
+      "8ff65b874202176c1449e6a51998094ef60f94f0"
+    ],
+    "chapters": [
+      {
+        "id": "usage-evaluation",
+        "title": "Adapt captured logit rows to the serializer",
+        "claims": [
+          {
+            "text": "main still collects CPU batch logits, concatenates them on dimension 0, then splits with size 1 on dimension 0. Here 1 means one sequence row per saved tensor, retaining the singleton batch dimension; the change wraps only that split result in list().",
+            "basis": "source",
+            "evidence": [
+              "call_1e28a580e183447f8da5c83db745c485",
+              "call_9f4a4c36bdb5421a9f4fd042af578c74"
+            ]
+          },
+          {
+            "text": "save_tensor distinguishes dictionaries, lists and everything else. Lists become consecutively numbered tensor.N entries; other inputs become a single tensor value. load_tensor reconstructs numbered entries as a list, and test_ppl indexes that list by evaluation row. Its existing producer already builds a list, so it needs no corresponding change.",
+            "basis": "source",
+            "evidence": [
+              "call_1ad62a17268843668cf4e8f5ece891d8",
+              "call_b1b2c52cfea34f6cac6b5b02c1850c8e",
+              "call_e77155b1a01249bc99178a5ba0e073af"
+            ]
+          },
+          {
+            "text": "Executing the AST-extracted repository save_tensor helper with a stub save_file confirmed that a two-object tuple takes the single tensor branch, while list(tuple) produces tensor.0 and tensor.1 containing the same objects in order. No tensor library or file writer ran.",
+            "basis": "execution",
+            "evidence": [
+              "call_fb97f015f7f047a3a670db3b450f29fc"
+            ]
+          },
+          {
+            "text": "The fix remains local to the capture caller rather than changing shared dispatch. Saving the concatenated dense tensor would also fit the inspected reader, which splits non-list references into singleton rows, but that alternative is not implemented.",
+            "basis": "source",
+            "evidence": [
+              "call_9f4a4c36bdb5421a9f4fd042af578c74",
+              "call_1ad62a17268843668cf4e8f5ece891d8"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Wraps captured logit splits in a list so the existing serializer writes numbered row tensors instead of treating the collection as one tensor value."
+  },
+  "evidence": {
+    "call_9f4a4c36bdb5421a9f4fd042af578c74": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "f02c9afd6afa617983f72cb7f79fcf35667e573b",
+        "offset": 162,
+        "max_bytes": 537
+      },
+      "result_sha256": "da1f973418c40076881b2031dc0e15465d490f1679a05c59e3dbeb588fd54a1e"
+    },
+    "call_1e28a580e183447f8da5c83db745c485": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "path": "eval/compare_q_logits.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "36ae865b71567b383dea6fd780ff8ef73cecdf7eea22265d34fabef86da62131"
+    },
+    "call_b1b2c52cfea34f6cac6b5b02c1850c8e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "query": "save_tensor",
+        "limit": 100
+      },
+      "result_sha256": "a40969401d1951dfda777e2479a93587b57f8a9cc97759d5c1b149b72f6bf0c2"
+    },
+    "call_1ad62a17268843668cf4e8f5ece891d8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "path": "eval/compare_q.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "f0ebbdd7833eecce0814819b52e01805e784fef311d146b3a8cfc6864c807a1f"
+    },
+    "call_7eac4314860e4797ac7a873932e05938": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "8ff65b874202176c1449e6a51998094ef60f94f0",
+        "max_bytes": 16384
+      },
+      "result_sha256": "90c975523b43232d37affaead755cec59d321ef29e1c147f1304149f2fdc37cd"
+    },
+    "call_e77155b1a01249bc99178a5ba0e073af": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "bcaa636f66973eac4ac071ad25ef31e8586a02dc",
+        "query": "load_tensor(",
+        "limit": 100
+      },
+      "result_sha256": "9cff9b8884f203cca97cdf13b3915373e258707c24d3bf461e50f39735631412"
+    },
+    "call_fb97f015f7f047a3a670db3b450f29fc": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\np=pathlib.Path('eval/compare_q.py')\nt=ast.parse(p.read_text()); fn=next(n for n in t.body if isinstance(n,ast.FunctionDef) and n.name=='save_tensor')\nseen=[]\nns={'save_file':lambda data,filename:seen.append(data)}\nexec(compile(ast.Module(body=[fn],type_ignores=[]),str(p),'exec'),ns)\nrows=(object(),object())\nns['save_tensor'](rows,'unused'); ns['save_tensor'](list(rows),'unused')\nassert list(seen[0])==['tensor'] and seen[0]['tensor'] is rows\nassert list(seen[1])==['tensor.0','tensor.1']\nassert all(seen[1]['tensor.'+str(i)] is rows[i] for i in range(2))\nprint('Tuple: one tensor key with tuple value. List: tensor.0, tensor.1 with identical row objects in order.')"
+        ]
+      },
+      "result_sha256": "f76066da0ccf1c57b0b2d1de15775a0a9f526e793d3267e73eaeb911263581c4"
+    },
+    "call_023cbd75d8844f24b82f03681e9df716": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16384
+      },
+      "result_sha256": "80f6c91ce2603adfea82764c90ec4bd76ef16399f291dd0ca14f464aadb178a3"
+    },
+    "call_0d760a08c3c04d358ac4bc046c3c6ad4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16384,
+        "max_bytes": 120000
+      },
+      "result_sha256": "f155cfa5c1fa86ad78e89f0e60b2cfdd5c32cd60162fb7bf2574cf88d5e0a6c9"
+    },
+    "call_f1676645e2654705b2ac5f39a5af750a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 16384,
+        "max_bytes": 65536
+      },
+      "result_sha256": "e7e237e6454547f27392bd40799f2e785bade0ef1b4395664e08713263bfcb93"
+    },
+    "call_46eb9e46ec3241bcb18e94a2a93bc413": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "offset": 81920,
+        "max_bytes": 65536
+      },
+      "result_sha256": "95756f745f5cb6bd6fa31313cb6a5c421b4d9c0d6388604d35e9e2e4a722603b"
+    }
+  }
+}

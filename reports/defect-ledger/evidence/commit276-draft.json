@@ -1,0 +1,228 @@
+{
+  "schema_version": 5,
+  "sha": "4db952592d65b6d40a78132850f80c63eed1bc3d",
+  "parent_shas": [
+    "1fa77542243550a22d15454cad1b9b5461685f45"
+  ],
+  "cutoff_date": "2025-06-15T08:02:38+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The parent workflow leaves two lines of the apt preference outside the indented run block. The change repairs that indentation while attempting to address the reported CUDA dependency error.",
+        "basis": "source",
+        "evidence": [
+          "call_816a2ceb8aac4792b0173d384c21c7d0",
+          "call_3f1d0005016b41859e3f04cd089c830e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The replacement uses a quoted shell heredoc rather than multiline echo, preserving the package, exact version and priority while suppressing tee's stdout. However, the step still inherits PowerShell rather than selecting a shell supporting this heredoc syntax.",
+        "basis": "source",
+        "evidence": [
+          "call_3f1d0005016b41859e3f04cd089c830e",
+          "call_816a2ceb8aac4792b0173d384c21c7d0"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The pin step remains limited to non-Windows CUDA jobs and precedes the unchanged network CUDA installer. Windows CUDA provisioning and the non-CUDA packaging row do not run this step.",
+        "basis": "source",
+        "evidence": [
+          "call_816a2ceb8aac4792b0173d384c21c7d0",
+          "call_3f1d0005016b41859e3f04cd089c830e"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the workflow introduction entry ae04741 and installer-update entry b2c3cab. They establish the inherited PowerShell command environment and the preceding update to cuda-toolkit v0.2.24; neither establishes successful dependency resolution.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ccb241d755c54b508a306e7d41c26855",
+          "call_4dc0d1e4c3e14a39a232d499f2f8fff8"
+        ]
+      },
+      {
+        "text": "The supplied PR #3 evidence concerns an absolute-path setup error: its body links issue #2, another contributor reports success, and turboderp acknowledges an oversight. These statements do not verify this workflow's CUDA pinning change.",
+        "basis": "source",
+        "evidence": [
+          "call_0637a1b3d5d6431cb0af5b1dc194609d",
+          "call_e96877304bb34cf4bb86beb077c9ff93",
+          "call_3a59d31968134de2b62ace9ceb72aecb"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Actions job, YAML parser, PowerShell interpreter, apt transaction or CUDA installation was executed.",
+      "The exact package version's availability and apt priority 1001's resolver behavior were not established by eligible documentation or execution.",
+      "The bounded Python check inspected indentation and transcribed block stripping; it did not validate shell execution."
+    ],
+    "links": [
+      "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+      "b2c3cabdbbce0413a1d9297380323f2ebc2a3b6e"
+    ],
+    "chapters": [
+      {
+        "id": "build-release",
+        "title": "Repair the CUDA pin block without changing its shell",
+        "claims": [
+          {
+            "text": "The preference still names nvidia-persistenced, version 570.148.08-1ubuntu1 and priority 1001. These are package-selection inputs, not CUDA compute capability values. The writer still targets /etc/apt/preferences.d/99-nvidia-persistenced and then invokes apt-get update; this is not a location change.",
+            "basis": "source",
+            "evidence": [
+              "call_3f1d0005016b41859e3f04cd089c830e"
+            ]
+          },
+          {
+            "text": "Indenting the preference body and EOF consistently supplies the YAML block structure needed to deliver the whole script to a shell. A bounded Python inspection found the parent's Pin and Pin-Priority lines at column zero and showed the replacement heredoc after stripping ten indentation spaces.",
+            "basis": "execution",
+            "evidence": [
+              "call_1dfc92d6bfb849f4ae6939e80a1e60c8"
+            ]
+          },
+          {
+            "text": "The indentation repair and heredoc replacement are coupled: the new delimiter and body must survive YAML block extraction together. This repairs script delivery but does not supply the compatible shell needed by the replacement syntax.",
+            "basis": "inference",
+            "evidence": [
+              "call_3f1d0005016b41859e3f04cd089c830e",
+              "call_816a2ceb8aac4792b0173d384c21c7d0"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "pin-heredoc-powershell",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The replacement introduces POSIX heredoc syntax into a step that inherits PowerShell.",
+        "trigger": "A non-Windows matrix job with a nonempty CUDA value reaches the pin step.",
+        "expected_behavior": "Write the three-line apt preference and refresh package metadata before CUDA installation.",
+        "actual_behavior": "The script contains <<'EOF', but the job default is shell: pwsh and this step has no override. Source inspection indicates a shell syntax failure rather than execution of the intended heredoc.",
+        "locations": [
+          {
+            "commit": "4db952592d65b6d40a78132850f80c63eed1bc3d",
+            "path": ".github/workflows/build.yml",
+            "symbol": "jobs.build_wheels"
+          }
+        ],
+        "source_evidence": [
+          "call_3f1d0005016b41859e3f04cd089c830e",
+          "call_816a2ceb8aac4792b0173d384c21c7d0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the changed run block with the inherited job shell and matrix guard. Reach is the four Ubuntu CUDA rows, not Windows or the source-distribution row.",
+            "evidence": [
+              "call_816a2ceb8aac4792b0173d384c21c7d0",
+              "call_3f1d0005016b41859e3f04cd089c830e"
+            ],
+            "limits": "PowerShell parsing and Actions execution were not run."
+          }
+        ]
+      }
+    ],
+    "summary": "Repairs the YAML indentation of the CUDA apt pin, but introduces a heredoc incompatible with the inherited PowerShell shell; successful dependency resolution remains unverified."
+  },
+  "evidence": {
+    "call_3f1d0005016b41859e3f04cd089c830e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4db952592d65b6d40a78132850f80c63eed1bc3d",
+        "offset": 180,
+        "max_bytes": 1014
+      },
+      "result_sha256": "73b2b4340ba590df67942de9bc6be440d02d0c2a2ee03374ee8783e2b5784db6"
+    },
+    "call_816a2ceb8aac4792b0173d384c21c7d0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "1fa77542243550a22d15454cad1b9b5461685f45",
+        "path": ".github/workflows/build.yml",
+        "max_bytes": 20000
+      },
+      "result_sha256": "e3df4232f03bae5399aa889cf34ccbbf3bd454ea6a04977672cbd10e0c979a26"
+    },
+    "call_4dc0d1e4c3e14a39a232d499f2f8fff8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b2c3cabdbbce0413a1d9297380323f2ebc2a3b6e",
+        "max_bytes": 16384
+      },
+      "result_sha256": "23e76ea89711383953fcf42280cff6ee7362b8939bb5debec534efb5f4ef63e3"
+    },
+    "call_ab00e592032e4677865311056bb871be": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": ".github/workflows/build.yml",
+        "limit": 10,
+        "max_bytes": 10000
+      },
+      "result_sha256": "a8ccb251c488bb0d5d830c587d9417d36f5009b3f761c679b879b96d8ac513fb",
+      "catalog_only": true
+    },
+    "call_0637a1b3d5d6431cb0af5b1dc194609d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/3",
+        "max_bytes": 10000
+      },
+      "result_sha256": "b3d23a3b1891a78fc47dc691dd347ef5078f57a3118d79d2d14b55f359fdeb89"
+    },
+    "call_e96877304bb34cf4bb86beb077c9ff93": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/3#issuecomment-2782049746",
+        "max_bytes": 10000
+      },
+      "result_sha256": "d19d3bc9b99324fa70c90d9acaa7635adc11fa942ec54262877b3ae60ed1f003"
+    },
+    "call_3a59d31968134de2b62ace9ceb72aecb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/3#issuecomment-2782817973",
+        "max_bytes": 10000
+      },
+      "result_sha256": "e9f4a7977fb764722b9856c3276c021d8c6b1ef3c35808f2a0c425c9ab28b10f"
+    },
+    "call_dead53e01ae14658ace0daa9683f474d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "1fa77542243550a22d15454cad1b9b5461685f45",
+        "query": "CUDA",
+        "limit": 100
+      },
+      "result_sha256": "af39cc69bea8a9eaf043b4c644e21f6d0b4cdb198c7247a106fafd4928fcf1b5"
+    },
+    "call_ccb241d755c54b508a306e7d41c26855": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "ae04741f22324cc746ab78c27365e53e3f9f1cf4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0ae8a9065c5838b52016bf042895189458beeee3e109914e6865c045e2a97359"
+    },
+    "call_1dfc92d6bfb849f4ae6939e80a1e60c8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\ns=Path('.github/workflows/build.yml').read_text(); lines=s.splitlines(); start=next(i for i,l in enumerate(lines) if '- name: Pin nvidia-persistenced' in l); end=next(i for i in range(start+1,len(lines)) if '- name: Install Linux CUDA' in lines[i]); print('parent pin continuation indentation:',[(l.split(':')[0],len(l)-len(l.lstrip())) for l in lines[start:end] if l.startswith('Pin')]); new=['          sudo tee /etc/apt/preferences.d/99-nvidia-persistenced >/dev/null <<\\'EOF\\'','          Package: nvidia-persistenced','          Pin: version 570.148.08-1ubuntu1','          Pin-Priority: 1001','          EOF']; print('transcribed block after stripping 10 YAML spaces:'); print('\\n'.join(l[10:] for l in new)); print('job shell:',next(l.strip() for l in lines if 'shell:' in l)); print('step shell overrides:',[l.strip() for l in lines[start:end] if 'shell:' in l])"
+        ]
+      },
+      "result_sha256": "31bfa6c9087848035966fcd4fdd5912bb5f44602cf5deb87727c346608331f1a"
+    }
+  }
+}

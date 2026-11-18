@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: MIT
 """Trusted approval and bounded export of reviewed, strict-ancestor explanations."""
 from .blob_store import put
+from .codex_adapter import require_approval_model
 import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 from .author import write_json
+from .validation_repair import verify_final
 from .editorial import assemble_draft
 
 MAX_CONTEXT_BYTES = 256 * 1024
@@ -36,6 +38,7 @@ def approve_run(run, packet, reviewer, note):
     draft=json.loads(read_regular(run/'draft.json'))
     transcript=json.loads(read_regular(run/'raw-transcript.json'))
     provenance=json.loads(read_regular(run/'provenance.json'))
+    require_approval_model(run,provenance)
     raw_manifest=read_regular(packet/'manifest.json')
     manifest=json.loads(raw_manifest)
     if manifest.get('authoring_task',{}).get('kind')=='chapter':
@@ -44,7 +47,10 @@ def approve_run(run, packet, reviewer, note):
         raise ValueError('Original authoring packet fingerprint mismatch')
     if provenance.get('input_mode')!='entry_analysis' or provenance.get('published') is not False:
         raise ValueError('Run is not an unpublished historical annotation')
-    expected,_=assemble_draft(draft['annotation'],manifest,transcript)
+    expected,_=verify_final(draft['annotation'],manifest,transcript,provenance)
+    from .editorial import render
+    if provenance.get('validation_repair_policy') and render(draft)!=read_regular(run/'draft.md').decode():
+        raise ValueError('Repair-policy draft rendering mismatch')
     if draft!=expected or review.get('sha')!=draft['sha']:
         raise ValueError('Draft identity or evidence differs from its recorded inputs')
     if artifact_hashes(run)!=hashes:

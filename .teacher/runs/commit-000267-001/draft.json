@@ -1,0 +1,589 @@
+{
+  "schema_version": 5,
+  "sha": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+  "parent_shas": [
+    "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95"
+  ],
+  "cutoff_date": "2025-06-14T15:30:47+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "BlockSparseMLP previously represented only routed experts. This change adds an optional always-evaluated shared MLP and includes its projections in TransformerBlock quantization allocation.",
+        "basis": "source",
+        "evidence": [
+          "call_cce47444b97b4ea083da488434dd8d9a",
+          "call_880b1309672c4ecc8c36f68e23e69b11"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Shared execution and allocation are complementary: registering the shared module makes its linears visible to recursive loading and conversion, while extending allocation supplies strategies for those additional quantization targets.",
+        "basis": "source",
+        "evidence": [
+          "call_cce47444b97b4ea083da488434dd8d9a",
+          "call_880b1309672c4ecc8c36f68e23e69b11",
+          "call_7522bf55e9054f8ca5188c171bbfc95b",
+          "call_df8e8127fe0a430da3c4c89d33cc364e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The existing MixtralModel and Qwen3MoeModel constructors remain compatible because neither supplies the new optional argument. Neither enables shared experts through this change.",
+        "basis": "source",
+        "evidence": [
+          "call_4d6694dcb04244a6a75fea1111e1094a",
+          "call_b7da23714b854505977f5d1e3000cf3a",
+          "call_93e5fff47f6a4821b7ad900c56029f45",
+          "call_cce47444b97b4ea083da488434dd8d9a"
+        ]
+      },
+      {
+        "text": "Support is incomplete: the fused single-token branch returns before the new addition, and allocation assumes shared experts expose GatedMLP-style projection lists despite also accepting MLP.",
+        "basis": "source",
+        "evidence": [
+          "call_cce47444b97b4ea083da488434dd8d9a",
+          "call_880b1309672c4ecc8c36f68e23e69b11",
+          "call_9f5f015c952d4eb689a9fab26b8f07a7"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The earlier BlockSparseMLP introduction entry was read. It establishes the routed/fused execution and allocation background and records an all-expert-routing versus fused-buffer cardinality defect.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_88c7ecf885ab479281d7b3eaad4d6c64"
+        ]
+      },
+      {
+        "text": "Issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d concerns tokenizer truncation; #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,\u201d concerns invalid inference states and Cholesky failure. Their relationship to this task is only inferred shared-source context: #16 includes transformer.py in its traceback and #43 lists BlockSparseMLP in its model log. Neither establishes motivation for shared experts.",
+        "basis": "inference",
+        "evidence": [
+          "call_323dafd169cd4a00ba2bf71b6643d308",
+          "call_e49b8d21990d4796bc37ff20093750cc",
+          "call_9b179bca70df46cba6ec7254beb8c3bc"
+        ]
+      },
+      {
+        "text": "Other inspected discussions have different framing: #39, \u201cGemma 3 architecture not in list?\u201d, discusses branch availability and frontend behavior; #33, \u201cError converting model,\u201d reports file-opening failures and later GLM sampling problems; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d and #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d discuss numerical conversion failures. PR #26, \u201cSuperior 3INST parameters,\u201d proposes codebook multiplier changes. Shared conversion-file context is an inferred association, not evidence these discussions prompted this task.",
+        "basis": "inference",
+        "evidence": [
+          "call_124204ab3bfd4ce9823866bcdbff2edc",
+          "call_84160bb846624e6d973fd1ca17c9d805",
+          "call_d155351661564e18b4abbdc958e37a4f",
+          "call_08688b987b1e434880192bd23b6ea1cf",
+          "call_16a4ccb02dc64098a616595756018ebe"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository inference, CUDA kernel, end-to-end conversion or performance test was run.",
+      "The Python check reconstructs the changed fused tail for AST inspection and models integer buffer dimensions; it does not execute tensor operations.",
+      "No supplied model constructor exercises shared experts, so checkpoint-specific shared-module shapes, calibration-map choices and numerical accuracy remain unverified."
+    ],
+    "links": [
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "block-sparse-mlp",
+        "title": "Shared experts alongside routed experts",
+        "claims": [
+          {
+            "text": "BlockSparseMLP.__init__ adds shared_experts: MLP | GatedMLP | None, defaulting to None. A supplied object is stored and registered as a submodule. Module's recursive iteration, load, unload, weight counting and calibration-map collection therefore include it without adding it to the routed expert lists.",
+            "basis": "source",
+            "evidence": [
+              "call_cce47444b97b4ea083da488434dd8d9a",
+              "call_7522bf55e9054f8ca5188c171bbfc95b"
+            ]
+          },
+          {
+            "text": "In the ordinary branch, forward first accumulates routing-weighted expert outputs, restores x.shape, then adds shared_experts.forward(x, params) before output-dtype conversion. The shared branch sees every input token, the original input tensor and the same params; it receives no routing weight. Its output must be compatible with the routed output's shape and in-place addition.",
+            "basis": "source",
+            "evidence": [
+              "call_71afa2539c81434181171a859cd8f311",
+              "call_cce47444b97b4ea083da488434dd8d9a"
+            ]
+          },
+          {
+            "text": "MLP.forward computes down(activation(up(x))); GatedMLP.forward sums sliced down(activation(gate(x)) \u00d7 up(x)) results. Existing decoder calls optionally normalize their input before invoking the MLP and pass params unchanged. The new shared call reuses BlockSparseMLP's input directly rather than introducing another normalization, routing step or output-dtype override.",
+            "basis": "source",
+            "evidence": [
+              "call_9f5f015c952d4eb689a9fab26b8f07a7",
+              "call_d4174192e4bf45918cef1be1dc581928",
+              "call_8857147cc8984f24a7ebfdcbc5d32f89",
+              "call_cce47444b97b4ea083da488434dd8d9a"
+            ]
+          },
+          {
+            "text": "The unchanged branch threshold counts flattened tokens, not merely the leading batch dimension: y = x.view(-1, hidden_size). More than one token, or non-EXL3/mixed routed storage, selects the ordinary branch. Exactly one token with all routed projections EXL3 selects fusion. Shared storage does not participate in that fusion eligibility test.",
+            "basis": "source",
+            "evidence": [
+              "call_71afa2539c81434181171a859cd8f311",
+              "call_cce47444b97b4ea083da488434dd8d9a"
+            ]
+          },
+          {
+            "text": "TransformerBlock.allocate_q appends shared gates, ups and downs to the corresponding routed lists. allocate_transformer sums each combined list's weight counts and expands a common group allocation back to individual keys. Shared projections consequently affect the budget and share each projection group's bit-width decision; this does not give them independent allocation choices. ParallelDecoderBlock.allocate_q is unchanged.",
+            "basis": "source",
+            "evidence": [
+              "call_880b1309672c4ecc8c36f68e23e69b11",
+              "call_5b5b86813b18411dbb7d08aaf7ec70ee",
+              "call_d4174192e4bf45918cef1be1dc581928"
+            ]
+          },
+          {
+            "text": "Whole-parent searches identify MixtralModel and Qwen3MoeModel as BlockSparseMLP construction sites, both leaving shared experts absent. TransformerBlock.forward directly dispatches to its supplied MLP; ParallelDecoderBlock has another generic MLP dispatch but its declared constructor type excludes BlockSparseMLP. Conversion main is the located allocate_q caller and requires every loaded quantization-target linear to have a strategy.",
+            "basis": "source",
+            "evidence": [
+              "call_4d6694dcb04244a6a75fea1111e1094a",
+              "call_b7da23714b854505977f5d1e3000cf3a",
+              "call_93e5fff47f6a4821b7ad900c56029f45",
+              "call_d4174192e4bf45918cef1be1dc581928",
+              "call_f17da2020e954944a2515dcbfd27a06a",
+              "call_df8e8127fe0a430da3c4c89d33cc364e"
+            ]
+          },
+          {
+            "text": "A bounded Python AST check of the reconstructed fused tail reports Assign, Return, Assign, If, Return: the first return precedes shared evaluation. Integer shape modeling also finds eight all-expert indices incompatible with a fused buffer allocated for two selected experts.",
+            "basis": "execution",
+            "evidence": [
+              "call_098972fe482e454495ff136bd93edb6a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "fused-shared-unreachable",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new shared-expert addition is unreachable in the fused branch.",
+        "trigger": "Supply shared_experts and forward exactly one flattened token with all routed expert projections stored as EXL3.",
+        "expected_behavior": "Return the routed result plus the shared MLP result, as the ordinary branch does.",
+        "actual_behavior": "The existing return final_hidden_states.view(x.shape) executes before the newly appended shared call. Only routed output is returned. TransformerBlock.forward can dispatch to this branch, but the inspected built-in constructors do not supply shared experts, limiting demonstrated reach to callers using the new API.",
+        "locations": [
+          {
+            "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_cce47444b97b4ea083da488434dd8d9a",
+          "call_71afa2539c81434181171a859cd8f311",
+          "call_8857147cc8984f24a7ebfdcbc5d32f89",
+          "call_d4174192e4bf45918cef1be1dc581928",
+          "call_4d6694dcb04244a6a75fea1111e1094a"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both changed return paths and inspected decoder dispatch and construction sites.",
+            "evidence": [
+              "call_cce47444b97b4ea083da488434dd8d9a",
+              "call_d4174192e4bf45918cef1be1dc581928"
+            ],
+            "limits": "No tensor or CUDA execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Reconstructed the task's fused tail in parent source and inspected its AST statement order.",
+            "evidence": [
+              "call_098972fe482e454495ff136bd93edb6a"
+            ],
+            "limits": "Static Python reconstruction, not execution of BlockSparseMLP.forward."
+          }
+        ]
+      },
+      {
+        "id": "shared-mlp-allocation-interface",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Allocation does not support the plain MLP type admitted by shared_experts.",
+        "trigger": "Construct a TransformerBlock containing BlockSparseMLP(shared_experts=<MLP instance>) and call allocate_q with a valid quantization budget.",
+        "expected_behavior": "Allocate strategies for the shared MLP's up and down projections.",
+        "actual_behavior": "TransformerBlock.allocate_q first accesses shared_experts.gates, which MLP does not define; it stores singular up and down instead. GatedMLP agrees with the new list-based accesses. Conversion main calls allocate_q before loading the module, so this API combination fails at allocation; neither inspected built-in sparse-model constructor supplies it.",
+        "locations": [
+          {
+            "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.allocate_q"
+          }
+        ],
+        "source_evidence": [
+          "call_880b1309672c4ecc8c36f68e23e69b11",
+          "call_cce47444b97b4ea083da488434dd8d9a",
+          "call_9f5f015c952d4eb689a9fab26b8f07a7",
+          "call_f17da2020e954944a2515dcbfd27a06a",
+          "call_df8e8127fe0a430da3c4c89d33cc364e"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared both admitted shared-module implementations with the new attribute reads and the located conversion caller.",
+            "evidence": [
+              "call_9f5f015c952d4eb689a9fab26b8f07a7",
+              "call_880b1309672c4ecc8c36f68e23e69b11",
+              "call_df8e8127fe0a430da3c4c89d33cc364e"
+            ],
+            "limits": "Attribute failure inferred from source; no repository execution."
+          }
+        ]
+      },
+      {
+        "id": "inherited-all-expert-fusion-cardinality",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The ancestor-recorded all-expert fused-buffer mismatch is carried over unchanged.",
+        "trigger": "Forward one flattened token with fully EXL3 routed experts, activate_all_experts=True, and num_experts different from num_experts_per_tok.",
+        "expected_behavior": "Evaluate all experts using compatible buffers or select the ordinary branch.",
+        "actual_behavior": "Native routing returns num_experts indices, while fused intermediate buffers retain num_experts_per_tok entries. exl3_mgemm checks indices dimension 1 against output dimension 0, so the first fused call encounters a shape-check failure. The task does not change this dispatch or allocation. Decoder forwarding passes params through; conversion can supply the flag, but a default conversion reaching this fully quantized single-token case was not established.",
+        "locations": [
+          {
+            "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_71afa2539c81434181171a859cd8f311",
+          "call_e7fc9554541b46dd8f608865c1235a82",
+          "call_099a4490da8a4e0793237e2ffd116bce",
+          "call_cce47444b97b4ea083da488434dd8d9a",
+          "call_df8e8127fe0a430da3c4c89d33cc364e"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Rechecked current parent routing, fused allocations and native shape validation against the task diff.",
+            "evidence": [
+              "call_e7fc9554541b46dd8f608865c1235a82",
+              "call_71afa2539c81434181171a859cd8f311",
+              "call_099a4490da8a4e0793237e2ffd116bce",
+              "call_cce47444b97b4ea083da488434dd8d9a"
+            ],
+            "limits": "Conditional source path, not a reproduced CUDA failure."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled eight all-expert indices against a two-expert fused buffer and measured unequal cardinalities.",
+            "evidence": [
+              "call_098972fe482e454495ff136bd93edb6a"
+            ],
+            "limits": "Integer shape arithmetic only."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional shared experts and combined quantization allocation, but fused execution skips their contribution and plain MLP allocation is incompatible with the declared interface."
+  },
+  "evidence": {
+    "call_cce47444b97b4ea083da488434dd8d9a": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "offset": 168,
+        "max_bytes": 2797
+      },
+      "result_sha256": "a454b534e1920dd1eefed939591e292dc319f00ed09611764d051de2497eab76"
+    },
+    "call_880b1309672c4ecc8c36f68e23e69b11": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "d5c48a647bed87ade58919b147a8ed2b461c9bde",
+        "offset": 2965,
+        "max_bytes": 1591
+      },
+      "result_sha256": "436c63696d2a9b96489512f8b2e8c83b81001c5e7e84f26c42546f837ac15b39"
+    },
+    "call_71afa2539c81434181171a859cd8f311": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "3bf90b1568c5d3d6db238c7ef9805f7ca668d963081cc960c48216782ba68ef0"
+    },
+    "call_5bd20b4e9ccc4985820415e1517d699d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": "shared_expert",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_4d6694dcb04244a6a75fea1111e1094a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": "BlockSparseMLP",
+        "limit": 100
+      },
+      "result_sha256": "83a66d8356d80eda99814cb2694448dfd2b5079ddbeb848de5f1cebec5184bd1"
+    },
+    "call_d4174192e4bf45918cef1be1dc581928": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 22000
+      },
+      "result_sha256": "10d650f34158f55773f0614cb89c949738083a8633808d758fa1304de44f5e5a"
+    },
+    "call_9f5f015c952d4eb689a9fab26b8f07a7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/modules/mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "2a43d94df209576cbc7e93ff9ba543337b993f297f25726bf663d86be73aed95"
+    },
+    "call_5b8535ae79d74b06986ceea35385ee71": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "block_sparse_mlp.py",
+        "limit": 30,
+        "max_bytes": 12000
+      },
+      "result_sha256": "d7fbdd6e9915421a3613aa40f52c3d5b318586ddd1440dd41472eb061680b051",
+      "catalog_only": true
+    },
+    "call_88c7ecf885ab479281d7b3eaad4d6c64": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16000
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_266d237e16bb496b9cbda3392abd6326": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": "blocksparse_mlp_routing",
+        "limit": 50
+      },
+      "result_sha256": "f3db61fadb2b506d77ee142d28b7229eafc6fe88fceac388c6563964234579fc"
+    },
+    "call_e7fc9554541b46dd8f608865c1235a82": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/exllamav3_ext/libtorch/blocksparse_mlp.cpp",
+        "max_bytes": 15000
+      },
+      "result_sha256": "349576a32bdf686a1452916572c9d1ad0ce9ec71ded3824ec0d1d81bd7a79c69"
+    },
+    "call_b7da23714b854505977f5d1e3000cf3a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/models/mixtral.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e7d3212c3ad53ce8e9924bf9d079b39f99cb82d216f08a39e20d5f0554401abd"
+    },
+    "call_93e5fff47f6a4821b7ad900c56029f45": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "98074a5e25ed91d3336a8038a549da7af90a4511df139581777c75e3c448cff6"
+    },
+    "call_7522bf55e9054f8ca5188c171bbfc95b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 18000
+      },
+      "result_sha256": "519d8da3b25d18a90c0c9f8e01dd90635fd5170e295ea70303f921b80b78ebe3"
+    },
+    "call_5b5b86813b18411dbb7d08aaf7ec70ee": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/conversion/allocation.py",
+        "max_bytes": 20000
+      },
+      "result_sha256": "a044399aa945afcc60afce18ec0fd71a3c9a2f02cd0e5e0a136301846869b0d8"
+    },
+    "call_323dafd169cd4a00ba2bf71b6643d308": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e68fb7a17122feb4901fe9d4987e25c91b0ec5bff906a063e3232ca9f30ac234"
+    },
+    "call_e49b8d21990d4796bc37ff20093750cc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8f39b24ed698d7ba6e03ec8d850940a26574c7748106d4d5cdcf8790d67ea59e"
+    },
+    "call_9b179bca70df46cba6ec7254beb8c3bc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "offset": 16000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "6c51601921badf4cef48726918c3003b08d31ebfe221d882a1fc59f70200b7a7"
+    },
+    "call_f17da2020e954944a2515dcbfd27a06a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": ".allocate_q(",
+        "limit": 100
+      },
+      "result_sha256": "4c0e6b037289b64ec5aa1c192b923f9adf2e279ee7152f0133a13fdb08cd2fdd"
+    },
+    "call_8857147cc8984f24a7ebfdcbc5d32f89": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": ".mlp.forward(",
+        "limit": 100
+      },
+      "result_sha256": "88a58d03fdbb94dcd2d5fe29c0badc0e26f0e411a4e68317d259243df2328400"
+    },
+    "call_df8e8127fe0a430da3c4c89d33cc364e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 10000,
+        "max_bytes": 6500
+      },
+      "result_sha256": "f30aa00c3a34e4f37a446185735408f3abf9a07223f0d16c82f606dee1483b61"
+    },
+    "call_07ce82e8305f4104b121d1bc7e2817af": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": "indices.numel()",
+        "limit": 50
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_d03b649d810740c4aee4e6c2a9290249": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": "void exl3_mgemm",
+        "limit": 20
+      },
+      "result_sha256": "0923cd2d263e211cc5fb02f2b8471de34d04ed55a7101c73fab33bc3f8b21e16"
+    },
+    "call_9c18021a138245f3ae340a694708bf26": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "query": "exl3_mgemm(",
+        "limit": 30
+      },
+      "result_sha256": "956b693519d8ab76e4955850715c51dac3ed102f6bcfddf3403c7ee32dee0185"
+    },
+    "call_09f3d81ae152491da496d7468fba918f": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/exllamav3_ext/quant",
+        "limit": 60
+      },
+      "result_sha256": "e470328434c9fd61c958ab1b993bc5c9e78d3a8c94392b7780bbc87d486e087f"
+    },
+    "call_50040d07b4d044c39061a2a95382a531": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "query": "exl3_mgemm",
+        "limit": 20
+      },
+      "result_sha256": "96bd82a1f278565c1f659c87ad556707fa8284af63babb9b89c9ffd0211c9bb2"
+    },
+    "call_099a4490da8a4e0793237e2ffd116bce": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "6bd852cc5e8cdb4c415460b6910e054bbbbb6f95",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4800,
+        "max_bytes": 7000
+      },
+      "result_sha256": "2379f3a37337dc91a1086eb1237ce959ec6bfa0ae5aa6b3c5ef2c2dda9553c03"
+    },
+    "call_098972fe482e454495ff136bd93edb6a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\ns=Path('exllamav3/modules/block_sparse_mlp.py').read_text()\nold='            return final_hidden_states.view(x.shape)'\nnew=old+'\\n            final_hidden_states = final_hidden_states.view(x.shape)\\n            if self.shared_experts:\\n                final_hidden_states += self.shared_experts.forward(x, params)\\n            return final_hidden_states'\ns=s.replace(old,new)\nt=ast.parse(s)\nf=next(n for n in ast.walk(t) if isinstance(n,ast.FunctionDef) and n.name=='forward')\nb=next(n for n in f.body if isinstance(n,ast.If) and n.orelse)\nprint('fused tail AST:',[type(n).__name__ for n in b.orelse[-5:]])\nprint('first fused return index:',next(i for i,n in enumerate(b.orelse) if isinstance(n,ast.Return)))\nprint('shared addition index:',next(i for i,n in enumerate(b.orelse) if isinstance(n,ast.If)))\nE,K,H=8,2,128\nprint('all-expert index shape:',(1,E),'fused gate buffer shape:',(K,1,H),'index/buffer match:',E==K)\n"
+        ],
+        "timeout_seconds": 10
+      },
+      "result_sha256": "38d2f5bab2d0ad9b5d38f28e74b7b30168489f97018e4a5eab6b98c06dbcde6c"
+    },
+    "call_124204ab3bfd4ce9823866bcdbff2edc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/39",
+        "max_bytes": 12000
+      },
+      "result_sha256": "0da121d340eba4d4f4ca1c5644fe3e086aa6f49167365cd8637a913edb5d245d"
+    },
+    "call_16a4ccb02dc64098a616595756018ebe": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 20000
+      },
+      "result_sha256": "cfe644f4804231867b12ec9e53de75aaf0136c3a41fe12f98f212f0cd298f9df"
+    },
+    "call_84160bb846624e6d973fd1ca17c9d805": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 60000
+      },
+      "result_sha256": "e012fbe4624b35f62100005970c6e85d0ea8d0b1f3b81b23344db22b763d8c44"
+    },
+    "call_d155351661564e18b4abbdc958e37a4f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 60000
+      },
+      "result_sha256": "4088a0b15f14f0a79cbac73ec81db0e1ace5918464952c30133ea51eb79ab8e8"
+    },
+    "call_08688b987b1e434880192bd23b6ea1cf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 60000
+      },
+      "result_sha256": "925de8f66d761a6282a9ba4bcfddeaf71cac13c6747fc2a8de62c349a642dcf5"
+    }
+  }
+}

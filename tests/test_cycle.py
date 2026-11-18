@@ -83,7 +83,7 @@ class CycleTests(unittest.TestCase):
         with patch('teacher.cycle.ROOT',self.root):self.stop('verdict_needs_judgement',cycle.approval,self.state,v)
 
     def test_skeleton_has_all_hashes_counts_and_explicit_judgement(self):
-        summary=dict(run='run',packet='packet',sha='a'*40,title='Exact title',hashes={'draft':'b'*64},catalog=dict(qualified_count=23,selected_count=20,path_only_qualified_count=7,path_only_selected_count=6,cap=20,truncated=True,path_qualified_cut=[{}]),validation=dict(reviewer_assisted=False,identical_replayed_calls=9,shared_readonly_blob_links_verified=31,fully_read_task_sections=[0],task_sections_total=2,ancestor_prose_read_count=0,tool_counts={'repo_read':1},runtime={'python_version':'3.14.4'},open_catalog_rows=13))
+        summary=dict(run='run',packet='packet',sha='a'*40,title='Exact title',hashes={'draft':'b'*64},catalog=dict(qualified_count=23,selected_count=20,path_only_qualified_count=7,path_only_selected_count=6,cap=20,truncated=True,path_qualified_cut=[{}]),validation=dict(teacher_model='gpt-6.1-sol',reasoning_effort='medium',reviewer_assisted=False,identical_replayed_calls=9,shared_readonly_blob_links_verified=31,fully_read_task_sections=[0],task_sections_total=2,ancestor_prose_read_count=0,tool_counts={'repo_read':1},runtime={'python_version':'3.14.4'},open_catalog_rows=13))
         text=cycle.skeleton(summary,'thread');self.assertIn('7 by path alone, 6 selected by path alone',text);self.assertIn('AUTHOR JUDGEMENT REQUIRED',text);self.assertIn('b'*64,text);self.assertIn('1/2',text)
 
     def test_approval_checks_hashes_preserves_pause_and_tracks_followups(self):

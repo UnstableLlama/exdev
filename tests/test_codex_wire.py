@@ -34,7 +34,10 @@ class CodexWireTests(unittest.TestCase):
     def test_retrieval_wire_has_citable_content_and_fifteen_tools(self):
         self.exercise_wire(retrieval=True)
 
-    def exercise_wire(self, retrieval=False):
+    def test_sol_trial_wire(self):
+        self.exercise_wire(model='gpt-6.2-sol')
+
+    def exercise_wire(self, retrieval=False, model='gpt-6-astra'):
         test_teacher_graph.GraphPacketTests.prepare(self)
         if retrieval:
             path=self.packet/'manifest.json';manifest=json.loads(path.read_text())
@@ -107,12 +110,12 @@ class CodexWireTests(unittest.TestCase):
         server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         auth=self.root/'fixture-auth.json';auth.write_text(json.dumps({'OPENAI_API_KEY':'TEST_FIXTURE_NOT_A_CREDENTIAL'}))
-        config=f'openai_base_url="http://127.0.0.1:{server.server_port}/v1"\n'+configuration()
+        config=f'openai_base_url="http://127.0.0.1:{server.server_port}/v1"\n'+configuration(model)
         try:
             with patch('teacher.codex_transport.configuration',return_value=config):
-                with CodexTransport(auth,timeout=30) as transport:
+                with CodexTransport(auth,timeout=30,model=model) as transport:
                     try:
-                        result=CodexTeacher().run(FreshSession(self.packet),transport)
+                        result=CodexTeacher().run(FreshSession(self.packet),transport,model=model)
                     except Exception:
                         transport.stderr.seek(0)
                         raise AssertionError(transport.stderr.read(4096).decode(errors="replace"))
@@ -124,7 +127,7 @@ class CodexWireTests(unittest.TestCase):
             self.assertTrue(requests, 'No actual turn request captured')
             catalogs_checked=0
             for request in requests:
-                self.assertEqual(request['model'],'gpt-6-astra')
+                self.assertEqual(request['model'],model)
                 self.assertEqual(request['reasoning']['effort'],'medium')
                 advertised=request.get('tools',[])+[t for item in request['input'] if item.get('type')=='additional_tools' for t in item['tools']]
                 names={leaf['name'] for tool in advertised for leaf in (tool['tools'] if tool['type']=='namespace' else [tool])}

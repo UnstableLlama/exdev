@@ -1,0 +1,250 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Disabling padding can expose the inherited activation kernel's missing odd-element tail.",
+  "trigger": "A direct GatedMLP caller selects pad_to=1 and runs FP16 projections with an odd total intermediate element count, for example one token, hidden_size=128 and intermediate_size=129.",
+  "expected_behavior": "Every intermediate element becomes activation(gate) multiplied by up before the down projection.",
+  "actual_behavior": "act_mul_kernel processes only numel // 2 half2 pairs. With 129 elements, the last up element remains ungated and is consumed by down. No even-element guard is added. The inspected model constructors retain padding, so this observation concerns opt-in callers rather than all existing model workflows.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Traced configurable dimensions through LinearFP16 output allocation to GatedMLP's in-place activation call and subsequent down projection.",
+      "evidence": [
+        "call_e091bd97b55640bcbbb2a7d126b415d4",
+        "call_c60c91d9d924471eb93be1574d4b98c9",
+        "call_e8cdd3658bf4405aaf61895a0bda049f",
+        "call_a8f589daa7364e07b185c9d2de5c4d36"
+      ],
+      "limits": "No GPU execution or loaded checkpoint."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Enumerated the kernel's pairwise coverage for 129 elements; index 128 was not written.",
+      "evidence": [
+        "call_94a9fc138a214c3aa25a88cb709dee16"
+      ],
+      "limits": "Integer indexing model only; does not execute CUDA or reproduce FP16 arithmetic."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Enumerated launch and pair-index arithmetic for lengths 1, 3, 128, 129, 512 and 513.",
+      "evidence": [
+        "call_e2646dafbb3b458587d4eb4e9c8bdc9b"
+      ],
+      "limits": "Integer coverage model, not repository kernel execution."
+    }
+  ],
+  "defect_id": "exllamav3-activation-odd-tail",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "543c4b27714c6a677a6e714c452d62532f634cff",
+      "status": "source_supported",
+      "rationale": "Read root activation.cu from Git: act_mul_kernel returns at idx >= numel / 2 and writes half2 pairs, with no scalar tail."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "3637103e2ff4a736544774606ddc964fc4f71362",
+      "run": ".teacher/runs/commit-000232-001",
+      "local_id": "unpadded-odd-activation-tail",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "unpadded-odd-activation-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Disabling padding can expose the inherited activation kernel's missing odd-element tail.",
+        "trigger": "A direct GatedMLP caller selects pad_to=1 and runs FP16 projections with an odd total intermediate element count, for example one token, hidden_size=128 and intermediate_size=129.",
+        "expected_behavior": "Every intermediate element becomes activation(gate) multiplied by up before the down projection.",
+        "actual_behavior": "act_mul_kernel processes only numel // 2 half2 pairs. With 129 elements, the last up element remains ungated and is consumed by down. No even-element guard is added. The inspected model constructors retain padding, so this observation concerns opt-in callers rather than all existing model workflows.",
+        "locations": [
+          {
+            "commit": "3637103e2ff4a736544774606ddc964fc4f71362",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.__init__"
+          },
+          {
+            "commit": "16df3fd1810c4f0747ff4fd5fbcc1dc94c4d6628",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "act_mul_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_bd6fe2c3517449a994c9c3fb7d385669",
+          "call_e8cdd3658bf4405aaf61895a0bda049f",
+          "call_a8f589daa7364e07b185c9d2de5c4d36",
+          "call_0753846c3ea744b5bcd9f01a47672c7e",
+          "call_3bf4e3122909424180de4e8d34977e82"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced configurable dimensions through LinearFP16 output allocation to GatedMLP's in-place activation call and subsequent down projection.",
+            "evidence": [
+              "call_e091bd97b55640bcbbb2a7d126b415d4",
+              "call_c60c91d9d924471eb93be1574d4b98c9",
+              "call_e8cdd3658bf4405aaf61895a0bda049f",
+              "call_a8f589daa7364e07b185c9d2de5c4d36"
+            ],
+            "limits": "No GPU execution or loaded checkpoint."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated the kernel's pairwise coverage for 129 elements; index 128 was not written.",
+            "evidence": [
+              "call_94a9fc138a214c3aa25a88cb709dee16"
+            ],
+            "limits": "Integer indexing model only; does not execute CUDA or reproduce FP16 arithmetic."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "d97bfdf1f402326f25773143dbe07751493758c1",
+      "run": ".teacher/runs/commit-000262-001",
+      "local_id": "odd-activation-tail",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "odd-activation-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Both activation kernel variants omit an odd final element.",
+        "trigger": "Call either exported activation with otherwise suitable buffers and an odd element count; an opt-in unpadded GatedMLP intermediate can expose this case.",
+        "expected_behavior": "Every destination element receives activation(x)*y.",
+        "actual_behavior": "The numel/2 guard writes only complete pairs. A separate output retains its previous last element; an in-place half output retains an ungated last up value. Neither wrapper checks evenness or launches a scalar tail.",
+        "locations": [
+          {
+            "commit": "d97bfdf1f402326f25773143dbe07751493758c1",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "act_mul_kernel_h / act_mul_kernel_f"
+          }
+        ],
+        "source_evidence": [
+          "call_bd6399fafa704e2283b31d00cbe55c0f",
+          "call_d825888659d24a8aa0aaf373d0ea50fd",
+          "call_43e66c7b06fc4bc5bc2752f1cb5180a2",
+          "call_6f07cb7028e34be9b80d3a2c51a4ac1f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Enumerated launch and pair-index arithmetic for lengths 1, 3, 128, 129, 512 and 513.",
+            "evidence": [
+              "call_e2646dafbb3b458587d4eb4e9c8bdc9b"
+            ],
+            "limits": "Integer coverage model, not repository kernel execution."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit232-001-draft.json",
+      "sha256": "d43c25b0e17772da2dd9d30d9aa2757f4dd0f4b5e51407ef29ed32c605df9485"
+    },
+    {
+      "file": "evidence/commit232-001-transcript.json",
+      "sha256": "7b145006e914d0aef4d29b16fa56be3188696db1599fd42f2006ae0a05ec3708"
+    },
+    {
+      "file": "evidence/commit232-001-verdict.md",
+      "sha256": "4100b421b10c4e45f55d3df7aa147e4a38ccb9a1227ccce150259084b0f75aaf"
+    },
+    {
+      "file": "evidence/root-activation-odd-tail.cu",
+      "sha256": "fe4b4d1a0690ac1e802643bb94d0c83fd63aa231f4dae545a1a3cdd8a9979cb3"
+    },
+    {
+      "file": "evidence/commit262-001-draft.json",
+      "sha256": "d8eee527fbee85968327e2f14287b403ca3eff7a2c2eccc47aba08544c2c81f6"
+    },
+    {
+      "file": "evidence/commit262-001-transcript.json",
+      "sha256": "95ec81ffc7a6804760cb02defd5c7ff000ef23bb7835fba960ce123e51c4dee2"
+    },
+    {
+      "file": "evidence/commit262-001-verdict.md",
+      "sha256": "c3684c54d9e8f45cfa58655fc0e933d550ea868468698459b9e33468c16ee23e"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit232-001-draft.json",
+      "source_id": "evidence/commit232-001-draft.json",
+      "content_sha256": "d43c25b0e17772da2dd9d30d9aa2757f4dd0f4b5e51407ef29ed32c605df9485",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit232-001-transcript.json",
+      "source_id": "evidence/commit232-001-transcript.json",
+      "content_sha256": "7b145006e914d0aef4d29b16fa56be3188696db1599fd42f2006ae0a05ec3708",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit232-001-verdict.md",
+      "source_id": "evidence/commit232-001-verdict.md",
+      "content_sha256": "4100b421b10c4e45f55d3df7aa147e4a38ccb9a1227ccce150259084b0f75aaf",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/root-activation-odd-tail.cu",
+      "source_id": "evidence/root-activation-odd-tail.cu",
+      "content_sha256": "fe4b4d1a0690ac1e802643bb94d0c83fd63aa231f4dae545a1a3cdd8a9979cb3",
+      "available_at": "2026-11-16T15:04:35.204473+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit262-001-draft.json",
+      "source_id": "evidence/commit262-001-draft.json",
+      "content_sha256": "d8eee527fbee85968327e2f14287b403ca3eff7a2c2eccc47aba08544c2c81f6",
+      "available_at": "2026-11-17T06:43:09.328942+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit262-001-transcript.json",
+      "source_id": "evidence/commit262-001-transcript.json",
+      "content_sha256": "95ec81ffc7a6804760cb02defd5c7ff000ef23bb7835fba960ce123e51c4dee2",
+      "available_at": "2026-11-17T06:43:09.328942+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit262-001-verdict.md",
+      "source_id": "evidence/commit262-001-verdict.md",
+      "content_sha256": "c3684c54d9e8f45cfa58655fc0e933d550ea868468698459b9e33468c16ee23e",
+      "available_at": "2026-11-17T06:43:09.328942+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "3637103e2ff4a736544774606ddc964fc4f71362",
+      "d97bfdf1f402326f25773143dbe07751493758c1"
+    ],
+    "limits": "Kernel limitation exists at root; 232 first exposes it through configurable GatedMLP padding. Opt-in FP16 odd total intermediate count; default padded model constructors remain unaffected. No continuous affected range asserted."
+  },
+  "first_caller_exposure": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "sha": "3637103e2ff4a736544774606ddc964fc4f71362",
+    "description": "GatedMLP pad_to=1 permits odd intermediate widths; odd token count yields an odd total."
+  },
+  "administrative_qualifications": [
+    "Suspected/source-only with integer coverage model; no CUDA or FP16 numerical execution.",
+    "Separate from deferred BF16 conversion odd-tail and FP32 intermediate-contract identities.",
+    "Preserved original finding verbatim. Canonical-use correction: activation.cu location should use task SHA 3637103e2ff4a736544774606ddc964fc4f71362 rather than the parent. Authored artifacts unchanged; never teacher input.",
+    "At 262 both the retained FP16-input kernel and new FP32-input kernel process floor(numel/2) pairs without a scalar tail. Default padded model dimensions are not shown to trigger it. No CUDA numerical execution or continuous affected range is asserted."
+  ],
+  "recorded_at": "2026-11-17T06:43:09.328942+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

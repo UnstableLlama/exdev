@@ -1,0 +1,706 @@
+{
+  "schema_version": 5,
+  "sha": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+  "parent_shas": [
+    "c6aa83f7e5a5e735c079d41244cbc704eda7e54e"
+  ],
+  "cutoff_date": "2025-05-11T15:35:38+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The parent architecture registry supports dense Qwen3 but not Qwen3MoeForCausalLM; Config.from_directory rejects an architecture absent from that registry.",
+        "basis": "source",
+        "evidence": [
+          "call_af812fb4337842bdadfcd6a69ca2c432",
+          "call_9555208412814f30995426b021cd2ccd"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The new builder combines the existing Qwen3 normalized-attention assembly with BlockSparseMLP, supplying expert checkpoint keys, routing dimensions and all-expert calibration.",
+        "basis": "source",
+        "evidence": [
+          "call_89bad8e3d4694c5d9864789ba0f54f41",
+          "call_0242adcdc71e4ba9bb9373cfd5e61480",
+          "call_cf72eb3dcebb46c492ad18e51318187d"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Registration enables architecture-specific configuration dispatch without changing attention or expert kernels. The calibration switch activates an existing conversion mechanism rather than introducing a new converter.",
+        "basis": "source",
+        "evidence": [
+          "call_f9343e620ca0483e8fb9c81967f926e7",
+          "call_89bad8e3d4694c5d9864789ba0f54f41",
+          "call_fa86a7a3557846ac870e30533824ab03"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the earlier Qwen3 entry, which establishes the normalized-attention builder being followed, and the BlockSparseMLP entry, which records the conditional all-expert/fused-buffer mismatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_f73f21e32f1e45188a153662e9b97c13",
+          "call_ea35458fe5674505a0a0e77915e3ec83"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d proposes a spelling correction. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports native-extension import failure. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports a Cholesky failure while converting a Cohere2 model.",
+        "basis": "source",
+        "evidence": [
+          "call_f248979d9701418ba11ea7895cd0621c",
+          "call_451c4666461847c980c38fe6a1e83c02",
+          "call_2cedbc69a1b746e384e91df2ac12c068"
+        ]
+      },
+      {
+        "text": "Their relationship to this task is only inferred shared-file context: config.py and convert_model.py occur in the inspected code and discussions. None establishes motivation for Qwen3 MoE support or successful execution of it.",
+        "basis": "inference",
+        "evidence": [
+          "call_f248979d9701418ba11ea7895cd0621c",
+          "call_451c4666461847c980c38fe6a1e83c02",
+          "call_2cedbc69a1b746e384e91df2ac12c068",
+          "call_89bad8e3d4694c5d9864789ba0f54f41"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model construction, checkpoint loading, conversion, generation or CUDA execution was performed. The Python calculation checks transcribed integer dimensions only.",
+      "Tensor-header inspection sampled ordinary BF16 checkpoints for both dimensional configurations, not every expert, layer or shard. Complete tensor-name coverage, optional tensors and FP8/GPTQ checkpoint loading remain unverified.",
+      "No throughput, numerical-equivalence, conversion-quality or long-context accuracy measurement supports this annotation."
+    ],
+    "links": [
+      "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Qwen3 MoE registration, expert routing and calibration",
+        "claims": [
+          {
+            "text": "architectures.py imports Qwen3MoeModel and includes it in the registry comprehension. Its config_class declares Qwen3MoeForCausalLM, so the existing directory lookup selects Qwen3MoeConfig, which associates itself with Qwen3MoeModel.",
+            "basis": "source",
+            "evidence": [
+              "call_f9343e620ca0483e8fb9c81967f926e7",
+              "call_89bad8e3d4694c5d9864789ba0f54f41",
+              "call_af812fb4337842bdadfcd6a69ca2c432",
+              "call_9555208412814f30995426b021cd2ccd"
+            ]
+          },
+          {
+            "text": "Qwen3MoeConfig preserves explicit head_dim, otherwise using hidden_size // num_attention_heads; KV-head count defaults to query-head count and tied embeddings default to false. It requires moe_intermediate_size, num_experts and num_experts_per_tok. Supplied hidden_act must be silu and supplied norm_topk_prob must be true; both assertions permit omission.",
+            "basis": "source",
+            "evidence": [
+              "call_89bad8e3d4694c5d9864789ba0f54f41",
+              "call_9555208412814f30995426b021cd2ccd"
+            ]
+          },
+          {
+            "text": "Parent-tree searches found no norm_top spelling or moe_intermediate spelling; num_experts and num_experts_per_tok occur in BlockSparseMLP. The new norm_topk_prob assertion therefore restricts accepted configuration to the module's existing unconditional normalization of selected routing probabilities, rather than controlling a new branch.",
+            "basis": "source",
+            "evidence": [
+              "call_18285422fa604769a00bc43f2b959f8e",
+              "call_6b6659b7601c466689432d367d3acd78",
+              "call_2653fbc2a6074af58627d88f04101da8",
+              "call_cf72eb3dcebb46c492ad18e51318187d",
+              "call_89bad8e3d4694c5d9864789ba0f54f41"
+            ]
+          },
+          {
+            "text": "Each layer is a sequential pre-normalized TransformerBlock: attention is added to the residual, then the updated residual is normalized for the expert MLP and receives its output. Attention uses separate q_proj, k_proj, v_proj and o_proj tensors, with Q/K RMSNorm after head reshaping and before RoPE in all three existing backends. The builder selects NEOX-style RoPE through the shared configuration helper.",
+            "basis": "source",
+            "evidence": [
+              "call_89bad8e3d4694c5d9864789ba0f54f41",
+              "call_e86e4e8d6a324a5ca7132e2b84ca1309",
+              "call_85789c51b02c459784b12d5cbaa94964",
+              "call_9555208412814f30995426b021cd2ccd"
+            ]
+          },
+          {
+            "text": "BlockSparseMLP projects flattened tokens through mlp.gate, applies softmax, selects num_experts_per_tok experts and renormalizes their probabilities. Each expert computes down(silu(gate(x)) \u00d7 up(x)); weighted results are accumulated into token order. The supplied keys expand to mlp.experts.{expert_idx}.{gate_proj,up_proj,down_proj}. Expert intermediates are half precision and the builder requests float output.",
+            "basis": "source",
+            "evidence": [
+              "call_cf72eb3dcebb46c492ad18e51318187d",
+              "call_89bad8e3d4694c5d9864789ba0f54f41"
+            ]
+          },
+          {
+            "text": "The ordinary expert path handles multiple flattened tokens or non-EXL3 experts. A single token with all expert projections EXL3 selects indexed multi-GEMM fusion; MultiLinear additionally requires matching dimensions and bit widths within each projection group, no biases or softcaps, and unit post-scaling. Parent-tree search found no existing BlockSparseMLP constructor call, so this task supplies a model-level consumer of that earlier module.",
+            "basis": "source",
+            "evidence": [
+              "call_cf72eb3dcebb46c492ad18e51318187d",
+              "call_d15553f5f9224d429f2904c7e3877851",
+              "call_89bad8e3d4694c5d9864789ba0f54f41"
+            ]
+          },
+          {
+            "text": "The constructor sets calibration_all_experts=True. Existing conversion forwards it as activate_all_experts during Hessian capture, then recomputes reference states without that flag and advances converted states using ordinary routing. This connects expert coverage during calibration to the new architecture; the attention/MLP calibration-map labels retain the established conversion interfaces.",
+            "basis": "source",
+            "evidence": [
+              "call_0db61ffcdd264b23961f654e2336ac3c",
+              "call_fa86a7a3557846ac870e30533824ab03",
+              "call_89bad8e3d4694c5d9864789ba0f54f41",
+              "call_cf72eb3dcebb46c492ad18e51318187d"
+            ]
+          },
+          {
+            "text": "The inherited single-token all-expert mismatch is carried over, not corrected: routing can return all experts while fused buffers remain sized by num_experts_per_tok. The new model enables the calibration flag, but this does not establish that normal conversion reaches the fully EXL3, single-token failure condition.",
+            "basis": "source",
+            "evidence": [
+              "call_cf72eb3dcebb46c492ad18e51318187d",
+              "call_610dc55cab9e48bf82f707d56859385b",
+              "call_89bad8e3d4694c5d9864789ba0f54f41",
+              "call_fa86a7a3557846ac870e30533824ab03"
+            ]
+          },
+          {
+            "text": "The output stack is final RMSNorm producing half precision followed by lm_head. A tied head may use model.embed_tokens as its alternate key only when tying is configured and the tensor collection reports no lm_head. prepare_inputs stores input_ids and calls prepare_for_attn exactly as the inspected Qwen3, Phi3, Llama, Glm4, Gemma2, DeciLM, Cohere2 and Cohere callers do; no additional caller-side guard is omitted. The shared helper defaults to uncached FlashAttention and retains its cache-preparation checks.",
+            "basis": "source",
+            "evidence": [
+              "call_89bad8e3d4694c5d9864789ba0f54f41",
+              "call_456546f693c24747bcc960d71cce3a52",
+              "call_c7b9a95c4b414615b714082cb008032a",
+              "call_85789c51b02c459784b12d5cbaa94964"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-235B-A22B, Qwen/Qwen3-235B-A22B-FP8 and Qwen/Qwen3-235B-A22B-GPTQ-Int4 were each read. Each declares the registered architecture, hidden size 4096, 94 layers, 64 query heads, four KV heads, head dimension 128 and expert intermediate size 1536. Each specifies 128 experts, eight selected experts, silu, normalized top-k probabilities, epsilon 1e-6 and untied embeddings, agreeing with the builder's assembly. The quantized variants additionally declare their distinct storage formats; configuration agreement alone does not establish loader compatibility.",
+            "basis": "source",
+            "evidence": [
+              "call_88e3ed1441b04372b4a9c26de4734ae5",
+              "call_027cdf3d1d3846c2b24659bc2c8c4c71",
+              "call_8bef024055b14cee872b309f53b89339",
+              "call_89bad8e3d4694c5d9864789ba0f54f41"
+            ]
+          },
+          {
+            "text": "Qwen/Qwen3-30B-A3B, Qwen/Qwen3-30B-A3B-Base, Qwen/Qwen3-30B-A3B-FP8 and Qwen/Qwen3-30B-A3B-GPTQ-Int4 were each read. Each declares the registered architecture, hidden size 2048, 48 layers, 32 query heads, four KV heads, head dimension 128 and expert intermediate size 768. Each also specifies 128 experts, eight selected experts, silu, normalized top-k probabilities, epsilon 1e-6 and untied embeddings. All seven inspected configurations specify sparse step 1 and no MLP-only layers, consistent with constructing an expert MLP in every block; the new builder does not implement alternative sparse/dense schedules.",
+            "basis": "source",
+            "evidence": [
+              "call_dc18cfe4286949b08379ae89bd3b260b",
+              "call_3b181a4f8c3b49e6ae29d825ac48d5f3",
+              "call_960a1020e1cd447093a016c1f7b1e9f7",
+              "call_0ab3f5534c5245ab8adc6e37f9be7a1a",
+              "call_88e3ed1441b04372b4a9c26de4734ae5",
+              "call_027cdf3d1d3846c2b24659bc2c8c4c71",
+              "call_8bef024055b14cee872b309f53b89339",
+              "call_89bad8e3d4694c5d9864789ba0f54f41"
+            ]
+          },
+          {
+            "text": "A standard-library calculation gives query widths 4096 and 8192 for the 30B and 235B configurations, respectively, and KV width 512 for both. Their fallback head dimension would be 64 rather than the configured 128, showing why preserving explicit head_dim matters. This is integer shape arithmetic, not model execution.",
+            "basis": "execution",
+            "evidence": [
+              "call_c7b9a95c4b414615b714082cb008032a"
+            ]
+          },
+          {
+            "text": "Sampled BF16 headers agree with these dimensions. For 30B, layer-0 Q/K/V/O weights are [4096,2048], [512,2048], [512,2048] and [2048,4096]; for 235B they are [8192,4096], [512,4096], [512,4096] and [4096,8192]. Both contain Q/K norm weights [128] and routing-gate weights [128,hidden_size]. Sampled expert gate/up weights are [expert_intermediate,hidden_size] and down weights have the reverse orientation. Embedding and lm_head shapes are [151936,hidden_size], and sampled residual/final norm weights have hidden_size entries.",
+            "basis": "source",
+            "evidence": [
+              "call_b10283b0200f4182b52aff02bb254c3f",
+              "call_fdd83a8173ab4fbd9f3a7b282ba66b8d",
+              "call_2fcb64425e114a379e4cd14c55e3116c",
+              "call_bce32e044e134de384ca1c426eebd5f3",
+              "call_53ee0a5802db426e84bae6195ea00207",
+              "call_0bffcefda0f34a39a4523a8a1e4fc1b0",
+              "call_9242235287534794a004e7d94965f8cc",
+              "call_c3bd9f0216074dfe9dd95ca9232d5728"
+            ]
+          },
+          {
+            "text": "Reusing attention, expert dispatch and calibration avoids architecture-specific kernels, at the cost of inheriting their storage, fusion and routing constraints. This is a design interpretation, not evidence of a performance improvement.",
+            "basis": "inference",
+            "evidence": [
+              "call_89bad8e3d4694c5d9864789ba0f54f41",
+              "call_cf72eb3dcebb46c492ad18e51318187d",
+              "call_85789c51b02c459784b12d5cbaa94964"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "inherited-all-expert-fused-shape",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new architecture retains BlockSparseMLP's conditional all-expert/fused-buffer cardinality mismatch.",
+        "trigger": "Forward one flattened token through fully EXL3 expert projections with activate_all_experts=True and num_experts unequal to num_experts_per_tok; the reference configurations use 128 versus eight.",
+        "expected_behavior": "Evaluate every expert for capture, or select an ordinary path that supports the all-expert count.",
+        "actual_behavior": "topk returns 128 expert indices but fused gate/up buffers have eight expert slots. exl3_mgemm checks the index dimension against the output expert dimension and rejects this combination. TransformerBlock.forward directly forwards params to the MLP; ParallelDecoderBlock is another parent-tree forwarding site, but the new model uses TransformerBlock. Conversion supplies the flag, although inspected code does not establish that ordinary conversion also supplies the fully EXL3, single-token conditions.",
+        "locations": [
+          {
+            "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          },
+          {
+            "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+            "path": "exllamav3/models/qwen3_moe.py",
+            "symbol": "Qwen3MoeModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_cf72eb3dcebb46c492ad18e51318187d",
+          "call_610dc55cab9e48bf82f707d56859385b",
+          "call_f9641e0f7cac4bafaa103a5b8e171746",
+          "call_e86e4e8d6a324a5ca7132e2b84ca1309",
+          "call_fa86a7a3557846ac870e30533824ab03",
+          "call_89bad8e3d4694c5d9864789ba0f54f41"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared routing cardinality, fused allocations, native shape validation and decoder forwarding sites with the task's new builder and calibration flag.",
+            "evidence": [
+              "call_cf72eb3dcebb46c492ad18e51318187d",
+              "call_610dc55cab9e48bf82f707d56859385b",
+              "call_e86e4e8d6a324a5ca7132e2b84ca1309",
+              "call_89bad8e3d4694c5d9864789ba0f54f41"
+            ],
+            "limits": "Conditional source path only; no tensor or CUDA execution."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Printed the reference configurations' all-expert index count 128 against fused output count eight.",
+            "evidence": [
+              "call_c7b9a95c4b414615b714082cb008032a"
+            ],
+            "limits": "Integer dimension model, not execution of BlockSparseMLP or exl3_mgemm."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds Qwen3MoeForCausalLM registration and assembly using normalized Qwen3 attention, routed expert MLPs and all-expert calibration; a conditional inherited fused-path shape mismatch remains."
+  },
+  "evidence": {
+    "call_f9343e620ca0483e8fb9c81967f926e7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+        "offset": 157,
+        "max_bytes": 724
+      },
+      "result_sha256": "66f2382f43520ff6d6cf2bcb85d6f20b0d3f961f3fdd7d21667aada0ee84dbe7"
+    },
+    "call_89bad8e3d4694c5d9864789ba0f54f41": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+        "offset": 881,
+        "max_bytes": 6513
+      },
+      "result_sha256": "bbf389dcf128a1a73462f791e6fa14f143a8eefcacbe5e35a0ca208244d69613"
+    },
+    "call_89bf685f776646b582300d7c16f110ea": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "6358ca608ec94d421de8b5007c5a92add3a4a2f730ce97eb2f89793667581346",
+      "catalog_only": true
+    },
+    "call_f73f21e32f1e45188a153662e9b97c13": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "1db3dce033981fe2d1825165a9389b3fdcd21b67",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0a5dd9cf92bb8eeba77b7bda8f95a0f48b5fc9619ac7c5de0909f8b1715d9451"
+    },
+    "call_ea35458fe5674505a0a0e77915e3ec83": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_cf72eb3dcebb46c492ad18e51318187d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "06a985b2271062ad94c7a8a4407ea8d5e4903f8e79c51d7895c83308a05d5eb4"
+    },
+    "call_88e3ed1441b04372b4a9c26de4734ae5": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "config.json"
+      },
+      "result_sha256": "b07906670c70cd59545c70d8a5a1d82a615741ac51fb1b01b21abab3f6e865cb"
+    },
+    "call_027cdf3d1d3846c2b24659bc2c8c4c71": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-FP8",
+        "revision": "bae6646ab86923752d1ae45a4bd660794daeafab",
+        "path": "config.json"
+      },
+      "result_sha256": "73b4c0097085522e22d185bb6a30d98ec92d0513306094479d474b27fa4226c5"
+    },
+    "call_8bef024055b14cee872b309f53b89339": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "revision": "db337e1a1eac79928ddea88d43615bbce753d8a7",
+        "path": "config.json"
+      },
+      "result_sha256": "ed86c55e8076d30f12fad029512b338b186a8ee3eb95dbc54b930a7afddaa749"
+    },
+    "call_dc18cfe4286949b08379ae89bd3b260b": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "config.json"
+      },
+      "result_sha256": "263a0f20cdae386b86023494b02e9237e10f0fd77ea1de3a3a1315229492d652"
+    },
+    "call_3b181a4f8c3b49e6ae29d825ac48d5f3": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-Base",
+        "revision": "89e5e822ba31507f5f79dc3422c7c5345c422737",
+        "path": "config.json"
+      },
+      "result_sha256": "716fce423a7574da5d72a30fadc937e567eb6efdfacc3899a04a6e0cb5e2d488"
+    },
+    "call_960a1020e1cd447093a016c1f7b1e9f7": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-FP8",
+        "revision": "4504c1329df104a4b299f0db05882e84da88830b",
+        "path": "config.json"
+      },
+      "result_sha256": "24a2962e36886fbfc6c6880dc34ee8f0a85d39f7c071121c9a8f72b7c872e201"
+    },
+    "call_0ab3f5534c5245ab8adc6e37f9be7a1a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "revision": "5b78b1b5f244a39334307aed060c27aa8d21e068",
+        "path": "config.json"
+      },
+      "result_sha256": "ed7b9c01833e2ef39978c4b47c5bd4e7227680ff0acd9cdc32f51490c3e74a2a"
+    },
+    "call_e43864ea367d4bc1877efbd92c8fff50": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "968737b19e5a836fefffff71baa5be70b8de113f1c923ad6d0048df4eb94fe83",
+        "max_bytes": 4000
+      },
+      "result_sha256": "34a845cf7eea861995ce55783fc95ae2976107233eeb78b8943c68825b24fab1",
+      "catalog_only": true
+    },
+    "call_d15553f5f9224d429f2904c7e3877851": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "BlockSparseMLP",
+        "limit": 100
+      },
+      "result_sha256": "e9a5e65d2526f09ea55bcbc0a7e103678b6595fa5905d59396efca36080bbf7a"
+    },
+    "call_0db61ffcdd264b23961f654e2336ac3c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "calibration_all_experts",
+        "limit": 100
+      },
+      "result_sha256": "7f3be0b1e3b9bcbc608cbe7a5ceb5f87bc2dc83863496077c770c26bb677ecab"
+    },
+    "call_18285422fa604769a00bc43f2b959f8e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "norm_top",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_732c9a6d05dc4e03a8dfe72488e946ee": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "Qwen3",
+        "limit": 100
+      },
+      "result_sha256": "f84f4a53fa005178a41404af4541c91b3330c158654f0f978cf51ec29584d59a"
+    },
+    "call_9555208412814f30995426b021cd2ccd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 25000
+      },
+      "result_sha256": "85e3aa930f1e238a4a27c3f5eb33c55bc3541cfe16f9226b6291529db5d1ec59"
+    },
+    "call_e86e4e8d6a324a5ca7132e2b84ca1309": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "0d3dc93f963edab7063120909cbc2f61569139f0c140144e2dc827c7073b56db"
+    },
+    "call_daa84c2c3b8f42dd8b728e66ceae2834": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 11000
+      },
+      "result_sha256": "9b6975e0608cb65d65b8e36c780e5328139495f3fea96c99ba250cffafa74a17"
+    },
+    "call_fa86a7a3557846ac870e30533824ab03": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 11000,
+        "max_bytes": 11000
+      },
+      "result_sha256": "de8530ebe2f0c83c94a24d38403a0741c4f0ad9fd4aa0c233065c9300bd1e0f6"
+    },
+    "call_b10283b0200f4182b52aff02bb254c3f": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "model-00001-of-00016.safetensors",
+        "limit": 12
+      },
+      "result_sha256": "c7d73ef9478d7103196ebf97d265703bbe11380b678fbac64dd7241ab491a84b"
+    },
+    "call_fdd83a8173ab4fbd9f3a7b282ba66b8d": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "model-00001-of-00016.safetensors",
+        "offset": 386,
+        "limit": 12
+      },
+      "result_sha256": "21dee820b986f4e1253a2cf697352dad4a7a0859be6e29d05d04f4ffbe6fa534"
+    },
+    "call_2fcb64425e114a379e4cd14c55e3116c": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00001-of-00118.safetensors",
+        "limit": 6
+      },
+      "result_sha256": "5102d767f556cdc7ed86f5d37c2d5d1a44fe415a221daa54f5a169205dd3c28e"
+    },
+    "call_85789c51b02c459784b12d5cbaa94964": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 17000
+      },
+      "result_sha256": "24308e96431cabc08c436215585cc25ce0dc22b2161acc5b35fab11af0ab2a79"
+    },
+    "call_456546f693c24747bcc960d71cce3a52": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "prepare_for_attn(",
+        "limit": 100
+      },
+      "result_sha256": "94a788d65a2304685544940ea79e912b8920512b17e7c3b940aca2cb076ee1c6"
+    },
+    "call_c7b9a95c4b414615b714082cb008032a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor p in Path('exllamav3/models').glob('*.py'):\n t=p.read_text(); lines=t.splitlines()\n for i,l in enumerate(lines):\n  if 'prepare_for_attn(input_ids, params)' in l: print(str(p)+':'+str(i+1)+'\\n'+'\\n'.join(lines[max(0,i-4):i+3]))\nfor h,q,m in [(2048,32,768),(4096,64,1536)]: print({'hidden':h,'Q_width':q*128,'KV_width':4*128,'fallback_head':h//q,'gate_up_shape':[m,h],'down_shape':[h,m],'all_expert_indices':128,'fused_outputs':8})"
+        ]
+      },
+      "result_sha256": "5c60a651fff8e365a420ea462e9e31a5899b9b41cbb1e88bddabf4c00fcf8b86"
+    },
+    "call_f248979d9701418ba11ea7895cd0621c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "1f1c057cda242440d99ac6aa706bb302e350b91ab5bd678d3e809b5f174ea474"
+    },
+    "call_451c4666461847c980c38fe6a1e83c02": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7c7b4e439d9d1bc48369795c75c8283c52a9e29478d206ec8d83913a46928e61"
+    },
+    "call_2cedbc69a1b746e384e91df2ac12c068": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16384
+      },
+      "result_sha256": "be7aca9e9874bf209f1bac584fdf7c9664503eb7ec69eaa3fb066c80988d36ef"
+    },
+    "call_2653fbc2a6074af58627d88f04101da8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "num_expert",
+        "limit": 100
+      },
+      "result_sha256": "b02ab923e591438df800ecdf0fae3a346990b9aafb81c65ffe03e2194f273082"
+    },
+    "call_6b6659b7601c466689432d367d3acd78": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "moe_intermediate",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_fbd4f14a917642f4919dc0de3d1d60f8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "indices.numel",
+        "limit": 50
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_1e8423dbf2b1499c8cb1d2a80f4a526c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": "indices.value",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "limit": 50
+      },
+      "result_sha256": "4f55cec607188e6623196adb20cf0e7456944fb6ad0e86a1f2e63c93f1839731"
+    },
+    "call_680947315c5a40cfa7eb068362745efa": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00002-of-00118.safetensors",
+        "offset": 169,
+        "limit": 16
+      },
+      "result_sha256": "105a1946345d174eb8913379bc9de5b6baae6cf6cf60b8d18b94cf83ad47abfb"
+    },
+    "call_53ee0a5802db426e84bae6195ea00207": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00118-of-00118.safetensors",
+        "limit": 18
+      },
+      "result_sha256": "566e77ffdc4c7588e5b5762f00ecb3e2c8896661d1171baf2b93c6d4148bd842"
+    },
+    "call_0bffcefda0f34a39a4523a8a1e4fc1b0": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00118-of-00118.safetensors",
+        "offset": 139,
+        "limit": 10
+      },
+      "result_sha256": "06db9e48d8330b3d25c3b8da65f866042dc64d0925b76efb93a14ebc071f239f"
+    },
+    "call_bce32e044e134de384ca1c426eebd5f3": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-235B-A22B",
+        "revision": "b51c4308ed84804fa6722b20722cd91e3cd17808",
+        "path": "model-00001-of-00118.safetensors",
+        "offset": 200,
+        "limit": 15
+      },
+      "result_sha256": "1c440f5f0cf1c9c358d9d5e77826575cc9c000ee6ee55bf15ebb0ff015c21c25"
+    },
+    "call_0242adcdc71e4ba9bb9373cfd5e61480": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/models/qwen3.py",
+        "max_bytes": 11000
+      },
+      "result_sha256": "7ef51eab3f8f864d0ee382c702e75349b4617b62dfe75d46ff8c9361f7c0a090"
+    },
+    "call_af812fb4337842bdadfcd6a69ca2c432": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/models/architectures.py"
+      },
+      "result_sha256": "870438b3e460261a67339000c2ee076aee80aa18f49ce48befeec90a189f1732"
+    },
+    "call_f9641e0f7cac4bafaa103a5b8e171746": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "query": ".mlp.forward(",
+        "limit": 100
+      },
+      "result_sha256": "f342a7cb4d6f15b0a6dbc961038906b44c7827c4eff16c715f88195f68a43d10"
+    },
+    "call_610dc55cab9e48bf82f707d56859385b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c6aa83f7e5a5e735c079d41244cbc704eda7e54e",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4400,
+        "max_bytes": 5500
+      },
+      "result_sha256": "6f165f797746066150276d0b14059d2afd2b59655e5f28b1badcf16f1dfad498"
+    },
+    "call_9242235287534794a004e7d94965f8cc": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "model-00016-of-00016.safetensors",
+        "limit": 2
+      },
+      "result_sha256": "8ec31f608cf18ca55157f24f9648a7d886558957636b017147cbf05eeb8bb35d"
+    },
+    "call_c3bd9f0216074dfe9dd95ca9232d5728": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "Qwen/Qwen3-30B-A3B",
+        "revision": "4c446470ba0aec43e22ac1128f9ffd915f338ba3",
+        "path": "model-00016-of-00016.safetensors",
+        "offset": 143,
+        "limit": 9
+      },
+      "result_sha256": "1095b881868576312e390427808ee9987e2226487d800562e2e525f40f4c12b6"
+    }
+  }
+}

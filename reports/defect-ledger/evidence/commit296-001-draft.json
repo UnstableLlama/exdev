@@ -1,0 +1,285 @@
+{
+  "schema_version": 5,
+  "sha": "86753399f5772f7b22d63a34efa235b0f7afd613",
+  "parent_shas": [
+    "69f8f9a07b95142878997f79e0053b1c1e08422f"
+  ],
+  "cutoff_date": "2025-07-08T17:12:23+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The loader previously reserved 0.25 GiB per device when no reserve was supplied, including unspecified entries in a short reserve list.",
+        "basis": "source",
+        "evidence": [
+          "call_107de4f844ec4f4da2e18362ce3feb98"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Increasing that reserve trades model-placement capacity for additional headroom. The diff does not establish why 0.5 was chosen.",
+        "basis": "inference",
+        "evidence": [
+          "call_107de4f844ec4f4da2e18362ce3feb98",
+          "call_8331a2c4bfff4f5e9a83f2fcae9e7708"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Default autosplit loading now reserves 0.5 GiB per device. Explicit scalar reserves and supplied list entries retain their values; use_per_device and explicit single-device loading bypass this default.",
+        "basis": "source",
+        "evidence": [
+          "call_107de4f844ec4f4da2e18362ce3feb98",
+          "call_2c998fb50fcf4980b2ac5895fdc67647"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root models ancestor entry was read. It describes the existing dummy-forward autosplit mechanism and its out-of-memory retry, which this change retains.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_e88653f24aab4a248de9f24756a3370a"
+        ]
+      },
+      {
+        "text": "Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d reports apparent unused VRAM. Its discussion describes transient allocations, dummy forwards and configurable reserves.",
+        "basis": "source",
+        "evidence": [
+          "call_b001a92cb5784217bfc72a9d85e1f915"
+        ]
+      },
+      {
+        "text": "Issue #50 is relevant by inference because its error text exactly matches _load_autosplit and its discussion names load/load_gen reserves; it is not evidence that this commit fixes the report. Issues #6 (\u201cNo ROCm runtime is found, using ROCM_HOME='/usr'\u201d) and #7 (\u201cquantizing model: undefined symbol: __cxa_call_terminate\u201d) instead report import/build failures. Their inferred connection is only the shared model.py traceback path, not the changed reserve logic.",
+        "basis": "inference",
+        "evidence": [
+          "call_b001a92cb5784217bfc72a9d85e1f915",
+          "call_bd162201350843c0b2c07511539c8c1a",
+          "call_a2e49cfc3a344a49b57849f7faab392b",
+          "call_7dee1893abd24c1e8c3667c788d66fca",
+          "call_107de4f844ec4f4da2e18362ce3feb98"
+        ]
+      }
+    ],
+    "limitations": [
+      "No GPU loading, placement, stability or throughput measurements were performed. The scalar computation checks byte conversion only.",
+      "The evidence does not establish an optimal reserve or connect this commit explicitly to issue #50."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Increase default autosplit memory headroom",
+        "claims": [
+          {
+            "text": "Both edits are needed for a consistent default: None initializes every device to 0.5, while a short list is extended with 0.5. Values are converted using int(x * 1024**3), so these are GiB despite the docstring's GB terminology. Negative explicit entries still exclude devices.",
+            "basis": "source",
+            "evidence": [
+              "call_107de4f844ec4f4da2e18362ce3feb98",
+              "call_2c998fb50fcf4980b2ac5895fdc67647"
+            ]
+          },
+          {
+            "text": "A bounded Python scalar calculation gives 268,435,456 bytes for the old default and 536,870,912 for the new one: an additional 256 MiB per defaulted device.",
+            "basis": "execution",
+            "evidence": [
+              "call_abe8ef97af904009ae5454c1d0dd751c"
+            ]
+          },
+          {
+            "text": "_load_autosplit passes the byte reserve to set_memory_fraction_reserve when entering a device. That helper touches the device, reads free and total memory, and sets the process memory fraction to (free - reserve) / total; it does not allocate a reserve tensor. Autosplit loads modules and runs dummy forwards, advancing to another device after recognized out-of-memory errors. On normal completion it restores touched devices' fractions.",
+            "basis": "source",
+            "evidence": [
+              "call_bd162201350843c0b2c07511539c8c1a",
+              "call_2c998fb50fcf4980b2ac5895fdc67647",
+              "call_8331a2c4bfff4f5e9a83f2fcae9e7708"
+            ]
+          },
+          {
+            "text": "The larger default can make autosplit advance earlier or exhaust its device list sooner, while leaving more headroom outside the loading budget. Users can retain the old budget with an explicit 0.25 reserve; use_per_device remains a separate budgeting alternative.",
+            "basis": "inference",
+            "evidence": [
+              "call_107de4f844ec4f4da2e18362ce3feb98",
+              "call_bd162201350843c0b2c07511539c8c1a",
+              "call_8331a2c4bfff4f5e9a83f2fcae9e7708"
+            ]
+          },
+          {
+            "text": "The whole-tree load_gen search finds direct calls in examples/loading.py and the Model.load wrapper. Both example generator calls omit memory overrides and therefore select the changed default; the wrapper forwards its caller's arguments.",
+            "basis": "source",
+            "evidence": [
+              "call_87c9e257ad184597a40507a1b66cf85b",
+              "call_d3269cf1b4b2448c90ceebd69b25635f",
+              "call_2c998fb50fcf4980b2ac5895fdc67647"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "stale-reserve-docstring",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The load_gen docstring retains the old default after both runtime defaults change.",
+        "trigger": "A caller consults load_gen's reserve_per_device documentation, also referenced by Model.load.",
+        "expected_behavior": "Documentation states the new 0.5 GiB default for omitted reserves and missing list entries.",
+        "actual_behavior": "The unchanged docstring states 0.25 GB, whereas the changed implementation uses 0.5 multiplied by 1024**3.",
+        "locations": [
+          {
+            "commit": "86753399f5772f7b22d63a34efa235b0f7afd613",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.load_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_107de4f844ec4f4da2e18362ce3feb98",
+          "call_2c998fb50fcf4980b2ac5895fdc67647"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the complete task diff with the parent docstring and wrapper. Searched the whole parent tree for reserve_per_device and load_gen callers; inspected the direct example calls. The mismatch concerns public documentation, not proof of a runtime failure.",
+            "evidence": [
+              "call_041a8c5f9f6243dd81712a95542c3422",
+              "call_87c9e257ad184597a40507a1b66cf85b",
+              "call_d3269cf1b4b2448c90ceebd69b25635f",
+              "call_107de4f844ec4f4da2e18362ce3feb98",
+              "call_2c998fb50fcf4980b2ac5895fdc67647"
+            ],
+            "limits": "No documentation rendering or repository runtime execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Doubles default autosplit reserve from 256 to 512 MiB per device, including missing list entries, but leaves the old default in the docstring."
+  },
+  "evidence": {
+    "call_107de4f844ec4f4da2e18362ce3feb98": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "86753399f5772f7b22d63a34efa235b0f7afd613",
+        "offset": 174,
+        "max_bytes": 1115
+      },
+      "result_sha256": "a6c9d5f5a18045ad6738e8eed246f2e5488642a9f9c822b24ef6c39a244ee32e"
+    },
+    "call_2c998fb50fcf4980b2ac5895fdc67647": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+        "path": "exllamav3/models/model.py",
+        "offset": 8500,
+        "max_bytes": 24000
+      },
+      "result_sha256": "b9eea299625ee84e876a71ace34cfe62d85b118186de62bad5acc6920a6c2a5a"
+    },
+    "call_bd162201350843c0b2c07511539c8c1a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 8500
+      },
+      "result_sha256": "c63478788d8f163c63789e530636ee479ace964b789fff6e9286decd0bbe5802"
+    },
+    "call_041a8c5f9f6243dd81712a95542c3422": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+        "query": "reserve_per_device",
+        "limit": 100
+      },
+      "result_sha256": "1acab78be5d01bbd19d1c44ec43d31bb945b6a29fbf3724950d230b7507f818d"
+    },
+    "call_8331a2c4bfff4f5e9a83f2fcae9e7708": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+        "path": "exllamav3/util/memory.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "22d729c1577ba3e2fd1c4ed9f5248d089e9d955c916f11e79e471bd3d33b0ab7"
+    },
+    "call_c03339e3611441369cb3b2177ee6b4ac": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "max_bytes": 12000,
+        "limit": 30
+      },
+      "result_sha256": "c23508b13d63e6745b2a73d0d46284acfbe6fb1388f6e3bfa31981ff51d678c2",
+      "catalog_only": true
+    },
+    "call_e88653f24aab4a248de9f24756a3370a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_7dee1893abd24c1e8c3667c788d66fca": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "e0b649302500b43408ab4b38b3ab2e4b5d61cf7e5dfb7cacd2b48678d366736a"
+    },
+    "call_a2e49cfc3a344a49b57849f7faab392b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 12000
+      },
+      "result_sha256": "58f58f1b1ad6ed919b006ec8dede80f2b37eb30116438587a9cf87d912236be7"
+    },
+    "call_b001a92cb5784217bfc72a9d85e1f915": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 16000
+      },
+      "result_sha256": "69c43583eb9d837daf382bd1191ad1264a36a5631be15361a7bb30aca2d82281"
+    },
+    "call_87c9e257ad184597a40507a1b66cf85b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+        "query": "load_gen(",
+        "limit": 100
+      },
+      "result_sha256": "ee0e2c0eaa53661e95c0e00170948584161659540e23f57d205c2a003d43f273"
+    },
+    "call_d3269cf1b4b2448c90ceebd69b25635f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+        "path": "examples/loading.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "79bb990913974980a2fcef1079846ae5d1b102238a61aa241d1e73cf1a6930cd"
+    },
+    "call_abe8ef97af904009ae5454c1d0dd751c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "old=int(.25*1024**3); new=int(.5*1024**3); print({'old_bytes':old,'new_bytes':new,'extra_bytes_per_default_device':new-old,'old_MiB':old//1024**2,'new_MiB':new//1024**2})"
+        ]
+      },
+      "result_sha256": "c2f867abd49b9a6cab9d91a1d1d970d950f5e1c741fc42b1e0dbd399d999f410"
+    }
+  }
+}

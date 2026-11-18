@@ -1,0 +1,329 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The new FP32 intermediate option is not supported end-to-end by GatedMLP.forward.",
+  "trigger": "Construct GatedMLP with interm_dtype=torch.float32 and run forward with otherwise valid FP16 inputs.",
+  "expected_behavior": "Gate/up outputs should be activated and consumed by the down projection with a compatible dtype, or the unsupported setting should be rejected before computation.",
+  "actual_behavior": "Gate and up projections allocate FP32 outputs. silu_mul and gelu_mul perform no dtype checks and reinterpret their buffers as half pointers. Their kernel processes numel/2 half2 values, not numel FP32 values. The tensor remains tagged FP32 afterward. A dense down projection then fails hgemm's FP16 input check; an EXL3 down projection first performs a supported float Hadamard but subsequently fails the same FP16-input requirement in either GEMM route. No shipped model constructor enables interm_dtype, so this concerns the new opt-in setting rather than every model workflow.",
+  "verification": [
+    {
+      "method": "source_inspection",
+      "description": "Traced gate/up dtype propagation, activation pointer casts, down projection forwarding and both GEMM input checks; inspected all model GatedMLP construction sites located by the parent-tree search.",
+      "evidence": [
+        "call_13eb6635fde84fd19b6ad2cec9ff06ad",
+        "call_ff68f6a124b0488eb9dc569d2c81d60b",
+        "call_82216054571e4367893b3e0c1cd438b0",
+        "call_73f3ee3c7f08478c90a284078b93d9ce"
+      ],
+      "limits": "No native execution; external callers were not enumerated."
+    },
+    {
+      "method": "scalar_transcription",
+      "description": "Computed activation write coverage for 128 FP32 elements: the half2 loop writes 256 bytes of a 512-byte tensor.",
+      "evidence": [
+        "call_0842549a05094f8daeae42df3bc215da",
+        "call_ff68f6a124b0488eb9dc569d2c81d60b"
+      ],
+      "limits": "Byte-count arithmetic only, not a CUDA execution or numerical simulation."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Compared all activation callers found by whole-tree searches with the new destination check and inspected intermediate allocation and LinearFP16 output dtype selection.",
+      "evidence": [
+        "call_505fc341039744419b1c249e0e40ecbc",
+        "call_48c75dec316f4874812aa55ad37d6a63",
+        "call_ba6f68cd2d384aa48732ae29b5d50333",
+        "call_3a99aefbdd834c22aa8144b783be3b46"
+      ],
+      "limits": "Conditional opt-in paths; no model or CUDA execution and no claim that every workflow enables FP32 intermediates."
+    },
+    {
+      "method": "source_inspection",
+      "description": "Compared whole-tree constructor/caller searches, destination arguments and native dtype checks.",
+      "evidence": [
+        "call_061b8d3de7e04883bde6a2dff8233a7b",
+        "call_d004e439fccd4fb281ce8cc9715b62e5",
+        "call_2307a285e1db4d5983642e393857ac60"
+      ],
+      "limits": "Conditional external or opt-in configuration; no CUDA execution."
+    }
+  ],
+  "defect_id": "exllamav3-fp32-mlp-intermediate-contract",
+  "revision_id": "r003",
+  "supersedes": "r002",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "status": "source_supported",
+      "rationale": "Introducing change identified in the bound draft and reviewer disposition; not the latest affected revision."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "run": ".teacher/runs/commit-000071-002",
+      "local_id": "fp32-mlp-intermediate-contract",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "fp32-mlp-intermediate-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new FP32 intermediate option is not supported end-to-end by GatedMLP.forward.",
+        "trigger": "Construct GatedMLP with interm_dtype=torch.float32 and run forward with otherwise valid FP16 inputs.",
+        "expected_behavior": "Gate/up outputs should be activated and consumed by the down projection with a compatible dtype, or the unsupported setting should be rejected before computation.",
+        "actual_behavior": "Gate and up projections allocate FP32 outputs. silu_mul and gelu_mul perform no dtype checks and reinterpret their buffers as half pointers. Their kernel processes numel/2 half2 values, not numel FP32 values. The tensor remains tagged FP32 afterward. A dense down projection then fails hgemm's FP16 input check; an EXL3 down projection first performs a supported float Hadamard but subsequently fails the same FP16-input requirement in either GEMM route. No shipped model constructor enables interm_dtype, so this concerns the new opt-in setting rather than every model workflow.",
+        "locations": [
+          {
+            "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.forward"
+          },
+          {
+            "commit": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "act_mul_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_13eb6635fde84fd19b6ad2cec9ff06ad",
+          "call_ff68f6a124b0488eb9dc569d2c81d60b",
+          "call_82216054571e4367893b3e0c1cd438b0",
+          "call_73f3ee3c7f08478c90a284078b93d9ce"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced gate/up dtype propagation, activation pointer casts, down projection forwarding and both GEMM input checks; inspected all model GatedMLP construction sites located by the parent-tree search.",
+            "evidence": [
+              "call_13eb6635fde84fd19b6ad2cec9ff06ad",
+              "call_ff68f6a124b0488eb9dc569d2c81d60b",
+              "call_82216054571e4367893b3e0c1cd438b0",
+              "call_73f3ee3c7f08478c90a284078b93d9ce"
+            ],
+            "limits": "No native execution; external callers were not enumerated."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed activation write coverage for 128 FP32 elements: the half2 loop writes 256 bytes of a 512-byte tensor.",
+            "evidence": [
+              "call_0842549a05094f8daeae42df3bc215da",
+              "call_ff68f6a124b0488eb9dc569d2c81d60b"
+            ],
+            "limits": "Byte-count arithmetic only, not a CUDA execution or numerical simulation."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "d97bfdf1f402326f25773143dbe07751493758c1",
+      "run": ".teacher/runs/commit-000262-001",
+      "local_id": "fp32-inplace-callers",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "fp32-inplace-callers",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Existing in-place activation callers do not implement the new FP32-input/FP16-output contract.",
+        "trigger": "Run GatedMLP with FP32 gate/up intermediates, or BlockSparseMLP with FP32 intermediates on its ordinary expert path (bsz > 1 or not fully quantized).",
+        "expected_behavior": "The supported FP32 intermediate setting supplies a half activation destination for the subsequent down projection.",
+        "actual_behavior": "Both paths pass u as the destination while u remains FP32. The newly added z dtype check rejects the call before launching the activation kernel. This changes the inherited failure from incorrect half-pointer interpretation to explicit rejection; the fused BlockSparseMLP path already has a separate half destination.",
+        "locations": [
+          {
+            "commit": "d97bfdf1f402326f25773143dbe07751493758c1",
+            "path": "exllamav3/exllamav3_ext/activation.cu",
+            "symbol": "silu_mul / gelu_mul"
+          },
+          {
+            "commit": "fce1b96e3fa533e9d3e371b640d3a48c4f97eae7",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.forward"
+          },
+          {
+            "commit": "fce1b96e3fa533e9d3e371b640d3a48c4f97eae7",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_bd6399fafa704e2283b31d00cbe55c0f",
+          "call_43e66c7b06fc4bc5bc2752f1cb5180a2",
+          "call_d7f9937b3258475cae565b94465c3209",
+          "call_3a99aefbdd834c22aa8144b783be3b46"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared all activation callers found by whole-tree searches with the new destination check and inspected intermediate allocation and LinearFP16 output dtype selection.",
+            "evidence": [
+              "call_505fc341039744419b1c249e0e40ecbc",
+              "call_48c75dec316f4874812aa55ad37d6a63",
+              "call_ba6f68cd2d384aa48732ae29b5d50333",
+              "call_3a99aefbdd834c22aa8144b783be3b46"
+            ],
+            "limits": "Conditional opt-in paths; no model or CUDA execution and no claim that every workflow enables FP32 intermediates."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+      "run": ".teacher/runs/commit-000295-003",
+      "local_id": "inherited-fp32-gated-destination",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "inherited-fp32-gated-destination",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "GatedMLP's opt-in FP32 intermediate path remains incompatible with the activation destination contract.",
+        "trigger": "Construct GatedMLP with interm_dtype=torch.float and execute forward with otherwise valid inputs.",
+        "expected_behavior": "Supply a half activation destination before the down projection.",
+        "actual_behavior": "GatedMLP passes float u as both up input and destination; silu_mul or gelu_mul rejects z's dtype before reaching the clamp. No located shipped GatedMLP constructor enables this setting. BlockSparseMLP's ordinary path now uses a separate half destination and does not retain this mismatch.",
+        "locations": [
+          {
+            "commit": "69f8f9a07b95142878997f79e0053b1c1e08422f",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_b5fcde59f83040a1ad9f1b7dadfdd13e",
+          "call_cad4197b43824f4aa84059afc112ae9e",
+          "call_83b59a5f5b98411ebd64f5a8140e9c96",
+          "call_dd6e44356ad74741bbbaadf005fbb4d9",
+          "call_95c8a3e34cd04a39b9905b1bab39d6d0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared whole-tree constructor/caller searches, destination arguments and native dtype checks.",
+            "evidence": [
+              "call_061b8d3de7e04883bde6a2dff8233a7b",
+              "call_d004e439fccd4fb281ce8cc9715b62e5",
+              "call_2307a285e1db4d5983642e393857ac60"
+            ],
+            "limits": "Conditional external or opt-in configuration; no CUDA execution."
+          }
+        ]
+      },
+      "reviewer_confirmed": true
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/ledger-backlog-001/.teacher__runs__commit-000071-002__draft.json",
+      "sha256": "604ba79ccc53c0cdf08e96efaa6302d42bdb9252d2c1216da5b4fb3177bed060"
+    },
+    {
+      "file": "evidence/ledger-backlog-001/reviews__verdicts__commit-000071-002.md",
+      "sha256": "5ad9bfdfaeec6003368657487476d692bba986e1ba59c96d820a68a447fe559b"
+    },
+    {
+      "file": "evidence/commit262-001-draft.json",
+      "sha256": "d8eee527fbee85968327e2f14287b403ca3eff7a2c2eccc47aba08544c2c81f6"
+    },
+    {
+      "file": "evidence/commit262-001-transcript.json",
+      "sha256": "95ec81ffc7a6804760cb02defd5c7ff000ef23bb7835fba960ce123e51c4dee2"
+    },
+    {
+      "file": "evidence/commit262-001-verdict.md",
+      "sha256": "c3684c54d9e8f45cfa58655fc0e933d550ea868468698459b9e33468c16ee23e"
+    },
+    {
+      "file": "evidence/commit295-003-draft.json",
+      "sha256": "f0d63294d3ebc77c2d5ea87836ce8d0c31dba31f2f462b56cc355ac87ca9ddb6"
+    },
+    {
+      "file": "evidence/commit295-003-transcript.json",
+      "sha256": "1a862a9ecff4e88378cc8ef13b8ef7902051f066c3c0c9b0fe8c3afaf4154303"
+    },
+    {
+      "file": "evidence/commit295-003-verdict.md",
+      "sha256": "92ab6acfa2b48dc08d2855db320f5f87dd433624dc1343796a3e25a3a13439d7"
+    }
+  ],
+  "dependencies": [
+    {
+      "url": "urn:exdev:administrative:.teacher/runs/commit-000071-002/draft.json",
+      "source_id": ".teacher/runs/commit-000071-002/draft.json",
+      "content_sha256": "604ba79ccc53c0cdf08e96efaa6302d42bdb9252d2c1216da5b4fb3177bed060",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "url": "urn:exdev:administrative:reviews/verdicts/commit-000071-002.md",
+      "source_id": "reviews/verdicts/commit-000071-002.md",
+      "content_sha256": "5ad9bfdfaeec6003368657487476d692bba986e1ba59c96d820a68a447fe559b",
+      "available_at": "2026-11-16T10:45:56.349385+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "available_at": "2025-04-18T02:48:28+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit262-001-draft.json",
+      "source_id": "evidence/commit262-001-draft.json",
+      "content_sha256": "d8eee527fbee85968327e2f14287b403ca3eff7a2c2eccc47aba08544c2c81f6",
+      "available_at": "2026-11-17T06:43:09.328942+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit262-001-transcript.json",
+      "source_id": "evidence/commit262-001-transcript.json",
+      "content_sha256": "95ec81ffc7a6804760cb02defd5c7ff000ef23bb7835fba960ce123e51c4dee2",
+      "available_at": "2026-11-17T06:43:09.328942+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit262-001-verdict.md",
+      "source_id": "evidence/commit262-001-verdict.md",
+      "content_sha256": "c3684c54d9e8f45cfa58655fc0e933d550ea868468698459b9e33468c16ee23e",
+      "available_at": "2026-11-17T06:43:09.328942+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit295-003-draft.json",
+      "source_id": "evidence/commit295-003-draft.json",
+      "content_sha256": "f0d63294d3ebc77c2d5ea87836ce8d0c31dba31f2f462b56cc355ac87ca9ddb6",
+      "available_at": "2026-11-17T16:40:12.505694+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit295-003-transcript.json",
+      "source_id": "evidence/commit295-003-transcript.json",
+      "content_sha256": "1a862a9ecff4e88378cc8ef13b8ef7902051f066c3c0c9b0fe8c3afaf4154303",
+      "available_at": "2026-11-17T16:40:12.505694+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit295-003-verdict.md",
+      "source_id": "evidence/commit295-003-verdict.md",
+      "content_sha256": "92ab6acfa2b48dc08d2855db320f5f87dd433624dc1343796a3e25a3a13439d7",
+      "available_at": "2026-11-17T16:40:12.505694+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "e9a3b6a9256fc59f888b80a7d4a58883954b39de",
+      "d97bfdf1f402326f25773143dbe07751493758c1",
+      "69f8f9a07b95142878997f79e0053b1c1e08422f"
+    ],
+    "limits": "Only the individually evidenced observations; no continuous descendant range asserted. At295 this is a conditional source observation only; see the full finding for caller bounds. No CUDA or checkpoint execution."
+  },
+  "recorded_at": "2026-11-17T16:40:12.505694+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false,
+  "administrative_qualifications": [
+    "Opt-in intermediate dtype; no shipped constructor sets this option at 71. Source-only suspected.",
+    "At 262 the native wrapper now explicitly requires FP16 output: ordinary in-place FP32 callers fail that check. The fused expert path instead uses a separate half buffer. This is a further source-only observation of the existing opt-in contract identity, not a fix or a claim about every model workflow.",
+    "295/003 reviewer-assisted observation accepted by Fable; ancestor retrieval only. Ordinary BlockSparseMLP now uses a separate half destination; only the opt-in GatedMLP mismatch is retained here, with no shipped builder enabling it. This does not mark the whole identity fixed."
+  ]
+}

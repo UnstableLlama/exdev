@@ -1,0 +1,803 @@
+{
+  "schema_version": 5,
+  "sha": "9665ba99989955593d2fb148323c9a96c77d1bea",
+  "parent_shas": [
+    "b728058b20789afd74bdc371428ff1b83bc0b0f2"
+  ],
+  "cutoff_date": "2025-05-14T17:53:33+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "new architecture support",
+    "problem": [
+      {
+        "text": "The parent registry does not recognize MixtralForCausalLM; directory-based configuration dispatch therefore rejects it as an unknown architecture.",
+        "basis": "source",
+        "evidence": [
+          "call_a5462626708c45f48cc4c90679bcae40",
+          "call_f946dbb3ae50497ab402e25421fd0890"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The change registers a Mixtral-specific configuration and model builder while reusing existing attention, transformer-block and routed-expert implementations rather than adding kernels.",
+        "basis": "source",
+        "evidence": [
+          "call_aac1f07bff33408d9495d73e53f0ab19",
+          "call_d5131c10b83a48a1b38611bbe396bc27"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Mixtral becomes selectable through Config.from_directory and Model.from_config. Registration and assembly do not by themselves establish successful conversion or generation.",
+        "basis": "source",
+        "evidence": [
+          "call_aac1f07bff33408d9495d73e53f0ab19",
+          "call_f946dbb3ae50497ab402e25421fd0890",
+          "call_70c9c088207f436f823c98992deedb1a"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "Read the Qwen3 MoE introduction entry and the BlockSparseMLP introduction entry. They establish the existing assembly pattern, all-expert calibration mechanism and a recorded conditional fused-buffer mismatch.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_3e8993f0f9b84139a2fbe47e95e410a9",
+          "call_4e6fc8a61eae4ca18fa074e5e3da6b83"
+        ]
+      },
+      {
+        "text": "PR #4, \u201cchore: update config.py,\u201d proposes a spelling correction. Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports extension loading. Their relationship to this change is only inferred shared configuration/model infrastructure, not evidence of Mixtral motivation.",
+        "basis": "inference",
+        "evidence": [
+          "call_b3376caeb5114a53a2761c38a4971dc6",
+          "call_1f3cb52d65684f189259f9904e4ba3ad",
+          "call_f946dbb3ae50497ab402e25421fd0890"
+        ]
+      },
+      {
+        "text": "Issue #33, \u201cError converting model,\u201d initially reports file-opening failures and later discusses GLM output problems. Issue #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports Cholesky failure. Issue #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports sliced-loading dimensions. Associations here are inferred from their tracebacks naming the inspected conversion or Linear code; none demonstrates a Mixtral failure.",
+        "basis": "inference",
+        "evidence": [
+          "call_4ed7ad0bd7374b22add28b2bf9a1e455",
+          "call_edc7c0c58b3f40bbb7cd2a14a3a831fc",
+          "call_054904c17c654f31805b4031840c2cdd",
+          "call_cafa2c706ee4468f86249dd8773c5921",
+          "call_bbe13162088d4c61a3446fce9807e28f",
+          "call_e554464f43d346b287afd441a248c5b8"
+        ]
+      }
+    ],
+    "limitations": [
+      "No repository model loading, conversion, tensor execution or CUDA testing was performed. The Python check models dimensions and capture bookkeeping only, not floating-point arithmetic or kernels.",
+      "Checkpoint inspection covers first and last shards of the 8x7B base and both 8x22B models, not every layer or shard. The 8x7B Instruct configuration was read, but its tensor headers were not separately inspected.",
+      "Numerical equivalence, long-context behavior, memory requirements and performance remain unmeasured."
+    ],
+    "links": [
+      "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "models",
+        "title": "Mixtral configuration, assembly and inherited execution paths",
+        "claims": [
+          {
+            "text": "Adding MixtralModel to the registry comprehension exposes MixtralForCausalLM with its configuration and model classes. The new configuration requires intermediate_size, num_local_experts and num_experts_per_tok, mapping them to the existing routed-MLP constructor. Parent searches distinguish these from Qwen3 MoE\u2019s moe_intermediate_size and num_experts spellings.",
+            "basis": "source",
+            "evidence": [
+              "call_aac1f07bff33408d9495d73e53f0ab19",
+              "call_d5131c10b83a48a1b38611bbe396bc27",
+              "call_af2ba0dd32d540e7865978653b550ea9",
+              "call_fb3459e5345d46748611a755e860f6ec",
+              "call_d4cda7493e834fb9a52c6619f10007a8"
+            ]
+          },
+          {
+            "text": "Explicit head_dim is retained; otherwise it is hidden_size divided by query-head count using integer division. KV-head count defaults to query-head count, tied embeddings default to false, and a supplied hidden_act must be silu. RoPE uses the existing default-settings reader with NEOX style.",
+            "basis": "source",
+            "evidence": [
+              "call_d5131c10b83a48a1b38611bbe396bc27",
+              "call_f946dbb3ae50497ab402e25421fd0890"
+            ]
+          },
+          {
+            "text": "The builder closely follows Qwen3MoeModel, but omits its Q/K normalization, changes the MLP prefix to block_sparse_moe, maps gate/up/down to w1/w3/w2, and requests half rather than float MLP output. It also omits Qwen3MoeModel\u2019s calibration_all_experts=True assignment.",
+            "basis": "source",
+            "evidence": [
+              "call_d5131c10b83a48a1b38611bbe396bc27",
+              "call_50119befce924239b024a4c2bd79e78f"
+            ]
+          },
+          {
+            "text": "Each layer applies input RMSNorm, attention and a residual addition, followed by post-attention RMSNorm, routed MLP and another residual addition. Attention uses q_proj/k_proj/v_proj/o_proj, no Q/K norms, no sliding window override and sm_scale=None. Its existing implementations handle uncached SDPA, uncached FlashAttention and cached FlashAttention; this patch supplies no new backend.",
+            "basis": "source",
+            "evidence": [
+              "call_d5131c10b83a48a1b38611bbe396bc27",
+              "call_0febcec3f60643ffbdc02b9006bca2d8",
+              "call_f2429752a1c84585bf0736d259f4184b"
+            ]
+          },
+          {
+            "text": "BlockSparseMLP projects router scores, applies softmax, selects top experts and renormalizes their weights. Each selected expert computes down(SiLU(w1(x)) \u00d7 w3(x)); weighted outputs are accumulated into token order. The routing projection uses pad_to=1, preserving exactly the expert count, while expert projections retain Linear\u2019s default 128-element alignment.",
+            "basis": "source",
+            "evidence": [
+              "call_d5131c10b83a48a1b38611bbe396bc27",
+              "call_78fbdc61ce8747edb0718c48dc8bc502",
+              "call_e554464f43d346b287afd441a248c5b8"
+            ]
+          },
+          {
+            "text": "The existing grouped-expert path handles multiple flattened tokens or non-EXL3 experts. One flattened token with every expert projection in EXL3 selects indexed multi-GEMMs. MultiLinear additionally requires matching dimensions and bit widths within each projection group, no biases or softcaps, and unit post-scaling. The new Mixtral caller inherits these restrictions.",
+            "basis": "source",
+            "evidence": [
+              "call_78fbdc61ce8747edb0718c48dc8bc502",
+              "call_d5131c10b83a48a1b38611bbe396bc27"
+            ]
+          },
+          {
+            "text": "The only pre-existing BlockSparseMLP model construction found is Qwen3 MoE. Its all-expert calibration override ensures every down projection is visited during capture. Mixtral instead inherits Model\u2019s false default: conversion supplies that value to activate_all_experts, leaving capture sparse. Gate/up projections share block.mlp.input; each down projection has its own block.mlp.{expert}.down capture key.",
+            "basis": "source",
+            "evidence": [
+              "call_3405f7921fee4410bbe054c0c120bc15",
+              "call_50119befce924239b024a4c2bd79e78f",
+              "call_70c9c088207f436f823c98992deedb1a",
+              "call_3b8a7cfe24864bc1bb01863f2d45d2fb",
+              "call_78fbdc61ce8747edb0718c48dc8bc502"
+            ]
+          },
+          {
+            "text": "Assembly ends with model.norm and lm_head. Tying enables model.embed_tokens as an alternate head key; Linear still tries supported storage at its primary key first. prepare_inputs stores input_ids and delegates to prepare_for_attn, whose default is uncached FlashAttention and whose uncached preparation rejects a supplied cache.",
+            "basis": "source",
+            "evidence": [
+              "call_d5131c10b83a48a1b38611bbe396bc27",
+              "call_e554464f43d346b287afd441a248c5b8",
+              "call_f2429752a1c84585bf0736d259f4184b"
+            ]
+          },
+          {
+            "text": "mistralai/Mixtral-8x7B-v0.1 and Mixtral-8x7B-Instruct-v0.1 each match the registration and configuration mappings: hidden size 4096, intermediate size 14336, 32 layers, 32 query heads, eight KV heads, eight experts with two selected, vocabulary 32000 and maximum positions 32768. Both specify SiLU, RMS epsilon 1e-5, RoPE theta 1000000, untied embeddings and no sliding window.",
+            "basis": "source",
+            "evidence": [
+              "call_cb8e3fc1f20b4b87a813b30a834cc8b1",
+              "call_4eec33d549e94a248a2ce0955c110ab8",
+              "call_d5131c10b83a48a1b38611bbe396bc27"
+            ]
+          },
+          {
+            "text": "mistralai/Mixtral-8x22B-v0.1 and Mixtral-8x22B-Instruct-v0.1 each match the mappings with hidden size 6144, intermediate size 16384, 56 layers, 48 query heads, eight KV heads, eight experts with two selected and maximum positions 65536. Their vocabularies differ: 32000 for base and 32768 for Instruct. Both retain SiLU, epsilon 1e-5, theta 1000000, untied embeddings and no sliding window.",
+            "basis": "source",
+            "evidence": [
+              "call_50dba8bd77f645c6a42d513f3408a91a",
+              "call_f70a0f57696445ada081df73ff943232",
+              "call_d5131c10b83a48a1b38611bbe396bc27"
+            ]
+          },
+          {
+            "text": "Sampled checkpoint headers agree with the requested weight families and orientation: w1/w3 are [intermediate, hidden], w2 is [hidden, intermediate], router weights are [8, hidden], Q/O are [hidden, hidden], K/V are [1024, hidden], norms are [hidden], and embeddings/head are [vocabulary, hidden]. These stored matrices are transposed by Linear.load_fp16. Sampled headers contain no optional biases or EXL3 scale/su/suh/sv/svh/trellis tensors, so the ordinary weight-loading path applies to these samples; tying is disabled in all four configurations. Every tensor in the inspected shards belongs to a requested weight family; no unused stored tensor was identified there.",
+            "basis": "source",
+            "evidence": [
+              "call_be406182c92c4a389522fdc03aa7a99f",
+              "call_d25236324f7f4558a6d5efe892b5ce73",
+              "call_d3c1677783e54b26bb21731358d9948d",
+              "call_10a80c9daa984b3f88ecc9d71033a3f4",
+              "call_19327663a96040ab8b282f080ca76e6c",
+              "call_956b0e39744b4ad19b6dbe89d1243edb",
+              "call_e554464f43d346b287afd441a248c5b8"
+            ]
+          },
+          {
+            "text": "Standard-library arithmetic gives head dimension 128 and KV width 1024 for all inspected configurations. Query widths are 4096 and 6144, with four or six query heads per KV head. Hidden, intermediate and vocabulary dimensions are divisible by 128, so default alignment adds no padding. Selecting two of eight experts is 25% of the expert set, not a measured fraction of total computation.",
+            "basis": "execution",
+            "evidence": [
+              "call_5708122539954b908a4fe826ebd2d6fd"
+            ]
+          },
+          {
+            "text": "Reusing shared modules reduces architecture-specific implementation work, but also imports their calibration requirements and fused-path restrictions. The two edits are complementary: registration exposes the new builder, while the builder supplies the checkpoint-specific names and dimensions needed by that dispatch.",
+            "basis": "inference",
+            "evidence": [
+              "call_aac1f07bff33408d9495d73e53f0ab19",
+              "call_d5131c10b83a48a1b38611bbe396bc27",
+              "call_78fbdc61ce8747edb0718c48dc8bc502"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "mixtral-sparse-calibration-coverage",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Mixtral omits the existing all-expert calibration override, allowing expert-specific capture data to be missing during conversion.",
+        "trigger": "A Mixtral layer\u2019s calibration tokens never select at least one expert, while conversion subsequently attempts to quantize all its expert projections.",
+        "expected_behavior": "Collect calibration input for every down projection, or handle an unvisited expert explicitly.",
+        "actual_behavior": "Model defaults calibration_all_experts to false. BlockSparseMLP skips unselected experts, and Linear creates capture entries only when forwarded. Conversion later indexes capture_H[linear.qmap] for every loaded quantization target, so an unvisited down projection has no entry and the lookup raises KeyError. The inspected Qwen3 MoE construction prevents this coverage gap with its true override. Direct convert_exl3 callers found were conversion main and test_quant_dequant; the test explicitly forwards its individual Linear before conversion and does not exercise routed coverage.",
+        "locations": [
+          {
+            "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+            "path": "exllamav3/models/mixtral.py",
+            "symbol": "MixtralModel.__init__"
+          },
+          {
+            "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+            "path": "exllamav3/conversion/convert_model.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_d5131c10b83a48a1b38611bbe396bc27",
+          "call_70c9c088207f436f823c98992deedb1a",
+          "call_78fbdc61ce8747edb0718c48dc8bc502",
+          "call_e554464f43d346b287afd441a248c5b8",
+          "call_3b8a7cfe24864bc1bb01863f2d45d2fb",
+          "call_bedb364f824640029a62bcb281864f37",
+          "call_0572f8fe89074f4186fe81d7b3c80dc3"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the inherited calibration default through conversion parameters, sparse expert visitation, lazy capture creation and the unconditional capture lookup.",
+            "evidence": [
+              "call_70c9c088207f436f823c98992deedb1a",
+              "call_78fbdc61ce8747edb0718c48dc8bc502",
+              "call_e554464f43d346b287afd441a248c5b8",
+              "call_3b8a7cfe24864bc1bb01863f2d45d2fb"
+            ],
+            "limits": "Conditional on actual router coverage; no checkpoint calibration was executed."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled repeated routing to experts zero and one; expert-specific capture keys for experts two through seven remain absent.",
+            "evidence": [
+              "call_5708122539954b908a4fe826ebd2d6fd"
+            ],
+            "limits": "Dictionary bookkeeping only; does not simulate learned routing or execute repository conversion."
+          }
+        ]
+      },
+      {
+        "id": "inherited-all-expert-fused-dimensions",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously recorded all-expert fused-buffer mismatch remains unchanged in the implementation newly used by Mixtral.",
+        "trigger": "Forward one flattened token through fully EXL3 Mixtral experts with activate_all_experts=True.",
+        "expected_behavior": "Evaluate all eight experts with suitably sized buffers or use the grouped-expert path.",
+        "actual_behavior": "Routing produces eight indices, but fused buffers retain num_experts_per_tok=2 slots. The first exl3_mgemm checks index count against the output expert dimension and rejects the mismatch. Model.forward passes caller parameters through TransformerBlock to its MLP, establishing conditional API reach. Parent search also found ParallelDecoderBlock forwarding parameters, but Mixtral uses TransformerBlock. Ordinary Mixtral conversion supplies false and does not establish this trigger.",
+        "locations": [
+          {
+            "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          },
+          {
+            "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+            "path": "exllamav3/models/mixtral.py",
+            "symbol": "MixtralModel.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_78fbdc61ce8747edb0718c48dc8bc502",
+          "call_32b7a2421e9240e68b14a254a224d870",
+          "call_ee4fbc172de04e0492876b896a2408e8",
+          "call_0febcec3f60643ffbdc02b9006bca2d8",
+          "call_70c9c088207f436f823c98992deedb1a",
+          "call_d5131c10b83a48a1b38611bbe396bc27"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared unchanged routing cardinality and fused allocations with the native dimension check and inspected parameter-forwarding callers.",
+            "evidence": [
+              "call_78fbdc61ce8747edb0718c48dc8bc502",
+              "call_32b7a2421e9240e68b14a254a224d870",
+              "call_0febcec3f60643ffbdc02b9006bca2d8"
+            ],
+            "limits": "No tensor allocation or native execution; conditional rather than a default-workflow failure."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed eight all-expert indices versus two fused slots for the inspected configurations.",
+            "evidence": [
+              "call_5708122539954b908a4fe826ebd2d6fd"
+            ],
+            "limits": "Integer shape arithmetic, not a CUDA test."
+          }
+        ]
+      }
+    ],
+    "summary": "Registers Mixtral and maps its configuration and checkpoint names onto existing attention and routed-expert modules. Reference configurations and sampled tensor layouts agree; conversion coverage and an inherited conditional fused-path mismatch remain suspected concerns."
+  },
+  "evidence": {
+    "call_aac1f07bff33408d9495d73e53f0ab19": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+        "offset": 158,
+        "max_bytes": 6506
+      },
+      "result_sha256": "ae2f49cd5218750c74330f19f2a26d27aa12025ea3853f4da6b0318460a047dd"
+    },
+    "call_d5131c10b83a48a1b38611bbe396bc27": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "9665ba99989955593d2fb148323c9a96c77d1bea",
+        "offset": 821,
+        "max_bytes": 5843
+      },
+      "result_sha256": "30ce2ca1de5e2df2c730a42cf638519f867632041b9d67e8ac105544be516ca3"
+    },
+    "call_ae2a3a494b724c8185490f300dd29f15": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "fb05df3f0a9aec117ddaf5d51199a74f31b9e9b3f32293ef297bcf69bf57e4bc",
+      "catalog_only": true
+    },
+    "call_3ec022135f1c499d81e29b826c2352f1": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "26eec13b6e966b8d53b1fcb80e3011f648d8bbafd2f708de0c7d4bf465201caf",
+      "catalog_only": true
+    },
+    "call_cb47e9cb41b74e8c94430ab82c1125d9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "Mixtral",
+        "limit": 100
+      },
+      "result_sha256": "615c01b489e2133c228cfc7f6cd3eb4dd2d8c36c54630b8d42b6c99b52b9420a"
+    },
+    "call_50119befce924239b024a4c2bd79e78f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "max_bytes": 16000
+      },
+      "result_sha256": "dc956337bd1b8e673d70ed16619489a386656ca795dc2cb8424566f0a28b0c0e"
+    },
+    "call_3e8993f0f9b84139a2fbe47e95e410a9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a5caa423bbd9d8a61266a88fb237c18fb77ec0b8",
+        "max_bytes": 16384
+      },
+      "result_sha256": "7b962bd4cfc79326fe848f6153b3881f7e987fd49a4ff520f257a0f83aece8cd"
+    },
+    "call_78fbdc61ce8747edb0718c48dc8bc502": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "456701910c9d170ce416b2bdd4782d9e62efaef3a10fedc3c1e3d62ac6c9417e"
+    },
+    "call_f946dbb3ae50497ab402e25421fd0890": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/models/config.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "85e3aa930f1e238a4a27c3f5eb33c55bc3541cfe16f9226b6291529db5d1ec59"
+    },
+    "call_a5462626708c45f48cc4c90679bcae40": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/models/architectures.py",
+        "max_bytes": 5000
+      },
+      "result_sha256": "d933bb12b6c4adc8a56792d2e9eac2ff24d838327ac2cc2dc37205f1aba85233"
+    },
+    "call_cb8e3fc1f20b4b87a813b30a834cc8b1": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-v0.1",
+        "revision": "ffe1a706bacbd5abddc5ff99432ee38f7e0662fb",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "15c9bd7f378fce099c3b6adc74902e45fe183d5442c63d9c8d36cb77deca7610"
+    },
+    "call_4eec33d549e94a248a2ce0955c110ab8": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "revision": "41bd4c9e7e4fb318ca40e721131d4933966c2cc1",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "580a5a7ad5da0cc1cdc4b8735550dad090f2c3bc839228eb31c303d37f73a35f"
+    },
+    "call_50dba8bd77f645c6a42d513f3408a91a": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-v0.1",
+        "revision": "6232b04930322afaa3c8f6edc4fe45a8a0a137a0",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "3322b1ec3f1ebb056cecc6f64c512e2dabf858e2f1a2357f927e441f4fb78973"
+    },
+    "call_f70a0f57696445ada081df73ff943232": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-Instruct-v0.1",
+        "revision": "a46959a1a02a9247294f5e141a4f3270059c6b32",
+        "path": "config.json",
+        "max_bytes": 10000
+      },
+      "result_sha256": "14c4d87b8827df7864516f7b66a1747cf8c9b0487f598fe57a6addefba73003c"
+    },
+    "call_8136750cdfe94334a15fee4063951aec": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "59c2d360af95fd1c25cbd56f8bf33c589b480138a3f5c7ae39106bda0c026f68",
+        "max_bytes": 6000
+      },
+      "result_sha256": "55c891fc8f862539952532753e43920aa82793da06f9c705f5086ed5c62a8e7e",
+      "catalog_only": true
+    },
+    "call_19327663a96040ab8b282f080ca76e6c": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-Instruct-v0.1",
+        "revision": "a46959a1a02a9247294f5e141a4f3270059c6b32",
+        "path": "model-00001-of-00059.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "156ad83a89e90bfc11c70077172de475855b0ae1ce4217a8820fa800f37c0e21"
+    },
+    "call_be406182c92c4a389522fdc03aa7a99f": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-v0.1",
+        "revision": "ffe1a706bacbd5abddc5ff99432ee38f7e0662fb",
+        "path": "model-00001-of-00019.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "cb0fe8d21dbb9d4582cf1d5e62f201473ab9c22deae9900fa85e984a7dadae78"
+    },
+    "call_d3c1677783e54b26bb21731358d9948d": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-v0.1",
+        "revision": "6232b04930322afaa3c8f6edc4fe45a8a0a137a0",
+        "path": "model-00001-of-00059.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "270b31c8ec4486337382c51e0a471a0d75ff0bbf7334cc346ef09e7c273d7e67"
+    },
+    "call_1ff21f5140494f0dba0be05de77e9a95": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "calibration_all_experts",
+        "limit": 100
+      },
+      "result_sha256": "e8601c6540be8a20f2a9504374327589e969451d6c73770802a98ed9473a3462"
+    },
+    "call_3b8a7cfe24864bc1bb01863f2d45d2fb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 10500,
+        "max_bytes": 8500
+      },
+      "result_sha256": "8fe401161b74d8102feae22039c72361639dce5fe73d2f5de86f918f8697b728"
+    },
+    "call_96d669ae79d045c68bf3ae790a278967": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "capture",
+        "path": "exllamav3/modules/linear.py",
+        "limit": 100
+      },
+      "result_sha256": "db36d01dbc07039d4639fad41ec6fa3c71db3f0a8efe0cedc615ca7bb0293b78"
+    },
+    "call_e554464f43d346b287afd441a248c5b8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 0,
+        "max_bytes": 16000
+      },
+      "result_sha256": "a0d92050bdf4de0d280646e3157cdfb3bbb5eb11b83cf527d890eb81427a30ed"
+    },
+    "call_2cda5012f47642648812e7a50acc3d2c": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "mistral.py",
+        "max_bytes": 4000
+      },
+      "result_sha256": "6b4050dfa11800d88684dd098fa2926c6588cecfef20e4a4cdb8206e5ad17394",
+      "catalog_only": true
+    },
+    "call_af2ba0dd32d540e7865978653b550ea9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "num_local_experts",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_fb3459e5345d46748611a755e860f6ec": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "num_experts",
+        "limit": 100
+      },
+      "result_sha256": "41623c12ff8c8749ffdf543988137ac39339d473f268c8417d09611900ccef2b"
+    },
+    "call_d4cda7493e834fb9a52c6619f10007a8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "intermediate_size",
+        "limit": 100
+      },
+      "result_sha256": "1579e2702afea6d505f9a6d947d703061cd5c7d8130125d073af3e5f74958032"
+    },
+    "call_70c9c088207f436f823c98992deedb1a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 14000
+      },
+      "result_sha256": "018a04db83278c9707af3e72666c6298bd8497fc782115f8143e9526bb0f2a64"
+    },
+    "call_ee9360dbcb7f4dc6b2f543faccb1dac3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/transformer_block.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_ee4fbc172de04e0492876b896a2408e8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "self.mlp.forward",
+        "limit": 100
+      },
+      "result_sha256": "f342a7cb4d6f15b0a6dbc961038906b44c7827c4eff16c715f88195f68a43d10"
+    },
+    "call_0febcec3f60643ffbdc02b9006bca2d8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "0d3dc93f963edab7063120909cbc2f61569139f0c140144e2dc827c7073b56db"
+    },
+    "call_f2429752a1c84585bf0736d259f4184b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 24000
+      },
+      "result_sha256": "24308e96431cabc08c436215585cc25ce0dc22b2161acc5b35fab11af0ab2a79"
+    },
+    "call_3405f7921fee4410bbe054c0c120bc15": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "BlockSparseMLP(",
+        "limit": 100
+      },
+      "result_sha256": "4d9d158c742d75f892952c9d9e66628ef0aba574eb386b306a3d5302b1f4b8ec"
+    },
+    "call_90d2979e7e244cc398edfad12c9a353b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "activate_all_experts",
+        "limit": 100
+      },
+      "result_sha256": "fc943ecf0758989340457e4d3b12bdf5bd353285873f0cb74e1766bb982d1d2d"
+    },
+    "call_0562f839d6b4469babede949ed00a362": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": "exl3_mgemm",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "limit": 100
+      },
+      "result_sha256": "1cf90b8985f1c918642504729bd6e29ab5463af6be0591bc2cff59c71e3cfd07"
+    },
+    "call_32b7a2421e9240e68b14a254a224d870": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4100,
+        "max_bytes": 4600
+      },
+      "result_sha256": "2c970bf98f906d76f8d40a5d32d3f7677f5b0090f89562e5809062a73cab03e8"
+    },
+    "call_b3376caeb5114a53a2761c38a4971dc6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 12000
+      },
+      "result_sha256": "25f049e75276d17ce0f9189ad831395afa88047fd979c6915df93a55839b684c"
+    },
+    "call_1f3cb52d65684f189259f9904e4ba3ad": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 15000
+      },
+      "result_sha256": "46cc18519355b63aac68103a47afcbc231c2dde0fb2b6d27fe7ceef8c3dec6ea"
+    },
+    "call_4ed7ad0bd7374b22add28b2bf9a1e455": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 16000
+      },
+      "result_sha256": "488caf1eb75f82cb29dce12686fde7663d2b1ac843684ca71d7ba8ac8a4cdffe"
+    },
+    "call_edc7c0c58b3f40bbb7cd2a14a3a831fc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 16000,
+        "max_bytes": 16384
+      },
+      "result_sha256": "35bb081eaf61386a4bcb1b0c2786a856e232cbe8f65591545535e727838937f9"
+    },
+    "call_054904c17c654f31805b4031840c2cdd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 32384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "9496c9113fa9b5e6e34065fdcbc0b0e9043e997f5974ea3fb9a0cb893f29b26e"
+    },
+    "call_cafa2c706ee4468f86249dd8773c5921": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 16384
+      },
+      "result_sha256": "be64adcdba8d2db6d619a1ff2bdcd508a51be26336f1bba35b7d771ecd5cbb7a"
+    },
+    "call_bbe13162088d4c61a3446fce9807e28f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 16384
+      },
+      "result_sha256": "8ca305edb39e0e956d23494f9ecb5c480205ea01ad590e22b5d6c81013d69b17"
+    },
+    "call_956b0e39744b4ad19b6dbe89d1243edb": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-Instruct-v0.1",
+        "revision": "a46959a1a02a9247294f5e141a4f3270059c6b32",
+        "path": "model-00059-of-00059.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "b0653166a52b2cbde0f708699be7b25116eca7a763073aff45f0a87c692241a4"
+    },
+    "call_10a80c9daa984b3f88ecc9d71033a3f4": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x22B-v0.1",
+        "revision": "6232b04930322afaa3c8f6edc4fe45a8a0a137a0",
+        "path": "model-00059-of-00059.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "1004ea89ddc864b09087769cdd6b5c2e9908f9e18019ed3dc42eb17d6d0c0040"
+    },
+    "call_d25236324f7f4558a6d5efe892b5ce73": {
+      "tool": "safetensors_header",
+      "arguments": {
+        "repo_id": "mistralai/Mixtral-8x7B-v0.1",
+        "revision": "ffe1a706bacbd5abddc5ff99432ee38f7e0662fb",
+        "path": "model-00019-of-00019.safetensors",
+        "limit": 100
+      },
+      "result_sha256": "be69b7b963a49f2da68b173ec5b0e73115458b7c5dc23caabef3ea1bcc36c971"
+    },
+    "call_5708122539954b908a4fe826ebd2d6fd": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import json\nfor h,i,q,v in [(4096,14336,32,32000),(6144,16384,48,32000),(6144,16384,48,32768)]:\n d=h//q\n print(json.dumps(dict(hidden=h,intermediate=i,vocab=v,head_dim=d,q_width=q*d,kv_width=8*d,group_size=q//8,alignment_remainders=[x%128 for x in (h,i,v)],routed_fraction=2/8,all_expert_indices=8,fused_slots=2)))\n# Model only lazy creation of expert-specific capture entries under repeated top-2 routing.\ncapture={}\nfor selected in [(0,1),(0,1),(1,0)]:\n for e in selected: capture.setdefault('block.mlp.%d.down'%e,0); capture['block.mlp.%d.down'%e]+=1\nprint('missing_down_capture', [e for e in range(8) if 'block.mlp.%d.down'%e not in capture])"
+        ]
+      },
+      "result_sha256": "02ce042570ccc27b2f3db5888e4009909cf7f7727b5cbdb2b71831da6c7a610b"
+    },
+    "call_bedb364f824640029a62bcb281864f37": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "query": ".convert_exl3(",
+        "limit": 100
+      },
+      "result_sha256": "ab6e66f182c9f9bef80a70f2caeda2bf44ba4074af59c4f83a03b806669bf9f3"
+    },
+    "call_0572f8fe89074f4186fe81d7b3c80dc3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "tests/test_quant_fn.py",
+        "offset": 3000,
+        "max_bytes": 3500
+      },
+      "result_sha256": "04c6138cc6b04ec5691915c9271280560b4ae0f32389a69ba19eb7669c7149e2"
+    },
+    "call_cd84aa647b6d44fead9d20ace8955997": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "block_sparse_mlp.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "e8b86e52ce3fb1873dc694ed6814ef5cba77230157cbda2366f6899e926966fc",
+      "catalog_only": true
+    },
+    "call_4e6fc8a61eae4ca18fa074e5e3da6b83": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_8d7644d375be44f2a3a5cba1ced2b3ba": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/loader/safetensors.py",
+        "query": "def has_tensor",
+        "limit": 20
+      },
+      "result_sha256": "53a5f537c49b30bf9cf0654f7828436e4d5c647aeb0946588266ed8bc6d64b2a"
+    },
+    "call_5941d955423a42e6a626f17ba918a8ff": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "b728058b20789afd74bdc371428ff1b83bc0b0f2",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 3000,
+        "max_bytes": 2500
+      },
+      "result_sha256": "5943708d1d994ee0c37e0c64689709945028e046a0c3a3f903c9bb0e84001f03"
+    }
+  }
+}

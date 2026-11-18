@@ -5,9 +5,10 @@ import hashlib
 import json
 import platform
 from pathlib import Path
-from .codex_adapter import CodexTeacher, MODEL
+from .codex_adapter import CodexTeacher, MODEL, TRIAL_MODEL
 from .codex_transport import CodexTransport, SUPPORTED_VERSION
 from .editorial import render
+from .validation_repair import repair_metadata
 from .session import FreshSession
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -19,7 +20,22 @@ def write_json(path, value):
     pending.replace(path)
 
 
-def author(packet, output, auth_file, transport_factory=CodexTransport):
+def author(packet, output, auth_file, transport_factory=CodexTransport, *, validation_repair=True):
+    return _author(packet, output, auth_file, transport_factory, validation_repair=validation_repair)
+
+
+def author_trial(packet, output, auth_file, *, model=TRIAL_MODEL, transport_factory=CodexTransport):
+    """Supervisor-only unpublished model comparison; no CLI or walk override."""
+    base=(ROOT/'.teacher/trials/teacher-model-001').resolve()
+    packet,output=Path(packet).resolve(),Path(output).resolve()
+    manifest=json.loads((packet/'manifest.json').read_text())
+    if (model!=TRIAL_MODEL or not packet.is_relative_to(base) or not output.is_relative_to(base)
+            or manifest.get('guidance_version')!=11 or manifest.get('coverage_request')):
+        raise ValueError('Model trial requires its isolated root, guidance 11 and unassisted input')
+    return _author(packet,output,auth_file,transport_factory,model=model,trial=True)
+
+
+def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=False, validation_repair=True):
     packet,output=Path(packet).resolve(),Path(output).resolve()
     if output.is_relative_to(packet):
         raise ValueError('Draft output must be outside the immutable packet')
@@ -31,22 +47,32 @@ def author(packet, output, auth_file, transport_factory=CodexTransport):
         raise ValueError('Coverage request belongs to another attempt')
     output.mkdir(parents=True,exist_ok=False)
     manifest=(packet/'manifest.json').read_bytes()
-    provenance={'model':MODEL,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
+    provenance={'model':model,'reasoning_effort':session.reasoning_effort,'codex_version':SUPPORTED_VERSION,
         'packet_manifest_sha256':hashlib.sha256(manifest).hexdigest(),
         'input_mode':'entry_analysis','published':False,
         'python_version':platform.python_version(),'machine_architecture':platform.machine(),'operating_system':platform.system(),
         'implementation_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted([*(ROOT/'teacher').glob('*.py'),*(ROOT/'schema').glob('*.json')])}}
+    if trial:
+        if session.reasoning_effort!='medium':
+            raise ValueError('Model trial requires medium effort')
+        provenance['trial_only']=True
     coverage=json.loads(manifest).get('coverage_request')
     if coverage:
         provenance['coverage_request']={k:coverage[k] for k in ('path','sha256')}
         provenance['reviewer_assisted']=True
+    provenance['validation_repair_enabled']=validation_repair
+    provenance.update(repair_metadata([]))
     write_json(output/'provenance.json',provenance)
     write_json(output/'status.json',{'status':'running','published':False})
+    def record(transcript):
+        write_json(output/'raw-transcript.json',transcript)
+        provenance.update(repair_metadata(transcript))
+        write_json(output/'provenance.json',provenance)
     try:
-        with transport_factory(auth_file) as transport:
+        with (transport_factory(auth_file,model=model) if trial else transport_factory(auth_file)) as transport:
             result=CodexTeacher().run(session,transport,
-                record=lambda transcript:write_json(output/'raw-transcript.json',transcript))
+                model=model, record=record, validation_repair=validation_repair)
         if manifest!=(packet/'manifest.json').read_bytes():
             raise ValueError('Packet changed during authoring')
         write_json(output/'draft.json',result['draft'])
