@@ -9,24 +9,30 @@ Setup, once:
 - Keep a bare clone of https://github.com/turboderp-org/exllamav3 outside this repository and use
   `git worktree` for each tested commit. Never edit upstream source.
 - Record the machine in `gpu-tests/STATE.md`: GPU, driver, CUDA, OS, Python versions available.
-- Run `python3 gpu-tests/export_queue.py` after every `git pull origin main` (merge main into your branch).
+- Run `python3 gpu-tests/export_queue.py` once now and again after every `git pull origin main` (merge main
+  into your branch). `queue.json` is generated locally and gitignored; never commit it.
 
 For each queue item, top first, skipping any that already has a result directory:
 1. Read the ledger file named in the item and check its SHA-256 matches. Read the trigger, expected and
    actual behaviour. Decide what the test needs: CPU only, GPU, a model, or something this machine cannot
    provide. If it cannot be tested here, write a `not_testable_here` result with the reason and move on.
-2. Pick the commits: the latest affected commit; and if a fix is recorded, the fix and its parent.
+2. Pick the commits: `commits.latest_affected` (it never is a fix commit; if it is null, use the fix's parent);
+   and for each recorded fix, the fix and its parent. A fix with status `partial` can confirm only the part it
+   claims to fix.
 3. Build or reuse an environment that commit can run in. Build the native extension when the trigger needs it.
 4. Write the smallest `repro.py` that performs the trigger as stated, using the repository's own code path.
    If you must stub or patch something to reach the trigger, say so in the result; the outcome is then
    `inconclusive` at best.
-5. Run it at each chosen commit. Save stdout and stderr per commit. Never rerun until it "works": if the
+5. Run it at each chosen commit. Save stdout and stderr per commit as
+   `stdout-<sha12>.txt` and `stderr-<sha12>.txt`. Never rerun until it "works": if the
    stated behaviour does not occur, that is the result.
-6. Write `result.json` to the schema, `env.json`, and the hashes. Commit that one result directory with the
+6. Write `result.json` to the schema, `env.json`, and the hashes of every other file (not `result.json`). Commit that one result directory with the
    message `gpu-test: <defect_id> <outcome>` and push the branch `gpu-tests`.
 
 Limits:
-- 20 minutes per finding. Past that, write `blocked` with what stopped you.
+- 20 minutes per finding, not counting setup (building an environment, the extension or a quantized model,
+  all cached for reuse). Setup has its own limit of 60 minutes per new environment. Past either, write
+  `blocked` with what stopped you and keep the build log.
 - Only small public checkpoints, pinned to a revision. Nothing gated or over about 5 GB without the user's word.
 - Write only under `gpu-tests/results/` and `gpu-tests/STATE.md`. Never touch `reviews/`, `reports/`,
   `teacher/`, `orchestration/`, `.teacher/`, `encyclopedia/` or the ledger. Never push `main`.

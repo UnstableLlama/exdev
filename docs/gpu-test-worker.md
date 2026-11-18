@@ -2,8 +2,8 @@
 
 A second, parallel worker that runs the code. The teacher walk explains each upstream commit from source and
 records suspected defects in `reports/defect-ledger/`. Almost none of those findings has ever been executed:
-on 18 November 2026 the ledger held 223 identities, 202 still `suspected`, and only 6 checks of 319 were
-`repository_execution`. The walk machine has no GPU. This worker runs on a machine that does, and tries to
+on 18 November 2026 the ledger held 223 identities, 202 still `suspected`, and only 6 of their 372 verification checks
+were `repository_execution`. The walk machine has no GPU. This worker runs on a machine that does, and tries to
 reproduce each finding against the real repository at the real commit.
 
 It does not write explanations, does not touch the walk, and does not change the ledger. It produces
@@ -29,7 +29,9 @@ plus the commits where it was introduced, where it is known to persist and where
 4. Compares that with the stated actual behaviour: same failure, at the same place, or not.
 
 Where a fix commit is recorded, the strongest test is a pair: the same script at the fix's parent and at the
-fix. Failing before and passing after confirms both the defect and the fix.
+fix. Failing before and passing after confirms both the defect and the fix. A fix commit is never tested as
+the affected commit, even when the ledger also lists it as verified. Where several fixes are recorded, pair-test
+each one; a fix whose ledger status is `partial` can confirm only the part it claims to fix.
 
 ## Outcomes
 
@@ -48,14 +50,15 @@ and lowers the claim: `reproduced` requires the repository's own code path, unmo
 ## Queue
 
 `gpu-tests/export_queue.py` reads the latest revision of every ledger identity and writes
-`gpu-tests/queue.json`, ordered so the most informative tests come first:
+`gpu-tests/queue.json` (generated locally, gitignored, never committed), ordered so the most informative tests come first:
 
-1. suspected, with a recorded fix (pair test available);
-2. suspected defects never executed;
+1. suspected findings of any classification with a recorded fix (pair test available);
+2. suspected defects without a fix that have never been executed;
 3. other suspected findings;
-4. confirmed findings without an execution check (lowest).
+4. confirmed findings (lowest).
 
-Each item carries the ledger file and its SHA-256, the texts above, the commits to test and a rough area
+Each item carries the ledger file and its SHA-256, the texts above, the commits to test (`latest_affected` already excludes fix commits and is null when the
+only verified commit is a fix; test the fix's parent then), the ledger status of each fix and a rough area
 hint (`runtime`, `conversion`, `eval_script`, `packaging_ci`, `native_ext`). The hint is only a starting
 point; the worker triages each item itself. Regenerate the queue after pulling `main`: the walk adds records
 all day.
@@ -66,12 +69,12 @@ One directory per attempt: `gpu-tests/results/<defect_id>/<NNN>/` holding
 
 - `result.json` (schema: `gpu-tests/result.schema.json`),
 - `repro.py` (and any helper files), exactly as run,
-- `stdout.txt`, `stderr.txt` for each commit tested,
+- `stdout-<sha12>.txt`, `stderr-<sha12>.txt` for each commit tested (first 12 hex digits of the commit),
 - `env.json`: GPU, driver, CUDA, OS, Python, Torch, FlashAttention, whether the extension was built, pip freeze hash.
 
 `result.json` names the ledger revision and file hash it tested, every commit tested with its role and
 outcome, the model used (repository and pinned revision) if any, what ran, the limits, and the SHA-256 of
-every file in the directory. A second attempt at the same finding gets a new number; nothing is overwritten.
+every other file in the directory (`result.json` itself is not listed). A second attempt at the same finding gets a new number; nothing is overwritten.
 
 ## Environments
 
@@ -80,6 +83,10 @@ Historical commits need historical dependencies. The worker keeps
 - one bare clone of upstream and a worktree per tested commit (`git worktree`, removed after the test);
 - `uv` virtual environments keyed by Python version plus the commit's `requirements.txt` hash, reused across commits;
 - a build cache for the native extension keyed by the hash of `exllamav3/exllamav3_ext/` at that commit.
+
+Building an environment, the native extension or a quantized model is setup and does not count toward the
+20-minute limit per finding; it is cached and reused. Setup has its own limit of 60 minutes per new
+environment. Past that, the finding is `blocked` and the failed build log is kept in its result directory.
 
 Models are small public checkpoints only, pinned to a revision and recorded. An EXL3 model, when a test
 needs one, is quantized with the repository itself at the tested commit; that conversion is evidence too,
@@ -91,7 +98,8 @@ and its log is kept. Nothing gated, nothing over a few gigabytes without the use
    Packets are built from pinned evidence and approved ancestor prose only; `gpu-tests/` is never a source.
 2. **The worker never edits the ledger.** A reviewed report is cited by the author in a new ledger revision
    with a `repository_execution` check. Status changes stay in the existing author and reviewer flow.
-3. **Separate branch.** The worker commits only under `gpu-tests/results/` and `gpu-tests/STATE.md`, on the
+3. **Separate branch.** The worker commits only under `gpu-tests/results/` and `gpu-tests/STATE.md` (`queue.json` is
+   regenerated locally and is gitignored), on the
    branch `gpu-tests`, and never pushes `main`. The walk machine pushes `main`; the two cannot collide.
 4. **Canonical and training stay false.** An execution report changes neither.
 5. **No fixing.** The worker does not patch upstream code, open issues or contact maintainers.
