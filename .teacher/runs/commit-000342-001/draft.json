@@ -1,0 +1,214 @@
+{
+  "schema_version": 5,
+  "sha": "784107df084163af6a13310c4cb07cf7709439ec",
+  "parent_shas": [
+    "921f0c4155e6f74b43b74fe823f3607eea12e203"
+  ],
+  "cutoff_date": "2025-07-29T22:02:34+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The parent utility module has no helper for asking the OS to choose an available port. Turboderp\u2019s commit adds `find_free_port()` without wiring it into any workflow.",
+        "basis": "source",
+        "evidence": [
+          "call_2ad720cb68af4c6fa3523b2cd72b913f",
+          "call_95bba2e008e94b45b5e9abbcc35df163",
+          "call_e1532e3339bb4dd095dd1fbb52aedefc"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Binding to port `0` delegates port selection to the OS instead of guessing a number or scanning a range. Returning only the number keeps the interface simple, but a caller that needs to keep the port reserved should retain and use the bound socket rather than close it and bind again later.",
+        "basis": "inference",
+        "evidence": [
+          "call_e1532e3339bb4dd095dd1fbb52aedefc"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The existing wildcard re-export makes the helper available as `exllamav3.util.find_free_port` as well as in `exllamav3.util.misc`. It also exposes the newly imported `socket` and `contextlib` names through `exllamav3.util`. A whole-parent literal search found no `find_free_port` references, and the complete diff adds no call site.",
+        "basis": "source",
+        "evidence": [
+          "call_9bac1fd727a64cc9a73a458a78931716",
+          "call_a8b1fc72ab3045f0a2e0b0711a8b5368",
+          "call_e1532e3339bb4dd095dd1fbb52aedefc"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial commit\u2019s runtime chapter describes `util` as a re-export of miscellaneous helpers and documents the original module\u2019s synchronization and timing utilities. The port helper is a sibling utility; it does not depend on the shared lock or the CUDA helpers.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_4e2fbbdbb08343e0b4ebc0c907eca7e2",
+          "call_1e28ed4b67cb4a199a3ddf3dd5d17910",
+          "call_e1532e3339bb4dd095dd1fbb52aedefc"
+        ]
+      }
+    ],
+    "limitations": [
+      "The socket sequence ran in isolation, not through a package import or an application caller. The check did not test concurrent allocation or whether a later bind succeeds.",
+      "The literal search cannot rule out dynamic or external consumers. The commit does not identify an intended consumer."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "port-allocation",
+        "title": "Let the OS choose an IPv4 TCP port",
+        "claims": [
+          {
+            "text": "`find_free_port()` creates an IPv4 TCP socket and binds it to `(\"\", 0)`: the empty host selects the IPv4 wildcard, and zero requests an OS-assigned port. It reads the port field from `getsockname()` and exits `contextlib.closing` before the caller receives the integer. It never listens, and it does not catch socket or bind errors.",
+            "basis": "source",
+            "evidence": [
+              "call_e1532e3339bb4dd095dd1fbb52aedefc"
+            ]
+          },
+          {
+            "text": "The result is a candidate for a later bind, not a reservation. Another socket can take the port between the helper closing its socket and the caller binding its own. The probe is for IPv4 TCP, not IPv6 or UDP.",
+            "basis": "inference",
+            "evidence": [
+              "call_e1532e3339bb4dd095dd1fbb52aedefc"
+            ]
+          },
+          {
+            "text": "A standalone standard-library run of the socket sequence observed `0.0.0.0`, an integer port in the range 1\u201365535, and an open descriptor inside the context that was closed on exit.",
+            "basis": "execution",
+            "evidence": [
+              "call_7a7bf9a221ed41feb39f302f6a336db8"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Adds a utility that asks the OS for an available IPv4 TCP port and returns its number. The socket closes before the caller receives the result, so the helper does not reserve the port."
+  },
+  "evidence": {
+    "call_e1532e3339bb4dd095dd1fbb52aedefc": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "offset": 166,
+        "max_bytes": 804
+      },
+      "result_sha256": "16182d197a117a84ad9d1c6f32c01aa2cf14197fca3e420c2ce9af4468454ca6"
+    },
+    "call_2ad720cb68af4c6fa3523b2cd72b913f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "path": "exllamav3/util/misc.py"
+      },
+      "result_sha256": "bae4151e9cd318d7fadf2f4b089915d762a388614c6722c53c8a00e5dcd11522"
+    },
+    "call_a8b1fc72ab3045f0a2e0b0711a8b5368": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "query": "find_free_port"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_7b700a618a524c69a3ee0f85a9eea057": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "query": "getsockname"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_390a20b5b0c646ec870e787ef3b99bcd": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "query": "socket."
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_1161491851af4b26a274331d05cda954": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/util/misc.py",
+        "until": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "limit": 20
+      },
+      "result_sha256": "a93e9c5e3a605965219f42246d45ee337658dcf130925b3026d3ef687fdc851c"
+    },
+    "call_117ce50d33c44d21bd53df5adef9d81e": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/util/misc.py",
+        "limit": 25
+      },
+      "result_sha256": "116b69030747be19d86bc6240ed050be76c568611a6f01cbcc5bda077724828c"
+    },
+    "call_4e2fbbdbb08343e0b4ebc0c907eca7e2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "runtime",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de1b97ae94bf13488b4bad98c6eb3de8b285753d46b56295711c375be802464"
+    },
+    "call_9bac1fd727a64cc9a73a458a78931716": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "path": "exllamav3/util/__init__.py"
+      },
+      "result_sha256": "ecec40de1e31d1106f0555bd9fc2f1b3509fc5832e9ed2ae0ae20777fd0219e7"
+    },
+    "call_0bfe3a5f6deb445ebd7e90c52844a6e1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "query": "MASTER_PORT"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_705374c8cdd54b61abca5a623c6658b7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "query": "from exllamav3.util import *"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_7a7bf9a221ed41feb39f302f6a336db8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import contextlib,socket\nwith contextlib.closing(socket.socket(socket.AF_INET,socket.SOCK_STREAM)) as s:\n    s.bind(('',0))\n    address,port=s.getsockname()\n    print(address, type(port).__name__, 0 < port <= 65535, s.fileno() >= 0)\nprint('closed', s.fileno() == -1)"
+        ]
+      },
+      "result_sha256": "9d5f6614bc58e0c17a95c21724e98991c5f87481257a59e49a7d7210d2896ba1"
+    },
+    "call_95bba2e008e94b45b5e9abbcc35df163": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "offset": 0,
+        "max_bytes": 166
+      },
+      "result_sha256": "267b525c9976df65b459de589004e5a210f878bd0d3251125f932c699baae021"
+    },
+    "call_1e28ed4b67cb4a199a3ddf3dd5d17910": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "path": "exllamav3/util/misc.py"
+      },
+      "result_sha256": "168759451f298dfa6d242c3a40676e41e4d78fb1db79f40accf80b0042ac3dfa"
+    }
+  }
+}

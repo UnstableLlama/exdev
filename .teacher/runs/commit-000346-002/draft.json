@@ -1,0 +1,1246 @@
+{
+  "schema_version": 5,
+  "sha": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+  "parent_shas": [
+    "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072"
+  ],
+  "cutoff_date": "2025-07-29T22:25:28+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The parent tensor-parallel (TP) planner used remaining memory as a split weight without handling an all-zero weight vector. It also emitted offsets in allocation units even when those units represented groups of channels. Attention supplied one unit per KV head without checking whether a shard boundary aligned to 128 channels.",
+        "basis": "source",
+        "evidence": [
+          "call_28f6efdfaf11464bbf7119bbae823efa",
+          "call_b10bef17aa13469a80b6b834b1fe73aa",
+          "call_d1dc5d2e1b5a431b8e74b16745e8224c"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The two offset changes work together. Attention now describes a shard in whole groups of KV heads; compile_tp_plan multiplies the cumulative group offsets by the number of heads per group. Without that multiplication the emitted offsets would count groups, not heads. The same multiplication converts standalone Linear's 128-channel blocks to channel offsets. The 128-channel rule is consistent with the existing EXL3 output-width alignment, but the diff does not establish that every prospective TP kernel needs the same alignment or that the particular grouping rule is necessary for all formats.",
+        "basis": "inference",
+        "evidence": [
+          "call_3457c1674a594876896cd546146fb73e",
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_523707b4aac540a9a2880fde2723f5cc",
+          "call_730abc226cd74aa0aefda2a85fde0c75"
+        ]
+      },
+      {
+        "text": "The planner trades a hard capacity constraint for a best-effort estimate: increasing the budget can restore positive weights and let planning continue, but it neither frees memory nor proves the resulting shards fit. Likewise, pinning a one-device component to slot 0 trades eligibility based on available room for a fixed placement; the source does not explain why slot 0 was chosen.",
+        "basis": "inference",
+        "evidence": [
+          "call_28f6efdfaf11464bbf7119bbae823efa",
+          "call_b5db84f96ba240f18f189a30568feebd"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The planner's initial_split return changes from one totals list to a tuple of three lists in the order total, storage, overhead. print_split is updated in the same diff to read the three new attributes instead of estimate. Whole-parent searches found no explicit caller of initial_split or compile_tp_plan and no explicit TPAllocator instantiation. Model.load_gen still uses the separate whole-module autosplit path for non-TP loading and raises NotImplementedError in its TP branch; the diff does not wire in TP loading.",
+        "basis": "source",
+        "evidence": [
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_1cd2549131764fe1ab92cba9b414de0f",
+          "call_44d8acb1fdfb4a4f9cc5bba630db9a26",
+          "call_45fc831f037746f6b5ae69149fd05344",
+          "call_71745d945a2e4d62a5f62aa2a4a60336"
+        ]
+      },
+      {
+        "text": "The old import survives in transformer.py even though the allocator file is renamed and ten other importers migrate. The modules initializer imports transformer.py eagerly, so even an import that asks only for Linear can encounter the missing module. This reaches architecture imports, factory paths that resolve the architecture registry, conversion's top-level import of Linear, and utilities such as science/kv_quant_exp.py. It is not limited to callers that opt into TP.",
+        "basis": "source",
+        "evidence": [
+          "call_cb515bc3d8024851b7e80b35902817a5",
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_fb0071eec5be403a919dad5f2920b1c1",
+          "call_1c3b35e6e30d44ababf2b143dd5fa8ab",
+          "call_84609799a2ab4bd793280dbdcf760558",
+          "call_df32284ef95149d4a434a7c6e09b8ca9",
+          "call_9224a112ed7940a6bcb19a11bdbd4891",
+          "call_74a3cff606f84103b98dc40288de46ef"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The supplied attribution names turboderp as the author. The message, \u201cTP: Refactor/fix auto allocation,\u201d describes the planner work; neither the message nor the diff identifies a motivating issue or claims to enable TP loading.",
+        "basis": "source",
+        "evidence": [
+          "call_ec274921d9ec42d2a0d343d5bae48bd2",
+          "call_b5db84f96ba240f18f189a30568feebd"
+        ]
+      },
+      {
+        "text": "The earlier entry \u201cTP: Auto layer split logic\u201d describes the introduction of the record collector and greedy planner without a loader integration. It records over-budget results, zero denominators, full-cache scratch counted per forward token, the empty-child assertion, and the separate-K/V assumption.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_b9ff0818c2cf4b3098268c13224bcf03",
+          "call_3d160b52c45740efbcdae97f497ba01b"
+        ]
+      },
+      {
+        "text": "Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d quotes the error raised by the unchanged whole-module loader after it exhausts active devices. Issue #54, \u201cGPU split isn't followed here?\u201d, asks about TabbyAPI split settings and observed VRAM and reports a change after adjusting the allocator backend. Their relevance is to the distinction between observed whole-module loading and TP estimates, not evidence that this commit fixes either report.",
+        "basis": "inference",
+        "evidence": [
+          "call_830d69d06a7240488830d92ca5b7cb29",
+          "call_b7d7a408626a4af995fca3f8e57a9339",
+          "call_2f25e3f82f6a46c9a5bff8c569a63472",
+          "call_71745d945a2e4d62a5f62aa2a4a60336"
+        ]
+      },
+      {
+        "text": "The conversion reports overlap by file, not by planner call. #8, \u201cRuntimeError: shape '[5120, -1, 128]' is invalid for input of size 776524800,\u201d traces lm_head quantization through Linear.convert_exl3, not attention grouping. #11, \u201cAssertionError: bias is wrong datatype,\u201d traces Linear.convert_exl3 into an EXL3 bias assertion. #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d traces conversion's Attention forward into Linear.capture_H. #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d traces a tensor-size mismatch through sliced MLP and Linear loading. #55, \u201cPossible GLM4 32B regression,\u201d traces an int/None comparison in the FP16 loader through Module, MLP and Linear.",
+        "basis": "inference",
+        "evidence": [
+          "call_de33b4d13da84ecdbd38ee260754632a",
+          "call_dff641079d7c4601aa134656c0be14a3",
+          "call_29376bae64dc4392af6290e15ce3a2b1",
+          "call_7b914c0c965d4cdebef968b8d502a839",
+          "call_a19fe4d5c3d3441e9a96ecb44cf0a99c",
+          "call_1f732f7c9f1e45159618d28c33d3a292",
+          "call_3457c1674a594876896cd546146fb73e",
+          "call_2d4284481a8e4b59806a6f015d0b2a6d"
+        ]
+      },
+      {
+        "text": "Further conversion context: #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated\u201d; #58, \u201clinalg.cholesky error converting OpenBuddy (Qwen3) 32B QAT\u201d; #34, \u201ctorch._C._LinAlgError on last layer of quant\u201d; and #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d trace from Linear.convert_exl3 to factorization. #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d reports NaNs and failure at the head in conversion through the same method. #53, \u201cCommand A support,\u201d starts as a model-support and quant availability request. Their overlap does not establish a relationship to TP allocation.",
+        "basis": "inference",
+        "evidence": [
+          "call_7da3e4e9aa8e436eb5090f14cad0ebbf",
+          "call_0641801bb9c24dfdbc109992c21e7609",
+          "call_136bc4861b6845baa8fe6a2c24143c71",
+          "call_2dab80e6f7ac442cbb363d9062f81dbf",
+          "call_ee71e9b3f5f64778a887e63d3f6f944e",
+          "call_471a26a9a936406282d0591d4cbd0506",
+          "call_2d4284481a8e4b59806a6f015d0b2a6d"
+        ]
+      },
+      {
+        "text": "Other nearby discussions describe different mechanisms: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d passes through the package and model initializers but fails loading the compiled extension, not the allocator module; #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d concerns a logits-buffer copy, not the Gemma vision MLP's allocation hook; #57, \u201cBatch process interrupted,\u201d concerns batched_translation.py stopping while creating jobs, with no matching planner call. #27, \u201cAttention Backend,\u201d asks about FlashInfer versus FlashAttention, not KV-head partitioning; #1, \u201cCache Quantization Strategy,\u201d describes independent K/V bitrates, relevant to the cache being estimated but not evidence of a change to its implementation here.",
+        "basis": "inference",
+        "evidence": [
+          "call_1bd91d54b94e4167b6db41a736dab006",
+          "call_3115d3a0276c4bfcbeb8b96cf0f4b901",
+          "call_33aa0b2a50bb43b2b9d62566f556e03b",
+          "call_911e6974f8d94b3a9387829e6aa6ca23",
+          "call_fc8b8f70fbfe416a9de69b7376ea6941",
+          "call_3457c1674a594876896cd546146fb73e",
+          "call_13b39b7a03e34b8e8a365f2e4cd8c574"
+        ]
+      }
+    ],
+    "limitations": [
+      "No package import, model load, CUDA allocation, sharded forward or distributed communication was executed. The scalar transcription uses Python integers and floating-point division, not NumPy fixed-width arithmetic or GPU allocator behavior. It does not measure memory fit, speed or accuracy.",
+      "Literal whole-tree searches establish explicit references, not dynamic callers or external users of the old import, estimate attribute or return value. The import finding assumes a clean installation without a stale copy or shim of util.tp_split; a bare top-level import that has not yet reached exllamav3.modules was not shown to fail.",
+      "The diff leaves FlashAttention temporary workspace unmodeled and does not supply a tensor slicer that consumes the emitted ranges. Compatibility with every available checkpoint head shape and the desired offset convention for already-sliced GatedMLP were not established."
+    ],
+    "links": [
+      "dd053a205d253e3610bbe224e4bb828a6a562ee4"
+    ],
+    "chapters": [
+      {
+        "id": "tp-auto-allocation",
+        "title": "Estimate tensor-parallel memory and emit aligned shard ranges",
+        "claims": [
+          {
+            "text": "TPAllocation records describe work to estimate, not tensors to load. Module.make_tp_allocation concatenates child records in registration order; Attention supplies a combined projection-and-cache record, and BlockSparseMLP may append its shared experts' record. Embedding and PosEmbedding emit no records. Conv still raises, now with an explicit message. Plain MLP no longer returns an estimate for its up/down projections and raises instead; the two explicit constructors found are Gemma3's vision encoder block and Mistral3's multimodal projector. Direct collection there is affected, while either vision model's module list also contains an earlier Conv. GatedMLP still has its own estimator.",
+            "basis": "source",
+            "evidence": [
+              "call_df5d070b92d14baeb40bf111b5e92adb",
+              "call_d1dc5d2e1b5a431b8e74b16745e8224c",
+              "call_2bdbba0fb2d84eaf9adb9cc6c58c0060",
+              "call_2f25e3f82f6a46c9a5bff8c569a63472",
+              "call_1a202d2435a04e0fb1dc92e6cf435695",
+              "call_13b39b7a03e34b8e8a365f2e4cd8c574",
+              "call_d3fae00e293c48d6b753a3e966ffc6d1",
+              "call_56f713c8433a4a66b19e404f08012881"
+            ]
+          },
+          {
+            "text": "For each component, initial_split subtracts accumulated persistent bytes and the maximum temporary charge seen so far from each device's working budget and clips the result at zero. If every weight is zero, it retries with each working budget multiplied by 11/10 and rounded down in bytes. It does this before masking devices: limit 1 keeps only slot 0; other non-None limits still keep the slots with the most remaining room. ratio_split floors proportional quotas in indivisible allocation units and distributes leftovers by largest fractional remainder. Replicated charges depend on the positive-weight mask, not the rounded split. Split charges are prorated; only overhead_to_split gets the forward-token multiplier, with output_num_tokens used for the final component. Persistent costs sum across components; temporary costs take a per-device maximum. The new report shows the two terms and their sum, with a 1024\u00b3 divisor despite the GB label.",
+            "basis": "source",
+            "evidence": [
+              "call_28f6efdfaf11464bbf7119bbae823efa",
+              "call_b5db84f96ba240f18f189a30568feebd",
+              "call_b10bef17aa13469a80b6b834b1fe73aa"
+            ]
+          },
+          {
+            "text": "Attention starts with one head per group and doubles the group size while group size \u00d7 head_dim is below 128, halving the number of groups each time and requiring an even count at each halving. The resulting width must be divisible by 128. This reaches an aligned boundary without splitting a head, but it rejects some widths even if a larger group could work: at head_dim 96 it stops at two heads (192 channels) and asserts instead of trying four heads (384 channels). This condition applies to allocation, not to Attention.forward.",
+            "basis": "source",
+            "evidence": [
+              "call_3457c1674a594876896cd546146fb73e",
+              "call_d1dc5d2e1b5a431b8e74b16745e8224c"
+            ]
+          },
+          {
+            "text": "compile_tp_plan keeps per-device, per-key half-open intervals, including empty intervals, and scales both endpoints by channel_width or 1. Attention now emits head offsets; standalone Linear and unsliced GatedMLP emit 128-channel boundaries; BlockSparseMLP still emits expert offsets; LayerNorm and RMSNorm leave width unset and are unchanged in this conversion. Already-sliced GatedMLP does not agree with either a slice-index or a true channel-offset interpretation: it still declares one allocation unit per slice but supplies width 128 regardless of the actual slice widths.",
+            "basis": "source",
+            "evidence": [
+              "call_b5db84f96ba240f18f189a30568feebd",
+              "call_3457c1674a594876896cd546146fb73e",
+              "call_523707b4aac540a9a2880fde2723f5cc",
+              "call_56f713c8433a4a66b19e404f08012881",
+              "call_1478a93b924d4c04a9a0d66b31a648f1",
+              "call_2bdbba0fb2d84eaf9adb9cc6c58c0060",
+              "call_9783a04b342842d194708f98bb281b61",
+              "call_fc5d4d7b9423440ab7fb4cbf0132a375"
+            ]
+          },
+          {
+            "text": "A bounded Python transcription gave four two-head groups for eight 64-channel KV heads. With weights 3:1, the groups split 3:1 and compile to head intervals [0,6) and [6,8). Three 64-channel heads and head widths of 96 or 192 hit the new assertions in the tested examples. A depleted 100-byte budget with 115 bytes already charged rose to 110, then 121; budgets from zero through nine bytes were fixed points of the growth step.",
+            "basis": "execution",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "stale-transformer-import",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The allocator move leaves a mandatory import at the old module path.",
+        "trigger": "In a clean task installation with earlier prerequisites satisfied, import exllamav3.modules or an architecture or conversion module that imports it.",
+        "expected_behavior": "The initializer imports both decoder block classes using the relocated TPAllocation definition.",
+        "actual_behavior": "The initializer reaches transformer.py, whose top-level import names the removed util.tp_split path; package initialization is expected to stop there before allocation is called.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TPAllocation import"
+          }
+        ],
+        "source_evidence": [
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_cb515bc3d8024851b7e80b35902817a5",
+          "call_fb0071eec5be403a919dad5f2920b1c1",
+          "call_1c3b35e6e30d44ababf2b143dd5fa8ab"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Cross-checked all literal old-path imports against the move and traced the eager initializer and its importers.",
+            "evidence": [
+              "call_cb515bc3d8024851b7e80b35902817a5",
+              "call_b5db84f96ba240f18f189a30568feebd",
+              "call_1c3b35e6e30d44ababf2b143dd5fa8ab",
+              "call_84609799a2ab4bd793280dbdcf760558"
+            ],
+            "limits": "No installed-package import ran; an old file left on disk could mask the failure."
+          }
+        ]
+      },
+      {
+        "id": "budget-growth-can-stall",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new retry replaces one zero-weight failure with a possible nonterminating loop.",
+        "trigger": "Call initial_split directly with a nonempty component list and max_mem=[0], or reach a component with exhausted budgets that cannot grow under integer flooring.",
+        "expected_behavior": "Find positive weights or return an explicit infeasible-budget error.",
+        "actual_behavior": "With zero capacity the next budget is still zero and the while loop has no progress check or retry limit.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/models/model_tp_alloc.py",
+            "symbol": "TPAllocator.initial_split"
+          }
+        ],
+        "source_evidence": [
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_1cd2549131764fe1ab92cba9b414de0f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Evaluated the growth expression and found all whole-byte values from 0 through 9 unchanged.",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ],
+            "limits": "Did not run the infinite loop; the search found no named in-tree caller."
+          }
+        ]
+      },
+      {
+        "id": "slot-zero-mask-removes-all-room",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Checking for positive weights before enforcing the single-device limit does not protect the split after masking.",
+        "trigger": "Call initial_split with a positive channel count on a one-device-limited component, slot 0 already exhausted, and another device still having room. For example, budgets [10,20] after a prior slot-0-only component charged 10 bytes give residuals [0,20].",
+        "expected_behavior": "Apply the fixed-slot constraint before testing feasibility, then either obtain a usable weight for slot 0 or report that it cannot fit.",
+        "actual_behavior": "The positive residual on slot 1 skips the retry, the mask zeroes slot 1, and ratio_split divides by zero for Python integer inputs.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/models/model_tp_alloc.py",
+            "symbol": "TPAllocator.initial_split"
+          }
+        ],
+        "source_evidence": [
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_b10bef17aa13469a80b6b834b1fe73aa",
+          "call_1cd2549131764fe1ab92cba9b414de0f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled the residual and mask steps and observed ZeroDivisionError from the transcribed split.",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ],
+            "limits": "Direct planner inputs only; no named in-tree planner caller was found."
+          }
+        ]
+      },
+      {
+        "id": "planner-still-lacks-fit-and-axis-checks",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new retry does not fix the inherited over-budget result or the independent zero-channel denominator.",
+        "trigger": "Call initial_split with budgets [4,4] and a record with storage_per_device=5 and default split sizes; separately pass a record with channels_to_split=0 and positive remaining room.",
+        "expected_behavior": "Report an infeasible replica or reject a zero-sized axis before prorating costs.",
+        "actual_behavior": "The first case returns totals [5,5] for rounded split [1,0]; the second gets zero shares from ratio_split and divides by the zero axis length in accounting.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/models/model_tp_alloc.py",
+            "symbol": "TPAllocator.initial_split"
+          }
+        ],
+        "source_evidence": [
+          "call_28f6efdfaf11464bbf7119bbae823efa",
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_b10bef17aa13469a80b6b834b1fe73aa",
+          "call_1cd2549131764fe1ab92cba9b414de0f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Checked rounding and replica totals for the first case and the zero share before the unchanged accounting denominator for the second.",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ],
+            "limits": "Synthetic planner inputs; no loader or actual device allocation was exercised."
+          }
+        ]
+      },
+      {
+        "id": "gated-mlp-slice-offset-unit-mismatch",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The range scaling newly propagates GatedMLP's inherited width metadata mismatch into the compiled plan.",
+        "trigger": "Compile an allocation for a GatedMLP already split into two slices, giving each device one slice; the constructor can create slices when the intermediate size exceeds its split threshold.",
+        "expected_behavior": "Represent the two slice indices or translate them into channel boundaries using the actual slice widths.",
+        "actual_behavior": "The record counts slices but multiplies offsets by 128, emitting [0,128) and [128,256) irrespective of those widths.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/models/model_tp_alloc.py",
+            "symbol": "TPAllocator.compile_tp_plan"
+          },
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/modules/mlp.py",
+            "symbol": "GatedMLP.make_tp_allocation"
+          }
+        ],
+        "source_evidence": [
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_56f713c8433a4a66b19e404f08012881",
+          "call_1478a93b924d4c04a9a0d66b31a648f1",
+          "call_44d8acb1fdfb4a4f9cc5bba630db9a26"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Scaled the cumulative offsets for two one-slice assignments.",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ],
+            "limits": "No in-tree consumer of compile_tp_plan was found, so no resulting tensor mis-slice was observed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-quantized-cache-scratch-scaling",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Changing the attention split unit leaves the inherited token multiplier on full-cache scratch intact.",
+        "trigger": "Collect an attention record with an attached quantized cache, directly or via a containing module, then estimate it for more than one forward token.",
+        "expected_behavior": "Charge the full-size K/V reconstruction pair once per call and scale only token-dependent activations with token count.",
+        "actual_behavior": "Attention puts the full-cache pair in overhead_to_split, and the planner multiplies it by the forward-token count before prorating. Conversely, the replicated overhead field is documented per token but charged once.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.make_tp_allocation"
+          },
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/models/model_tp_alloc.py",
+            "symbol": "TPAllocator.initial_split"
+          }
+        ],
+        "source_evidence": [
+          "call_d1dc5d2e1b5a431b8e74b16745e8224c",
+          "call_3457c1674a594876896cd546146fb73e",
+          "call_2f25e3f82f6a46c9a5bff8c569a63472",
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_8ca72cda40c34a799cea34ea01d4e381"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Isolated the cache term: 1,024 cache positions, eight heads, head width 128 and two bytes per element give a 4 MiB K/V pair, counted as 32 MiB at eight forward tokens.",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ],
+            "limits": "This is estimate arithmetic, not peak VRAM or a live model-loading path."
+          }
+        ]
+      },
+      {
+        "id": "inherited-combined-kv-estimator-failure",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new head grouping still cannot be reached for the constructor's combined-K/V form.",
+        "trigger": "Construct Attention with named Q/O projections and a supplied kv_proj instead of key_k/key_v, then ask it for a record directly or through Module's child traversal.",
+        "expected_behavior": "Account for the combined projection or reject it explicitly.",
+        "actual_behavior": "The constructor only assigns kv_proj in that branch, but the estimator reads k_proj.storage_size() before reaching the new grouping logic.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.make_tp_allocation"
+          }
+        ],
+        "source_evidence": [
+          "call_d3dcdd5a03514d84a0c347ee5b606e29",
+          "call_d1dc5d2e1b5a431b8e74b16745e8224c",
+          "call_3457c1674a594876896cd546146fb73e",
+          "call_df5d070b92d14baeb40bf111b5e92adb"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the constructor branches to the unchanged estimate reads and checked the parent collector and literal kv_proj assignment references.",
+            "evidence": [
+              "call_bf7478075fc84c4ab0adef2239b9ce82",
+              "call_8ca72cda40c34a799cea34ea01d4e381",
+              "call_d3dcdd5a03514d84a0c347ee5b606e29",
+              "call_d1dc5d2e1b5a431b8e74b16745e8224c"
+            ],
+            "limits": "Conditional on the accepted custom constructor form; the literal search does not rule out dynamically supplied arguments."
+          }
+        ]
+      },
+      {
+        "id": "inherited-empty-collector-assertion",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The generic allocation collector still cannot return an empty plan for a no-op decoder block.",
+        "trigger": "With assertions enabled, directly collect an allocation from a DeciLM TransformerBlock with both attention and FFN marked no_op, assuming the module imports have succeeded.",
+        "expected_behavior": "Return no records for a block with no child work.",
+        "actual_behavior": "None children are not registered, so the inherited collector asserts on the empty list before returning. The Module diff only changes its allocator import.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/modules/module.py",
+            "symbol": "Module.make_tp_allocation"
+          }
+        ],
+        "source_evidence": [
+          "call_2f25e3f82f6a46c9a5bff8c569a63472",
+          "call_fb0071eec5be403a919dad5f2920b1c1",
+          "call_e1193c0bed374f219d7da6141cfe0710",
+          "call_8ca72cda40c34a799cea34ea01d4e381"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the two no_op branches through registration to the unchanged collector guard and searched for explicit callers.",
+            "evidence": [
+              "call_2f25e3f82f6a46c9a5bff8c569a63472",
+              "call_fb0071eec5be403a919dad5f2920b1c1",
+              "call_8ca72cda40c34a799cea34ea01d4e381"
+            ],
+            "limits": "No model-level allocation caller was found; this is not a claim about ordinary DeciLM forward execution."
+          }
+        ]
+      }
+    ],
+    "summary": "Refactors the tensor-parallel planner to separate storage from peak overhead and emit aligned KV-head and channel ranges. It does not enable TP loading. A stale transformer import can block module initialization, and the new budget retry and device mask still admit infeasible cases."
+  },
+  "evidence": {
+    "call_b5db84f96ba240f18f189a30568feebd": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 166,
+        "max_bytes": 5002
+      },
+      "result_sha256": "6a607e9eb024bbecfe5cfac3546fc9fda748a9b5a6c3a329ad209121e8d50b53"
+    },
+    "call_3457c1674a594876896cd546146fb73e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 5168,
+        "max_bytes": 1747
+      },
+      "result_sha256": "3c3affd663c93bdf010fc4bae95e2fcaefc44a4480b60375e61c2f1e1fc708d7"
+    },
+    "call_8ed8e9091f0c481086284321be641fe5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 6915,
+        "max_bytes": 5980
+      },
+      "result_sha256": "03bc5775c988f726e3a9cab74cc1ec7922a84a4a0e94f52f4e0b5d86e27629a5"
+    },
+    "call_1a202d2435a04e0fb1dc92e6cf435695": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 7449,
+        "max_bytes": 737
+      },
+      "result_sha256": "fdf575db41a56889998505a91a1db0e635d66369795aaeaaf4d7304e1a8dc9d3"
+    },
+    "call_1833652499a9405a9e546968440ec08f": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 8186,
+        "max_bytes": 529
+      },
+      "result_sha256": "7cf9127185afe89b42f1347b1ae8991586da082be741bbe5b3735f03ae8676b1"
+    },
+    "call_ed5f6bbf85f940de926467b5520d44ff": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 8715,
+        "max_bytes": 497
+      },
+      "result_sha256": "93b801acab5606256a5d0f75dc898fe1b8ec579c97247482118767503a43c233"
+    },
+    "call_2d4284481a8e4b59806a6f015d0b2a6d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 9212,
+        "max_bytes": 543
+      },
+      "result_sha256": "15cfedb9a748ccb4b16e633f8cbcbaf05a245da4c76c68db40f7affafbb46a38"
+    },
+    "call_13b39b7a03e34b8e8a365f2e4cd8c574": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 9755,
+        "max_bytes": 1543
+      },
+      "result_sha256": "a6de635e3170fb26d2eac562493235e6b91c1f077b3af80ef2e3f241c2ef4403"
+    },
+    "call_e1193c0bed374f219d7da6141cfe0710": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 11298,
+        "max_bytes": 585
+      },
+      "result_sha256": "7132f5c8c250deabc4a375a30cc5a175cc42f653243377eff240938c35d9bcf1"
+    },
+    "call_c56231de7a1748c98ee4cfd85a14f212": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 11883,
+        "max_bytes": 525
+      },
+      "result_sha256": "8ec3e781a3d55f9b23e0adba117806a2bd846c03ff887da2f26a97bce8b6f380"
+    },
+    "call_17a6c6ee814e4d0fb52a02c5dda50ab5": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 12408,
+        "max_bytes": 487
+      },
+      "result_sha256": "329c3704c46a5c6d9767a53958399615ff4685d21e35aaf90e1d3d1660d4525e"
+    },
+    "call_cb515bc3d8024851b7e80b35902817a5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "tp_split"
+      },
+      "result_sha256": "ce7dea1690347d339278efd21b68c9aef7702ef40ad5f4f512da3e88b9f4a3bf"
+    },
+    "call_8ca72cda40c34a799cea34ea01d4e381": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "make_tp_allocation"
+      },
+      "result_sha256": "ada4b2fd4aab712b2dd9a19d1fa3edddffe32aa22cf465b511a73080718c052a"
+    },
+    "call_45fc831f037746f6b5ae69149fd05344": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "TPAllocator"
+      },
+      "result_sha256": "4500d956459c7ac0c84064cc2ca637a102ced14fb3ac14567c10f1621f2b75e7"
+    },
+    "call_28f6efdfaf11464bbf7119bbae823efa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/util/tp_split.py"
+      },
+      "result_sha256": "30146ff7ba685f231ed0cf0fe615c5432cd141a93dcc22f37f6f4fa15d5c85be"
+    },
+    "call_44d8acb1fdfb4a4f9cc5bba630db9a26": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "compile_tp_plan"
+      },
+      "result_sha256": "98e9d0c75817badbc9282c47a1c8a1bf674dd720cb22450d33fe895be5953be1"
+    },
+    "call_1cd2549131764fe1ab92cba9b414de0f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "initial_split"
+      },
+      "result_sha256": "ec5016c61c0081ccd3bca951ecbdb818eec03c773526609c4f27f70bf2110ab4"
+    },
+    "call_f6c864b83a46488fb69a8adb7b172e35": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "def ratio_split"
+      },
+      "result_sha256": "c2af143c2d7ba4b478b6d4a38df182b117ef3379c4e1b439656b8ff506dc4746"
+    },
+    "call_b10bef17aa13469a80b6b834b1fe73aa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/util/misc.py",
+        "offset": 1200,
+        "max_bytes": 3900
+      },
+      "result_sha256": "c7197c04d7561df5b098097cd2733ea1e56b9f85cbc183cb7d4d4b3b32737276"
+    },
+    "call_ac345576b41a478bb075f4d6bd2d6be5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "util/tp_split.py"
+      },
+      "result_sha256": "3b746d6633dd48bb261ff955e3c20c60efbadbf0dbc397b478116fd0f520fb72",
+      "catalog_only": true
+    },
+    "call_b9ff0818c2cf4b3098268c13224bcf03": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "46318eea56234e53770b5a25eaa0ee35e07b18de3f37b6a6b4e005dce2c636a0"
+    },
+    "call_3d160b52c45740efbcdae97f497ba01b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+        "offset": 16384
+      },
+      "result_sha256": "baa6c3379b4682205ebcf5cad3b4151eddf59875d88b94c7abfdae276a55d688"
+    },
+    "call_fb0071eec5be403a919dad5f2920b1c1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "47b4294fd657b212ded0e6fe00f4c349cb908c9e0f9775ebc43c9a82812aa2d5"
+    },
+    "call_1c3b35e6e30d44ababf2b143dd5fa8ab": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/__init__.py"
+      },
+      "result_sha256": "a0cf2d99c5d38f230e53efba72de387749367483b8fa8d6ea514dcc5c59799b5"
+    },
+    "call_d47ba70954d74a8b8e803298394cd8b1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/models/__init__.py"
+      },
+      "result_sha256": "1d7046b5b3e872ac3c4d1036914d1d531d67d3b0077240265e4d0e917e103d3f"
+    },
+    "call_f1ce534dc531481ab1b0c909b8728739": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/__init__.py"
+      },
+      "result_sha256": "cdc98590e0b8321128dc6175bccf67fbcad6a6ed257665151392e1e39fe5cd17"
+    },
+    "call_7214fb30639f49a292db030026f8c3ae": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "tensor_parallel",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_34488026ccfb49a98b9c549ffa37234e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "tp",
+        "path": "exllamav3/models/model.py",
+        "limit": 40
+      },
+      "result_sha256": "514e6669c3c724e79b881a5f77d10d8a380faf30dcca9768fc19b95be18922bb"
+    },
+    "call_71745d945a2e4d62a5f62aa2a4a60336": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/models/model.py",
+        "offset": 12750,
+        "max_bytes": 5100
+      },
+      "result_sha256": "dd6991ef06c40888494fd1af7ac4a6c310d5dbd3513357a3e6722df6298b85f8"
+    },
+    "call_b6fa6cf6f12d43608a0ad3043e33ed6e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "TPAllocation(",
+        "limit": 100
+      },
+      "result_sha256": "995281d4d820f9ac6689171fc7632e7bfb96fb4884b457c05ce7976dd544570b"
+    },
+    "call_66f38d1042ec48489e47767a337990c1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "channel_width"
+      },
+      "result_sha256": "afccb6ab8024e5dd88fc41437e29a23d2ca46d8b4532dd6141c1a060d3919811"
+    },
+    "call_7bcedc2b5c9d4e24bda8146a2bcafb5f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": " = MLP("
+      },
+      "result_sha256": "d3f5e9ad664bbd387b45226a3097bae4e8cf914d2f3c70d53e3094816bd9d3bf"
+    },
+    "call_d3fae00e293c48d6b753a3e966ffc6d1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "MLP(",
+        "limit": 100
+      },
+      "result_sha256": "88e68422d5ecc162c82469cdd9489505f46a0309fd540b00ffc952c16f7334db"
+    },
+    "call_311ef44cf42847cc80e05f1262e85766": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 19100,
+        "max_bytes": 6700
+      },
+      "result_sha256": "a6f387b47e0375b41a55b0ebdc7abb6c6c1803454b728ccc64b33ee105cf4d23"
+    },
+    "call_d1dc5d2e1b5a431b8e74b16745e8224c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 18000,
+        "max_bytes": 1800
+      },
+      "result_sha256": "5c6a41d1f902b973180d43d08a214a9fbf809b89c4566f4bcdb1427f2b96c3de"
+    },
+    "call_c9e01e66a7f5498286e046785d6c4d25": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 1550,
+        "max_bytes": 4300
+      },
+      "result_sha256": "e0b6a34225c7b49fb13df5ab404c9a318294b637fe8d95b3bb67a8b4dde6932f"
+    },
+    "call_d3dcdd5a03514d84a0c347ee5b606e29": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 5850,
+        "max_bytes": 3540
+      },
+      "result_sha256": "5db451de0a6b6a902f536929bf8e59a92719fdc8869756f192fdb4e8db882196"
+    },
+    "call_bf7478075fc84c4ab0adef2239b9ce82": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "kv_proj ="
+      },
+      "result_sha256": "f0f0173570c15cb37d9c57505bb7843a70205648a06e0ee45687edd7964ffb3b"
+    },
+    "call_df5d070b92d14baeb40bf111b5e92adb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/module.py",
+        "offset": 3000,
+        "max_bytes": 2300
+      },
+      "result_sha256": "5c6c83a0c7b50f6a617fbd7ce1334642c66d49e1a4bfa2bd5e9d8a1a773c4fef"
+    },
+    "call_2bdbba0fb2d84eaf9adb9cc6c58c0060": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 16400,
+        "max_bytes": 5000
+      },
+      "result_sha256": "c37005c9b1a9d667c90bbea60798ae26e09e52a78661aaaf62ed81c46f6d7fd7"
+    },
+    "call_984e34b6bf6640a9b7b9294cb2706556": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 10100,
+        "max_bytes": 4000
+      },
+      "result_sha256": "6b50c33f55ce918928e67f26a24a4f21945fd7ba7fd03b963f8c43262abc4c8c"
+    },
+    "call_56f713c8433a4a66b19e404f08012881": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/mlp.py",
+        "offset": 9200,
+        "max_bytes": 2000
+      },
+      "result_sha256": "b80c7bb21087b1d2834d9c788d6c6c8e9cec62919bc35185dc64bec8676889d4"
+    },
+    "call_523707b4aac540a9a2880fde2723f5cc": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 12000,
+        "max_bytes": 4300
+      },
+      "result_sha256": "6a0e00578385144eea6cbb631da884ae5ba3f301e0dda17dafe96d04ab09e5dc"
+    },
+    "call_7a8060847e004216be8f8f4743b50876": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/layernorm.py",
+        "offset": 3450
+      },
+      "result_sha256": "37d3e2c6020a001a4de274a767bf132837adde23e0f4fe23b1c32ea8b30ed8fa"
+    },
+    "call_9783a04b342842d194708f98bb281b61": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/layernorm.py",
+        "offset": 3050
+      },
+      "result_sha256": "9034c953df839e542a011c6af6fb4e33af5612e2f1a48af4e6783e062ae6d078"
+    },
+    "call_56c5b133e1194edc99adedcf88f03332": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "offset": 2650
+      },
+      "result_sha256": "041aad942f409be0551d08a6bbb3a5bbeab42b14d0d61f5198311aa4a5d24447"
+    },
+    "call_fc5d4d7b9423440ab7fb4cbf0132a375": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "path": "exllamav3/modules/rmsnorm.py",
+        "offset": 2130
+      },
+      "result_sha256": "eb3966afed8c7b9990e3b39c943a3f996395fdc8b724fe83c3d959b59daf3ece"
+    },
+    "call_0b14dcf49be743a694030d596fa9069a": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 5102
+      },
+      "result_sha256": "05ed98c2b336ebe5689e83f162c3dffa8b9f66df549a2fb42cb1954d8494ded4",
+      "catalog_only": true
+    },
+    "call_de33b4d13da84ecdbd38ee260754632a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/8",
+        "max_bytes": 3000
+      },
+      "result_sha256": "3f123e137e18f94937817bded70bc5ffdfb59416e7faa037eb5b1703c580390f"
+    },
+    "call_dff641079d7c4601aa134656c0be14a3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "max_bytes": 2600
+      },
+      "result_sha256": "486ad679b59ad291a7f5bdbc51899e789bbeb0b96e526c63b031387a23842959"
+    },
+    "call_7b914c0c965d4cdebef968b8d502a839": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 5500
+      },
+      "result_sha256": "209b463f277a97ae4dec4ad599fbfba17ccca7ee7efc140ddbd26e1e904f79ea"
+    },
+    "call_a19fe4d5c3d3441e9a96ecb44cf0a99c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 4800
+      },
+      "result_sha256": "8481896f7c81a6fd59ff4b2ab5d102711deaca81b429c6f750bd01e907465a07"
+    },
+    "call_7da3e4e9aa8e436eb5090f14cad0ebbf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 4300
+      },
+      "result_sha256": "1c7871277db57f6edd3b196f0d7b5bbc22fdb2cb9c4e38140db0e605987eef72"
+    },
+    "call_1f732f7c9f1e45159618d28c33d3a292": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/55",
+        "max_bytes": 4400
+      },
+      "result_sha256": "1a56a46adb3cde6f2e505213b57c5cf9ec3a353f402e05dd24e8c41be5336123"
+    },
+    "call_33aa0b2a50bb43b2b9d62566f556e03b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/57",
+        "max_bytes": 3000
+      },
+      "result_sha256": "d14dfed9b9408cc8968092a7dca72d842fe1521a24244562087a94a5520f2085"
+    },
+    "call_0641801bb9c24dfdbc109992c21e7609": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/58",
+        "max_bytes": 3400
+      },
+      "result_sha256": "535ba6604923d1811aaa7066ce35180cb661cd6e7678184a37e748a86d978b85"
+    },
+    "call_1bd91d54b94e4167b6db41a736dab006": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 5000
+      },
+      "result_sha256": "dda402c692a4534043881fdbd440c866fe831ca8b832b9d75635db511ff66108"
+    },
+    "call_136bc4861b6845baa8fe6a2c24143c71": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 4200
+      },
+      "result_sha256": "6abe2eb739e07fb5062aaba0ad4111a0d1b07975149e85beefc6201ba53c6eda"
+    },
+    "call_ee71e9b3f5f64778a887e63d3f6f944e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 3400
+      },
+      "result_sha256": "cbd22cb0797bb0814d4c52bf93e39e74d53cb8d203a535954f2196ad11db65a3"
+    },
+    "call_2dab80e6f7ac442cbb363d9062f81dbf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 4300
+      },
+      "result_sha256": "07b314a327e5cafe59589e84bef8588cac6f086cbf90e8bb36a36cd691c355c4"
+    },
+    "call_471a26a9a936406282d0591d4cbd0506": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 3300
+      },
+      "result_sha256": "74b0f79f4178f2d6d8899fad7485340b6a22ef99bb9b52db4aa475a0692a1041"
+    },
+    "call_74a3cff606f84103b98dc40288de46ef": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "import TransformerBlock"
+      },
+      "result_sha256": "b9ed4efd7da333ec5a490cd57d157ad94c3bfacae4541576b71a771ab4ecba03"
+    },
+    "call_d0cb3317d1fa438291d0fb3773468775": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "TransformerBlock",
+        "limit": 65
+      },
+      "result_sha256": "09b453a4bdf76a22665d1ac2038bb1a95c8e5c0a1eae0f6fdeed92ade4efb34c"
+    },
+    "call_3196a0b9b45a4ecb842a48dde5cbe01f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "from ..modules",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "345828581113c036ddbcf0a9f012d24150549c5270c01e0eda14d642b2149333"
+    },
+    "call_84609799a2ab4bd793280dbdcf760558": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "from ..modules",
+        "limit": 100
+      },
+      "result_sha256": "46c523a57ccaee9c1430cb32fc7243f193dfe1104b90dcffb7e0aff1e86de4ea"
+    },
+    "call_0413b79b481c4c6194a96a72d8cec02b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "Insufficient VRAM"
+      },
+      "result_sha256": "340792bff574cdd9aa37157efd947616b2aac4eee0f67a88a85380583cd8d2a9"
+    },
+    "call_830d69d06a7240488830d92ca5b7cb29": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 2800
+      },
+      "result_sha256": "62d46f5d8e6810338e30c0a5105ec9e03ee1267a49c3bf2b32bad21fd4f3ca75"
+    },
+    "call_b7d7a408626a4af995fca3f8e57a9339": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/54",
+        "max_bytes": 2500
+      },
+      "result_sha256": "1f880e35b55d9830589165c02d69b059fdbbe1faa24cd92202007a31a5e453ce"
+    },
+    "call_3115d3a0276c4bfcbeb8b96cf0f4b901": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 2800
+      },
+      "result_sha256": "5a80a3572e792db35280c2861df1e4ead46af2cf6e5e895b11f64726a05dcf2d"
+    },
+    "call_ec274921d9ec42d2a0d343d5bae48bd2": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 0,
+        "max_bytes": 166
+      },
+      "result_sha256": "6a52d76c3127a23292c9a8b62781f1a044e8c1835115cc19f7cf094be84d85cb"
+    },
+    "call_2f25e3f82f6a46c9a5bff8c569a63472": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\nfor name in ['models/gemma3.py','models/mistral3.py','models/decilm.py','cache/quant.py','models/model.py','modules/module.py','modules/embedding.py','modules/pos_embedding.py']:\n p=Path('exllamav3')/name; s=p.read_text(); L=s.splitlines(); t=ast.parse(s); print(name)\n if name.endswith(('gemma3.py','mistral3.py','decilm.py')):\n  for i,l in enumerate(L):\n   if ' = Conv(' in l or '            Conv(' in l or ' MLP(' in l or 'no_op' in l or 'register_submodule(self.multimodal_projector)' in l: print(i+1, '\\n'.join(L[max(0,i-2):i+9]))\n elif name.endswith('model.py'): print('\\n'.join(L[:26])); print('\\n'.join(L[212:234]))\n else:\n  for n in ast.walk(t):\n   if isinstance(n,ast.FunctionDef) and n.name in ('overhead_size','register_submodule','make_tp_allocation','get_kv'): print(ast.get_source_segment(s,n)[:1700])"
+        ]
+      },
+      "result_sha256": "d4444e4e4197664d6da056430302171ae3d9503c367595d538bd9d8a03a5156d"
+    },
+    "call_8fe15d91300d4819982cd3464bd9fe5b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "num_slices",
+        "path": "exllamav3/models/decilm.py"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_1c0c82528b1742fc8cf0332136f1e587": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "intermediate_slices",
+        "limit": 40
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_1478a93b924d4c04a9a0d66b31a648f1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "slices",
+        "path": "exllamav3/modules/mlp.py"
+      },
+      "result_sha256": "38a7e8daf08a11dab4c39c679a83914f54b74721e8dd76da92b52d49e6e74bd4"
+    },
+    "call_5d642edaf3504e62b27ed3b3750e95fe": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "intermediate_split_size",
+        "limit": 60
+      },
+      "result_sha256": "6c95381eeb0bbf82fe531ab4dcfb890a0a5f22a70afbdc3f761935faa10b099d"
+    },
+    "call_2b2b6d57a4dd40a882c0bad77d70ddab": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "MAX_MLP_INTERMEDIATE"
+      },
+      "result_sha256": "4d02d53286963533a6fa4d9e817760bdcdffd42481058516ecf66b6a1827102f"
+    },
+    "call_ba25788889e742a3a0a6bff576b6ec01": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from itertools import accumulate\n\ndef group(h,d):\n w,n=1,h\n while w*d<128:\n  assert n%2==0\n  w*=2;n//=2\n assert w*d%128==0\n return w,n\n\ndef split(d,w):\n q=[d*x/sum(w) for x in w]; b=list(map(int,q))\n for i in sorted(range(len(q)),key=lambda i:-(q[i]-b[i]))[:d-sum(b)]: b[i]+=1\n return b\n\ndef ranges(s,w):\n e=list(accumulate(s,initial=0));return [(a*w,b*w) for a,b in zip(e,e[1:])]\nw,n=group(8,64); s=split(n,[3,1]);print('KV',w,n,s,ranges(s,w))\nfor h,d in [(3,64),(8,96),(8,192),(8,128)]:\n try: print(h,d,group(h,d))\n except AssertionError: print(h,d,'asserts')\nprint('replica split / estimate',split(1,[4,4]),[5,5]);print('fixed points',[m for m in range(12) if m*11//10==m]);print('positive growth from 100 when usage is 115',[100,100*11//10,(100*11//10)*11//10]); rem=[max(0,m-u) for m,u in zip([10,20],[10,0])]; rem[1:]=[0]\ntry: split(1,rem)\nexcept ZeroDivisionError: print('limit one',rem,'ZeroDivisionError')\nprint('zero channels',split(0,[10]));print('slices',ranges([1,1],128)); print('cache pair/full term at 8 tokens',2*1024*8*128*2,8*2*1024*8*128*2)"
+        ]
+      },
+      "result_sha256": "5b0b2852c8c3b4dbd02827bdf844104bb6ec38009e31d42b009e6bde773e05ed"
+    },
+    "call_3ef03e6956304d7d97d1162594f1619f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "% 128",
+        "path": "exllamav3/modules/quant",
+        "limit": 18
+      },
+      "result_sha256": "bc1ac1ca7590d3d094376515bc796c68fb23e137fedf90d22fd446ef8fd8e23c"
+    },
+    "call_730abc226cd74aa0aefda2a85fde0c75": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "% 128",
+        "path": "exllamav3/exllamav3_ext/quant",
+        "limit": 20
+      },
+      "result_sha256": "71e1b8828fcc8b8705f2e53c9c4be0de5238cd209e07ff01604d53e8bdd06bcf"
+    },
+    "call_df32284ef95149d4a434a7c6e09b8ca9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "from .llama",
+        "path": "exllamav3/models"
+      },
+      "result_sha256": "9b0b40c7146a5407d37602f3987bb2d36a94f6bc0074193b61dd4f56dbf41729"
+    },
+    "call_29465acf9c224bc39e330c0819b8dce2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "import architectures"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_822b6ce0c8ea480aa510d1658bcf67b9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "from .architectures"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_9224a112ed7940a6bcb19a11bdbd4891": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "c3049627ea2cdbe7f0c8e62e2491e4eed8d37072",
+        "query": "architectures import"
+      },
+      "result_sha256": "70f91985c9e7619b2d03f4f209a9f1c205dda76347f70d73a002704d8d6302fd"
+    },
+    "call_29376bae64dc4392af6290e15ce3a2b1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/11",
+        "offset": 2600,
+        "max_bytes": 1749
+      },
+      "result_sha256": "c2e1dcae98af7ecc527382015c331fdf004e40babf00f5178f583048052bd097"
+    },
+    "call_911e6974f8d94b3a9387829e6aa6ca23": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/27",
+        "max_bytes": 2300
+      },
+      "result_sha256": "7cd0c7d25a1d4f205959552099983869d2b986b533e8ebd0c29909a8a2f98e57"
+    },
+    "call_fc8b8f70fbfe416a9de69b7376ea6941": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/1",
+        "max_bytes": 2600
+      },
+      "result_sha256": "62557d297e66d4bea2cb18fca2110c706f72eaf5b5fc06ec986e6ef5ae72ecd3"
+    }
+  }
+}

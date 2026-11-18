@@ -1,0 +1,746 @@
+{
+  "schema_version": 5,
+  "sha": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+  "parent_shas": [
+    "ea62df9eee39fd86654971a4001cb0f846b09020"
+  ],
+  "cutoff_date": "2025-07-29T22:01:45+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "In the parent chat loop, a KeyboardInterrupt raised by the main prompt read escapes main instead of following the existing /x exit path. The commit by turboderp describes the goal as a cleaner multiprocess exit; the diff addresses the prompt exception, not process management.",
+        "basis": "source",
+        "evidence": [
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+          "call_659a9acfc03d436c90d39474d06c1362"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Mapping the interrupt to /x reuses the same message and loop exit as a typed command. This avoids duplicating the exit branch and limits the behavior change to the main prompt read rather than catching interrupts around the entire application.",
+        "basis": "inference",
+        "evidence": [
+          "call_659a9acfc03d436c90d39474d06c1362",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "If the main prompt raises KeyboardInterrupt, chat prints its usual exit message and main returns normally instead of propagating the exception. The patch installs no signal handler and adds no explicit worker shutdown, process join, or session save.",
+        "basis": "source",
+        "evidence": [
+          "call_659a9acfc03d436c90d39474d06c1362",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+          "call_251b5eb2dacd4a119758753a22996438"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial usage-evaluation entry describes chat.py's original format\u2013tokenize\u2013generate loop. The console-extraction entry identifies read_input_ptk as the reader selected by both output modes. The clipboard-feature entry records the introduction of /x and its normal loop exit; the later interactive-controls entry describes the first-token command dispatcher the patch now feeds.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_caf92bbdaa954b73b9ae867b98d7cb1e",
+          "call_9d1253ea422c47c599a74a6945fc75f0",
+          "call_43b69f5074a44ef19ec45960a4ec5d3b",
+          "call_026244a1e1484ac284945bd662a37f81"
+        ]
+      },
+      {
+        "text": "The more-commands entry records the prefilled prompt reads for /e, /sp and /ban, plus the empty-history and explicit-filename /load defects. The other entries record the clipboard feedback, code-block indexing and rich-streaming boundary defects.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_880ce4821f794d539808aeb819df9d4d",
+          "call_43b69f5074a44ef19ec45960a4ec5d3b",
+          "call_026244a1e1484ac284945bd662a37f81",
+          "call_9d1253ea422c47c599a74a6945fc75f0"
+        ]
+      },
+      {
+        "text": "PR #22, \u201cOpenAI compatible API example,\u201d proposes an HTTP endpoint. The closest parallel is a comment's server example, which catches KeyboardInterrupt around serve_forever and closes the server in finally; the discussion also cites chat.py for prompt formatting and comparison. The shared exception and example are contextual overlap, not evidence that this PR motivated the CLI change or that the CLI now performs equivalent cleanup.",
+        "basis": "inference",
+        "evidence": [
+          "call_081d416aed8f41fa9a2e98aed313b0a1",
+          "call_ce7ee3893e594a6d88955ba95aefbaca",
+          "call_659a9acfc03d436c90d39474d06c1362"
+        ]
+      },
+      {
+        "text": "The overlap with #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d and #62, \u201cDev branch 15JUL2025 - ModuleNotFoundError: No module named 'exllamav3.generator.filter',\u201d is the traceback's top-level `from exllamav3 import Generator, Job, model_init` in chat.py. #6 reports an extension-build assertion after the ROCm notice; #62 reports a missing packaged module. Both fail before the edited prompt read.",
+        "basis": "inference",
+        "evidence": [
+          "call_16dc0c3399f94f519fdd3ba3e51d6c0b",
+          "call_5e57a5ae2107479595f920e326ff63db",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+        ]
+      },
+      {
+        "text": "#12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d reports a quantized-model chat failure at Job construction after a prompt was entered with llama3 mode; the thread recommends ChatML. #61, \u201cRun ERNIE-4.5-300B-A47B-PT 2.25bpw with 5x20G 3080 got 'Insufficient VRAM',\u201d matches chat.py's model_init.init call and reports success with a different CUDA allocator. These are matches to distinct, unchanged call sites, not evidence about Ctrl-C.",
+        "basis": "inference",
+        "evidence": [
+          "call_4b581668b4ec47db919bf7fb2347b119",
+          "call_895b839e5db4489294c292f31c55ecc3",
+          "call_9fe82f5ddf174b08bd1be98a4f6cede6",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+        ]
+      },
+      {
+        "text": "#39, \u201cGemma 3 architecture not in list?,\u201d asks about architecture availability and mentions chat.py in follow-up comparisons of output and loading behavior. #43, \u201cError converting abliterated Qwen3 mlabonne/Qwen3-30B-A3B-abliterated,\u201d reports a Cholesky failure during conversion and suggests chat.py for testing raw weights. #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d reports conversion failures for some bitrates and later suggests the chat.py ChatML mode for a separate output-quality comparison. Their overlap is use of the same CLI, not a report of interrupted prompt input.",
+        "basis": "inference",
+        "evidence": [
+          "call_f12fa97cd00b4e968154c77744e61eb3",
+          "call_0bc92e95055644b8813f9236205e4d23",
+          "call_d489f5befb1144f993e54259e620f364",
+          "call_fb38582e60174a1ea943317e339725c7",
+          "call_61547aa26b234b6fb77528684b3517fc",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+        ]
+      }
+    ],
+    "limitations": [
+      "The bounded check injected a Python exception; it did not run the full CLI, prompt_toolkit, a real terminal, GPU inference, or a multiprocess setup. Actual Ctrl-C delivery, exit status under a launcher, and worker cleanup were not measured.",
+      "Whole-parent literal searches found no matches for `Ctrl-C`, `KeyboardInterrupt`, `multiprocess`, or `Process(`. That does not rule out external launchers, dynamic calls, or process management under other names."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "872e698b8b7f5e41639022a78bc83a6e1614f0bb",
+      "e0cfb2e93c6ddd1e347711f544d1e0750a0acc45",
+      "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+      "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2"
+    ],
+    "chapters": [
+      {
+        "id": "chat",
+        "title": "Route an interrupted chat prompt through /x",
+        "claims": [
+          {
+            "text": "Basic and rich output both select read_input_ptk, which calls prompt_toolkit with the active multiline setting. The new except block replaces an interrupted top-level input read with the exact string `/x`. That string begins with `/` and produces `/x` as the first token, satisfying the same dispatch conditions as a typed exit. The parent had only the typed-command route, introduced with the clipboard commands.",
+            "basis": "source",
+            "evidence": [
+              "call_251b5eb2dacd4a119758753a22996438",
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+              "call_659a9acfc03d436c90d39474d06c1362",
+              "call_e1e3d4ac33814e8eb36d41718bea9952",
+              "call_ad922b94096c4cafabc2822cffb1bd26"
+            ]
+          },
+          {
+            "text": "A successful read still initializes `prefix` to an empty string. An interrupted read skips that assignment, but the /x case calls print_info(\"Exiting\") and breaks before any use of `prefix`, context insertion, tokenization, or job enqueue. Because no code follows the loop inside main, the break leads to a normal return.",
+            "basis": "source",
+            "evidence": [
+              "call_659a9acfc03d436c90d39474d06c1362",
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+            ]
+          },
+          {
+            "text": "The handler is local to the ordinary user prompt, not to read_input_ptk itself. The other three reads\u2014reply editing (/e), system-prompt editing (/sp), and banned-string editing (/ban)\u2014still pass their prefilled text to the same reader outside the try block. Startup, generation and streaming are also outside it, and exceptions other than KeyboardInterrupt from the main read are not caught by the new block.",
+            "basis": "source",
+            "evidence": [
+              "call_3ebec2d206274e16acf4fe6b8f943eaf",
+              "call_707533dfd3034ecab6c2aff30edc2759",
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+              "call_659a9acfc03d436c90d39474d06c1362"
+            ]
+          },
+          {
+            "text": "A standard-library probe extracted the parent prompt and /x dispatch fragment, applied the task edit to a copy, and supplied stub readers. An injected KeyboardInterrupt propagated in the parent fragment but returned normally and logged `Exiting` in the edited fragment. Typed `/x` returned normally with the same message in both, and ordinary `hello` retained an empty prefix in both.",
+            "basis": "execution",
+            "evidence": [
+              "call_788cc70efcfc46a38091b773920cf62f"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "carried-over-empty-history-retry-edit",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The prompt hook leaves the existing /r and /e history access unguarded in the shared CLI loop.",
+        "trigger": "Submit /r or /e with no turns, for example just after starting chat, after /clear, or with --amnesia enabled.",
+        "expected_behavior": "Report that there is no previous turn and keep accepting commands.",
+        "actual_behavior": "Both branches index context[-1] before checking for history and raise IndexError; the new handler covers neither branch.",
+        "locations": [
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+          "call_659a9acfc03d436c90d39474d06c1362"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked initial and reset history, both command branches and the direct script call to main. Both output modes use this dispatcher.",
+            "evidence": [
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+              "call_b533013259a64e7494a4f760feb183aa",
+              "call_659a9acfc03d436c90d39474d06c1362"
+            ],
+            "limits": "No interactive reproduction or external callers checked."
+          }
+        ]
+      },
+      {
+        "id": "carried-over-explicit-load-fallthrough",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The /load dispatcher still calls the file reader only in the no-filename branch.",
+        "trigger": "Submit `/load saved.json` at the ordinary user prompt.",
+        "expected_behavior": "Attempt to read saved.json and return to command input without treating the command as a chat turn.",
+        "actual_behavior": "The extra token bypasses both load_session and continue, so the command text enters the ordinary context insertion and generation path.",
+        "locations": [
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+          "call_a773ca4020e240b5809cc3dec214c1e0",
+          "call_659a9acfc03d436c90d39474d06c1362"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the unchanged /load indentation and following context append in the loop reached by the direct script call to main.",
+            "evidence": [
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+              "call_b533013259a64e7494a4f760feb183aa",
+              "call_659a9acfc03d436c90d39474d06c1362"
+            ],
+            "limits": "No file or model generation was exercised."
+          }
+        ]
+      },
+      {
+        "id": "carried-over-codeblock-index",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The clipboard command still forwards negative block numbers to a helper with only an upper clamp.",
+        "trigger": "Submit `/cc -2` after a response containing exactly two matched fenced code blocks.",
+        "expected_behavior": "Reject or normalize a nonpositive block number without terminating chat.",
+        "actual_behavior": "`matches[-num]` becomes `matches[2]`, raising IndexError. The command's try block guards integer conversion, not the helper call.",
+        "locations": [
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat_util.py",
+            "symbol": "copy_last_codeblock"
+          },
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_f0d1f6028e4b4827afbc0d5e5155225f",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+          "call_659a9acfc03d436c90d39474d06c1362"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "The whole-parent helper search found the /cc branch as the only literal caller; inspected its unguarded call in the dispatcher shared by both output modes.",
+            "evidence": [
+              "call_99089258e16c43689e22efd58b65bfbc",
+              "call_f0d1f6028e4b4827afbc0d5e5155225f",
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+            ],
+            "limits": "No interactive run; dynamic and external callers are not covered."
+          }
+        ]
+      },
+      {
+        "id": "carried-over-empty-codeblock-feedback",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The clipboard command still treats an empty extracted snippet as if no block matched.",
+        "trigger": "Submit /cc with a whitespace-only last matched fenced block, assuming the clipboard write succeeds.",
+        "expected_behavior": "Distinguish an empty matched block from an absent block and report consistently with the write.",
+        "actual_behavior": "The helper strips the contents, copies an empty string and returns it; main treats it as false and reports that no code block was found.",
+        "locations": [
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat_util.py",
+            "symbol": "copy_last_codeblock"
+          },
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_f0d1f6028e4b4827afbc0d5e5155225f",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+          "call_659a9acfc03d436c90d39474d06c1362"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the helper's empty-string return with the truthiness test at its sole literal parent caller, unchanged by the prompt hook.",
+            "evidence": [
+              "call_99089258e16c43689e22efd58b65bfbc",
+              "call_f0d1f6028e4b4827afbc0d5e5155225f",
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+            ],
+            "limits": "No clipboard backend was executed."
+          }
+        ]
+      },
+      {
+        "id": "carried-over-rich-reasoning-boundary",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged rich streamer can still omit answer text that shares the closing think-tag chunk.",
+        "trigger": "In rich output with --think, a generated chunk completes the closing think tag and includes answer text after it.",
+        "expected_behavior": "Include the suffix after the tag in the rendered answer and the stored response.",
+        "actual_behavior": "The thinking branch appends the whole chunk to think_text and starts answer rendering without transferring its suffix to all_text. main then stores only all_text.strip().",
+        "locations": [
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat_console.py",
+            "symbol": "Streamer_rich.stream"
+          },
+          {
+            "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+            "path": "examples/chat.py",
+            "symbol": "main"
+          }
+        ],
+        "source_evidence": [
+          "call_251b5eb2dacd4a119758753a22996438",
+          "call_f9e4dcbe12b74dcca13771c5a073d0cb",
+          "call_659a9acfc03d436c90d39474d06c1362"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Inspected the shared CLI loop's prefix and generated-chunk stream calls, the rich thinking branch, and the history write. The basic streamer does not take this branch.",
+            "evidence": [
+              "call_44f779d86ff84e0aaeb9af02d383d031",
+              "call_251b5eb2dacd4a119758753a22996438",
+              "call_f9e4dcbe12b74dcca13771c5a073d0cb"
+            ],
+            "limits": "No model-generated chunk boundaries or terminal rendering were exercised."
+          }
+        ]
+      }
+    ],
+    "summary": "Catches KeyboardInterrupt at the main chat prompt and routes it through the existing /x command. Other reads and generation are outside the handler, and multiprocess cleanup was not verified."
+  },
+  "evidence": {
+    "call_659a9acfc03d436c90d39474d06c1362": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "921f0c4155e6f74b43b74fe823f3607eea12e203",
+        "offset": 188
+      },
+      "result_sha256": "ef30be5ceacae9033e02a0fc888e9fbd396bf32001fd38c3d67b1f8386ef9045"
+    },
+    "call_f9e4dcbe12b74dcca13771c5a073d0cb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "path": "examples/chat.py",
+        "max_bytes": 30000
+      },
+      "result_sha256": "b538f3055c34129fb8bf0f0c773cec180910fbb63c066c8c501813bc4e3eafd2"
+    },
+    "call_a773ca4020e240b5809cc3dec214c1e0": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "path": "examples/chat_io.py"
+      },
+      "result_sha256": "bfaa64bf55811d73f3b739ff1da581b05108a8142e40b4beb0adaf5e8671e5f2"
+    },
+    "call_251b5eb2dacd4a119758753a22996438": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "path": "examples/chat_console.py"
+      },
+      "result_sha256": "1b940412d470159086a68414c89b33c67b86e44f17d66dafbc967b4aba2c9914"
+    },
+    "call_4be49bb14ad749b1b57db916376beadc": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions"
+      },
+      "result_sha256": "71e5e69cedf2c3090d90aa1fdc0d2e41a0857e4d88ac4524e8a836365c4a889a",
+      "catalog_only": true
+    },
+    "call_16dc0c3399f94f519fdd3ba3e51d6c0b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6"
+      },
+      "result_sha256": "03f8bc5e76af81025c8c29a9f6281184b5066159694a371c3bfb1561a5ee970a"
+    },
+    "call_4b581668b4ec47db919bf7fb2347b119": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "source_id": "unreferenced-issue-12@2025-07-29T22:01:45+02:00"
+      },
+      "result_sha256": "b0355b1ddc19e562115c40f48f7731527a7fc95fb2c07e69d10374d147f5bd4f"
+    },
+    "call_895b839e5db4489294c292f31c55ecc3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "source_id": "unreferenced-issue-12@2025-07-29T22:01:45+02:00",
+        "offset": 24500
+      },
+      "result_sha256": "b7f3aa183aa0a32e4bfd6d8c32d9db6ad21279caf4c4f1f2927bdcbf384cd428"
+    },
+    "call_f12fa97cd00b4e968154c77744e61eb3": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/39"
+      },
+      "result_sha256": "a1c127b33df6d29f986e75eafd92105a060c82f278d63b59a3f914d65692bea0"
+    },
+    "call_0bc92e95055644b8813f9236205e4d23": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "max_bytes": 8500
+      },
+      "result_sha256": "406947f38f6556f9d721cd032de29bd133ad6dcb04e9f87de8e9b504aabdacac"
+    },
+    "call_d489f5befb1144f993e54259e620f364": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/43",
+        "offset": 17000
+      },
+      "result_sha256": "9b646ed199b1130a77af582d9bd5ffc74cedb8303dce1c7746f7c20cf2622f77"
+    },
+    "call_9fe82f5ddf174b08bd1be98a4f6cede6": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/61"
+      },
+      "result_sha256": "1fd66a3dfae54141e2460765aee6f2e8fab404771d42be4a4ee085bc88577ac2"
+    },
+    "call_5e57a5ae2107479595f920e326ff63db": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/62"
+      },
+      "result_sha256": "61b6ab6a810836029b667adbff24b9b08b336cadc10d123db686c317595bb291"
+    },
+    "call_081d416aed8f41fa9a2e98aed313b0a1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22"
+      },
+      "result_sha256": "a052a7603fb17c9895a62c9a5efd4bf597e5178afa92395ad5d8fc18d560812b"
+    },
+    "call_d9bb44f120cf4b44b8343f9fe59af0d7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 35100
+      },
+      "result_sha256": "a05933ddb0acc329b3ee1071b3b82c34a0906bfeefd3351efef64b2019840830"
+    },
+    "call_fb38582e60174a1ea943317e339725c7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 10000
+      },
+      "result_sha256": "4bac5a387f1e7a6a0a75b7ac9256030d50813fcf6b9bbee0a8a17a8f5469ddf8"
+    },
+    "call_61547aa26b234b6fb77528684b3517fc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "offset": 10000
+      },
+      "result_sha256": "b9bcce24e4f54842014ca6f0225ad90e550a6bd6239a7e29d4b22d99634a3c63"
+    },
+    "call_c8229a35400945de8c4c954c99a1f574": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "KeyboardInterrupt"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_dc3dc4971fe64e63890a084cda86a9a4": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "multiprocess"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_3ebec2d206274e16acf4fe6b8f943eaf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "read_input_ptk"
+      },
+      "result_sha256": "5988519b5868ab6a98b1bf4ee825963a4ae3437a7761bafc697cd41b2feb73de"
+    },
+    "call_483e7254168a43a090696378aaa062b2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "Ctrl-C"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_707533dfd3034ecab6c2aff30edc2759": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "read_input_fn"
+      },
+      "result_sha256": "30bcadb0c51c9520ef45c8844fa859befb0d66d4ca94abc71eabf0383a3e9ef1"
+    },
+    "call_e1e3d4ac33814e8eb36d41718bea9952": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "\"/x\""
+      },
+      "result_sha256": "2cb75179ba83632817d4e188867d1e33308419d817fd1a011d13bcd317cdb854"
+    },
+    "call_ba445fdf507c4490bb78940bdb909cdf": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "examples/chat.py",
+        "until": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "limit": 40
+      },
+      "result_sha256": "8d214f6cb48e96401ea744ae78cff5b9d81119bb35672e6ea4931caa2920f19c"
+    },
+    "call_5b154dd12786457b8a56c70d08813d9a": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "examples/chat.py",
+        "limit": 45
+      },
+      "result_sha256": "56f76fbe961338f07984140f8b67cc626ad2a342125ba55c59507519c865fc94"
+    },
+    "call_880ce4821f794d539808aeb819df9d4d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "e12a1a5d0b2083dbf1dede0caf8bbe637b7f3cf2"
+      },
+      "result_sha256": "d92a1a4de951f95f9a05c12f2527b61f48ac2c72de1d4d3fccfc7e0f2933fd24"
+    },
+    "call_026244a1e1484ac284945bd662a37f81": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9e2e1ecdffdc082b4af4c468950ea68319d2580266118c3f69aa0fe49d457989"
+    },
+    "call_5a6850f22e10478fb9898399e3466f91": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "examples/chat.py",
+        "limit": 25
+      },
+      "result_sha256": "b7d41bbb772a725af55debbbcdbeb35986c114c26161cb51ca87e2ae9140e96d",
+      "catalog_only": true
+    },
+    "call_caf92bbdaa954b73b9ae867b98d7cb1e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "usage-evaluation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "1de445731e5fed1acd692da7cbbeb25f1f253ff468e1981fed3b8139ab311e10"
+    },
+    "call_99089258e16c43689e22efd58b65bfbc": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "copy_last_codeblock"
+      },
+      "result_sha256": "31f84b5eede9081b5cb352519f837aedc51716fc927849383aa1d1c7b4c51288"
+    },
+    "call_f0d1f6028e4b4827afbc0d5e5155225f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "path": "examples/chat_util.py"
+      },
+      "result_sha256": "3eae14494f558c569fa2416b74f458de230df6e75fd84b616c719ef3e710771d"
+    },
+    "call_b533013259a64e7494a4f760feb183aa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "main(_args)",
+        "path": "examples/chat.py"
+      },
+      "result_sha256": "f403d0a8ffe94fd6d8a76351f2a68b43d903845d0a5edd8dce35089e58af6c71"
+    },
+    "call_c6cb8a921ae64bc4b367f912ea2960db": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "import chat"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_788cc70efcfc46a38091b773920cf62f": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\np=Path('examples/chat.py').read_text(); start=p.index('        # Get user prompt'); end=p.index('                # Copy codeblock'); old=p[start:end]; new=old.replace('        user_prompt = read_input_fn(args, user_name, multiline)\\n        prefix = \"\"\\n','        try:\\n            user_prompt = read_input_fn(args, user_name, multiline)\\n            prefix = \"\"\\n        except KeyboardInterrupt:\\n            user_prompt = \"/x\"\\n'); assert new!=old\nfor name,s in [('parent',old),('patched',new)]:\n code=compile('def probe(read_input_fn, print_info):\\n    args = user_name = multiline = None\\n    while True:\\n'+s+'        return (user_prompt, prefix)\\n','<isolated-dispatch>','exec'); ns={}; exec(code,ns)\n def interrupt(*args): raise KeyboardInterrupt\n for mode, reader in [('interrupt',interrupt),('typed exit',lambda *args:'/x'),('normal',lambda *args:'hello')]:\n  msgs=[]\n  try: outcome=ns['probe'](reader,msgs.append)\n  except KeyboardInterrupt: outcome='KeyboardInterrupt propagated'\n  print(name,mode,repr(outcome),msgs)"
+        ]
+      },
+      "result_sha256": "3b97839b4ad299a8d06f3d8b1fa8145ade912b54cd850b29c9f25099dd1eb1d1"
+    },
+    "call_b8c65076994041ee869d578b756fdb2c": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "examples/chat_console.py",
+        "limit": 20
+      },
+      "result_sha256": "76724a4137c6cc6b37ad6c794b6a8fedd78e6c454196a7a899cd27572e5e7a2b"
+    },
+    "call_9d1253ea422c47c599a74a6945fc75f0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "872e698b8b7f5e41639022a78bc83a6e1614f0bb"
+      },
+      "result_sha256": "6522cd5d13b00cfd3c08a7d885c7f3ef4868d1b821dabca5a862b84841dd8048"
+    },
+    "call_ce7ee3893e594a6d88955ba95aefbaca": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 28500,
+        "max_bytes": 6600
+      },
+      "result_sha256": "46b09312d36dd5bc4c577fd9d160b7044d4e184d946e1a20c4ce0819ed2ede43"
+    },
+    "call_b49416f561894a2e96101e39afc23ff7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "Process("
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_b23435cdbcec4373a502f3cf8d0c56e1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "query": "\"/x\"",
+        "path": "examples/chat.py"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_234e8e52fe2241828eb4844bc14dd59c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "769ddb34b02769e9a8189d4f4b9653784f2516ba",
+        "query": "\"/x\"",
+        "path": "examples/chat.py"
+      },
+      "result_sha256": "d879d24d2805a3cf1999c8fe40e1517f0925f204095fc76ac03f9ee90b7eb347"
+    },
+    "call_f172fd61b6af453d9403e3ac9ba8da1a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "08858bc8e35b6350516507a4f01435bd4e76e25b",
+        "query": "\"/x\"",
+        "path": "examples/chat.py"
+      },
+      "result_sha256": "75d89e1a0fa75521097f9db9c0c6964a4abd977123b980560bc7cd666872d77a"
+    },
+    "call_754d03fd84c44623b8d9611685eec8db": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "872e698b8b7f5e41639022a78bc83a6e1614f0bb",
+        "query": "\"/x\"",
+        "path": "examples/chat.py"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_3ee061b88b4a4559b12c389e1952b6a6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fc543509c67605f64ab75bea590c5b91bad0e875",
+        "query": "\"/x\"",
+        "path": "examples/chat.py"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_ad922b94096c4cafabc2822cffb1bd26": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e0cfb2e93c6ddd1e347711f544d1e0750a0acc45",
+        "max_bytes": 8500
+      },
+      "result_sha256": "6fb869b35328a5dea2145b049ef85a98e990506c3be4f7444e73d46f87734478"
+    },
+    "call_43b69f5074a44ef19ec45960a4ec5d3b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "e0cfb2e93c6ddd1e347711f544d1e0750a0acc45"
+      },
+      "result_sha256": "7e92bf027d7ce094ce93cf22dd9322b7469daa0d583ba6f093039295020c362e"
+    },
+    "call_cd80d8c15ec24c29ba9ce543bbf38516": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "examples.chat"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_f776d0b1422247eeb3f1ba1fffbc50bd": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "examples/chat.py"
+      },
+      "result_sha256": "8fdcc1cd3815a2b3a0c0d28dbf148632eb216e338a5391b9022237f690800f62"
+    },
+    "call_44f779d86ff84e0aaeb9af02d383d031": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "query": "s.stream("
+      },
+      "result_sha256": "54a953df365f07c2800a671e7167c523c7d5efe6894a05db3276bf9edcca9c86"
+    }
+  }
+}

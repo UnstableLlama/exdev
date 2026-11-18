@@ -1,0 +1,732 @@
+--- a/teacher/editorial.py
++++ b/teacher/editorial.py
+@@ -6,6 +6,8 @@
+ from pathlib import Path
+ import re
+ 
++EVIDENCE_IDENTIFIER = r'(?:prior:[0-9a-f]{64}:)?(?:call_|ancestor:)[0-9a-fA-F]+'
++
+ SCHEMA = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v2.json').read_text())
+ SCHEMA_V5 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v5.json').read_text())
+ SCHEMA_V4 = json.loads((Path(__file__).resolve().parents[1]/'schema/editorial-annotation-v4.json').read_text())
+@@ -20,11 +22,19 @@
+         self.detail = detail
+ 
+ 
+-def bounded_identifier(identifier, pattern):
++class AnnotationProblems(ValueError):
++    """Independent annotation refusals in deterministic validation order."""
++
++    def __init__(self, problems):
++        super().__init__(str(problems[0]))
++        self.problems = tuple(problems)
++
++
++def bounded_identifier(identifier, pattern, *, limit=64):
+     if not re.fullmatch(pattern, identifier):
+         return '[invalid identifier]'
+-    if len(identifier) > 64:
+-        return identifier[:61] + '...'
++    if len(identifier) > limit:
++        return identifier[:limit - 3] + '...'
+     return identifier
+ 
+ 
+@@ -56,32 +66,42 @@
+     return schema
+ 
+ 
+-def validate_shape(value, schema, path='annotation'):
+-    """Small validator for this schema's deliberately bounded JSON Schema subset."""
++def validate_shape(value, schema, path='annotation', *, report=None):
++    """Check the schema subset, retaining the first-refusal order for replay."""
++    def invalid(reason):
++        if report is None:
++            raise ValueError(f'{path}: {reason}')
++        report(path, reason, value)
++
++    if report is not None:
++        report(path, None, value)
+     kind = schema['type']
+     valid = {'object':isinstance(value,dict), 'array':isinstance(value,list),
+              'string':isinstance(value,str), 'integer':type(value) is int}[kind]
+     if not valid:
+-        raise ValueError(path+': wrong type')
++        invalid('wrong type')
++        return
+     if 'const' in schema and value != schema['const']:
+-        raise ValueError(path+': incorrect version')
++        invalid('incorrect version')
+     if 'enum' in schema and value not in schema['enum']:
+-        raise ValueError(path+': unknown value')
++        invalid('unknown value')
+     if kind == 'object':
+         if set(value) != set(schema['required']):
+-            raise ValueError(path+': missing or protected fields')
+-        for key, item in value.items():
+-            validate_shape(item,schema['properties'][key],path+'.'+key)
++            invalid('missing or protected fields')
++        keys = value if report is None else sorted(schema['properties'].keys() & value.keys())
++        for key in keys:
++            validate_shape(value[key],schema['properties'][key],path+'.'+key,report=report)
+     elif kind == 'array':
+         if not schema.get('minItems',0)<=len(value)<=schema['maxItems']:
+-            raise ValueError(path+': invalid number of items')
+-        for item in value:
+-            validate_shape(item,schema['items'],path+'[]')
++            invalid('invalid number of items')
++        for index, item in enumerate(value):
++            suffix = '[]' if report is None else f'[{index}]'
++            validate_shape(item,schema['items'],path+suffix,report=report)
+     elif kind == 'string':
+         if len(value.strip())<schema.get('minLength',0) or len(value)>schema.get('maxLength',1000000):
+-            raise ValueError(path+': invalid length')
++            invalid('invalid length')
+         if 'pattern' in schema and not re.fullmatch(schema['pattern'],value):
+-            raise ValueError(path+': invalid format')
++            invalid('invalid format')
+ 
+ 
+ def evidence_ledger(transcript, *, imported=False, complete=False):
+@@ -112,12 +132,63 @@
+     return results
+ 
+ 
+-def validate_annotation(annotation, manifest, transcript, *, prior=()):
+-    validate_shape(annotation,output_schema(manifest))
++def validate_annotation(annotation, manifest, transcript, *, prior=(), collect_problems=False):
++    problems = []
++    known_fields = set()
++    bad_fields = set()
++    bad_counts = set()
++
++    def refuse(category, detail=None):
++        error = ValueError(category) if detail is None else AnnotationDiagnostic(category, detail)
++        if not collect_problems:
++            raise error
++        problems.append(error)
++
++    def shape_problem(path, reason, value):
++        if reason is None:
++            known_fields.add(path)
++            return
++        if reason == 'invalid number of items':
++            bad_counts.add(path)
++        elif reason != 'missing or protected fields':
++            bad_fields.add(path)
++        reference_pattern = None
++        if re.search(r'\.evidence\[\d+\]$|\.source_evidence\[\d+\]$', path):
++            reference_pattern = EVIDENCE_IDENTIFIER
++        elif re.search(r'\.links\[\d+\]$|\.commit$', path):
++            reference_pattern = r'[0-9a-fA-F]+'
++        elif re.search(r'\.related_chapters\[\d+\]$', path):
++            reference_pattern = r'[a-z][a-z0-9-]*'
++        if reference_pattern is not None and isinstance(value, str):
++            identifier = bounded_identifier(value, reference_pattern)
++            refuse(f'{path}: {reason}', f'{path} rejected reference: {identifier}')
++        else:
++            refuse(f'{path}: {reason}')
++
++    def field(obj, path, key):
++        path = f'{path}.{key}'
++        if not isinstance(obj, dict) or (collect_problems and (path not in known_fields or path in bad_fields)):
++            return None
++        return obj.get(key)
++
++    def items(obj, path, key):
++        values = field(obj, path, key)
++        return enumerate(values) if isinstance(values, list) else ()
++
++    def has_duplicates(values):
++        return len(set(values)) != len(values)
++
++    def successful_run(item):
++        if item['tool'] != 'run':
++            return False
++        result = item['result'].get('result', {})
++        return result.get('returncode') == 0 and not result.get('timed_out', False)
++
++    validate_shape(annotation,output_schema(manifest),report=shape_problem if collect_problems else None)
+     from .coverage import require_coverage
+-    require_coverage(manifest,[*prior, *transcript])
++    require_coverage(manifest,[*prior, *transcript],refuse=refuse if collect_problems else None)
+     task=manifest.get('authoring_task')
+-    if task and task['kind']=='chapter':
++    if not collect_problems and task and task['kind']=='chapter':
+         if len(annotation['chapters'])!=1 or annotation['chapters'][0]['id']!=task['id']:
+             raise ValueError('Chapter output does not match assigned subsystem')
+     ledger=evidence_ledger(transcript, complete=bool(prior))
+@@ -131,81 +202,130 @@
+             item['catalog_only'] = True
+     context={'ancestor:'+e['sha']:{'kind':'approved_ancestor_context','sha':e['sha'],'content_sha256':e['blob']}
+              for e in manifest.get('ancestor_entries',[]) if 'blob' in e and e['sha'] in manifest['commits'] and manifest.get('ancestor_context_mode') != 'retrieval_v1'}
+-    claims = [(f'{field}[{index}]', claim)
+-              for field in ('problem', 'reasoning', 'impact', 'source_notes')
+-              for index, claim in enumerate(annotation[field])]
++    root = 'annotation'
++    claims = [(f'{name}[{index}]', claim)
++              for name in ('problem', 'reasoning', 'impact', 'source_notes')
++              for index, claim in items(annotation, root, name)]
+     chapter_ids=set()
+-    for chapter_index, chapter in enumerate(annotation['chapters']):
+-        if chapter['id'] in chapter_ids:
+-            raise ValueError('Duplicate chapter ID')
+-        chapter_ids.add(chapter['id'])
+-        claims.extend((f'chapters[{chapter_index}].claims[{index}]', claim)
+-                      for index, claim in enumerate(chapter['claims']))
+-        refs=chapter.get('related_chapters',[])
+-        if len(refs)!=len(set(refs)):raise ValueError('Duplicate chapter reference')
+-    for claim_path, claim in claims:
+-        refs=claim['evidence']
++    for index, chapter in items(annotation, root, 'chapters'):
++        path = f'chapters[{index}]'
++        chapter_id = field(chapter, f'{root}.{path}', 'id')
++        if chapter_id is not None:
++            if chapter_id in chapter_ids:
++                refuse('Duplicate chapter ID', f'{path}.id' if collect_problems else None)
++            chapter_ids.add(chapter_id)
++        claims.extend((f'{path}.claims[{i}]', claim)
++                      for i, claim in items(chapter, f'{root}.{path}', 'claims'))
++        refs_path = f'{path}.related_chapters'
++        refs = [ref for i, ref in items(chapter, f'{root}.{path}', 'related_chapters')
++                if f'{root}.{refs_path}[{i}]' not in bad_fields]
++        if has_duplicates(refs):
++            refuse('Duplicate chapter reference', refs_path if collect_problems else None)
++
++    source_tools = {'repo_read', 'git_show', 'git_diff', 'web_fetch', 'hf_fetch', 'safetensors_header'}
++
++    def checked_refs(refs, path, *, finding=False):
++        values = [(i, ref) for i, ref in enumerate(refs) if f'{root}.{path}[{i}]' not in bad_fields]
++        if has_duplicates([ref for _, ref in values]):
++            category = 'Duplicate finding evidence' if finding else 'Duplicate evidence anchor'
++            refuse(category, path if collect_problems else None)
++        resolved = []
++        for index, ref in values:
++            if not finding and ref in context:
++                resolved.append(ref)
++                continue
++            item = ledger.get(ref)
++            if item and item['result'].get('ok') is True and not item.get('catalog_only'):
++                resolved.append(ref)
++                continue
++            if finding:
++                category = ('Findings require successful prior or current evidence' if prior else
++                            'Findings require successful current-session evidence')
++                if not collect_problems:
++                    refuse(category)
++            else:
++                category = 'Unknown or unsuccessful evidence call'
++            pattern = EVIDENCE_IDENTIFIER if collect_problems else r'(?:call_|ancestor:)[0-9a-fA-F]+'
++            identifier = bounded_identifier(ref, pattern, limit=128 if collect_problems and ref.startswith('prior:') else 64)
++            refuse(category, f'{path}[{index}] rejected reference: {identifier}')
++        return resolved if len(resolved) == len(refs) and f'{root}.{path}' not in bad_counts else None
++
++    version = field(annotation, root, 'schema_version')
++    for path, claim in claims:
++        refs = field(claim, f'{root}.{path}', 'evidence')
++        if refs is None:
++            continue
+         if not refs:
+-            raise ValueError('Claims, including inferences, need evidence anchors')
+-        if len(set(refs))!=len(refs):
+-            raise ValueError('Duplicate evidence anchor')
+-        for index, ref in enumerate(refs):
+-            if ref not in context and (ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only'))):
+-                identifier = bounded_identifier(ref, r'(?:call_|ancestor:)[0-9a-fA-F]+')
+-                raise AnnotationDiagnostic(
+-                    'Unknown or unsuccessful evidence call',
+-                    f'{claim_path}.evidence[{index}] rejected reference: {identifier}',
+-                )
+-        if annotation['schema_version'] >= 5:
++            if f'{root}.{path}.evidence' not in bad_counts:
++                refuse('Claims, including inferences, need evidence anchors',
++                       f'{path}.evidence' if collect_problems else None)
++            continue
++        refs = checked_refs(refs, f'{path}.evidence')
++        basis = field(claim, f'{root}.{path}', 'basis')
++        if refs is None or basis is None:
++            continue
++        if version is not None and version >= 5:
+             ancestor_refs=[ref for ref in refs if ref in context or
+                            (ledger[ref]['tool']=='ancestor_read' and ledger[ref]['arguments'].get('mode')=='content')]
+-            if len(ancestor_refs)==len(refs) and claim['basis']!='ancestor':
+-                raise ValueError('Ancestor-only claims require basis ancestor')
+-            if claim['basis']=='ancestor' and not ancestor_refs:
+-                raise ValueError('Ancestor basis requires ancestor prose evidence')
+-        if claim['basis']=='execution':
+-            runs=[ledger[ref] for ref in refs if ref in ledger and ledger[ref]['tool']=='run']
+-            if not any(r['result'].get('result',{}).get('returncode')==0 and
+-                       not r['result']['result'].get('timed_out',False) for r in runs):
+-                raise ValueError('Execution claims require successful run evidence')
++            if len(ancestor_refs)==len(refs) and basis!='ancestor':
++                refuse('Ancestor-only claims require basis ancestor', f'{path}.basis' if collect_problems else None)
++            if basis=='ancestor' and not ancestor_refs:
++                refuse('Ancestor basis requires ancestor prose evidence', f'{path}.basis' if collect_problems else None)
++        if basis=='execution' and not any(successful_run(ledger[ref]) for ref in refs if ref in ledger):
++            refuse('Execution claims require successful run evidence', f'{path}.evidence' if collect_problems else None)
++
++    def require_kinds(category, path, finding_id, kinds, *, detail_in_legacy=False):
++        detail = None
++        if collect_problems or detail_in_legacy:
++            identifier = bounded_identifier(finding_id, r'[a-z][a-z0-9-]*')
++            detail = f"{path} (finding ID: {identifier}). Supported tool kinds: {', '.join(sorted(kinds))}"
++        refuse(category, detail)
++
+     finding_ids=set()
+-    source_tools={'repo_read','git_show','git_diff','web_fetch','hf_fetch','safetensors_header'}
+-    def checked_refs(refs):
+-        if len(refs)!=len(set(refs)):
+-            raise ValueError('Duplicate finding evidence')
+-        if any(ref not in ledger or (ledger[ref]['result'].get('ok') is not True or ledger[ref].get('catalog_only')) for ref in refs):
+-            raise ValueError('Findings require successful current-session evidence' if not prior else
+-                             'Findings require successful prior or current evidence')
+-        return [ledger[ref] for ref in refs]
+-    for finding_index, finding in enumerate(annotation.get('findings', [])):
+-        if finding['id'] in finding_ids:raise ValueError('Duplicate finding ID')
+-        finding_ids.add(finding['id'])
+-        sources=checked_refs(finding['source_evidence'])
+-        if not any(s['tool'] in source_tools for s in sources):
+-            raise ValueError('Findings require inspected source evidence')
+-        for location in finding['locations']:
+-            path=location['path']
+-            if path.startswith('/') or '\\' in path or any(p in ('','..','.') for p in path.split('/')):
+-                raise ValueError('Finding locations require repository-relative paths')
+-        for check_index, check in enumerate(finding['verification']):
+-            evidence=checked_refs(check['evidence'])
+-            if check['method']=='source_inspection':
+-                if not any(e['tool'] in source_tools for e in evidence):
+-                    finding_id = bounded_identifier(finding['id'], r'[a-z][a-z0-9-]*')
+-                    kinds = ', '.join(sorted(source_tools))
+-                    raise AnnotationDiagnostic(
+-                        'Source inspection requires source evidence',
+-                        f'findings[{finding_index}].verification[{check_index}] '
+-                        f'(finding ID: {finding_id}). Supported tool kinds: {kinds}',
+-                    )
+-            elif not any(e['tool']=='run' and e['result'].get('result',{}).get('returncode')==0 and
+-                         not e['result']['result'].get('timed_out',False) for e in evidence):
+-                raise ValueError('Computational verification requires successful run evidence')
+-    approved={e['sha'] for e in manifest.get('ancestor_entries',[])}
+-    if len(set(annotation['links']))!=len(annotation['links']):
+-        raise ValueError('Duplicate ancestor link')
+-    if not set(annotation['links']) <= approved & set(manifest['commits']):
+-        raise ValueError('Links require approved, supplied ancestor prose')
++    for index, finding in items(annotation, root, 'findings'):
++        path = f'findings[{index}]'
++        finding_id = field(finding, f'{root}.{path}', 'id')
++        if finding_id is not None:
++            if finding_id in finding_ids:
++                refuse('Duplicate finding ID', f'{path}.id' if collect_problems else None)
++            finding_ids.add(finding_id)
++        sources = field(finding, f'{root}.{path}', 'source_evidence')
++        if sources is not None:
++            refs = checked_refs(sources, f'{path}.source_evidence', finding=True)
++            if finding_id is not None and refs is not None and not any(ledger[ref]['tool'] in source_tools for ref in refs):
++                require_kinds('Findings require inspected source evidence', f'{path}.source_evidence', finding_id, source_tools)
++        for location_index, location in items(finding, f'{root}.{path}', 'locations'):
++            field_path = f'{path}.locations[{location_index}]'
++            location_path = field(location, f'{root}.{field_path}', 'path')
++            if location_path is None:
++                continue
++            if location_path.startswith('/') or '\\' in location_path or any(p in ('','..','.') for p in location_path.split('/')):
++                refuse('Finding locations require repository-relative paths', f'{field_path}.path' if collect_problems else None)
++        for check_index, check in items(finding, f'{root}.{path}', 'verification'):
++            check_path = f'{path}.verification[{check_index}]'
++            evidence = field(check, f'{root}.{check_path}', 'evidence')
++            if evidence is None:
++                continue
++            refs = checked_refs(evidence, f'{check_path}.evidence', finding=True)
++            method = field(check, f'{root}.{check_path}', 'method')
++            if refs is None or method is None or finding_id is None:
++                continue
++            if method=='source_inspection':
++                if not any(ledger[ref]['tool'] in source_tools for ref in refs):
++                    require_kinds('Source inspection requires source evidence', check_path, finding_id, source_tools, detail_in_legacy=True)
++            elif not any(successful_run(ledger[ref]) for ref in refs):
++                require_kinds('Computational verification requires successful run evidence', check_path, finding_id, {'run'})
++
++    links = [(i, sha) for i, sha in items(annotation, root, 'links')
++             if f'{root}.links[{i}]' not in bad_fields]
++    if has_duplicates([sha for _, sha in links]):
++        refuse('Duplicate ancestor link', 'links' if collect_problems else None)
++    approved = {e['sha'] for e in manifest.get('ancestor_entries',[])} & set(manifest['commits'])
++    for index, sha in links:
++        if sha not in approved:
++            refuse('Links require approved, supplied ancestor prose',
++                   f'links[{index}] rejected reference: {bounded_identifier(sha, r"[0-9a-fA-F]+")}'
++                   if collect_problems else None)
+     if manifest.get('ancestor_context_mode') == 'retrieval_v1':
+         read_entries=set()
+         for item in ledger.values():
+@@ -216,13 +336,18 @@
+                 and content.get('chapter','')==args.get('chapter','')
+                 and content.get('next_offset',0)>content.get('offset',0)):
+                 read_entries.add(args['commit'])
+-        if not set(annotation['links']) <= read_entries:
+-            raise ValueError('Ancestor links require a successful nonempty prose read in this session')
++        for index, sha in links:
++            if sha in approved and sha not in read_entries:
++                refuse('Ancestor links require a successful nonempty prose read in this session',
++                       f'links[{index}] rejected reference: {bounded_identifier(sha, r"[0-9a-fA-F]+")}'
++                       if collect_problems else None)
++    if problems:
++        raise AnnotationProblems(problems)
+     return dict(ledger,**context)
+ 
+ 
+-def assemble_draft(annotation, manifest, transcript, *, prior=()):
+-    ledger=validate_annotation(annotation,manifest,transcript,prior=prior)
++def assemble_draft(annotation, manifest, transcript, *, prior=(), collect_problems=False):
++    ledger=validate_annotation(annotation,manifest,transcript,prior=prior,collect_problems=collect_problems)
+     entry={'schema_version':annotation['schema_version'],'sha':manifest['task_sha'],'parent_shas':manifest['task_parents'],
+            'cutoff_date':manifest['cutoff_date'],'annotation':deepcopy(annotation),
+            'evidence':{key:{k:v for k,v in value.items() if k!='result'} for key,value in ledger.items()}}
+--- a/teacher/coverage.py
++++ b/teacher/coverage.py
+@@ -36,7 +36,7 @@
+     return reads
+ 
+ 
+-def require_coverage(manifest, transcript):
++def require_coverage(manifest, transcript, *, refuse=None):
+     task=manifest.get('authoring_task')
+     if not task:return None  # Old drafts remain inspectable, never silently upgraded.
+     reads=observed_reads(transcript)
+@@ -69,7 +69,11 @@
+         else:length=item['content_bytes']
+         if covered(ranges,0,length):evidence_complete.append(source_id)
+         else:missing.append(source_id)
+-    if missing:raise ValueError('Required evidence not fully read: '+', '.join(missing))
++    if missing:
++        message = 'Required evidence not fully read: '+', '.join(missing)
++        if refuse is None:
++            raise ValueError(message)
++        refuse(message)
+     report={'fully_read_sections':complete,'fully_read_evidence':evidence_complete,'policy':'complete_assigned_ranges'}
+     if task.get('execution_required'):
+         calls={c['id']:c for m in transcript if m['role']=='assistant' for c in m.get('calls',[])}
+@@ -79,7 +83,11 @@
+             result=json.loads(m['content'])
+             if result.get('ok') and result.get('result',{}).get('returncode')==0 and not result['result'].get('timed_out',False):
+                 successful.append(m['call_id'])
+-        if not successful:raise ValueError('Assigned computation requires a successful run')
++        if not successful:
++            message = 'Assigned computation requires a successful run'
++            if refuse is None:
++                raise ValueError(message)
++            refuse(message)
+         report['successful_required_runs']=successful
+     return report
+ 
+--- a/teacher/codex_adapter.py
++++ b/teacher/codex_adapter.py
+@@ -2,7 +2,7 @@
+ """Fresh Codex app-server authoring session, using the adopted teacher model with task-specific reasoning."""
+ from copy import deepcopy
+ import json
+-from .editorial import AnnotationDiagnostic, output_schema, assemble_draft
++from .editorial import AnnotationDiagnostic, AnnotationProblems, output_schema, assemble_draft
+ from .validation_repair import POLICY, repair_metadata, verify_final, eligible, repair_feedback, refusal_fields
+ 
+ LEGACY_MODEL = 'gpt-6-astra'
+@@ -214,10 +214,10 @@
+                 observed_reads([*prior, *transcript])
+                 try:
+                     annotation=json.loads(final)
+-                    entry, review=assemble_draft(annotation,manifest,transcript,prior=prior)
++                    entry, review=assemble_draft(annotation,manifest,transcript,prior=prior,collect_problems=validation_repair)
+                 except ValueError as error:
+                     if not validation_repair or repair is not None or not eligible(error):
+-                        if type(error) is AnnotationDiagnostic:
++                        if type(error) in (AnnotationDiagnostic, AnnotationProblems):
+                             raise ValueError(str(error)) from error
+                         raise
+                     import hashlib
+--- a/teacher/validation_repair.py
++++ b/teacher/validation_repair.py
+@@ -2,18 +2,25 @@
+ """Policy-bound, one-turn repair audit shared by publication and approval."""
+ import hashlib
+ import json
+-from .editorial import AnnotationDiagnostic, assemble_draft
++from .editorial import AnnotationDiagnostic, AnnotationProblems, assemble_draft
+ 
+ LEGACY_POLICY = 'validator-only-v1'
+ KEEP_REST_POLICY = 'validator-keep-rest-v2'
+-POLICY = 'validator-claim-diagnostics-v3'
++CLAIM_DIAGNOSTICS_POLICY = 'validator-claim-diagnostics-v3'
++POLICY = 'validator-collect-all-v4'
++POLICIES = (LEGACY_POLICY, KEEP_REST_POLICY, CLAIM_DIAGNOSTICS_POLICY, POLICY)
++FEEDBACK_MAX_BYTES = 4096
++COLLECT_ALL_SENTENCE = ('Correct the issues named in the validator message and return '
++                        'the rest of the annotation unchanged.')
+ KEEP_REST_SENTENCE = ('Correct only the issue named in the validator message and return '
+                       'the rest of the annotation unchanged.')
+ 
+ def repair_feedback(error, policy=POLICY):
+     if policy == LEGACY_POLICY:
+         return error
+-    if policy in (KEEP_REST_POLICY, POLICY):
++    if policy == POLICY:
++        return error + '\n' + COLLECT_ALL_SENTENCE
++    if policy in (KEEP_REST_POLICY, CLAIM_DIAGNOSTICS_POLICY):
+         return error + '\n' + KEEP_REST_SENTENCE
+     raise ValueError('Unknown validation repair policy')
+ 
+@@ -24,6 +31,8 @@
+                 ': invalid length', ': invalid format')
+ 
+ def eligible(error):
++    if type(error) is AnnotationProblems:
++        return True
+     message=str(error)
+     if type(error) is AnnotationDiagnostic:
+         return message in ANNOTATION_ERRORS
+@@ -37,12 +46,42 @@
+         message.startswith('annotation') and message.endswith(SHAPE_ERRORS)))
+ 
+ 
++def bounded_problems(messages):
++    """Keep a prefix of whole diagnostics and account for every omitted item."""
++    total = len(messages)
++    count_note = f'Total validation problems: {total}. Omitted: {total}.'
++    suffix_bytes = len(('\n' + COLLECT_ALL_SENTENCE).encode())
++    budget = FEEDBACK_MAX_BYTES - suffix_bytes
++    joined = '\n\n'.join(messages)
++    if len(joined.encode()) <= budget:
++        return joined
++    shown = []
++    used = 0
++    for message in messages:
++        size = len(message.encode()) + (2 if shown else 0)
++        omitted = total - len(shown) - 1
++        footer_size = 2 + len(count_note.encode()) if omitted else 0
++        if used + size + footer_size > budget:
++            break
++        shown.append(message)
++        used += size
++    if len(shown) < total:
++        shown.append(f'Total validation problems: {total}. Omitted: {total - len(shown)}.')
++    return '\n\n'.join(shown)
++
++
+ def refusal_fields(error, policy):
++    if policy == POLICY:
++        errors = error.problems if type(error) is AnnotationProblems else (error,)
++        messages = [str(problem) + ('\n' + problem.detail if type(problem) is AnnotationDiagnostic else '')
++                    for problem in errors]
++        error_type = 'ValueError' if type(error) in (AnnotationDiagnostic, AnnotationProblems) else type(error).__name__
++        return {'error_type': error_type, 'error': bounded_problems(messages)}
+     message = str(error)
+     error_type = type(error).__name__
+     if type(error) is AnnotationDiagnostic:
+         error_type = 'ValueError'
+-        if policy == POLICY:
++        if policy == CLAIM_DIAGNOSTICS_POLICY:
+             message += '\n' + error.detail
+     return {'error_type': error_type, 'error': message}
+ 
+@@ -81,7 +120,8 @@
+                            ('validation_repair_policy', 'validation_repair_enabled')
+                            for k in provenance)):
+             raise ValueError('Unexpected repair provenance on unrepaired run')
+-        return assemble_draft(annotation, manifest, transcript, prior=prior)
++        return assemble_draft(annotation, manifest, transcript, prior=prior,
++                              collect_problems=provenance.get('validation_repair_policy') == POLICY)
+     if not marked or type(provenance.get('validation_repair')) is not bool or len(events)!=1:
+         raise ValueError('Missing or ambiguous validation repair provenance')
+     if provenance.get('validation_repair_enabled') is False:
+@@ -89,7 +129,7 @@
+     i,event=events[0]
+     keys={'role','policy','refused_index','prefix_end','refused_sha256','error_type','error',
+           'thread_id','first_turn_id','repair_turn_id','selected_final_index','feedback_sent'}
+-    if set(event)!=keys or event['policy'] not in (LEGACY_POLICY, KEEP_REST_POLICY, POLICY) or event['feedback_sent'] is not True:
++    if set(event)!=keys or event['policy'] not in POLICIES or event['feedback_sent'] is not True:
+         raise ValueError('Invalid validation repair event')
+     refused=event['refused_index']; chosen=event['selected_final_index']
+     if (type(refused) is not int or type(chosen) is not int or event['prefix_end']!=i
+@@ -121,8 +161,10 @@
+     if any(provenance.get(k)!=v for k,v in metadata.items()):
+         raise ValueError('Validation repair provenance mismatch')
+     # Reproduce the refusal against ONLY evidence available at that first final.
++    collect_problems = event['policy'] == POLICY
+     try:
+-        assemble_draft(json.loads(original['content']),manifest,transcript[:i],prior=prior)
++        assemble_draft(json.loads(original['content']),manifest,transcript[:i],prior=prior,
++                       collect_problems=collect_problems)
+     except ValueError as error:
+         refusal = refusal_fields(error, event['policy'])
+         if not eligible(error) or any(event[key] != value for key, value in refusal.items()):
+@@ -132,7 +174,7 @@
+     final=json.loads(selected['content'])
+     if final!=annotation:
+         raise ValueError('Published annotation differs from selected repaired final')
+-    return assemble_draft(final,manifest,transcript,prior=prior)
++    return assemble_draft(final,manifest,transcript,prior=prior,collect_problems=collect_problems)
+ 
+ 
+ def disclosure(transcript, policy=POLICY):
+--- a/teacher/README.md
++++ b/teacher/README.md
+@@ -198,7 +198,15 @@
+ 
+ After implementation acceptance, a first final refused by JSON parsing or ordinary
+ annotation validation may receive one additional turn on the same server thread.
+-Under `validator-claim-diagnostics-v3`, a rejected claim anchor names the
++Under `validator-collect-all-v4`, the single repair contains the independently
++checkable problems in a fixed order. Rejected references include the field path and
++bounded rejected value. Invalid fields suppress checks that need them. An invalid
++evidence reference suppresses basis, tool-kind and execution checks on its evidence
++list. An invalid method or finding ID suppresses the associated method diagnostic.
++Link prose reads are checked only for links to approved entries. The complete feedback
++is limited to 4096 UTF-8 bytes, with total and omitted counts when it is shortened.
++The second final is fully checked.
++Under historical `validator-claim-diagnostics-v3`, a rejected claim anchor names the
+ annotation path and a bounded reference. A source inspection without supported
+ source evidence names the verification entry, finding ID and supported tool kinds.
+ The message ends with "Correct only the issue named in the validator message and
+--- a/tests/test_validation_repair.py
++++ b/tests/test_validation_repair.py
+@@ -8,7 +8,11 @@
+ from teacher.codex_adapter import CodexTeacher, provider_output_schema
+ from teacher.editorial import output_schema, validate_shape
+ from teacher.session import FreshSession
+-from teacher.validation_repair import repair_metadata, verify_final, disclosure, repair_feedback, POLICY, LEGACY_POLICY, KEEP_REST_POLICY, KEEP_REST_SENTENCE, digest
++from teacher.validation_repair import (
++    CLAIM_DIAGNOSTICS_POLICY, COLLECT_ALL_SENTENCE, FEEDBACK_MAX_BYTES,
++    KEEP_REST_POLICY, KEEP_REST_SENTENCE, LEGACY_POLICY, POLICY,
++    digest, disclosure, refusal_fields, repair_feedback, repair_metadata, verify_final,
++)
+ from teacher.ancestor_context import approve_run
+ import test_codex_teacher as legacy
+ from test_codex_teacher import FakeTransport
+@@ -46,7 +50,9 @@
+     def test_feedback_exact_constant_and_provenance(self):
+         self.assertEqual(KEEP_REST_SENTENCE, 'Correct only the issue named in the validator message and return the rest of the annotation unchanged.')
+         message='annotation.x: wrong type\nverbatim detail'
+-        self.assertEqual(repair_feedback(message), message+'\n'+KEEP_REST_SENTENCE)
++        self.assertEqual(repair_feedback(message, CLAIM_DIAGNOSTICS_POLICY),
++                         message+'\n'+KEEP_REST_SENTENCE)
++        self.assertEqual(repair_feedback(message), message+'\n'+COLLECT_ALL_SENTENCE)
+         result=self.run_teacher()
+         transcript=result['transcript']
+         event=next(m for m in transcript if m.get('role')=='validation')
+@@ -165,10 +171,10 @@
+             'verification': [{'method': 'source_inspection', 'description': 'Read fixture',
+                               'evidence': ['read-1'], 'limits': 'Source only'}],
+         }
+-        for field, refused, reason in (
+-            ('links', dict(valid, links=['c' * 40]), 'annotation.links[]: unknown value'),
++        for field, refused, path in (
++            ('links', dict(valid, links=['c' * 40]), 'annotation.links[0]'),
+             ('locations', dict(valid, findings=[finding]),
+-             'annotation.findings[].locations[].commit: unknown value'),
++             'annotation.findings[0].locations[0].commit'),
+         ):
+             with self.subTest(field=field):
+                 transport = RepairTransport(first=json.dumps(refused), second=json.dumps(valid))
+@@ -181,6 +187,7 @@
+                     validate_shape(refused, schema)
+                 transcript = result['transcript']
+                 event = next(message for message in transcript if message['role'] == 'validation')
++                reason = f'{path}: unknown value\n{path} rejected reference: ' + 'c' * 40
+                 self.assertEqual(event['error'], reason)
+                 self.assertEqual(starts[1]['input'],
+                                  [{'type': 'text', 'text': repair_feedback(reason)}])
+@@ -204,16 +211,55 @@
+         i = next(i for i, message in enumerate(t) if message['role'] == 'validation')
+         category = 'Unknown or unsuccessful evidence call'
+         self.assertEqual(t[i]['error'], category + f'\nproblem[0].evidence[0] rejected reference: {reference}')
+-        for old_policy in (LEGACY_POLICY, KEEP_REST_POLICY):
++        for old_policy in (LEGACY_POLICY, KEEP_REST_POLICY, CLAIM_DIAGNOSTICS_POLICY):
+             historical = deepcopy(t)
+-            historical[i].update(policy=old_policy, error=category)
+-            historical[i+1]['content'] = repair_feedback(category, old_policy)
++            error = t[i]['error'] if old_policy == CLAIM_DIAGNOSTICS_POLICY else category
++            historical[i].update(policy=old_policy, error=error)
++            historical[i+1]['content'] = repair_feedback(error, old_policy)
+             verify_final(a, m, historical, repair_metadata(historical))
+ 
+         t[i]['error'] += '\nInjected advice'
+         t[i+1]['content'] = repair_feedback(t[i]['error'])
+         with self.assertRaisesRegex(ValueError, 'refusal does not reproduce'):
+             verify_final(a, m, t, repair_metadata(t))
++
++    def test_one_repair_for_all_independent_refusals(self):
++        valid = fixture()
++        bad = deepcopy(valid)
++        ref = 'call_' + 'a' * 32
++        bad['problem'][0].update(evidence=[ref, ref], basis='execution')
++        bad['source_notes'] = [dict(bad['problem'][0], evidence=[ref])]
++        bad['reasoning'] = [{'text': '', 'basis': 'source', 'evidence': []}]
++
++        transport = RepairTransport(first=json.dumps(bad), second=json.dumps(valid))
++        result = self.run_teacher(transport)
++        transcript = result['transcript']
++        event = next(message for message in transcript if message['role'] == 'validation')
++        self.assertEqual(disclosure(transcript)['repair_count'], 1)
++        self.assertEqual(event['error'].count(f'rejected reference: {ref}'), 3)
++        for path in ('problem[0].evidence[0]', 'problem[0].evidence[1]',
++                     'source_notes[0].evidence[0]', 'annotation.reasoning[0].text',
++                     'reasoning[0].evidence'):
++            self.assertIn(path, event['error'])
++        self.assertIn('Duplicate evidence anchor', event['error'])
++        self.assertNotIn('Execution claims require', event['error'])
++        self.assertNotIn('read-1', event['error'])
++        manifest = json.loads((self.packet/'manifest.json').read_text())
++        verify_final(valid, manifest, transcript, repair_metadata(transcript))
++
++    def test_collect_all_budget_uses_bytes_and_reports_exact_omissions(self):
++        from teacher.editorial import AnnotationProblems
++
++        errors = [ValueError(f'Problem {i} résumé: ' + 'é' * 120) for i in range(100)]
++        refusal = refusal_fields(AnnotationProblems(errors), POLICY)['error']
++        feedback = repair_feedback(refusal)
++        self.assertLessEqual(len(feedback.encode()), FEEDBACK_MAX_BYTES)
++        lines = refusal.split('\n\n')
++        self.assertEqual(lines[:-1], list(map(str, errors[:len(lines) - 1])))
++        self.assertEqual(lines[-1], f'Total validation problems: 100. Omitted: {101 - len(lines)}.')
++        self.assertEqual(feedback, repair_feedback(refusal_fields(AnnotationProblems(errors), POLICY)['error']))
++        oversized = refusal_fields(ValueError('é' * FEEDBACK_MAX_BYTES), POLICY)['error']
++        self.assertEqual(oversized, 'Total validation problems: 1. Omitted: 1.')
+ 
+     def test_rejected_chapter_reference_rendering_is_bounded(self):
+         for reference, rendered in (
+--- a/tests/test_editorial_findings.py
++++ b/tests/test_editorial_findings.py
+@@ -62,6 +62,36 @@
+                      'safetensors_header, web_fetch',
+         })
+ 
++    def test_collect_all_keeps_unrelated_method_and_reference_problems(self):
++        from teacher.editorial import AnnotationProblems
++        from teacher.validation_repair import POLICY, refusal_fields
++
++        annotation = self.annotation()
++        self.add_run()
++        reference = 'call_' + 'c' * 32
++        annotation['problem'][0]['evidence'] = [reference]
++        finding = annotation['findings'][0]
++        finding['source_evidence'] = [reference]
++        first_check = finding['verification'][0]
++        first_check['evidence'] = [reference]
++        finding['verification'].append(dict(first_check, evidence=['run-1']))
++        finding['verification'].append(dict(first_check, method='repository_execution', evidence=['read-1']))
++
++        with self.assertRaises(AnnotationProblems) as caught:
++            validate_annotation(annotation, self.manifest, self.transcript, collect_problems=True)
++
++        message = refusal_fields(caught.exception, POLICY)['error']
++        self.assertEqual(len(caught.exception.problems), 5)
++        self.assertEqual(message.count('rejected reference:'), 3)
++        self.assertIn(f'findings[0].source_evidence[0] rejected reference: {reference}', message)
++        self.assertIn(f'findings[0].verification[0].evidence[0] rejected reference: {reference}', message)
++        self.assertNotIn('findings[0].verification[0] (finding ID:', message)
++        self.assertIn('findings[0].verification[1] (finding ID: fixture-boundary). Supported tool kinds: git_diff, '
++                      'git_show, hf_fetch, repo_read, safetensors_header, web_fetch', message)
++        self.assertIn('findings[0].verification[2] (finding ID: fixture-boundary). Supported tool kinds: run', message)
++        self.assertNotIn('read-1', message)
++        self.assertNotIn('run-1', message)
++
+     def test_execution_modes_need_successful_run_and_separate_source(self):
+         for method in ('scalar_transcription','repository_execution'):
+             a=self.annotation();check=a['findings'][0]['verification'][0];check['method']=method

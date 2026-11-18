@@ -1,0 +1,960 @@
+{
+  "schema_version": 5,
+  "sha": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+  "parent_shas": [
+    "37f80fb98cf6247f9da12d9b942253f38f6dbd82"
+  ],
+  "cutoff_date": "2025-07-26T01:04:55+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "refactor",
+    "problem": [
+      {
+        "text": "The 17 text-model overrides of prepare_inputs put the incoming token tensor in params[\"input_ids\"] even though they already passed it directly to prepare_for_attn and returned it as the initial forward state. Whole-parent-tree searches for the quoted key found writes, but no literal reads of that params entry.",
+        "basis": "source",
+        "evidence": [
+          "call_629ac04040da4fcb817090ac7c13acd0",
+          "call_27cc19202ff34076b29cc6392f93344b",
+          "call_adfe8b74410c46aaa22a10b990f5d89b",
+          "call_87cb312dceca4cacb8d47ce1db6a8af4"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The deletion makes the explicit tensor argument the only input-ID channel used by the inspected text forward path. The old assignment stored another reference, not another tensor allocation. Removing it avoids retaining that reference through a caller-owned params dictionary; the tradeoff is that out-of-tree hooks can no longer rely on these overrides to populate or refresh the entry. The commit message describes the removal but gives no further rationale.",
+        "basis": "inference",
+        "evidence": [
+          "call_629ac04040da4fcb817090ac7c13acd0",
+          "call_60e991f0dac947768edb8afd5c42bd2e",
+          "call_406ed35fe2844d8da5e7a4d613ab98a5"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Token IDs remain an argument to forward and prefill. A fresh params dictionary no longer gains an input_ids entry through the changed overrides, and an existing entry is left untouched rather than deleted or refreshed. This is not a global removal: the base Model.prepare_inputs still writes the entry, including when inherited by the Gemma3 and Mistral3 vision components, whose image-embedding methods pass image tensors through Model.forward.",
+        "basis": "source",
+        "evidence": [
+          "call_629ac04040da4fcb817090ac7c13acd0",
+          "call_60e991f0dac947768edb8afd5c42bd2e",
+          "call_c00333a8a8114fc29908ac3ebe91e24f",
+          "call_820b04c567bc46b0b745267761dfb4bb",
+          "call_c303ddfe0bd047fe8161661ab150453e",
+          "call_b41dc5aa66f34f39ac1e8fc3644f4a19"
+        ]
+      },
+      {
+        "text": "The parent Gemma3TextModel inherits the changed Gemma3 text override. MiMoModel, MistralModel and Qwen2Model each inherit the changed Llama override, so their own files need no deletion.",
+        "basis": "source",
+        "evidence": [
+          "call_629ac04040da4fcb817090ac7c13acd0",
+          "call_2d27bc2581354e3193d77722b5330089",
+          "call_d4eb18739be94b15a6dd556713ad0460",
+          "call_bd100eb5289e4f8eab930618417ebb1f",
+          "call_5dd8fe3b0d9b4e808df4604dfea6ba69"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The introducing models and modules chapters document the original duplicate token reference, attention preparation and prefill cutoff. The Gemma3 and EXAONE4 introducing entries document those adapters following the same convention, with attention guards in prepare_for_attn. The EXAONE4 entry also records a constructor failure that can prevent the changed hook from being reached, and a separate prefill-dictionary reuse problem.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_ed4b4cccf8824f0ba81c7a3268b381ea",
+          "call_c2cc75df97654d1e98f23e5d241da062",
+          "call_3a27c7bbdbe44096bd438416121688a2",
+          "call_5b1466ecd4c743aaab20f592d74fa384",
+          "call_e973643d7e1449b59f5d858827d09a8b"
+        ]
+      },
+      {
+        "text": "The Gemma3 introducing entry recorded that Qwen3MoeConfig once supplied a bare class where the factory expected a component mapping. That mismatch is already absent in the parent, which supplies {\"text\": Qwen3MoeModel}; this patch does not repair it. The separate chat-formatting entry recorded Gemma prompt-format issues; the inspected parent still has the same formatter bodies and the patch does not edit them. The direct caller in examples/imgsearch.py now present in the parent passes only the user prompt, so it does not exercise the nonempty-system-prompt case.",
+        "basis": "source",
+        "evidence": [
+          "call_7c0c8af6add14eff827e66fd1804777d",
+          "call_6c7b9ea6f1734759a4261317218550e7",
+          "call_60e991f0dac947768edb8afd5c42bd2e",
+          "call_c6b3905fef4347b09c5ea2ccdc3a9eb5",
+          "call_81b2b9431a4a48a4bea54d6856da6973",
+          "call_2d27bc2581354e3193d77722b5330089",
+          "call_90be03a7ddb34a9d9260d1a07efa3671",
+          "call_629ac04040da4fcb817090ac7c13acd0"
+        ]
+      },
+      {
+        "text": "The discussion matches are inferred overlaps, not upstream references or evidence of a fix. #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d traces through models/model.py but fails importing the native extension, before forward. #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d names gemma3.py and traces a logits-width mismatch in generator/job.py. #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d points to a Llama GatedMLP precision workaround for a Cholesky failure. #53, \u201cCommand A support,\u201d links cohere2.py and later reports a conversion failure; the changed Cohere2 line does not change conversion arithmetic.",
+        "basis": "inference",
+        "evidence": [
+          "call_f7231abae77c4f66bfd1eac05a7a8a8a",
+          "call_3006de2d902d4db7ae4dc3595eda1aed",
+          "call_ab61164d60b44b9697f0fd87748bbe52",
+          "call_2e56705b819040c7ae215268bb0cdd6c",
+          "call_d0bd70fea77647018d587c69332b4ab9",
+          "call_629ac04040da4fcb817090ac7c13acd0"
+        ]
+      },
+      {
+        "text": "Other inferred overlaps are likewise narrower than a causal link: #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, names Qwen3 and discusses RoPE scaling, not the token-reference write. #51, \u201cdots.llm1 support,\u201d concerns the model implemented in dots1.py, not this cleanup. PR #26, \u201cSuperior 3INST parameters,\u201d mentions eval/model_diff.py as an evaluation tool; #33, \u201cError converting model,\u201d also discusses model_diff.py after its original file-opening error and later discusses Gemma3 support. Neither identifies a reader of the removed key.",
+        "basis": "inference",
+        "evidence": [
+          "call_7681f8350c304487b10f908e72012d6d",
+          "call_c7312efb727a4a2e9a54fec1ab82ca74",
+          "call_7da42b2e763d4367b748588d735ba131",
+          "call_6942063f832046839914886374f3b93c",
+          "call_9aac90dfe8e8411a8057e13ac954e58c",
+          "call_a2625be4ee084403aa6e724c6285b020",
+          "call_629ac04040da4fcb817090ac7c13acd0"
+        ]
+      }
+    ],
+    "limitations": [
+      "The whole-tree searches cover literal spellings and visible call sites, not dynamically constructed dictionary keys or out-of-tree consumers.",
+      "The bounded check ran extracted method bodies with a stand-in token tensor. It did not run the rectangular-cache branch's Torch allocations, real model construction, GPU kernels, generation, or a logits or memory comparison.",
+      "The edit is inside existing model classes but does not change architecture registration, configuration mappings, or checkpoint tensor names or dimensions. This annotation does not revalidate the full reference-checkpoint catalog; the pinned EXAONE-4.0-1.2B configuration was checked for the inherited constructor blocker."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "7989c93b6a476a918dbfff0a0b96954a79111662",
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+      "544ba423bf9c58c940dca6cb36a1aa93f6cda41a"
+    ],
+    "chapters": [
+      {
+        "id": "forward-params",
+        "title": "Pass token IDs as forward state, not duplicate metadata",
+        "claims": [
+          {
+            "text": "The complete diff removes one assignment from each of Cohere, Cohere2, DeciLM, Dots1, ERNIE 4.5, ERNIE 4.5 MoE, EXAONE4, Gemma2, Gemma3, GLM4, Llama, Mistral3, Mixtral, Phi3, Qwen3, Qwen3 MoE and SmolLM3. Each still calls prepare_for_attn(input_ids, params) and returns its result.",
+            "basis": "source",
+            "evidence": [
+              "call_629ac04040da4fcb817090ac7c13acd0"
+            ]
+          },
+          {
+            "text": "The direct in-tree callers found were Model.forward, Model.prefill and the research sampler sample_qkv in science/kv_quant_exp.py. Each uses the return value as x and passes the dictionary separately. Embedding.forward reads IDs from x, including when it selects indexed multimodal embeddings. The quoted input_ids in eval/model_diff.py names a saved tensor; the evaluation loop passes the IDs as module state, not as that dictionary key.",
+            "basis": "source",
+            "evidence": [
+              "call_a7f1381340d14f88914d3e4dd95faf60",
+              "call_60e991f0dac947768edb8afd5c42bd2e",
+              "call_0c524fe15c9e46e9b5b223f3c9507193",
+              "call_406ed35fe2844d8da5e7a4d613ab98a5",
+              "call_a2625be4ee084403aa6e724c6285b020"
+            ]
+          },
+          {
+            "text": "Generation still supplies the token batch separately from its cache, block table, cache sequence lengths and indexed embeddings. prepare_for_attn still defaults to uncached FlashAttention; the uncached FlashAttention and SDPA preparation routes reject a supplied cache. Cached FlashAttention reads batch size from the tensor argument, accepts a supplied page table or builds one for a rectangular cache, and prepares position metadata. The rectangular sequence capacity must be divisible by PAGE_SIZE, 256 tokens per page. None of those checks or metadata writes depends on params[\"input_ids\"].",
+            "basis": "source",
+            "evidence": [
+              "call_52edb1f72020429d9bbd55a263f67223",
+              "call_50ac22feb5394cce87cc49944929dacf",
+              "call_87cb312dceca4cacb8d47ce1db6a8af4",
+              "call_8ae73e4291594d87a02342674854da95"
+            ]
+          },
+          {
+            "text": "A standard-library check extracted all 17 parent overrides and the attention preparation helpers, then applied the one-statement deletion to each extracted override. Across 102 paired cases covering default uncached, explicit SDPA and already-paged FlashAttention preparation, the returned object and other metadata matched. The changed versions omitted the key when absent and preserved its old value when supplied; the extracted base method still wrote it.",
+            "basis": "execution",
+            "evidence": [
+              "call_a403aa1befb945d9b6cf5082b1978b50",
+              "call_629ac04040da4fcb817090ac7c13acd0",
+              "call_87cb312dceca4cacb8d47ce1db6a8af4"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "prefill-flag-survives-forward-params-reuse",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The previously documented prefill flag problem is carried over. Removing the input_ids write does not reset the remaining dictionary state.",
+        "trigger": "Call Model.prefill through its last KV module, then reuse the same params object for Model.forward without clearing prefill, on a path that reaches a transformer block.",
+        "expected_behavior": "Ordinary forward runs the block's full attention and MLP path.",
+        "actual_behavior": "Prefill leaves prefill true and ordinary forward does not reset it. TransformerBlock can return after attention without applying the attention residual or running the MLP; ParallelDecoderBlock applies the attention residual but still skips the MLP. The inspected generation loop, draft path and Job prefill calls pass fresh dictionary literals, so this is a reachable direct-API reuse case, not an observed failure of those workflows.",
+        "locations": [
+          {
+            "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.prefill / Model.forward"
+          },
+          {
+            "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.forward / ParallelDecoderBlock.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_629ac04040da4fcb817090ac7c13acd0",
+          "call_60e991f0dac947768edb8afd5c42bd2e",
+          "call_7b54daa7cae148b8b24fec1f80984229",
+          "call_2c1aa09596334880bdf8b0d4db0b42d7",
+          "call_77831956dff8452ca592499b9921f610",
+          "call_c7b130aa031644fc92108178bf406f08",
+          "call_50ac22feb5394cce87cc49944929dacf"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced writes and readers of the flag in the parent, inspected the prefill call sites and compared them with the task deletion.",
+            "evidence": [
+              "call_60e991f0dac947768edb8afd5c42bd2e",
+              "call_7b54daa7cae148b8b24fec1f80984229",
+              "call_2c1aa09596334880bdf8b0d4db0b42d7",
+              "call_629ac04040da4fcb817090ac7c13acd0"
+            ],
+            "limits": "No prefill or model forward was executed; the later call must get through attention for the described early return."
+          }
+        ]
+      },
+      {
+        "id": "exaone-null-pattern-still-blocks-input-preparation",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The earlier EXAONE4 constructor blocker is carried over; the changed prepare_inputs implementation does not make the pinned 1.2B model constructible.",
+        "trigger": "Construct the default text component using the pinned LGAI-EXAONE/EXAONE-4.0-1.2B configuration, which has 30 layers and a null sliding_window_pattern.",
+        "expected_behavior": "Handle the absent schedule or reject it with a configuration diagnostic before attempting to index it.",
+        "actual_behavior": "The pattern resolves to None. The constructor evaluates len(config.sliding_window_pattern) for the first non-final layer, so construction stops before prepare_inputs can be called. Model.from_config is the inspected factory path to the constructor.",
+        "locations": [
+          {
+            "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+            "path": "exllamav3/models/exaone4.py",
+            "symbol": "Exaone4Model.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_5bfd8546f7664092866e2fca4896300e",
+          "call_69758a49ba3940afa121578f26da8c9f",
+          "call_12b21a862bf04d9b99766c2558fcb957",
+          "call_60e991f0dac947768edb8afd5c42bd2e",
+          "call_629ac04040da4fcb817090ac7c13acd0"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the pinned null pattern with the parent default and constructor expression, and checked that the task diff leaves them unchanged.",
+            "evidence": [
+              "call_5bfd8546f7664092866e2fca4896300e",
+              "call_69758a49ba3940afa121578f26da8c9f",
+              "call_629ac04040da4fcb817090ac7c13acd0"
+            ],
+            "limits": "No model construction or checkpoint load was run."
+          }
+        ]
+      }
+    ],
+    "summary": "Stops 17 text-model hooks from copying the token tensor reference into forward metadata. Tokens still flow through the explicit argument, attention preparation is unchanged, and the base hook used by the two vision components still writes the key."
+  },
+  "evidence": {
+    "call_629ac04040da4fcb817090ac7c13acd0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "max_bytes": 10000
+      },
+      "result_sha256": "33a99c95d691e7f1b3568d140b7c01f299b52733575430dbfdd4aca169c12f6d"
+    },
+    "call_27cc19202ff34076b29cc6392f93344b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "\"input_ids\"",
+        "limit": 150
+      },
+      "result_sha256": "82ad3838931a8ecec3ec5e0ed38203f6ea1ac7cfed2b35deeb67fc733e70d2d4"
+    },
+    "call_a7f1381340d14f88914d3e4dd95faf60": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "prepare_inputs(",
+        "limit": 100
+      },
+      "result_sha256": "80758453b7b780589b9b95019657db98055cb0c77535944168d8f964a5aa5d50"
+    },
+    "call_adfe8b74410c46aaa22a10b990f5d89b": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "'input_ids'",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_60e991f0dac947768edb8afd5c42bd2e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 7800
+      },
+      "result_sha256": "501d44e80c3fdcc62413072f5e3e0f0afc32055578ac3e50073958d1aef4ae63"
+    },
+    "call_0c524fe15c9e46e9b5b223f3c9507193": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "d6b7c53d2ed2d625adc7b9bd925b2541f6b66e9890dee7e77232ee521ebd3a5a"
+    },
+    "call_1ee1bfce2ebf4ca594807a769c29545a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "def prepare_for_attn"
+      },
+      "result_sha256": "c641d037cc3e3b46d45a748fc1ce620fe511ab10aadb48e1ba3e201d66e95276"
+    },
+    "call_87cb312dceca4cacb8d47ce1db6a8af4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 10100
+      },
+      "result_sha256": "f35fc91caaa12689cd00d2893ecb87fb6038c0019118fe6a0d5d835cf2568bac"
+    },
+    "call_5f081bbb94c94b0d80f8d309013af8c1": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "input_ids",
+        "limit": 200
+      },
+      "result_sha256": "20d2d13303a8abcfc5933ea207ff951ccdd7336f55cb86466865cf29a31f60eb"
+    },
+    "call_c00333a8a8114fc29908ac3ebe91e24f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "(Model)",
+        "limit": 100
+      },
+      "result_sha256": "dff17c780fad79f6d5ecabd8fff04d1640485209af8de3a207ea213529b6c57c"
+    },
+    "call_820b04c567bc46b0b745267761dfb4bb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "def forward(",
+        "path": "exllamav3/models",
+        "limit": 100
+      },
+      "result_sha256": "c5b0da673188490b28c5d07bf024a510a99a8d5009abf40cc190da09ae12bcd2"
+    },
+    "call_be29799e182942449101d9d54f04f448": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "def prefill(",
+        "limit": 100
+      },
+      "result_sha256": "4eaebbf31896cc5350130c4242a4b85d37531e8e8763c2171438776189190d8a"
+    },
+    "call_cef05159bdcc4e9b89c5340141f1062d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 14300,
+        "max_bytes": 5900
+      },
+      "result_sha256": "abd69fd39c95348e3ea482625123912d5e79563f16c285fe6ee44c224f63398f"
+    },
+    "call_6edf1f3c60de4042a6472f2af09033bf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 12900,
+        "max_bytes": 1550
+      },
+      "result_sha256": "5750e1f73985aacc9408117e578077032ec28f31e325bc470294421cfd63e4a0"
+    },
+    "call_641cc61672dd4f8ab2a10834d4f96ddf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "self.forward(",
+        "path": "exllamav3/models"
+      },
+      "result_sha256": "4f9e53354de2fde28d8c09a68b7eb949fb5405724e4e8ee5adefcc59c5cf84f8"
+    },
+    "call_c303ddfe0bd047fe8161661ab150453e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 20200,
+        "max_bytes": 2500
+      },
+      "result_sha256": "15c85051bef868ff66edc46deede3e2e37f40b7a834ac56b9579cc921ef14e7e"
+    },
+    "call_555eecd4ea104b77a39eb1df5a206b5c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 9200,
+        "max_bytes": 2000
+      },
+      "result_sha256": "b0d27b325d57c5d4e89c54ad32ed51630a3cfb6bba144773d7e6b23fe7247a9a"
+    },
+    "call_b41dc5aa66f34f39ac1e8fc3644f4a19": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/mistral3.py",
+        "offset": 18500,
+        "max_bytes": 4000
+      },
+      "result_sha256": "790ba0d68ff1a6d1ed770a4ec44cabd618fc3c53200abb5eb5dd5e1a903c5347"
+    },
+    "call_f7231abae77c4f66bfd1eac05a7a8a8a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 10000
+      },
+      "result_sha256": "1fa3feb6dd07ad349e60868d6087364699d2ca6e0f46216015d41e48361e2ece"
+    },
+    "call_3006de2d902d4db7ae4dc3595eda1aed": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 6500
+      },
+      "result_sha256": "2627a3f9828c0e24b89ff11352807ac21b8002013d702928d9805663bf513fe5"
+    },
+    "call_ab61164d60b44b9697f0fd87748bbe52": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 12000
+      },
+      "result_sha256": "7263437adeefed99a6bd7db29f0521ecb69543f34bd0b74851086d93cd222dd0"
+    },
+    "call_ced677aebeba4e548cac452226b65a93": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "offset": 12000
+      },
+      "result_sha256": "a718310d340bbbcb20ed561e5dfd9e23fac66025cf37507d07319f8d6fde29f7"
+    },
+    "call_2e56705b819040c7ae215268bb0cdd6c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 16000
+      },
+      "result_sha256": "b84ac9367e315f8a8f74fba843851b5f4c0a50948e8cf1ec64a468ad71c8dd15"
+    },
+    "call_d0bd70fea77647018d587c69332b4ab9": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "offset": 16000,
+        "max_bytes": 12000
+      },
+      "result_sha256": "d1d8e2b5b1561d346a6b4a145f0177f14ad88154fcdae340aceeb9b69efcc8c0"
+    },
+    "call_7681f8350c304487b10f908e72012d6d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29"
+      },
+      "result_sha256": "84c4913e1b00d17f8ccb7f5a474c7b21538e6202401ba840080f1d4aed5b834f"
+    },
+    "call_c7312efb727a4a2e9a54fec1ab82ca74": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/51"
+      },
+      "result_sha256": "90e4e867f59b0533ef3eb4c6917d776815a6f149fb7a17fcfef79cb309cfa83d"
+    },
+    "call_3943c44a916c4cebb4687bf4ccacbcdf": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/models/model.py",
+        "until": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "limit": 40
+      },
+      "result_sha256": "3596afbb2529494f48edd16bc87d68f4a928c096bd1130df0348fa3b8368090a"
+    },
+    "call_ebd0d934aff44507887d8c8a663ebff3": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "prepare_inputs",
+        "limit": 35
+      },
+      "result_sha256": "95e89a6cc8870dd5edc0a1d8864b36cf352981dea2d7ac58995b76314ff3fca9",
+      "catalog_only": true
+    },
+    "call_c6b3905fef4347b09c5ea2ccdc3a9eb5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "7989c93b6a476a918dbfff0a0b96954a79111662",
+        "max_bytes": 16000
+      },
+      "result_sha256": "fa58f8575f26193c392ab8475d24b5d5e3a4dd95b4ebf80dcf0431d824675d9b"
+    },
+    "call_ed4b4cccf8824f0ba81c7a3268b381ea": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_81dc752ee6b140a6809d703bdfbbea4f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "(LlamaModel",
+        "limit": 100
+      },
+      "result_sha256": "ce99e47aea9161b6e80f5baab65718dcb6da2703fe07ef08c8ba559dda14a30a"
+    },
+    "call_17a8e9538eee4c6e97a80b4b5835a592": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "(Gemma3Model",
+        "limit": 100
+      },
+      "result_sha256": "bf4f3bb86d33576885294407182093832e33e09f22161805a539b69ea8a124b3"
+    },
+    "call_d4eb18739be94b15a6dd556713ad0460": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/mimo.py"
+      },
+      "result_sha256": "a29eafb109932a774d69b0faee0c72db56107eb9da774e2190e3d00e53238512"
+    },
+    "call_bd100eb5289e4f8eab930618417ebb1f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/mistral.py"
+      },
+      "result_sha256": "f55b7deee8981a7457727f5dbaa397d20b3f79b62ee7faf87f8b5bced8d06c81"
+    },
+    "call_5dd8fe3b0d9b4e808df4604dfea6ba69": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/qwen2.py"
+      },
+      "result_sha256": "6579c9f2d222a5cb7b9f8bad906134963eab42cc3cbbc6901977dd9282a77e37"
+    },
+    "call_2d27bc2581354e3193d77722b5330089": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/gemma3.py",
+        "offset": 11900,
+        "max_bytes": 1100
+      },
+      "result_sha256": "b922b81075e3ad1e38b486a6ae849d92bee1dd1794a6d6628c2e78308be85ad2"
+    },
+    "call_2eac343fb2bd43d68e2ce3126bd9676d": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/gemma2.py",
+        "offset": 6850,
+        "max_bytes": 2000
+      },
+      "result_sha256": "9d5402f531d3aab5fc64bc20852375717d9eef3893cad088c30d3baa3f1fbd44"
+    },
+    "call_81b2b9431a4a48a4bea54d6856da6973": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/gemma2.py",
+        "offset": 5750,
+        "max_bytes": 2000
+      },
+      "result_sha256": "7eb41884b979c9adecf87096ca6397adfadd50697c3515268d23d118b91eab01"
+    },
+    "call_2dbc7e1f554b480ba9679a0f6ae210b9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "default_chat_prompt(",
+        "limit": 100
+      },
+      "result_sha256": "a95f67595675b10bdf08a773dc2d92892520379b1781730b24310c9e9766d6fc"
+    },
+    "call_90be03a7ddb34a9d9260d1a07efa3671": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "examples/imgsearch.py",
+        "offset": 1800,
+        "max_bytes": 2500
+      },
+      "result_sha256": "7851ad6a97470d215dd9934d4e366d0fb5b1663c5f53104e19678324dc0f8c0d"
+    },
+    "call_24aa536524c04525955afdfcf0d27ca7": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 8192,
+        "max_bytes": 16384
+      },
+      "result_sha256": "7cab7fc2403f685e0bd541fd3ec17ae46cb34b534c21c06e6bc923035e41c7eb",
+      "catalog_only": true
+    },
+    "call_ab21602aa72a436dac56b49d03f575aa": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "params.items()",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c85578c08c1741c099d550ca862ac233": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "input_id",
+        "path": "exllamav3/modules",
+        "limit": 100
+      },
+      "result_sha256": "10bf9e974dc0dfa928c53797adf6b7bebe7c418960c0b25825db49c840663ffc"
+    },
+    "call_406ed35fe2844d8da5e7a4d613ab98a5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/modules/embedding.py",
+        "offset": 1800,
+        "max_bytes": 3700
+      },
+      "result_sha256": "8accfa332f8420a37042ff9a82d6935a40252333f9dae9cb8ca34156d2c03ba1"
+    },
+    "call_52edb1f72020429d9bbd55a263f67223": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 15500,
+        "max_bytes": 3100
+      },
+      "result_sha256": "bbbafac4e1e8e9f625ba44390c108fd17d083d5ed9a7323269cd0347dacd9a1c"
+    },
+    "call_50ac22feb5394cce87cc49944929dacf": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/generator/job.py",
+        "offset": 34600,
+        "max_bytes": 2800
+      },
+      "result_sha256": "ff62029d06a69e3583cf1ad2d8af7ab72e7e81fc16d0841dd9de38b6700d4ff2"
+    },
+    "call_7da42b2e763d4367b748588d735ba131": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 14000
+      },
+      "result_sha256": "06d2ea94bff4c0a337016823942f86cd9ede018947e14767c5a683cb1356d583"
+    },
+    "call_a2625be4ee084403aa6e724c6285b020": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "eval/model_diff.py",
+        "offset": 2800,
+        "max_bytes": 4200
+      },
+      "result_sha256": "3187a1f95696f830bfb42ad466a1f0e92b83197be8d73c198ca5ccb8b8f741d1"
+    },
+    "call_6942063f832046839914886374f3b93c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 6000
+      },
+      "result_sha256": "e56f994af89fba600dff79b1ccc36a8266788c2ed670a2eec48833a5a70c7aa1"
+    },
+    "call_a403aa1befb945d9b6cf5082b1978b50": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,copy,pathlib,types\np=pathlib.Path('exllamav3/models'); names='cohere cohere2 decilm dots1 ernie4_5 ernie4_5_moe exaone4 gemma2 gemma3 glm4 llama mistral3 mixtral phi3 qwen3 qwen3_moe smollm3'.split()\ndef node(path,name):\n return next(n for n in ast.walk(ast.parse(path.read_text())) if isinstance(n,ast.FunctionDef) and n.name==name)\nattn=pathlib.Path('exllamav3/modules/attn.py')\nns={'torch':types.SimpleNamespace(Tensor=object)}\ndef build(fn):\n fn.decorator_list=[]\n exec(compile(ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[])), '<isolated-method>', 'exec'),ns)\n return ns[fn.name]\nfor name in ['prepare_sdpa_nc','prepare_flash_attn_nc','prepare_flash_attn','prepare_for_attn']: build(node(attn,name))\nids=types.SimpleNamespace(shape=(2,3)); stale=object(); trials=0\nfor name in names:\n fn=node(p/(name+'.py'),'prepare_inputs'); new=copy.deepcopy(fn)\n assert ast.unparse(new.body.pop(0))==\"params['input_ids'] = input_ids\"\n old=build(fn); changed=build(new)\n for metadata in ({},{'attn_mode':'sdpa_nc'},{'attn_mode':'flash_attn','block_table':object(),'cache_seqlens':object()}):\n  for initial in ({},{'input_ids':stale}):\n   a=metadata|initial; b=a.copy()\n   assert old(None,ids,a) is changed(None,ids,b) is ids\n   assert a.pop('input_ids') is ids and b.get('input_ids') is initial.get('input_ids')\n   b.pop('input_ids',None); assert a==b\n   trials+=1\nbase=build(node(p/'model.py','prepare_inputs')); d={}; assert base(None,ids,d) is ids and d['input_ids'] is ids\nprint(f'{len(names)} overrides, {trials} paired cases: same object and same other metadata; fresh key omitted and supplied key left untouched; base still writes key')"
+        ]
+      },
+      "result_sha256": "2bad974b66e39b8cb37c9bff603408e81a6e4be7b5a4e32e4593c7ac25ac6638"
+    },
+    "call_36adf6d22b1e4d3d838b113b67eecbd2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "prepare_for_attn"
+      },
+      "result_sha256": "93032e5bf7fe341955bf2ece6421d467d6745d808f8edccf4cb283693eb8273a",
+      "catalog_only": true
+    },
+    "call_c2cc75df97654d1e98f23e5d241da062": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "chapter": "modules",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "max_bytes": 16000
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_a47ef168b9c7452eac711eb1b8923ed8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "\"input_id",
+        "limit": 100
+      },
+      "result_sha256": "ce03c33aa67236f2c90f6b0e78904c864d3bc44220366d2438b12698b8419acf"
+    },
+    "call_5b9ec3b5c48440f79cc65759cc5dca9a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "dev_cache",
+        "limit": 100
+      },
+      "result_sha256": "280a66d9f304c8fd9059d1b533f01cfc43135de4b814f35e3b9dfba157555fa8"
+    },
+    "call_94d393395b3347bd93de880eb1ef3842": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "get_for_device(",
+        "limit": 100
+      },
+      "result_sha256": "f5118292d509c090a6610482ae70dba543063418b48e0fc6bbb55b13501543bb"
+    },
+    "call_4f1f02d21e964015b91fb61ec5032c7e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/util/tensor.py",
+        "offset": 3400,
+        "max_bytes": 1600
+      },
+      "result_sha256": "7c5cce1057f6f6b512ff6bd812b0a97c942d1695e3109dfd5cb8ea42eaa9a5dd"
+    },
+    "call_8dca40b7dbbd46bfb24508fcd692ce4d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "sliding_window_size",
+        "path": "exllamav3/models"
+      },
+      "result_sha256": "9d8505ac7056d8d1ea6ddbaeed8cf20b5b21edc493a850fac2ea581688bad140"
+    },
+    "call_3fbfc74c3d8c4b3aba6b6e57750dc5a3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "sliding_window",
+        "path": "exllamav3/models",
+        "limit": 60
+      },
+      "result_sha256": "71538973b6fdd0293f6212c209b68b9186ecea58b5875ac6180dc2cc92dcfb01"
+    },
+    "call_2fea49e829314273952a5d478539a621": {
+      "tool": "evidence_index",
+      "arguments": {
+        "offset": 24576,
+        "max_bytes": 16384
+      },
+      "result_sha256": "aa5dffcf197731961875e3c50e69175c06e61a9f3facb4270e3a16a276bc56e1",
+      "catalog_only": true
+    },
+    "call_3a27c7bbdbe44096bd438416121688a2": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "max_bytes": 12000
+      },
+      "result_sha256": "bcb19f3047780e4f6efe999764a4758837cf1bf1739418fb4dd3d9618aa6e897"
+    },
+    "call_7c0c8af6add14eff827e66fd1804777d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "offset": 12000
+      },
+      "result_sha256": "1f9b07e44efca58d0b9d03b098746b97ccd1a691efadf44b9024a046f5f39f3e"
+    },
+    "call_6c7b9ea6f1734759a4261317218550e7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/qwen3_moe.py",
+        "max_bytes": 2400
+      },
+      "result_sha256": "93c43cecdfc6d8ce8870ac2790153fb7ca1e6ebce6b0bcc0c3ff62c547d413ac"
+    },
+    "call_5b1466ecd4c743aaab20f592d74fa384": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6a916a9a4b8ed17f7228f5e6e386e4fb3ef571bf5b218f0c1383a489ab72f787"
+    },
+    "call_e973643d7e1449b59f5d858827d09a8b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "544ba423bf9c58c940dca6cb36a1aa93f6cda41a",
+        "offset": 16384,
+        "max_bytes": 5000
+      },
+      "result_sha256": "82d16ab10757d5bbc19ad3481f6d65f78c2a64684ecd8cf37cf95b6d1ac7d8a0"
+    },
+    "call_69758a49ba3940afa121578f26da8c9f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/models/exaone4.py",
+        "offset": 1000,
+        "max_bytes": 3200
+      },
+      "result_sha256": "9f5711d0687634cdd8ba51c2eb701850310ce3e0a6d2cb056627dcc62f62fe56"
+    },
+    "call_bf91e2f1ba95431f9610a38ddfb2622c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "params.get(\"prefill",
+        "limit": 50
+      },
+      "result_sha256": "d79b615441fae81081cedde6d4d7b0c955d70e0c64775c0e2215887193acdd29"
+    },
+    "call_7b54daa7cae148b8b24fec1f80984229": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/modules/transformer.py",
+        "offset": 1300,
+        "max_bytes": 5500
+      },
+      "result_sha256": "7dcb71820d1814998e5c463d84f405f3bdd77251259ef01dcc08b491dd39a4cb"
+    },
+    "call_2c1aa09596334880bdf8b0d4db0b42d7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": ".prefill(",
+        "limit": 80
+      },
+      "result_sha256": "34cecd126d8106c502a33b3287d51d17d5812e0cf973632be9fa74810e5cd2fd"
+    },
+    "call_77831956dff8452ca592499b9921f610": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "examples/generation_loop.py",
+        "offset": 850,
+        "max_bytes": 2700
+      },
+      "result_sha256": "72d7a08dff3f2bf47501ffa6b50790f83fd4fee1accadf24750b775fe02d9450"
+    },
+    "call_c7b130aa031644fc92108178bf406f08": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/generator/generator.py",
+        "offset": 12100,
+        "max_bytes": 2400
+      },
+      "result_sha256": "e6f359a1d5089f629b881bf9da5241f78b4bdec175d21ea7a25c59d8461903be"
+    },
+    "call_8ae73e4291594d87a02342674854da95": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "PAGE_SIZE =",
+        "path": "exllamav3",
+        "limit": 30
+      },
+      "result_sha256": "edb2daf89c67ca74fb4ca841f5ff437ab91dfa1d57056075605da74dba13dfb9"
+    },
+    "call_9aac90dfe8e8411a8057e13ac954e58c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 42000,
+        "max_bytes": 6000
+      },
+      "result_sha256": "2388cf704412e17a5e4ab5f966135da70c1b8511aab22c5be7bc9a868e00884a"
+    },
+    "call_5bfd8546f7664092866e2fca4896300e": {
+      "tool": "hf_fetch",
+      "arguments": {
+        "repo_id": "LGAI-EXAONE/EXAONE-4.0-1.2B",
+        "revision": "e1bc152ddee871e02a4b91826a700898686c2012",
+        "path": "config.json"
+      },
+      "result_sha256": "78f52fd7dca0ca7aa9f50e55052651b810e305d21a1188ec239e973ae153ee33"
+    },
+    "call_12b21a862bf04d9b99766c2558fcb957": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "Exaone4Model",
+        "limit": 100
+      },
+      "result_sha256": "6c28d908f0aec9a3ce6de31751192818ad590aef1a71f659e37f9c23c27506a9"
+    },
+    "call_57e9eef50c56496d85c5b126b78b6c2f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "if value is None",
+        "path": "exllamav3",
+        "limit": 40
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c92fa2fcc891423fa308190f9dd0f053": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "query": "def read_dict",
+        "limit": 20
+      },
+      "result_sha256": "c723373aefb0b7e0447021cee561a8793d2f829320dee3b1c81bd42ca0d2e0e7"
+    },
+    "call_1d5afa0e7ebd4485b3ab769b7faa26d1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "path": "exllamav3/util/file.py",
+        "offset": 1350,
+        "max_bytes": 2300
+      },
+      "result_sha256": "9578bba79dc31647892e297ee248ac4247b3e70194041ce1c24695d3730f57fe"
+    }
+  }
+}

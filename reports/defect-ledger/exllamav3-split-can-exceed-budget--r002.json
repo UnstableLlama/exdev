@@ -1,0 +1,220 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "Positive residual capacity is used as a weight, not as a feasibility check.",
+  "trigger": "Call initial_split with maximum byte budgets [4, 4] and a component with storage_per_device=5 and otherwise default sizes.",
+  "expected_behavior": "A capacity-aware plan should reject the infeasible replica or account for it before assigning work.",
+  "actual_behavior": "The method marks both devices active, rounds the logical split to [1, 0], charges both devices for the replica, and returns [5, 5] without rejecting the over-budget result. compile_tp_plan can still turn the logical split into ranges.",
+  "verification": [
+    {
+      "method": "scalar_transcription",
+      "description": "Transcribed the rounding and accounting for one component and obtained the over-budget estimate.",
+      "evidence": [
+        "call_c421c73f513d4f1d8e044fece19f697a"
+      ],
+      "limits": "Direct planner input; no model-loading caller or GPU behavior was verified."
+    }
+  ],
+  "defect_id": "exllamav3-split-can-exceed-budget",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "status": "source_supported",
+      "paths": [
+        "exllamav3/util/tp_split.py"
+      ],
+      "rationale": "Adds initial_split, which weights assignments by remaining room and accounts for replicas without enforcing the device limits."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "run": ".teacher/runs/commit-000334-001",
+      "local_id": "split-can-exceed-budget",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "split-can-exceed-budget",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Positive residual capacity is used as a weight, not as a feasibility check.",
+        "trigger": "Call initial_split with maximum byte budgets [4, 4] and a component with storage_per_device=5 and otherwise default sizes.",
+        "expected_behavior": "A capacity-aware plan should reject the infeasible replica or account for it before assigning work.",
+        "actual_behavior": "The method marks both devices active, rounds the logical split to [1, 0], charges both devices for the replica, and returns [5, 5] without rejecting the over-budget result. compile_tp_plan can still turn the logical split into ranges.",
+        "locations": [
+          {
+            "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+            "path": "exllamav3/util/tp_split.py",
+            "symbol": "TPAllocator.initial_split / compile_tp_plan"
+          }
+        ],
+        "source_evidence": [
+          "call_368480094ac744c1a77bf577252332a6",
+          "call_2ee6dc3b4f734965bbde6924c5473cff"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed the rounding and accounting for one component and obtained the over-budget estimate.",
+            "evidence": [
+              "call_c421c73f513d4f1d8e044fece19f697a"
+            ],
+            "limits": "Direct planner input; no model-loading caller or GPU behavior was verified."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+      "run": ".teacher/runs/commit-000346-002",
+      "local_id": "planner-still-lacks-fit-and-axis-checks",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "planner-still-lacks-fit-and-axis-checks",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new retry does not fix the inherited over-budget result or the independent zero-channel denominator.",
+        "trigger": "Call initial_split with budgets [4,4] and a record with storage_per_device=5 and default split sizes; separately pass a record with channels_to_split=0 and positive remaining room.",
+        "expected_behavior": "Report an infeasible replica or reject a zero-sized axis before prorating costs.",
+        "actual_behavior": "The first case returns totals [5,5] for rounded split [1,0]; the second gets zero shares from ratio_split and divides by the zero axis length in accounting.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/models/model_tp_alloc.py",
+            "symbol": "TPAllocator.initial_split"
+          }
+        ],
+        "source_evidence": [
+          "call_28f6efdfaf11464bbf7119bbae823efa",
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_b10bef17aa13469a80b6b834b1fe73aa",
+          "call_1cd2549131764fe1ab92cba9b414de0f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Checked rounding and replica totals for the first case and the zero share before the unchanged accounting denominator for the second.",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ],
+            "limits": "Synthetic planner inputs; no loader or actual device allocation was exercised."
+          }
+        ]
+      },
+      "scope_note": "This identity covers the replica's over-budget result. The same authored finding's zero-channel example is recorded under zero-split-denominator."
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit334-001-draft.json",
+      "sha256": "b1b175598cdf95a20646436d27441d583349fac49b29b55c8f7293d473cf55a4"
+    },
+    {
+      "file": "evidence/commit334-001-transcript.json",
+      "sha256": "8a8093e91a312c1b2b3a5d264581b66239aaff60b2c6a48f46427cfae0e84862"
+    },
+    {
+      "file": "evidence/commit334-001-manifest.json",
+      "sha256": "49a70a9d195f9eb158d12894248f509982db5d7532f43a4c54a74d97e52a50c8"
+    },
+    {
+      "file": "evidence/commit334-001-verdict.md",
+      "sha256": "73ecda503abc7799151b2528d86c1fdb7fc0ab6302a2c0821305492b56f030eb"
+    },
+    {
+      "file": "evidence/commit334-001-upstream.diff",
+      "sha256": "ea8fd8912cc2344fe20e6bd078c7ae04f3127003cb50ce8f282f9e108b83890e"
+    },
+    {
+      "file": "evidence/commit334-001-cache.py",
+      "sha256": "2ccf73e80574489449cfb284673fd7637643f07dd1431de67812837b3774c80d"
+    },
+    {
+      "file": "evidence/commit334-001-q_cache_kernels.cuh",
+      "sha256": "a900a2efb37fcaeb42f48c2276eacd25d6dc6d2723b2263db5f36a891ba3a0bf"
+    },
+    {
+      "file": "evidence/commit346-002-draft.json",
+      "sha256": "3a556c630ce1da0adfcf4e0b1f164b71628c339b62144695e9901bcd9f4d6a6a"
+    },
+    {
+      "file": "evidence/commit346-002-transcript.json",
+      "sha256": "e1afdfed00a0d9875f7e3cb99b437b5974c32284dd3dd28eede6e8dd4eb07f70"
+    },
+    {
+      "file": "evidence/commit346-002-manifest.json",
+      "sha256": "0bde98440836a31ce9bb253acc46cbd54cad3140f1fa37150f8b5dea29939ed7"
+    },
+    {
+      "file": "evidence/commit346-002-verdict.md",
+      "sha256": "dffaea1bf59b3fd73a13d0c3fa907753338cac5f2651a8b084fcac36a4ae0802"
+    },
+    {
+      "file": "evidence/commit346-002-upstream.diff",
+      "sha256": "f552d7d2fb6c0300679d2e9a55577fef2cff82c22f0bd2939f0c664dbe3ed115"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "available_at": "2026-11-18T07:33:03.161008+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+      "available_at": "2025-07-29T22:25:28+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-draft.json",
+      "source_id": "evidence/commit346-002-draft.json",
+      "content_sha256": "3a556c630ce1da0adfcf4e0b1f164b71628c339b62144695e9901bcd9f4d6a6a",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-transcript.json",
+      "source_id": "evidence/commit346-002-transcript.json",
+      "content_sha256": "e1afdfed00a0d9875f7e3cb99b437b5974c32284dd3dd28eede6e8dd4eb07f70",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-manifest.json",
+      "source_id": "evidence/commit346-002-manifest.json",
+      "content_sha256": "0bde98440836a31ce9bb253acc46cbd54cad3140f1fa37150f8b5dea29939ed7",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-verdict.md",
+      "source_id": "evidence/commit346-002-verdict.md",
+      "content_sha256": "dffaea1bf59b3fd73a13d0c3fa907753338cac5f2651a8b084fcac36a4ae0802",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-upstream.diff",
+      "source_id": "evidence/commit346-002-upstream.diff",
+      "content_sha256": "f552d7d2fb6c0300679d2e9a55577fef2cff82c22f0bd2939f0c664dbe3ed115",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "67e0fd74413228c85e1edc65cfc7c39365b1a6ca"
+    ],
+    "limits": "Direct planner or estimator inputs only. Source inspection and any scalar checks did not execute a model or GPU. Position 346 applies only to the checked revision. This identity covers the replica's over-budget result. The same authored finding's zero-channel example is recorded under zero-split-denominator."
+  },
+  "recorded_at": "2026-11-18T21:36:23.791282+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

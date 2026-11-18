@@ -3,8 +3,10 @@
 import argparse
 import hashlib
 import json
+import os
 import platform
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from .codex_adapter import CodexTeacher, MODEL, TRIAL_MODEL
 from .codex_transport import CodexTransport, SUPPORTED_VERSION
 from .editorial import render
@@ -18,6 +20,20 @@ def write_json(path, value):
     pending=path.with_suffix(path.suffix+'.new')
     pending.write_text(json.dumps(value,indent=2)+'\n')
     pending.replace(path)
+
+
+def write_failure_diagnostics(output, diagnostics):
+    pending = None
+    try:
+        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=output,
+                                prefix='.codex-failure-', delete=False) as handle:
+            pending = Path(handle.name)
+            json.dump(diagnostics, handle, indent=2)
+            handle.write('\n')
+        os.replace(pending, output/'codex-failure.json')
+    finally:
+        if pending is not None:
+            pending.unlink(missing_ok=True)
 
 
 def author(packet, output, auth_file, transport_factory=CodexTransport, *, validation_repair=True):
@@ -89,8 +105,10 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
         write_json(output/'raw-transcript.json',transcript)
         provenance.update(repair_metadata(transcript), token_usage=transcript[0].get('teacher_token_usage'))
         write_json(output/'provenance.json',provenance)
+    transport_context = None
     try:
-        with (transport_factory(auth_file,model=model) if trial else transport_factory(auth_file)) as transport:
+        transport_context = transport_factory(auth_file, model=model) if trial else transport_factory(auth_file)
+        with transport_context as transport:
             result=CodexTeacher().run(session,transport,
                 model=model, record=record, validation_repair=validation_repair)
         if manifest!=(packet/'manifest.json').read_bytes():
@@ -111,6 +129,11 @@ def _author(packet, output, auth_file, transport_factory, *, model=MODEL, trial=
         write_json(output/'status.json',{'status':'draft','published':False})
         return output
     except BaseException as error:
+        if isinstance(transport_context, CodexTransport) and transport_context.failure_diagnostics is not None:
+            try:
+                write_failure_diagnostics(output, transport_context.failure_diagnostics)
+            except OSError:
+                error.add_note('Could not save Codex failure diagnostics')
         write_json(output/'status.json',{'status':'failed','published':False,'error_type':type(error).__name__})
         raise
 

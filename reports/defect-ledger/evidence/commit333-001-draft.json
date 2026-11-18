@@ -1,0 +1,729 @@
+{
+  "schema_version": 5,
+  "sha": "0460dda4e410e1311c8474b1c1e980b6cbbba152",
+  "parent_shas": [
+    "3279fe188edb9e4be423fc828e5a8444c6aa6d06"
+  ],
+  "cutoff_date": "2025-07-20T14:15:49+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The shared model CLI had only a commented-out tensor-parallel option. The loader already accepted a `tensor_p` argument, but the branch for `tensor_p=True` was a stub. The patch exposes that argument without implementing the branch.",
+        "basis": "source",
+        "evidence": [
+          "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_93b80a74be594dd8887a185cefcb2f5f"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "`add_args` registers `-tp` and `--tensor_parallel` as aliases for a boolean switch, outside the optional cache arguments. This supplies the `args.tensor_parallel` attribute that `init` now reads unconditionally when calling `model.load`. The two edits depend on one another: registration alone would not change loading, and forwarding alone would leave callers using the shared parser without the new attribute.",
+        "basis": "source",
+        "evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+          "call_f7920cf859784111b3b43d71bbcdc63d"
+        ]
+      },
+      {
+        "text": "The narrow change is consistent with turboderp's subject, \u201cTP: model_init args\u201d: it connects the shared parser to the existing loader API rather than adding a second loading implementation. The diff and discussions do not establish why the flag was exposed while that API branch still raised.",
+        "basis": "inference",
+        "evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_93b80a74be594dd8887a185cefcb2f5f"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "On CLI paths that use both helper functions, omitting the flag supplies `False` and preserves the ordinary load selection. Passing either alias supplies `True`; without an explicit device, `Model.load_gen` raises `NotImplementedError` before loading any module. With an explicit device and otherwise valid arguments, the single-device branch rejects `tensor_p=True`. No branch implements the help text's promise to attempt to respect `--gpu_split` in tensor-parallel mode.",
+        "basis": "source",
+        "evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_93b80a74be594dd8887a185cefcb2f5f",
+          "call_f7920cf859784111b3b43d71bbcdc63d"
+        ]
+      },
+      {
+        "text": "The inspected CLI entry points that both register and consume the option are `eval/humaneval.py`, `eval/longctx.py`, `eval/mmlu.py`, `eval/ppl.py`, `examples/batched_translation.py`, `examples/chat.py`, and `examples/imgsearch.py`. PPL and imgsearch register it even with cache options disabled. PPL forwards sizing options but no `tensor_p` override. Imgsearch's later vision-component load is a separate call and receives no flag. `eval/ppl_transformers.py` accepts the option through the shared parser but does not consume it: it calls Transformers with `device_map=\"auto\"`. `eval/compare_q_logits.py` and `eval/prequant_test.py` only import the helper in the inspected references.",
+        "basis": "source",
+        "evidence": [
+          "call_443262e0babc4281af82e505b0d62e18",
+          "call_d78a02ad25c94ccfb5124b9c6ba783d7",
+          "call_8403d889a8ce49319fef527213d27b03",
+          "call_68e46cf6d9204d908678840f260f563d"
+        ]
+      },
+      {
+        "text": "Programmatic calls to `model_init.init` have two new failure modes at the load call: a namespace built without `tensor_parallel` fails attribute access, and a caller still forwarding `tensor_p` through `**kwargs` supplies the keyword twice. No inspected in-tree caller uses either old form. Direct calls to `Model.load` or `Model.load_gen` are not subject to the new namespace requirement or duplicate keyword.",
+        "basis": "source",
+        "evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+          "call_443262e0babc4281af82e505b0d62e18",
+          "call_af7e0461214143d99707a1e53ff5e5b3",
+          "call_d78a02ad25c94ccfb5124b9c6ba783d7",
+          "call_f7920cf859784111b3b43d71bbcdc63d"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The root entry's `models` chapter describes the original shared initialization order and explicitly identifies tensor-parallel loading as unimplemented. The later YAML-override entry describes the variant tensor collection and records missing metrics APIs and the deferred CUDA BF16 odd-tail issue.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_2cde6f477a6a454f8913a9a08be6e310",
+          "call_8db0067106804ea4803d67a2bb2e1c8f"
+        ]
+      },
+      {
+        "text": "Comparing the complete patch with the parent source shows that it leaves the override wrapper, metrics block, and ordinary deferred-load path unchanged. The separate `Model.get_load_metrics()` wrapper also still calls `stc.get_metrics()`, for which the parent search found no definition. The search for callers of that wrapper found only its definition; it is not the call used by `--load_metrics`.",
+        "basis": "source",
+        "evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_a9c6c68f8c2f45109eac12524108c635",
+          "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+          "call_93b80a74be594dd8887a185cefcb2f5f",
+          "call_efedbbc0b64f4a92a76746275468b978",
+          "call_f0b8e0f922bd45ffa4deea794144e03f"
+        ]
+      },
+      {
+        "text": "Issue #61, \u201cRun ERNIE-4.5-300B-A47B-PT 2.25bpw with 5x20G 3080 got 'Insufficient VRAM',\u201d quotes the exact pre-change `model.load` call and traces into `_load_autosplit`. The reporter said that changing the CUDA allocator backend worked. The matching call and error connect it to the existing split path, not to the new flag or to a fix by this patch. Its `-tps` was chat's throughput-display option, not `-tp`.",
+        "basis": "inference",
+        "evidence": [
+          "call_13ac838a981a41cba2ef133cc6c988c1",
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_d78a02ad25c94ccfb5124b9c6ba783d7",
+          "call_93b80a74be594dd8887a185cefcb2f5f"
+        ]
+      },
+      {
+        "text": "PR #22, \u201cOpenAI compatible API example,\u201d proposed an endpoint for web clients. A posted example uses both `model_init.add_args` and `model_init.init`, and the discussion quotes the cache-quantization option from the same parser. This illustrates how parser changes can surface in downstream tooling; it does not show that the PR motivated this patch or that any deployed endpoint took the new flag.",
+        "basis": "inference",
+        "evidence": [
+          "call_9c04b7d3025749378026f01742bc6c34",
+          "call_e2a75b3a161e4a48a5a29a9b840682c1",
+          "call_68e46cf6d9204d908678840f260f563d"
+        ]
+      },
+      {
+        "text": "Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d reports that same autosplit error under TabbyAPI. Issue #54, \u201cGPU split isn't followed here?\u201d, asks about split limits under TabbyAPI and reports improvement after an allocator setting change. The matching error in #50 and matching split-budget terminology and dummy-forward behavior in #54 connect them to ordinary autosplit, not to a working tensor-parallel path.",
+        "basis": "inference",
+        "evidence": [
+          "call_b9bd76003bbb4b1e864b2960c46dab63",
+          "call_230d6322d7b444be9ccb8cbc868a92b2",
+          "call_93b80a74be594dd8887a185cefcb2f5f",
+          "call_acb86c198cca4c73ad97da772ed19aca"
+        ]
+      },
+      {
+        "text": "Other discussion matches are file or entry-point overlaps, not evidence of a TP failure: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d mentions `models/model.py` in an import traceback; #33, \u201cError converting model,\u201d traces a file-open failure through the safetensors loader and later discusses GLM4 sampling; #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d references `gemma3.py` in a logit-width investigation; #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d reports a conversion Cholesky failure and mentions `examples/chat.py` in later diagnosis of Qwen output.",
+        "basis": "inference",
+        "evidence": [
+          "call_1d74d300039f4d8ea8111a330cb55913",
+          "call_7b20009efaf3451482a2ca81f43f9deb",
+          "call_d028e2a9e5f04446a82d65646f908aac",
+          "call_f56069b009bd46aabd7085de01b250b5",
+          "call_19da90a7981644198d8f953bdea97962",
+          "call_9234802973c9494984893e57f74d285d",
+          "call_68e46cf6d9204d908678840f260f563d"
+        ]
+      }
+    ],
+    "limitations": [
+      "The Python checks transcribed argument binding, branch selection, and pair coverage. They did not run the repository CLI, a model load, a CUDA kernel, or an allocator.",
+      "Whole-parent-tree literal searches establish the inspected in-tree call sites, not dynamic references or compatibility with unobserved external callers.",
+      "The historical reports are not reproductions of this commit; none establishes why the flag was added or how a future tensor-parallel split would use the budgets."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d"
+    ],
+    "chapters": [
+      {
+        "id": "model-init",
+        "title": "Wire the tensor-parallel flag to the existing loader switch",
+        "claims": [
+          {
+            "text": "Config, tensor overrides, model construction, and optional cache setup still precede the load call. `init` passes `use_per_device=None` for an absent split or `auto`; otherwise it parses comma-separated floats. The patch adds `tensor_p` alongside that same split and progress value. Tokenizer creation and metrics reporting still follow the load, so neither runs after a loader exception.",
+            "basis": "source",
+            "evidence": [
+              "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+              "call_68e46cf6d9204d908678840f260f563d"
+            ]
+          },
+          {
+            "text": "`Model.load` consumes `load_gen` with generator progress yields disabled. The existing direct `load_gen` calls in `examples/loading.py` instead iterate progress and leave `tensor_p` at its default. In the normal no-device branch an explicit budget is converted with `int(x * 1024**3)`, so the help text's GB units are interpreted as GiB, and only positive budgets select devices. The loader places whole modules, tests their memory use with dummy forwards, and retries on another device for recognized out-of-memory errors. This is sequential module placement, not tensor sharding. The tensor-parallel branch reaches none of that budget logic.",
+            "basis": "source",
+            "evidence": [
+              "call_93b80a74be594dd8887a185cefcb2f5f",
+              "call_acb86c198cca4c73ad97da772ed19aca",
+              "call_2b15599b2fbd4dc4a49db2bba52a3a3d",
+              "call_d78a02ad25c94ccfb5124b9c6ba783d7"
+            ]
+          },
+          {
+            "text": "A standard-library transcription selected autosplit when the flag was omitted and converted a `1.5,0` split to `[1610612736, 0]` bytes. It raised `NotImplementedError` for either alias, including with a valid split, and reached the single-device assertion when a device was supplied with the flag and no split.",
+            "basis": "execution",
+            "evidence": [
+              "call_f7920cf859784111b3b43d71bbcdc63d"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "tensor-parallel-flag-selects-stub",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The shared CLI advertises a load mode that the unchanged loader does not implement.",
+        "trigger": "Pass `-tp` or `--tensor_parallel` to a CLI that uses both shared helpers, such as `examples/chat.py`, and reach the load call with otherwise valid arguments and no explicit device.",
+        "expected_behavior": "Load in tensor-parallel mode and attempt to honor any supplied `--gpu_split`, as stated in help.",
+        "actual_behavior": "`Model.load_gen` raises `NotImplementedError` before module loading, with or without a valid split. An explicit device with no conflicting budget instead reaches the single-device assertion.",
+        "locations": [
+          {
+            "commit": "0460dda4e410e1311c8474b1c1e980b6cbbba152",
+            "path": "exllamav3/model_init.py",
+            "symbol": "add_args and init"
+          },
+          {
+            "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.load_gen"
+          }
+        ],
+        "source_evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_93b80a74be594dd8887a185cefcb2f5f",
+          "call_443262e0babc4281af82e505b0d62e18",
+          "call_d78a02ad25c94ccfb5124b9c6ba783d7"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled parsing and loader dispatch using argparse and the inspected branch conditions.",
+            "evidence": [
+              "call_f7920cf859784111b3b43d71bbcdc63d"
+            ],
+            "limits": "Did not import or execute the repository loader."
+          }
+        ]
+      },
+      {
+        "id": "legacy-model-init-namespace",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "`model_init.init` now requires `tensor_parallel` on caller-built namespaces.",
+        "trigger": "Supply a namespace equivalent to the old parser's output, but without `tensor_parallel`, and reach the load call.",
+        "expected_behavior": "An omitted TP setting retains ordinary loading, as it does with the updated parser.",
+        "actual_behavior": "Reading `args.tensor_parallel` raises `AttributeError` before the loader is called.",
+        "locations": [
+          {
+            "commit": "0460dda4e410e1311c8474b1c1e980b6cbbba152",
+            "path": "exllamav3/model_init.py",
+            "symbol": "init"
+          }
+        ],
+        "source_evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+          "call_443262e0babc4281af82e505b0d62e18",
+          "call_d78a02ad25c94ccfb5124b9c6ba783d7"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Called the transcribed wrapper with a namespace lacking the new attribute.",
+            "evidence": [
+              "call_f7920cf859784111b3b43d71bbcdc63d"
+            ],
+            "limits": "Programmatic API case; no old-form in-tree caller was found."
+          }
+        ]
+      },
+      {
+        "id": "duplicate-tensor-p-keyword",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "The formerly forwarded `tensor_p` keyword now collides with the explicit keyword.",
+        "trigger": "Call `model_init.init(args, tensor_p=False)` using an otherwise valid namespace with the new attribute.",
+        "expected_behavior": "Forward `False` to the loader as before through the documented extra keywords.",
+        "actual_behavior": "Python raises `TypeError` for multiple values for `tensor_p` before the loader runs, even when both values are false.",
+        "locations": [
+          {
+            "commit": "0460dda4e410e1311c8474b1c1e980b6cbbba152",
+            "path": "exllamav3/model_init.py",
+            "symbol": "init"
+          }
+        ],
+        "source_evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+          "call_af7e0461214143d99707a1e53ff5e5b3"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Exercised the explicit keyword plus `**kwargs` call with the same key in both.",
+            "evidence": [
+              "call_f7920cf859784111b3b43d71bbcdc63d"
+            ],
+            "limits": "No in-tree caller passing this keyword through `init` was found."
+          }
+        ]
+      },
+      {
+        "id": "inherited-override-metrics",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The YAML override metrics failure recorded by the ancestor persists on the ordinary load path.",
+        "trigger": "Run a shared-init CLI with nonempty YAML overrides and `--load_metrics`, omit TP, and reach the metrics block after an otherwise successful load.",
+        "expected_behavior": "Print load metrics and return the initialized objects.",
+        "actual_behavior": "The variant collection does not initialize `metrics`; `config.stc.metrics.print()` fails with `AttributeError`.",
+        "locations": [
+          {
+            "commit": "0460dda4e410e1311c8474b1c1e980b6cbbba152",
+            "path": "exllamav3/model_init.py",
+            "symbol": "init"
+          },
+          {
+            "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "VariantSafetensorsCollection.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+          "call_a9c6c68f8c2f45109eac12524108c635",
+          "call_95ecec46c3ae4dc7be8221591668be59",
+          "call_d78a02ad25c94ccfb5124b9c6ba783d7"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked the wrapper constructor and the unchanged metrics access reached by shared-init callers.",
+            "evidence": [
+              "call_a9c6c68f8c2f45109eac12524108c635",
+              "call_ae3c64a5060c4db4ab2930d5ed7aa7c3",
+              "call_68e46cf6d9204d908678840f260f563d"
+            ],
+            "limits": "Conditional on reaching the metrics block; no YAML-backed model load was executed."
+          }
+        ]
+      },
+      {
+        "id": "inherited-deferred-bf16-tail",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Ordinary shared initialization still reaches the deferred CUDA converter with no odd-element cleanup.",
+        "trigger": "During an ordinary load, a module takes deferred CUDA loading for an odd-element BF16 tensor with BF16 disallowed.",
+        "expected_behavior": "Convert every element to FP16.",
+        "actual_behavior": "The native caller supplies the 16-bit element count; the CUDA wrapper launches only `numel / 2` pair conversions with integer division and no scalar tail.",
+        "locations": [
+          {
+            "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_68e46cf6d9204d908678840f260f563d",
+          "call_acb86c198cca4c73ad97da772ed19aca",
+          "call_475b7f712968443089b63e2f1cf5bf5d",
+          "call_83e73f8105b2474b8c14b42945d55e50",
+          "call_ccb09c26e2bd4f0786720eea3707b6b1",
+          "call_f58d86559b9f4456914660272454ad80"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Counted the elements covered by the pair bound and 1024-thread block size; counts of 3 and 2049 each left one uncovered element, unlike counts of 2 and 2048.",
+            "evidence": [
+              "call_c1e741f04ec24f3fb1f55d43580c6057"
+            ],
+            "limits": "Python integer coverage only; no affected checkpoint, CUDA launch behavior, or conversion output was verified."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds `-tp` / `--tensor_parallel` to shared model initialization and forwards it to the loader. The default load path is unchanged; opting in reaches an existing `NotImplementedError`, not tensor-parallel loading."
+  },
+  "evidence": {
+    "call_68e46cf6d9204d908678840f260f563d": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "0460dda4e410e1311c8474b1c1e980b6cbbba152",
+        "offset": 153,
+        "max_bytes": 1198
+      },
+      "result_sha256": "d22ef68cd755e726922eed3eff6bc7d46c4cd2d12508845a47f4b849bef3f33f"
+    },
+    "call_ae3c64a5060c4db4ab2930d5ed7aa7c3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "exllamav3/model_init.py"
+      },
+      "result_sha256": "8c4d3f4a24157d19c8746e18d20bda259442978383a484d415e83423941baaee"
+    },
+    "call_443262e0babc4281af82e505b0d62e18": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "model_init",
+        "limit": 200
+      },
+      "result_sha256": "b68fb09953fe5e55956cff77e723c7b91f948f2c9a3f93e70ed8176cd84ec5da"
+    },
+    "call_af7e0461214143d99707a1e53ff5e5b3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "tensor_p",
+        "limit": 200
+      },
+      "result_sha256": "137a79ddb1abfd78be1737f92d23a1929bdf3bd800cabe95ef0b2c44c6d32dee"
+    },
+    "call_93b80a74be594dd8887a185cefcb2f5f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "exllamav3/models/model.py",
+        "offset": 7000,
+        "max_bytes": 14500
+      },
+      "result_sha256": "0a93ef030f147b0047c0dfb18fc14d17f1bd1c0a0a7e8e688e6ce7031dd822af"
+    },
+    "call_2b15599b2fbd4dc4a49db2bba52a3a3d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "load_gen("
+      },
+      "result_sha256": "ee0e2c0eaa53661e95c0e00170948584161659540e23f57d205c2a003d43f273"
+    },
+    "call_819a98e91b8c4a949fb9b2bd19c635cb": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "\"-tp\""
+      },
+      "result_sha256": "c5f6e78e91c7f017950a7b8ea54461b0afe498a29b1a8c30bbfec96e43cbccf2"
+    },
+    "call_8d681d15f78e40d9bad90cec122b4c7a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "def load_gen("
+      },
+      "result_sha256": "9f698e72021bb577ad16069aee4d035a532fe71bfb659680433ffc3bc0de401b"
+    },
+    "call_c7a8aadc0dff47e584eb6daf75064b07": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "def load(",
+        "path": "exllamav3/models",
+        "limit": 100
+      },
+      "result_sha256": "3697a75afcf36f806a7e5f8e574688ad579262ad4dbff1214e961250a56939dc"
+    },
+    "call_e87d57c2480d40a39f4bc553c2fee874": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "parse_args(",
+        "limit": 100
+      },
+      "result_sha256": "dea43a486ab5a61301dbc08796e18d840a1991d2f9b15b1ea3b4a874da3ad2c5"
+    },
+    "call_a82d11a99bf847e9b98b51945de98c61": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "gpu_split",
+        "limit": 100
+      },
+      "result_sha256": "a67ca9d6844674446bd5f848de8c9353e47b19c440e5c39a124a7d60fa2e83af"
+    },
+    "call_acb86c198cca4c73ad97da772ed19aca": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 7000
+      },
+      "result_sha256": "1945f03a49606f1bdc2e1eebd375d8eab42e29cd4666639c46b9a79d00f09000"
+    },
+    "call_3d4ade5ce4694769966268665501ce8f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/model_init.py",
+        "limit": 30
+      },
+      "result_sha256": "154c67d2fca5c934c4536fa2754e28d7720a65ddd8618a128c4806cd4563d48a",
+      "catalog_only": true
+    },
+    "call_8db0067106804ea4803d67a2bb2e1c8f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6341b119efc4ef73ff2e4adcdd14a4d79b0a5e6d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "8bef6da2877d138c00be97af8f4fe2b130f05ef05bcd7f093473c74908021f80"
+    },
+    "call_2cde6f477a6a454f8913a9a08be6e310": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models",
+        "max_bytes": 16384
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_13ac838a981a41cba2ef133cc6c988c1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/61"
+      },
+      "result_sha256": "91319b40731c53027b603b87c40e0d83ca0aee6e7848468b94c4811a2ab2a8d6"
+    },
+    "call_9c04b7d3025749378026f01742bc6c34": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22"
+      },
+      "result_sha256": "902f3d8a4b4dd47bd0e881f545738781643293325ac3970f4b80652b5b307bae"
+    },
+    "call_e2a75b3a161e4a48a5a29a9b840682c1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 16384,
+        "max_bytes": 24000
+      },
+      "result_sha256": "016f12232b43a9d5f12f6cc3b8f00f61afc2ac1c92a4b1d4dc85bb114e9d2ae8"
+    },
+    "call_1d74d300039f4d8ea8111a330cb55913": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "df41c02e489db1b78ee4c5f92f24614643335580f6e2d3782e3984a5ac4de476"
+    },
+    "call_68cf6b0d9d754e7083c8087a8396bf89": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 1138
+      },
+      "result_sha256": "ac55c9610ca32e2be3d2a7d3f39ea2a2ebff5744a519fd75ee545e9153b1000f",
+      "catalog_only": true
+    },
+    "call_efedbbc0b64f4a92a76746275468b978": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "get_load_metrics",
+        "limit": 100
+      },
+      "result_sha256": "a986db8e88cac0819111b7ce7325977f82629205bba47e7bfe6d4b33e9aa0892"
+    },
+    "call_d2f6a8c84e644f8ab47acae3498fac8f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "class VariantSafetensorsCollection"
+      },
+      "result_sha256": "3a7829f4ddb9605fdc2dd7877e96e6dd87fdfa9d47f368ccfcbc92fca7eb2c0b"
+    },
+    "call_95ecec46c3ae4dc7be8221591668be59": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 18300,
+        "max_bytes": 6500
+      },
+      "result_sha256": "76dcb42c3aa183658f6d992b3469e49262a217734446e1ace6928baa4c1cbd5a"
+    },
+    "call_a9c6c68f8c2f45109eac12524108c635": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "exllamav3/loader/safetensors.py",
+        "offset": 17500,
+        "max_bytes": 1000
+      },
+      "result_sha256": "cf041d829415f61217b21260fca209a313181f3e6447f57df5e1c8cda3c45314"
+    },
+    "call_f0b8e0f922bd45ffa4deea794144e03f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "def get_metrics("
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_7b20009efaf3451482a2ca81f43f9deb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 32000
+      },
+      "result_sha256": "9ef54c5e0052d58d1eb4d6c57a37851c9df3b4d8acee31703183cfe672d6eb81"
+    },
+    "call_19da90a7981644198d8f953bdea97962": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 7000
+      },
+      "result_sha256": "5fbb51255898e94b4bcfa0165cef522a900bbdfb18a78b03687bba4850b7cf45"
+    },
+    "call_9234802973c9494984893e57f74d285d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "offset": 7000
+      },
+      "result_sha256": "c5aabffbe706a7507e98d8a49c46b44cf3996ac4fe4d2e05d3a12a0dfef12a75"
+    },
+    "call_d78a02ad25c94ccfb5124b9c6ba783d7": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor n in ('eval/humaneval','eval/longctx','eval/mmlu','eval/ppl','eval/ppl_transformers','examples/batched_translation','examples/chat','examples/imgsearch','examples/loading','exllamav3/models/gemma3'):\n p=Path(n+'.py'); ls=p.read_text().splitlines(); print(p); keys=('model_init.', 'parse_args(', 'main(_args', 'model.load(', 'model.load_gen(', 'class Gemma3', 'def load('); ix={j for i,l in enumerate(ls) if any(k in l for k in keys) for j in range(max(0,i-1),min(i+6,len(ls)))}; print('\\n'.join(f'{j+1}: {ls[j]}' for j in sorted(ix)))"
+        ]
+      },
+      "result_sha256": "d18299112c7d977edfe1903fecfc518bdfc824a93f5c86ff4cf8229368aa6ec9"
+    },
+    "call_f56069b009bd46aabd7085de01b250b5": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 7000
+      },
+      "result_sha256": "65409069345f641073beebf01e1febb2bddbfa83385286d7c2638d6987d5e6dd"
+    },
+    "call_f7920cf859784111b3b43d71bbcdc63d": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import argparse\nfrom types import SimpleNamespace\ndef route(use_per_device, tensor_p=False, device=None):\n if device is not None:\n  assert not use_per_device\n  assert not tensor_p, 'Cannot use tensor_p when loading to single device.'\n  return 'single'\n elif not tensor_p:\n  return ('autosplit',None if use_per_device is None else [int(x*1024**3) for x in use_per_device])\n else: raise NotImplementedError()\ndef call(args, **kwargs):\n split=None if args.gpu_split in (None,'auto') else [float(x) for x in args.gpu_split.split(',')]\n return route(use_per_device=split,tensor_p=args.tensor_parallel,**kwargs)\np=argparse.ArgumentParser(); p.add_argument('-gs','--gpu_split'); p.add_argument('-tp','--tensor_parallel',action='store_true')\nfor argv, kw in [([],{}), (['-gs','1.5,0'],{}), (['-tp'],{}), (['--tensor_parallel','-gs','1.5,0'],{}), (['-tp'],{'device':0}), ([],{'tensor_p':False}), (None,{})]:\n try: print(argv,kw,call(SimpleNamespace(gpu_split=None) if argv is None else p.parse_args(argv),**kw))\n except Exception as e: print(argv,kw,type(e).__name__,str(e))"
+        ]
+      },
+      "result_sha256": "328f34c9c0953160c1400d30351fa7835d646ee21834648c519fec5d6b5a7db7"
+    },
+    "call_83e73f8105b2474b8c14b42945d55e50": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "inplace_bf16_to_fp16_cuda"
+      },
+      "result_sha256": "d3ab3c81a89e237b04f8b26780c1348331716143231ec59d30e0b3a4a7eda230"
+    },
+    "call_f58d86559b9f4456914660272454ad80": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+        "max_bytes": 4500
+      },
+      "result_sha256": "313d816cfbdf8b70471c6619d333fc7e37d06f52c3670cee53cdce5ac271f384"
+    },
+    "call_ccb09c26e2bd4f0786720eea3707b6b1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "exllamav3/exllamav3_ext/stloader.cpp",
+        "offset": 8100,
+        "max_bytes": 4400
+      },
+      "result_sha256": "26aa475cb558e1969929ffbac1838270c56273932acda74218165f70fb8de1fb"
+    },
+    "call_d028e2a9e5f04446a82d65646f908aac": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 32000,
+        "max_bytes": 15000
+      },
+      "result_sha256": "48f7e6aa966064f18a3b054f65d0da5d3d1a2896a7bf1d93d5296b844c424953"
+    },
+    "call_8403d889a8ce49319fef527213d27b03": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "path": "eval/ppl_transformers.py",
+        "max_bytes": 4500
+      },
+      "result_sha256": "9ec028b7b83f6a99f6d7cae4000633762d28c68503ab7284ad4f2cc32601e948"
+    },
+    "call_475b7f712968443089b63e2f1cf5bf5d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "bf16_to_fp16",
+        "path": "exllamav3/loader/safetensors.py"
+      },
+      "result_sha256": "84f3dd554d29d510072467b40f11b61608f68f698c1f3a606305e040d6aea0b5"
+    },
+    "call_230d6322d7b444be9ccb8cbc868a92b2": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/54",
+        "max_bytes": 8000
+      },
+      "result_sha256": "68e611c97336323ccbf6fa31f8ee70c150fe276db93de3dc82e3ba20e38afaa2"
+    },
+    "call_b9bd76003bbb4b1e864b2960c46dab63": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 13000
+      },
+      "result_sha256": "b784e1330a11a3f55caa36694f92e5e6e695cfd79e48e48d75d348ee6eaad489"
+    },
+    "call_2df4c19b959b472585295022f5fc7404": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "query": "tensor-parallel",
+        "limit": 100
+      },
+      "result_sha256": "6fbdf92e8099845c1559d4251be4c0f6f5b839c3ba1859662dfddb8a2766f809"
+    },
+    "call_c1e741f04ec24f3fb1f55d43580c6057": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for n in (2,3,2048,2049):\n pairs=n//2; blocks=(pairs+1023)//1024; written=2*sum(i<pairs for i in range(blocks*1024)); print(n,blocks,written,n-written)"
+        ]
+      },
+      "result_sha256": "4e3ee8e06067652de48bfd1888ee4f1d5498b60e01eb919e965388315289da39"
+    }
+  }
+}

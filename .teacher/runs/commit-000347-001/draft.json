@@ -1,0 +1,715 @@
+{
+  "schema_version": 5,
+  "sha": "1258dfb4ddedaa8be3f6388f2c79f520dc7d0583",
+  "parent_shas": [
+    "67e0fd74413228c85e1edc65cfc7c39365b1a6ca"
+  ],
+  "cutoff_date": "2025-07-29T22:56:16+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "The parent can estimate tensor-parallel allocations, but its TransformerBlock has no interface for exporting its loaded children and rebuilding a block on another device. This change adds that interface; it does not connect it to model loading or implement the child-level split.",
+        "basis": "source",
+        "evidence": [
+          "call_1c6ee98a90f7496b87ba583580f1959f",
+          "call_29b6a3e662e347a08c12e30522ff58f3",
+          "call_03fe5facc08c4c879c4e8eeee4c81060",
+          "call_28ae1a6ff89744489e6ef28900082726"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The block handles composition rather than slicing. It passes the plan unchanged to each present child, and import dispatches through the class in each child's payload. That lets different normalization, attention and MLP implementations own their reconstruction rules, but means the block cannot export a present child that lacks the protocol. The parent's planner produces a list of per-device dictionaries of half-open ranges keyed by component; the new block methods neither select one of those dictionaries nor look up or validate any range.",
+        "basis": "source",
+        "evidence": [
+          "call_03fe5facc08c4c879c4e8eeee4c81060",
+          "call_29b6a3e662e347a08c12e30522ff58f3",
+          "call_ec231f47dbdd4111b2db25383ef8bbf3",
+          "call_eb5aaee36d8748fbb2076325d2f95632"
+        ]
+      },
+      {
+        "text": "Allowing Config | None describes the new constructor use, rather than changing how ordinary blocks are built. The constructor already forwards config to Module, which stores it without dereferencing it. Reconstruction can therefore pass None and supply already-imported children; it does not reopen the checkpoint or call the recursive loader. This is a narrower contract than cloning a block for arbitrary reuse: conversion still reads module.config.stc after loading a module, but its inspected path builds and iterates the ordinary base model, not TP imports.",
+        "basis": "source",
+        "evidence": [
+          "call_03fe5facc08c4c879c4e8eeee4c81060",
+          "call_1c6ee98a90f7496b87ba583580f1959f",
+          "call_21a962cfa0f64dc2b323e3072a5853fb",
+          "call_08edf9e097cd4b279ee38607867add75"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "A parent-tree AST scan found 17 direct TransformerBlock constructor calls. Every one still supplies config=config, and none overrides qbits_key: DeciLM, Dots1, Ernie 4.5 dense and MoE, Exaone4, Gemma2, GLM4, Llama, Mixtral, Phi3, Qwen3 dense and MoE, and SmolLM3 each have one call; Gemma3 and Mistral3 each have two. None needs a constructor update for the widened annotation. The literal search also found the package re-export and the KV quantization experiment's isinstance check, not another constructor or subclass.",
+        "basis": "source",
+        "evidence": [
+          "call_ec841734ea734550b40c7580577a9cfe",
+          "call_c04a9c8f091f4c34905564c26e999f21",
+          "call_03fe5facc08c4c879c4e8eeee4c81060"
+        ]
+      },
+      {
+        "text": "The parent's whole-tree searches found no tp_export or tp_import definitions or calls. The task adds only the block methods and their delegated calls, not a caller that initiates export or import. Model.load_gen still rejects tensor_p with an explicit single device and raises NotImplementedError in its tensor-parallel branch; ordinary multi-device loading still uses _load_autosplit. ParallelDecoderBlock and TransformerBlock.forward are unchanged.",
+        "basis": "source",
+        "evidence": [
+          "call_ec231f47dbdd4111b2db25383ef8bbf3",
+          "call_eb5aaee36d8748fbb2076325d2f95632",
+          "call_28ae1a6ff89744489e6ef28900082726",
+          "call_03fe5facc08c4c879c4e8eeee4c81060"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The supplied attribution names turboderp. The message, \u201cTransformerBlock: TP split,\u201d matches the new block-level handoff; the diff does not show tensor slicing, a communication step, or a working end-to-end TP loader.",
+        "basis": "source",
+        "evidence": [
+          "call_03fe5facc08c4c879c4e8eeee4c81060"
+        ]
+      },
+      {
+        "text": "The root entry's modules chapter describes the original explicit child registration, recursive loading, and sequential attention and MLP residual branches. It also describes the original unconditional child calls; that is not the current forward contract, which already guards missing attention and MLP and falls back to half input when a pre-norm is absent.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_cb28f1ef115c416a996e009b1b891c9a",
+          "call_1c6ee98a90f7496b87ba583580f1959f"
+        ]
+      },
+      {
+        "text": "The immediate parent entry, \u201cTP: Refactor/fix auto allocation,\u201d distinguishes planner ranges from loaded shards and records both the stale transformer import and the empty-child allocation assertion. The task retains both conditions, as detailed in the findings.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_8cf068669d904488b1b9ef3d543b2b3d",
+          "call_c0edd512aeb24f4dbf4422f6a26ae9dc"
+        ]
+      },
+      {
+        "text": "Closed issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d reports an RTX 3060 conversion failure for a Phi-4 fine-tune. Its traceback uses the same `self.attn.forward(y, params)` call in TransformerBlock.forward and proceeds to Linear.capture_H; the maintainer attributed the report to tokenizer truncation and said it was overridden at tokenizer load. The matching forward line connects the report to the file, not to the new TP methods.",
+        "basis": "inference",
+        "evidence": [
+          "call_6bef48da2147466f838874c0847c0fc4",
+          "call_1c6ee98a90f7496b87ba583580f1959f",
+          "call_03fe5facc08c4c879c4e8eeee4c81060"
+        ]
+      },
+      {
+        "text": "Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d quotes the current non-TP autosplit error. Issue #54, \u201cGPU split isn't followed here?\u201d, asks why TabbyAPI's requested splits do not match observed allocation and reports improvement after changing the allocator setting. Their loading context matches the separate _load_autosplit branch, not evidence of either report reaching the new block methods.",
+        "basis": "inference",
+        "evidence": [
+          "call_e726701d9277481c8c92c4065936f81e",
+          "call_d2c3617dd81a47c9a6804c45f5580824",
+          "call_2a4c9c23376845f3a3ca99ee2c09d493",
+          "call_28ae1a6ff89744489e6ef28900082726"
+        ]
+      },
+      {
+        "text": "The conversion-path overlaps are distinct: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d fails loading a native extension after entering via convert_model; #33, \u201cError converting model,\u201d reaches compile_model and fails reopening a tensor file; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports a Cholesky failure on a model using ParallelDecoderBlock; #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d reports a NaN warning and a failure at lm_head; #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d reports Cholesky failures for some conversion settings. They share the conversion source path, not a TP method call. PR #26, \u201cSuperior 3INST parameters,\u201d proposes a quantizer multiplier change; #53, \u201cCommand A support,\u201d begins as a support and quant availability request. Neither framing identifies a block export or import problem.",
+        "basis": "inference",
+        "evidence": [
+          "call_2c647e0f156e4270b98378388bfe4c1e",
+          "call_85f74d2724fd4b1c88530955c87ffcb7",
+          "call_174cb4aa55bb496f9f7e267ab26c0fba",
+          "call_0d59ce6a6d07460e9d97f1493507418b",
+          "call_d9047dafe7184046ac12a13d78bdf5bb",
+          "call_f4a3a0e0b6824195bde83289d6c84475",
+          "call_5dcfc90d125f495e834573270b9c8a38",
+          "call_08edf9e097cd4b279ee38607867add75"
+        ]
+      },
+      {
+        "text": "Issue #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d cites Gemma3 source and reports a logits-buffer copy size mismatch, not a reconstruction failure. Issue #27, \u201cAttention Backend,\u201d asks about FlashInfer versus FlashAttention; its overlap is the attention component, whose forward dispatch the task leaves alone. PR #4, \u201cchore: update config.py,\u201d is a spelling correction, not a change to the Config object or to this constructor's use of None.",
+        "basis": "inference",
+        "evidence": [
+          "call_b9c3b3e6b2e64ea6aa03922a94178c95",
+          "call_7d923359a753441d88d69fd2ab104618",
+          "call_864d46bc21624ac0956b0efd89b207cd",
+          "call_03fe5facc08c4c879c4e8eeee4c81060"
+        ]
+      }
+    ],
+    "limitations": [
+      "No installed-package import, model load, real child round trip, CUDA execution or distributed communication ran. The standard-library payload check modeled Python dispatch and metadata only; it did not run repository methods with PyTorch modules or validate a transport format.",
+      "Literal tree searches and direct-call AST inspection do not establish dynamic callers, out-of-tree implementations, or compatibility with a future child protocol."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "67e0fd74413228c85e1edc65cfc7c39365b1a6ca"
+    ],
+    "chapters": [
+      {
+        "id": "transformer-tp-split",
+        "title": "Export and reconstruct a transformer block through its children",
+        "claims": [
+          {
+            "text": "tp_export asserts that the block's device is set. It emits TransformerBlock as the class, a kwargs dictionary containing key and out_dtype, the source device, and six named child slots: attention input norm, attention, attention post-norm, MLP input norm, MLP, and MLP post-norm. Absent children are written as None. No child tensors are sliced at this level.",
+            "basis": "source",
+            "evidence": [
+              "call_03fe5facc08c4c879c4e8eeee4c81060"
+            ]
+          },
+          {
+            "text": "tp_import reads the destination from local_context['device'], not the exported source device. It reconstructs each nonempty payload via that payload's cls.tp_import, passing the same context and plan; a missing or falsy child payload becomes None. The regular constructor re-registers the returned children in block order and derives num_slices from the imported MLP, or uses one without an MLP. The wrapper then sets its own device; child placement is up to child import.",
+            "basis": "source",
+            "evidence": [
+              "call_03fe5facc08c4c879c4e8eeee4c81060",
+              "call_1c6ee98a90f7496b87ba583580f1959f",
+              "call_21a962cfa0f64dc2b323e3072a5853fb"
+            ]
+          },
+          {
+            "text": "A standard-library transcription kept all six slots empty for a childless block, used the destination rather than source device, and reset a custom qbits_key to bits. An unloaded wrapper hit the assertion before dispatch, while a loaded wrapper with a dummy child lacking tp_export raised AttributeError. These results check only the transcribed Python logic.",
+            "basis": "execution",
+            "evidence": [
+              "call_e33d2913a5cc4561b48500151773b242"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "stale-transformer-allocator-import",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The task retains the parent's mandatory import of TPAllocation from the removed util.tp_split path.",
+        "trigger": "Import exllamav3.modules in a clean installation after earlier import prerequisites succeed, or enter it through an architecture import, conversion's import of Linear, or the KV quantization experiment.",
+        "expected_behavior": "The module package exposes its classes without needing the obsolete allocator module.",
+        "actual_behavior": "The package initializer eagerly imports transformer.py, whose stale import is expected to stop initialization before either TP hook can be used. This can affect non-TP callers, even ones requesting only Linear.",
+        "locations": [
+          {
+            "commit": "1258dfb4ddedaa8be3f6388f2c79f520dc7d0583",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TPAllocation import"
+          }
+        ],
+        "source_evidence": [
+          "call_1c6ee98a90f7496b87ba583580f1959f",
+          "call_f54357267f8a4818b8a86cc9c426cb03",
+          "call_03fe5facc08c4c879c4e8eeee4c81060",
+          "call_ebce8f81a1004a81b4afc96e12d4eace",
+          "call_30ff8c0f0a17465dada9512fcf6bf216",
+          "call_c04a9c8f091f4c34905564c26e999f21"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Checked the missing parent file, surviving import, eager initializer, and named importers against the single-file task diff.",
+            "evidence": [
+              "call_f54357267f8a4818b8a86cc9c426cb03",
+              "call_03fe5facc08c4c879c4e8eeee4c81060",
+              "call_ebce8f81a1004a81b4afc96e12d4eace"
+            ],
+            "limits": "No package import ran; a stale installed copy or shim could mask the missing path. A bare import that has not reached exllamav3.modules is not shown to fail here."
+          }
+        ]
+      },
+      {
+        "id": "missing-child-tp-protocol",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "The new wrapper methods require a child protocol the task does not implement for ordinary children.",
+        "trigger": "After bypassing the unrelated stale import, directly export a loaded TransformerBlock with an ordinary child, such as the first RMSNorm in Llama; or directly import a nonempty child payload naming an ordinary class with no tp_import.",
+        "expected_behavior": "A supported child can supply or reconstruct its shard payload; an unsupported child is diagnosed before treating the block as exportable.",
+        "actual_behavior": "The wrapper calls the missing child method without a capability check. Export reaches an AttributeError at the first present child that lacks tp_export; import likewise cannot dispatch to a missing tp_import.",
+        "locations": [
+          {
+            "commit": "1258dfb4ddedaa8be3f6388f2c79f520dc7d0583",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.tp_export / TransformerBlock.tp_import"
+          }
+        ],
+        "source_evidence": [
+          "call_03fe5facc08c4c879c4e8eeee4c81060",
+          "call_ec231f47dbdd4111b2db25383ef8bbf3",
+          "call_eb5aaee36d8748fbb2076325d2f95632",
+          "call_2dee764793114506b5252e854c6e511c"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Searched the whole parent tree for both protocol names and checked the new dispatch against the ordinary block construction and unchanged loader.",
+            "evidence": [
+              "call_ec231f47dbdd4111b2db25383ef8bbf3",
+              "call_eb5aaee36d8748fbb2076325d2f95632",
+              "call_28ae1a6ff89744489e6ef28900082726"
+            ],
+            "limits": "Reach is a direct call or externally supplied payload; no in-tree loader reaches the wrapper."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "A loaded stub with one present child lacking the method raised AttributeError for tp_export.",
+            "evidence": [
+              "call_e33d2913a5cc4561b48500151773b242"
+            ],
+            "limits": "Stub dispatch only; no real norm or imported child ran."
+          }
+        ]
+      },
+      {
+        "id": "empty-block-allocation-still-asserts",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new payload can represent a childless block, but the inherited planner record collector still cannot return an empty record list for one.",
+        "trigger": "With assertions enabled and imports working, call make_tp_allocation on a DeciLM block whose attention and FFN are both marked no_op.",
+        "expected_behavior": "Return no allocation records for a block with no child work.",
+        "actual_behavior": "The absent children are not registered, so Module.make_tp_allocation asserts before collecting records. The task's new export/import methods do not replace this collector.",
+        "locations": [
+          {
+            "commit": "1258dfb4ddedaa8be3f6388f2c79f520dc7d0583",
+            "path": "exllamav3/modules/module.py",
+            "symbol": "Module.make_tp_allocation"
+          }
+        ],
+        "source_evidence": [
+          "call_21a962cfa0f64dc2b323e3072a5853fb",
+          "call_545b9b22f7dc43d48e006532d71afbf8",
+          "call_1138ef41142d4b85a726749cc3690d30",
+          "call_03fe5facc08c4c879c4e8eeee4c81060"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Followed both no-op branches through child registration to the unchanged collector. The whole-parent search found recursive Module and shared-expert calls but no explicit model-level collector invocation.",
+            "evidence": [
+              "call_297185778dee4ced8a51e6f424efc453",
+              "call_21a962cfa0f64dc2b323e3072a5853fb",
+              "call_545b9b22f7dc43d48e006532d71afbf8",
+              "call_1138ef41142d4b85a726749cc3690d30"
+            ],
+            "limits": "Applies to direct collection or a traversal that reaches the childless block, not ordinary DeciLM forward or export of an already loaded childless block."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds block-level TP export and reconstruction for TransformerBlock. The wrapper delegates slicing to child methods that are not yet implemented in-tree, and no loader invokes it. The parent's stale allocator import still blocks a clean module import."
+  },
+  "evidence": {
+    "call_03fe5facc08c4c879c4e8eeee4c81060": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "1258dfb4ddedaa8be3f6388f2c79f520dc7d0583",
+        "offset": 160,
+        "max_bytes": 4000
+      },
+      "result_sha256": "b7ff135085119d10212b684e8d1792b60125316ed0bf67c3e201889df7b8776e"
+    },
+    "call_1c6ee98a90f7496b87ba583580f1959f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "47b4294fd657b212ded0e6fe00f4c349cb908c9e0f9775ebc43c9a82812aa2d5"
+    },
+    "call_8cf068669d904488b1b9ef3d543b2b3d": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f7c1e33c91b62e25daf289701b75cf92c60df57662231b5e93f765e9ee6b21db"
+    },
+    "call_c0edd512aeb24f4dbf4422f6a26ae9dc": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "offset": 16384
+      },
+      "result_sha256": "7b2254c354689e2169d9e307ddd625028b8d336d875cd084fcd966d96c505851"
+    },
+    "call_ec231f47dbdd4111b2db25383ef8bbf3": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "tp_export",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_eb5aaee36d8748fbb2076325d2f95632": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "tp_import",
+        "limit": 100
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c04a9c8f091f4c34905564c26e999f21": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "TransformerBlock",
+        "limit": 120
+      },
+      "result_sha256": "09b453a4bdf76a22665d1ac2038bb1a95c8e5c0a1eae0f6fdeed92ade4efb34c"
+    },
+    "call_6d18d53183b0494796265b33f3342356": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "from .transformer import"
+      },
+      "result_sha256": "f7479ba80ba18aa8ce1543ac5718c61263355a6ca25a12a8ded515497fb27f64"
+    },
+    "call_30ff8c0f0a17465dada9512fcf6bf216": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "import Linear",
+        "limit": 60
+      },
+      "result_sha256": "315131002338b39c47403b29c0b646f8844a214dadfde8c2c45fc6803e4c80b2"
+    },
+    "call_9a5c2b76c4884d58b446d843c9f39841": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "util.tp_split"
+      },
+      "result_sha256": "b9d2bfa4c87fee14d2258480692336cc1fc6a0806d1765e645e32e915f75fffa"
+    },
+    "call_af04b92ec13b4015af3c9becbd3dc76a": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/util/tp_split.py"
+      },
+      "result_sha256": "2404e0b4be0defc88ee5cb44bd3210624ed5c4b1274935a2e16b225a9e45d856"
+    },
+    "call_21a962cfa0f64dc2b323e3072a5853fb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/modules/module.py"
+      },
+      "result_sha256": "c023116bcddff8a65e4c751d0d29319fd49210f706bb94390811285c25f30f8d"
+    },
+    "call_297185778dee4ced8a51e6f424efc453": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "make_tp_allocation",
+        "limit": 80
+      },
+      "result_sha256": "9228420f8bc406bb0581f40141845578f1bee604d2809486950a712906abd1c7"
+    },
+    "call_2ba4a278bd464437a6979ab2d353d87a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/transformer.py",
+        "limit": 35
+      },
+      "result_sha256": "b9c158941306545fe4c53a08f0947170fa8e7a8a7d96e7e5a6c883effe7917b6",
+      "catalog_only": true
+    },
+    "call_cb28f1ef115c416a996e009b1b891c9a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules"
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_2280765ad6cc4c609bfcf810177ade22": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions"
+      },
+      "result_sha256": "315631e21d458a69fd0f365462e7fb84d892593876a0b17c81f44eb9030cf274",
+      "catalog_only": true
+    },
+    "call_6bef48da2147466f838874c0847c0fc4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "17c572a45fd487db6b47d11b87d2556356737c051f69b5c9c060199ac7e5e05f"
+    },
+    "call_2c647e0f156e4270b98378388bfe4c1e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 11000
+      },
+      "result_sha256": "f2dde4e3bb9effe79a4f1e94df4f5c5f43d96a22819c9fa9b1174d9a3568b619"
+    },
+    "call_f4a3a0e0b6824195bde83289d6c84475": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 1000
+      },
+      "result_sha256": "c93abadf436a9a1991c9b9028dc9498d296251265b525c732c1c6914a79683cc"
+    },
+    "call_174cb4aa55bb496f9f7e267ab26c0fba": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 6000
+      },
+      "result_sha256": "b1cbbe8a00a368ff7484f192ffc6a3f7f78d4c4238b27432c2353d003486a5b7"
+    },
+    "call_0d59ce6a6d07460e9d97f1493507418b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 3000
+      },
+      "result_sha256": "92c42037be3f6dfb7de542edb7fd2138c55564fa4f6874a93a939d5b816de658"
+    },
+    "call_85f74d2724fd4b1c88530955c87ffcb7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 4200
+      },
+      "result_sha256": "c8a0f7a2dd123b9a156c41b144759a9fda6d2955be6359e02c443b136571381c"
+    },
+    "call_d9047dafe7184046ac12a13d78bdf5bb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 4500
+      },
+      "result_sha256": "4bca1d0e885a9463d89f379e5f0b3ac54962aa9066990c137074c00f06b4befb"
+    },
+    "call_5dcfc90d125f495e834573270b9c8a38": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 3500
+      },
+      "result_sha256": "be4cadabff01071fa5c064917c3c7e93054bb4e8f5eebc29342a1492ecf722fe"
+    },
+    "call_b9c3b3e6b2e64ea6aa03922a94178c95": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 3200
+      },
+      "result_sha256": "f9c19f6a5b2abcfdbf5362f7dc098ae3f0addba1163c0820c0c57e86d0a534dc"
+    },
+    "call_b3b3e351c5494d96a9debfb61753a063": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "qbits_key",
+        "limit": 60
+      },
+      "result_sha256": "4ea9cc13f381f9a2bbc0802b3e6ca06e9d505078bcccc23346fa19c9ee14ac61"
+    },
+    "call_eade84a10241479e936cd529a94bf492": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "tensor_p",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "d2e3b35047cb5c94d9875d558f524b2f4afa6db22aaa42196f9b6f1ef9f6af2c"
+    },
+    "call_50ebc90351e9445d9f151a34265ba5f7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "NotImplementedError",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "5783a929fa898b6f17df53f2c433035900bb04d4f47fc099f6ed03dfa341bbe8"
+    },
+    "call_28ae1a6ff89744489e6ef28900082726": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/models/model.py",
+        "offset": 12100,
+        "max_bytes": 4400
+      },
+      "result_sha256": "6efb162616018156eb2ea46289f69ef282b683ed20122cde4df051e991edc028"
+    },
+    "call_864d46bc21624ac0956b0efd89b207cd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 5000
+      },
+      "result_sha256": "fe3b658037b77a00ddd8a58f5c8bceaa57dd7768bd5652c8996f1911d14936f6"
+    },
+    "call_ec841734ea734550b40c7580577a9cfe": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nfor p in sorted(pathlib.Path('.').rglob('*.py')):\n t=ast.parse(p.read_bytes());\n for n in ast.walk(t):\n  if isinstance(n,ast.Call) and isinstance(n.func, ast.Name) and n.func.id=='TransformerBlock':\n   print(p,n.lineno, 'pos:',[ast.unparse(a) for a in n.args], 'kw:',[(k.arg,ast.unparse(k.value) if k.arg in ('config','qbits_key') else '') for k in n.keywords])"
+        ]
+      },
+      "result_sha256": "b48494ab4d5e16235a5a93938a2f71ecc07043d1adc0c3008dc94550a156e051"
+    },
+    "call_e33d2913a5cc4561b48500151773b242": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from types import SimpleNamespace\nnames=('attn_norm','attn','attn_post_norm','mlp_norm','mlp','mlp_post_norm')\ndef export(block, plan):\n assert block.device is not None\n return {'kwargs':{'key':block.key,'out_dtype':block.out_dtype}, **{n:(c.tp_export(plan) if (c:=getattr(block,n,None)) is not None else None) for n in names}, 'device':block.device}\ndef rebuild(ctx,e,plan):\n d=ctx['device']; children={n:e[n]['cls'].tp_import(ctx,e[n],plan) if e.get(n) else None for n in names}; return SimpleNamespace(config=None,device=d,qbits_key='bits',**e['kwargs'],**children)\nempty=SimpleNamespace(device='source',key='layer',out_dtype='float',qbits_key='other'); plan={}; e=export(empty,plan); local=rebuild({'device':'target'},e,plan); print('empty slots:',sum(e[n] is None for n in names),'target:',local.device,'config:',local.config,'qbits:',empty.qbits_key,'->',local.qbits_key)\nempty.attn_norm=SimpleNamespace()\ntry: export(empty,plan)\nexcept AttributeError as exc: print(type(exc).__name__,exc.name)\nempty.device=None\ntry: export(empty,plan)\nexcept AssertionError: print('unloaded: AssertionError before child dispatch')"
+        ]
+      },
+      "result_sha256": "5ebe34824ee0857acc2c692e0c24d97b73235a26cecb2ee6f8f95e044c3afd01"
+    },
+    "call_ebce8f81a1004a81b4afc96e12d4eace": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/modules/__init__.py"
+      },
+      "result_sha256": "a0cf2d99c5d38f230e53efba72de387749367483b8fa8d6ea514dcc5c59799b5"
+    },
+    "call_1138ef41142d4b85a726749cc3690d30": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/models/decilm.py",
+        "offset": 3900,
+        "max_bytes": 3000
+      },
+      "result_sha256": "319d09ede5d556c33843513c65b795d07361d47a4bf39b850255f46eb8cb89c8"
+    },
+    "call_819d3a2d020b4544b6f64695c7898b3c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "cfg_attn.get(\"no_op\")"
+      },
+      "result_sha256": "9c364318221e71ab755b33700dc32ff12929b71e4242d8766c4ee14b26294557"
+    },
+    "call_545b9b22f7dc43d48e006532d71afbf8": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/models/decilm.py",
+        "offset": 2250,
+        "max_bytes": 1800
+      },
+      "result_sha256": "b3eddad43b5094c646375e076e3e13b3cd8610e2235b6903321d3efb00f4f2fa"
+    },
+    "call_4bc89a3b24704fdc93b70d0da2a50ccf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": ".allocate_q(",
+        "limit": 50
+      },
+      "result_sha256": "4c0e6b037289b64ec5aa1c192b923f9adf2e279ee7152f0133a13fdb08cd2fdd"
+    },
+    "call_ef6dccf0501b40df9a014cf4b7d9b992": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "compile_tp_plan"
+      },
+      "result_sha256": "3d1dea88e0c0ec4df2e60d05a1542e163f3e11cdffdc3ae6026a674e2ff92291"
+    },
+    "call_29b6a3e662e347a08c12e30522ff58f3": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/models/model_tp_alloc.py",
+        "offset": 5200,
+        "max_bytes": 4100
+      },
+      "result_sha256": "0d0ea1cfdf21da7b904a449b8dbb02e81d860a42b991d1cbc153b61040a183a4"
+    },
+    "call_e726701d9277481c8c92c4065936f81e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 4500
+      },
+      "result_sha256": "1c6de38e8729e45f4ea9ab8673f6b8a0898e797af95ad389daa59eafe96d2dac"
+    },
+    "call_d2c3617dd81a47c9a6804c45f5580824": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/54",
+        "max_bytes": 2600
+      },
+      "result_sha256": "7bc50cffa6801fcc1891cc312348564b47aba4a5f6c4f56a33e07ba41c55117b"
+    },
+    "call_2a4c9c23376845f3a3ca99ee2c09d493": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "Insufficient VRAM in split"
+      },
+      "result_sha256": "340792bff574cdd9aa37157efd947616b2aac4eee0f67a88a85380583cd8d2a9"
+    },
+    "call_7d923359a753441d88d69fd2ab104618": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/27",
+        "max_bytes": 3500
+      },
+      "result_sha256": "0172b831a7ab6b807d412b6ee763f29cff8a5883e6375f1a5b582927ee4525df"
+    },
+    "call_2dee764793114506b5252e854c6e511c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/models/llama.py",
+        "offset": 2400,
+        "max_bytes": 1800
+      },
+      "result_sha256": "5163af4d7a71c34a6d1348d67ab7e7d245b36a0a4657b36ec502ea5d287706fa"
+    },
+    "call_c8c5d2a9c41d434e9a79d164f49c0bc5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "self.config",
+        "path": "exllamav3/modules/transformer.py"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_70abc15d049d48e6bd3d6c38efb31b76": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "query": "module.config",
+        "limit": 80
+      },
+      "result_sha256": "94e58aca0915ce65ae666e11ca47152b3737992fdbacb822dda970110e630d79"
+    },
+    "call_08edf9e097cd4b279ee38607867add75": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 11550,
+        "max_bytes": 2700
+      },
+      "result_sha256": "92dd5bd4c0b5d869aefcdc8e361709a29589aad4ffd789ab5f77bd5f608765a6"
+    },
+    "call_f54357267f8a4818b8a86cc9c426cb03": {
+      "tool": "repo_list",
+      "arguments": {
+        "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+        "path": "exllamav3/util",
+        "limit": 100
+      },
+      "result_sha256": "fb62cbae693c589871d1366c1c39b16c48270d403206383b87b757e74ccfbe30"
+    }
+  }
+}

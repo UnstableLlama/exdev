@@ -1,0 +1,851 @@
+{
+  "schema_version": 5,
+  "sha": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+  "parent_shas": [
+    "fb63886b9a9909ab78822780e82fd10d001dcd02"
+  ],
+  "cutoff_date": "2025-07-26T01:11:19+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "refactor",
+    "problem": [
+      {
+        "text": "Turboderp titled the change \u201cFormatting, cleanup, typos.\u201d Most of the diff fits that description, but two edits in the shared Model class change behavior: module lookup is memoized, and input preparation stops providing a default implementation.",
+        "basis": "source",
+        "evidence": [
+          "call_43f65cd1c87543399e5b0fb9bcb0825e"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Model.find_module still recursively walks registered modules and returns the first matching key, or None. The added @lru_cache lets another lookup for the same model and key reuse that result without walking the tree. It uses the existing functools import, which was already used for get_cache_layers. The separate Module.find_module, which includes the receiver itself in its walk, is not decorated.",
+        "basis": "source",
+        "evidence": [
+          "call_43f65cd1c87543399e5b0fb9bcb0825e",
+          "call_66db9b4a925d46699ce7a51e61a6c248",
+          "call_d66ae5d9e6a648e9857b936aec677eaa"
+        ]
+      },
+      {
+        "text": "The cache trades repeated tree walks for retained lookup results, including misses. It fits a stable module tree, but the patch does not add invalidation. By contrast, making prepare_inputs an override requirement does not depend on the lookup cache. That edit needs each component that uses the shared forward or prefill to provide its own input preparation; the diff does not supply the missing vision overrides.",
+        "basis": "inference",
+        "evidence": [
+          "call_43f65cd1c87543399e5b0fb9bcb0825e",
+          "call_66db9b4a925d46699ce7a51e61a6c248",
+          "call_6a2b8d14aaa14f83b79e9d67681a4c6a",
+          "call_aa0076a51eb043ccbbaf8a6d7f38ac4c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The visible model-level lookup callers are test_qgemm, which finds a linear and optionally a norm, and test_quant_fn's test_quant_dequant, which finds a linear. They still pass string keys. The conversion match is different: mod_strategy finds submodules on the current conversion Module to read qbits_mod_key, so it does not gain the Model cache.",
+        "basis": "source",
+        "evidence": [
+          "call_d926053e9dee4bb88b2f0cdf45440866",
+          "call_7fce1a9183c24975b970533cc2c3b3c8",
+          "call_d66ae5d9e6a648e9857b936aec677eaa",
+          "call_6801228d877a4f569fc20417579bdbff",
+          "call_43f65cd1c87543399e5b0fb9bcb0825e"
+        ]
+      },
+      {
+        "text": "Text preprocessing remains on the existing architecture overrides. Gemma3 and Mistral3 image embedding instead reach the base prepare_inputs through inherited forward and would now stop before executing the vision tower. Loading is a separate path: single-device loading loads modules directly, and autosplit probes individual modules with dummy input and load parameters rather than calling Model.forward. A successful load therefore would not show that image embedding still works.",
+        "basis": "inference",
+        "evidence": [
+          "call_43f65cd1c87543399e5b0fb9bcb0825e",
+          "call_66db9b4a925d46699ce7a51e61a6c248",
+          "call_6a2b8d14aaa14f83b79e9d67681a4c6a",
+          "call_d66ae5d9e6a648e9857b936aec677eaa",
+          "call_976ae661598e4f258a4c66ff35d144fb"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial models chapter describes the shared forward/prefill hooks. The component-selection entry introduced the named factory mapping and recorded a Qwen3 MoE constructor that still passed a bare class. The Gemma3 introduction entry describes the original vision stub; the later Gemma3 and Mistral3 entries describe the executable image towers and their use of shared model execution. The deferred-loader entry describes its allocation/flush contract and records an odd-element CUDA BF16 conversion gap.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_85280bb8ee7940889848ad76a5d13fe5",
+          "call_a5c7e56d72ff4a01ad44369a36770239",
+          "call_8396bb542f234f4abc61397976c16aec",
+          "call_52aed327bca4445291e3faa9f862680e",
+          "call_70c832ff5b2c47a790e544db378bf07e",
+          "call_419438de120343aea62228c62fed2412"
+        ]
+      },
+      {
+        "text": "The Qwen3 MoE mapping mismatch is already absent in the parent: its constructor supplies a text-component dictionary, and the task removes only a TODO from the factory docstring. Gemma3's previously recorded preprocessing-file requirement is still present in its constructor. The earlier Mistral3 resize finding used ceiling at the bounding-box step; the parent now uses floor before alignment, and the task leaves that helper alone. The new vision exception would also stop inherited forward before its attention layers.",
+        "basis": "source",
+        "evidence": [
+          "call_4bfefa870a924acaaf769751e3600de7",
+          "call_cb3eef489cf6495cbcf4f3d8bf677526",
+          "call_6801228d877a4f569fc20417579bdbff",
+          "call_d66ae5d9e6a648e9857b936aec677eaa",
+          "call_43f65cd1c87543399e5b0fb9bcb0825e"
+        ]
+      },
+      {
+        "text": "A scalar resize check using the earlier Mistral3 trigger (28\u00d71541 input, 1540 maximum, 28-pixel alignment) gave 28\u00d71568 with ceiling and 28\u00d71540 with the inspected floor formula. This checks that example, not Pillow or arbitrary image sizes.",
+        "basis": "execution",
+        "evidence": [
+          "call_cb3eef489cf6495cbcf4f3d8bf677526",
+          "call_be2156758ae14c1390098fbf65867226"
+        ]
+      },
+      {
+        "text": "Closed issues #6, \u201cNo ROCm runtime is found, using ROCM_HOME='/usr',\u201d and open #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d both pass through model.py's Config import in their traces. #6 ends in a native build assertion; #7 ends in a native extension import failure. Closed #61, \u201cRun ERNIE-4.5-300B-A47B-PT 2.25bpw with 5x20G 3080 got 'Insufficient VRAM',\u201d and open #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d match the autosplit exception; #61's reporter said changing allocator backend worked. These are inferred associations from the traceback and exact exception text, not fixes made by the model edits.",
+        "basis": "inference",
+        "evidence": [
+          "call_705fb2724bb24a2ebd525f32afe8945b",
+          "call_f0fb93f827234133b61a0dae53f5654d",
+          "call_f613e3cb3c834f0c9117ce4f1a862f71",
+          "call_c28b27ddd51c4ff7adac2449b001e8dd",
+          "call_6801228d877a4f569fc20417579bdbff",
+          "call_43f65cd1c87543399e5b0fb9bcb0825e"
+        ]
+      },
+      {
+        "text": "Closed #12, \u201cQwen2.5 Coder 0.5B Instruct | ValueError: Unsupported type in stop_conditions,\u201d reaches Job's matching exception when using the wrong chat mode. Open #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d reaches the unchanged held_logits append with a width mismatch. Closed #62, \u201cDev branch 15JUL2025 - ModuleNotFoundError: No module named 'exllamav3.generator.filter',\u201d traces Generator's import of Job and Job's import of the missing installed subpackage. The inferred connection is those unchanged calls or imports, not the duplicate profiling imports.",
+        "basis": "inference",
+        "evidence": [
+          "call_8357fd7f6b1948b59a30eb2498ff83c1",
+          "call_6e697072f2da4eb68fc6bb44b85fc98a",
+          "call_9526be0240754176a05b4e273b5fa1ef",
+          "call_783c2fb2c6a84bd7b7afd63116bf89a0",
+          "call_6801228d877a4f569fc20417579bdbff",
+          "call_43f65cd1c87543399e5b0fb9bcb0825e"
+        ]
+      },
+      {
+        "text": "The earlier \u201cFix #62, include new directory in packages\u201d entry explains the packaging remedy: explicitly include the existing filter package without changing the import chain.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_3d5d3e51967247058a4f2dd676feafec"
+        ]
+      },
+      {
+        "text": "Closed #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d traces uncached attention into linear Hessian capture; the discussion attributes the problem to tokenizer truncation, not attention method formatting. Open #27, \u201cAttention Backend,\u201d asks for comparative FlashInfer support. Closed #38, \u201cError converting nvidia/Llama-3_1-Nemotron-Ultra-253B-v1,\u201d reports a tensor-size mismatch in get_tensor's padding copy; open #33, \u201cError converting model,\u201d opens with a compilation-time failure at get_tensor's native file-open call. The associations are inferred from the named attention paths and matching loader operations; the task changes neither backend selection nor file opening or padding.",
+        "basis": "inference",
+        "evidence": [
+          "call_e6d5b92b94b046deac8f4fdca94aa817",
+          "call_27d7f833b9d04109b1cf03209067a888",
+          "call_b5a7627e301b44ada9854b11cb2e38da",
+          "call_b40c2e9d3b464d9982bf1981b9c54897",
+          "call_720d9bd5911a4346a4a3a76692993078",
+          "call_6801228d877a4f569fc20417579bdbff",
+          "call_43f65cd1c87543399e5b0fb9bcb0825e"
+        ]
+      },
+      {
+        "text": "PR #26, \u201cSuperior 3INST parameters,\u201d proposes a decoder multiplier; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports a factorization failure; #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d reports a bitrate-specific conversion failure; #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d reports Cholesky failures for several bitrates; and #53, \u201cCommand A support,\u201d asks for Command A support or available quants. Their inferred overlaps are the inspected conversion file or its Cohere2/Llama model paths, not evidence that this task changes codebook parameters, factorization, or architecture support.",
+        "basis": "inference",
+        "evidence": [
+          "call_8d64ed0320d24c27ade9e03ccb126d62",
+          "call_c46ccfa6ac4245cba725ad7de37aa410",
+          "call_bf233abfe37e4b1f8720779723e77173",
+          "call_fd847bf9a6024c3ca4e402ab5cad51e7",
+          "call_260e51da0e4443f3a6d3a41c21751baf",
+          "call_7fce1a9183c24975b970533cc2c3b3c8",
+          "call_6a2b8d14aaa14f83b79e9d67681a4c6a",
+          "call_43f65cd1c87543399e5b0fb9bcb0825e"
+        ]
+      }
+    ],
+    "limitations": [
+      "The Python checks use source extraction, stubbed model methods, or scalar arithmetic. No installed package import, real checkpoint load, image preprocessing, generation, or CUDA kernel was executed. Lookup speed and cache retention in normal use were not measured.",
+      "Literal searches and static class inspection do not cover external subclasses, dynamically selected callers, or downstream code that reads the removed params entry. No in-tree caller was shown to mutate the module tree between repeated model lookups.",
+      "Discussion reports provide historical context, not reproduction results or proof of the author's rationale. For long threads, the notes are limited to the portions inspected."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "830b6a018070a327d6d261628dff496f1303cf93",
+      "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+      "532d78658414d8f9aabce52cb64b982b3ec53388",
+      "45fa5abff9001ff373a612303e48ec01d34efe42",
+      "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+      "db533103b1827e83b55bac4f4531eeef3684a57f"
+    ],
+    "chapters": [
+      {
+        "id": "model-and-loader-cleanup",
+        "title": "Cache model lookups and require input preparation overrides",
+        "claims": [
+          {
+            "text": "The base prepare_inputs used to record the original tensor in params[\"input_ids\"] and return it unchanged. The task replaces both operations with NotImplementedError. Model.forward and Model.prefill call this hook before any module runs; the other direct call found is science/kv_quant_exp.py's sample_qkv, which uses a factory-created text model and then walks the modules itself. The literal input_ids-key search found no in-tree params reader; the other quoted-key match is a tensor export name in eval/model_diff.py.",
+            "basis": "source",
+            "evidence": [
+              "call_43f65cd1c87543399e5b0fb9bcb0825e",
+              "call_66db9b4a925d46699ce7a51e61a6c248",
+              "call_80ceda838d7745bfa1e373537fb9075a",
+              "call_7fce1a9183c24975b970533cc2c3b3c8",
+              "call_05bdab523f7c40ceaf23d55aa1fda1ea",
+              "call_6eabf7ed89474de08758639e1298ff30"
+            ]
+          },
+          {
+            "text": "Cohere, Cohere2, DeciLM, Dots1, Ernie4_5, Ernie4_5MoE, Exaone4, Gemma2, Gemma3 text, GLM4, Llama, Mistral3 text, Mixtral, Phi3, Qwen3, Qwen3 MoE and SmolLM3 each override the hook by returning prepare_for_attn's result without calling the base. Qwen2, Mistral and MiMo inherit Llama's override; Gemma3TextModel inherits Gemma3Model's. The helper still handles attention/cache preparation for text. Gemma3VisionModel and Mistral3VisionModel have no such override and pass preprocessed images, not token sequences, to inherited forward.",
+            "basis": "source",
+            "evidence": [
+              "call_d80e5b624d5a4d898d2419548fc1d67a",
+              "call_6a2b8d14aaa14f83b79e9d67681a4c6a",
+              "call_976ae661598e4f258a4c66ff35d144fb",
+              "call_d66ae5d9e6a648e9857b936aec677eaa",
+              "call_43f65cd1c87543399e5b0fb9bcb0825e"
+            ]
+          },
+          {
+            "text": "Keeping a base pass-through would preserve the shared tensor-forward interface. If the base should require an override instead, explicit vision pass-throughs would preserve the prepared image tensors and their caller-supplied parameters without routing them through token-oriented attention setup.",
+            "basis": "inference",
+            "evidence": [
+              "call_66db9b4a925d46699ce7a51e61a6c248",
+              "call_d66ae5d9e6a648e9857b936aec677eaa",
+              "call_43f65cd1c87543399e5b0fb9bcb0825e"
+            ]
+          },
+          {
+            "text": "An isolated Python run extracted the parent method bodies and applied the two task edits in memory. With a stand-in layer and no component override, the original returned the input and wrote input_ids; the edited path raised without setting the entry. Inserting a layer after a miss made the uncached lookup find it, but the edited lookup still returned None. The local Python's decorator reported maxsize 128 and typed=False; no claim about other interpreter versions is needed.",
+            "basis": "execution",
+            "evidence": [
+              "call_aa0076a51eb043ccbbaf8a6d7f38ac4c",
+              "call_43f65cd1c87543399e5b0fb9bcb0825e"
+            ]
+          },
+          {
+            "text": "The loader renames the local filenmame to filename consistently. The deferred-record key was always \"filename\". CPU and CUDA requests still go into separate per-file buckets; within each bucket they are sorted by descending byte size, chunked for native reads, and copied from temporary buffers when needed. The immediate Python backend only loses a blank line. Attention, block-sparse MLP, and memory utility edits also change only spacing. Generator and Job each add a second identical profile_opt import, rather than adding new profiling instrumentation.",
+            "basis": "source",
+            "evidence": [
+              "call_43f65cd1c87543399e5b0fb9bcb0825e",
+              "call_d66ae5d9e6a648e9857b936aec677eaa",
+              "call_6801228d877a4f569fc20417579bdbff"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "vision-input-preparation-missing",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The shared input hook becomes mandatory without migrating either existing vision component.",
+        "trigger": "Call Gemma3VisionModel.get_image_embeddings or Mistral3VisionModel.get_image_embeddings with an otherwise valid loaded component and an image that reaches forward.",
+        "expected_behavior": "Forward the preprocessed image tensor into the first vision module and continue toward an image embedding.",
+        "actual_behavior": "Both components invoke inherited Model.forward, which calls the new base prepare_inputs and raises NotImplementedError before entering the module loop. The direct caller is Model.forward; Model.prefill has the same dependency on an override if invoked. The inspected multimodal and image-search examples call get_image_embeddings, so they can reach the failure when using an affected component. This does not establish failure of model loading or text-only generation.",
+        "locations": [
+          {
+            "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.prepare_inputs"
+          },
+          {
+            "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+            "path": "exllamav3/models/gemma3.py",
+            "symbol": "Gemma3VisionModel.get_image_embeddings"
+          },
+          {
+            "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+            "path": "exllamav3/models/mistral3.py",
+            "symbol": "Mistral3VisionModel.get_image_embeddings"
+          }
+        ],
+        "source_evidence": [
+          "call_43f65cd1c87543399e5b0fb9bcb0825e",
+          "call_66db9b4a925d46699ce7a51e61a6c248",
+          "call_6a2b8d14aaa14f83b79e9d67681a4c6a",
+          "call_d66ae5d9e6a648e9857b936aec677eaa",
+          "call_4b8e518636724bb8ae25467106437e7c",
+          "call_976ae661598e4f258a4c66ff35d144fb"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Searched the full parent tree for hook calls and overrides, then followed the two vision embedding methods into the unchanged forward and the edited base hook.",
+            "evidence": [
+              "call_80ceda838d7745bfa1e373537fb9075a",
+              "call_d66ae5d9e6a648e9857b936aec677eaa",
+              "call_43f65cd1c87543399e5b0fb9bcb0825e"
+            ],
+            "limits": "Literal search does not cover dynamic or external overrides."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Ran isolated method bodies with a dummy layer, a no-op inference decorator, and the task's hook replacement applied in memory.",
+            "evidence": [
+              "call_aa0076a51eb043ccbbaf8a6d7f38ac4c"
+            ],
+            "limits": "No vision model, checkpoint, PyTorch operation, or image library executed."
+          }
+        ]
+      },
+      {
+        "id": "cached-module-miss-survives-insertion",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "behavior_change",
+        "description": "Model.find_module can return an old lookup result after the registered module tree is edited.",
+        "trigger": "Look up an absent string key, insert a module with that key into the public module tree, then repeat the same lookup on the same model while the miss is cached.",
+        "expected_behavior": "The prior scan would observe the newly inserted module.",
+        "actual_behavior": "The decorated method returns the cached None. Replacing a previously found module can similarly leave a cached reference to the old object. The directly observed in-tree callers in test_qgemm and test_quant_fn use existing keys, not this mutation sequence; the conversion lookup uses the separate Module method.",
+        "locations": [
+          {
+            "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+            "path": "exllamav3/models/model.py",
+            "symbol": "Model.find_module"
+          }
+        ],
+        "source_evidence": [
+          "call_43f65cd1c87543399e5b0fb9bcb0825e",
+          "call_66db9b4a925d46699ce7a51e61a6c248",
+          "call_d926053e9dee4bb88b2f0cdf45440866",
+          "call_7fce1a9183c24975b970533cc2c3b3c8",
+          "call_d66ae5d9e6a648e9857b936aec677eaa"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Applied the decorator to the extracted lookup and repeated a miss after inserting a stand-in layer. Only the undecorated version observed the new layer.",
+            "evidence": [
+              "call_aa0076a51eb043ccbbaf8a6d7f38ac4c"
+            ],
+            "limits": "This is a conditional API behavior check, not evidence that any inspected caller edits the tree between lookups."
+          }
+        ]
+      },
+      {
+        "id": "deferred-cuda-bf16-odd-tail-carried-over",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The deferred-loader rename carries over the earlier pair-only CUDA BF16 conversion.",
+        "trigger": "Queue a file-backed tensor with an odd BF16 element count for deferred loading to CUDA with allow_bf16 false, then flush.",
+        "expected_behavior": "Convert every source element to FP16 before the destination is consumed.",
+        "actual_behavior": "The loader still sends the same conversion flag and byte count to the native CUDA path. A full 2 MiB chunk holds an even 1,048,576 BF16 elements, so an odd tensor leaves an odd final chunk. The conversion processes only numel/2 pairs and has no scalar tail; one element is not converted, and a one-element chunk computes zero launch blocks. The native helper is called by stloader_deferred_cuda; eligible Model single-device and autosplit loads call the flush, and literal matches also exist in evaluation utilities. Eager loads and CPU conversion do not take this CUDA helper.",
+        "locations": [
+          {
+            "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+            "path": "exllamav3/loader/safetensors.py",
+            "symbol": "SafetensorsCollection.end_deferred_load"
+          },
+          {
+            "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+            "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+            "symbol": "inplace_bf16_to_fp16_cuda"
+          }
+        ],
+        "source_evidence": [
+          "call_43f65cd1c87543399e5b0fb9bcb0825e",
+          "call_d66ae5d9e6a648e9857b936aec677eaa",
+          "call_9396695084514ca3a4a689942a8b3c7f",
+          "call_6801228d877a4f569fc20417579bdbff",
+          "call_976ae661598e4f258a4c66ff35d144fb",
+          "call_181aae9160aa43e4bc477020baa95a84",
+          "call_389aa096c8a949e1b9fb77ccb762a4c8"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the queue record and dispatch with the task diff and followed the native conversion flag to the unchanged pair kernel.",
+            "evidence": [
+              "call_976ae661598e4f258a4c66ff35d144fb",
+              "call_43f65cd1c87543399e5b0fb9bcb0825e",
+              "call_6801228d877a4f569fc20417579bdbff",
+              "call_9396695084514ca3a4a689942a8b3c7f"
+            ],
+            "limits": "No affected checkpoint or outcome of a zero-block CUDA launch was established."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Checked chunk parity and pair coverage. Counts 1, 3 and 2049 leave one element; count 2 leaves none. The bit pattern for BF16 one, interpreted as binary16, gives 1.875.",
+            "evidence": [
+              "call_aa0076a51eb043ccbbaf8a6d7f38ac4c",
+              "call_be2156758ae14c1390098fbf65867226"
+            ],
+            "limits": "Python integer and bit-pattern checks; they do not execute the CUDA conversion or model native arithmetic and launch error handling."
+          }
+        ]
+      }
+    ],
+    "summary": "Mostly formatting and a deferred-loader variable rename. The substantive edits cache Model.find_module and replace the base input pass-through with NotImplementedError, leaving Gemma3 and Mistral3 vision embedding paths without a required override."
+  },
+  "evidence": {
+    "call_43f65cd1c87543399e5b0fb9bcb0825e": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "max_bytes": 6000
+      },
+      "result_sha256": "0ed2884aecfae048c7438ed88046ad3115dd74751a9a593af930a8ecb35c1638"
+    },
+    "call_80ceda838d7745bfa1e373537fb9075a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "prepare_inputs",
+        "limit": 100
+      },
+      "result_sha256": "80758453b7b780589b9b95019657db98055cb0c77535944168d8f964a5aa5d50"
+    },
+    "call_d926053e9dee4bb88b2f0cdf45440866": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "find_module",
+        "limit": 100
+      },
+      "result_sha256": "bf39981bb3a3209bc125a8dc614767c13c5a809d70e27f5ca10b6d6152ba5702"
+    },
+    "call_66db9b4a925d46699ce7a51e61a6c248": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "path": "exllamav3/models/model.py",
+        "max_bytes": 6500
+      },
+      "result_sha256": "bcc4e5fef90ba48c18a987dd25b9842453518e7fa81401c3a2ef6abfe6b1bdd5"
+    },
+    "call_d80e5b624d5a4d898d2419548fc1d67a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "(Model",
+        "limit": 150
+      },
+      "result_sha256": "6e03007b2d003381787d692fe01d42ab10cabd2b428d92b89dfcb00cffafeda2"
+    },
+    "call_6a2b8d14aaa14f83b79e9d67681a4c6a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\np=pathlib.Path('exllamav3/models')\nfor f in sorted(p.glob('*.py')):\n s=f.read_text(); t=ast.parse(s)\n for c in t.body:\n  if isinstance(c,ast.ClassDef) and any(ast.unparse(b)=='Model' for b in c.bases):\n   print(f.name,c.name)\n   for m in c.body:\n    if isinstance(m,ast.FunctionDef) and m.name in ('prepare_inputs','forward','prefill'):\n     print(ast.unparse(m))"
+        ]
+      },
+      "result_sha256": "b27b86d54e82181008700f989b1416b4992ee4c9362377db0fee83dba82914b1"
+    },
+    "call_7fce1a9183c24975b970533cc2c3b3c8": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,ranges in {'exllamav3/models/gemma3.py':[(370,405)],'exllamav3/models/mistral3.py':[(265,295)],'exllamav3/models/model.py':[(290,465)],'exllamav3/conversion/convert_model.py':[(236,271)],'tests/test_qgemm.py':[(17,53)],'tests/test_quant_fn.py':[(117,147)],'science/kv_quant_exp.py':[(30,71)]}.items():\n a=Path(f).read_text().splitlines(); print(f)\n for l,r in ranges: print('\\n'.join(a[l-1:r]))\nfor f in Path('exllamav3').rglob('*.py'):\n a=f.read_text().splitlines()\n for i,l in enumerate(a):\n  if any(k in l for k in ['def prepare_for_attn','vision_model.forward','vision_model.prefill','vision_model.get_image','vision_model.get_embedding']): print(f,i+1,'\\n'.join(a[i:i+12]))"
+        ]
+      },
+      "result_sha256": "2319bdf082498865e46ebb82d30a72ec3b736c74d904a60453ac39c441a5027a"
+    },
+    "call_4b8e518636724bb8ae25467106437e7c": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "get_image_embeddings",
+        "limit": 100
+      },
+      "result_sha256": "543c098bddd5faa40110786cde8d668200c8962839787585c00c7e847a7c579c"
+    },
+    "call_d66ae5d9e6a648e9857b936aec677eaa": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,l,r in [('exllamav3/models/gemma3.py',490,620),('exllamav3/models/mistral3.py',420,555),('exllamav3/modules/module.py',39,58),('exllamav3/loader/safetensors.py',397,487),('exllamav3/modules/attn.py',24,131)]:\n print(f); print('\\n'.join(Path(f).read_text().splitlines()[l-1:r]))\nfor f in Path('exllamav3/conversion').glob('*.py'):\n for l in f.read_text().splitlines():\n  if 'mod_strategy(' in l: print(f,l)"
+        ]
+      },
+      "result_sha256": "990c74db1a7d3d939fc05897361b0bb4cf2e400098357ac4956ded8ad4bef04d"
+    },
+    "call_705fb2724bb24a2ebd525f32afe8945b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/6",
+        "max_bytes": 8000
+      },
+      "result_sha256": "7afb982ac931b09d3e1f7ffd0ce5ce1f6220a51779615fcbd9b1f4880efde250"
+    },
+    "call_8357fd7f6b1948b59a30eb2498ff83c1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "max_bytes": 16000
+      },
+      "result_sha256": "56ee307df99620e81811bcdaab81e47f7c365a5d5519cef2b192a6b1dce33144"
+    },
+    "call_e6d5b92b94b046deac8f4fdca94aa817": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 10000
+      },
+      "result_sha256": "979d1dea9e9fa44ede84fa63c93a41dcc010af52f95ce6a999856b9356e67bd6"
+    },
+    "call_b5a7627e301b44ada9854b11cb2e38da": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "max_bytes": 4400
+      },
+      "result_sha256": "b7b916022c8af9f9d34e8be61adf2e9fbf55c10f7fd3fd17bd918577bba40bbf"
+    },
+    "call_f613e3cb3c834f0c9117ce4f1a862f71": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/61",
+        "max_bytes": 9000
+      },
+      "result_sha256": "0f6ed6c3050f3061b41b0ac5342ebb721aec13b4b3d6c0cc2e530ed469c5eadb"
+    },
+    "call_783c2fb2c6a84bd7b7afd63116bf89a0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/62"
+      },
+      "result_sha256": "6fc1bb7528e2dd41e0d322ca5078477a59c9dd2b5cec22f0442b67647aef1297"
+    },
+    "call_f0fb93f827234133b61a0dae53f5654d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 7000
+      },
+      "result_sha256": "acd5f85df3b118d352c36a55a00a08639febfeb0a6b70957bb5db92bcb7ccba5"
+    },
+    "call_720d9bd5911a4346a4a3a76692993078": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 7000
+      },
+      "result_sha256": "623cc07eecfe14db8631f8fa011e90721384b6064b04331aa9544b639a168be5"
+    },
+    "call_9526be0240754176a05b4e273b5fa1ef": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 8500
+      },
+      "result_sha256": "cf06e07629d7d70eae921903616ecb9786e0364ca3c4469e3cb2d4ed25ea70b9"
+    },
+    "call_7ac096c6480342bbbe467de68c76058f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/models/model.py",
+        "symbol": "prepare_inputs",
+        "limit": 20
+      },
+      "result_sha256": "a77382a5bd7e05c11c1aee73c94a4585ce116755b79408e377c83b48e7baf263",
+      "catalog_only": true
+    },
+    "call_85280bb8ee7940889848ad76a5d13fe5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "models"
+      },
+      "result_sha256": "42c6f2b3d6400ba76b19d9cc6bfdd3c84b5de9a99ce869b23174830a62c7c993"
+    },
+    "call_bc5826bbc80d4158b13426f694a7ef88": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "gemma3.py",
+        "symbol": "VisionModel",
+        "limit": 12
+      },
+      "result_sha256": "8fc3d4868df2de748717a33b2400c0cb13640bba5028b9ebe542e4959aad1570",
+      "catalog_only": true
+    },
+    "call_8396bb542f234f4abc61397976c16aec": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "966762a32d1eb2c0aa5e01b02451676bca6ca7fd",
+        "max_bytes": 16000
+      },
+      "result_sha256": "8c71038dadb2b549afd916f3d1f31cceaa8378c4ffe512d73555c47b8469f0a7"
+    },
+    "call_4bfefa870a924acaaf769751e3600de7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "Qwen3MoeModel",
+        "limit": 30
+      },
+      "result_sha256": "069462c40dacf22736bcf97939e6dfb3032d9a31b9cc6a296867ee33a027788d"
+    },
+    "call_52aed327bca4445291e3faa9f862680e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "532d78658414d8f9aabce52cb64b982b3ec53388",
+        "max_bytes": 16000
+      },
+      "result_sha256": "15d48b2c4ebcaf08eec2070a5e1d570d19674eaa0a80d762fea85b4c66155a23"
+    },
+    "call_05bdab523f7c40ceaf23d55aa1fda1ea": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "params[\"input_ids\"]",
+        "limit": 100
+      },
+      "result_sha256": "7ecfb6ca17074692b5dd9ed665cb1837b781f9f0867952f1f8905eb67033a7cd"
+    },
+    "call_6eabf7ed89474de08758639e1298ff30": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "\"input_ids\"",
+        "limit": 100
+      },
+      "result_sha256": "48f7afed3810485acad985013285c1f923dbc5e9f92e684515ca6d38ebc408a1"
+    },
+    "call_8d64ed0320d24c27ade9e03ccb126d62": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 2600
+      },
+      "result_sha256": "660cef125c53ac4a9b503b575715a085e11d97e9ec3cdeee8bcb6af590d3220f"
+    },
+    "call_c46ccfa6ac4245cba725ad7de37aa410": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 3500
+      },
+      "result_sha256": "26a7209b3d63a299ad03564310a73ab75b1463779b6657165029fca6121693e8"
+    },
+    "call_bf233abfe37e4b1f8720779723e77173": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 2400
+      },
+      "result_sha256": "7928128051244a7c729ae21918c00cd32283b630f3e1b057a5d33f61ebb41a11"
+    },
+    "call_fd847bf9a6024c3ca4e402ab5cad51e7": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 4300
+      },
+      "result_sha256": "ce03f391af27f6943eb60518b3edf29f9d891281dd4b259a5a95fd12a4653a00"
+    },
+    "call_260e51da0e4443f3a6d3a41c21751baf": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 2400
+      },
+      "result_sha256": "831dbce98a0d213203fc92e22d7ec971d43b026089596cec25b31f8f3eb1b536"
+    },
+    "call_e3ff411033e4423e9372fc914416add7": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 3763
+      },
+      "result_sha256": "fe3caff48e3b765d5b11ccfc91d459005c40bdfe75467528fb301e255e39f42b",
+      "catalog_only": true
+    },
+    "call_599a751863284d37884183ec9664ec7e": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/loader/safetensors.py",
+        "limit": 16
+      },
+      "result_sha256": "a8747f79f11dd2b4857e5425edc567173449b8aa7cc5c30cbee7831eea64092f"
+    },
+    "call_419438de120343aea62228c62fed2412": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "647bb7d549b8485ad052ac0650148bd35fcee6d4",
+        "max_bytes": 16000
+      },
+      "result_sha256": "061e4dce54d3bb9055e5308e37b95f431258d57cae23de19023d4c772984212d"
+    },
+    "call_389aa096c8a949e1b9fb77ccb762a4c8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "inplace_bf16_to_fp16_cuda",
+        "limit": 25
+      },
+      "result_sha256": "d3ab3c81a89e237b04f8b26780c1348331716143231ec59d30e0b3a4a7eda230"
+    },
+    "call_9396695084514ca3a4a689942a8b3c7f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "path": "exllamav3/exllamav3_ext/stloader_cu.cu",
+        "max_bytes": 5000
+      },
+      "result_sha256": "313d816cfbdf8b70471c6619d333fc7e37d06f52c3670cee53cdce5ac271f384"
+    },
+    "call_181aae9160aa43e4bc477020baa95a84": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "fb63886b9a9909ab78822780e82fd10d001dcd02",
+        "query": "end_deferred_load",
+        "limit": 50
+      },
+      "result_sha256": "9e283456e5d2c1b1b5a49e3c70712bb9d55ee247ae37551bdf802296d66bf5d9"
+    },
+    "call_0f4f837d86844ba28888f2cfcbfb3075": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast, pathlib, functools\np=pathlib.Path('exllamav3/models/model.py'); s=p.read_text(); t=ast.parse(s); c=next(n for n in t.body if isinstance(n,ast.ClassDef) and n.name=='Model'); names={'__iter__','find_module','prepare_inputs','forward','prefill'}; c.body=[n for n in c.body if isinstance(n,ast.FunctionDef) and n.name in names]; parse=lambda s:ast.parse(s).body\nclass Torch:\n Tensor=object\n def inference_mode(self):return lambda f:f\nfor patched in (False,True):\n if patched:\n  for n in c.body:\n   if n.name=='find_module':n.decorator_list=[ast.Name(id='lru_cache',ctx=ast.Load())]\n   if n.name=='prepare_inputs':n.body=parse('raise NotImplementedError')\n ns={'torch':Torch(),'lru_cache':functools.lru_cache}; exec(compile(ast.fix_missing_locations(ast.Module(body=[c],type_ignores=[])),'<isolated methods>','exec'),ns)\n C=ns['Model']; m=C(); m.modules=[]\n class Layer:\n  key='k';caps={}\n  def __iter__(self):yield self\n  def prepare_for_device(self,x,p):return x\n  def forward(self,x,p):return x\n print('patched',patched,'miss',m.find_module('k')); m.modules=[Layer()]; print('after insertion hit',m.find_module('k') is m.modules[0]); p={}; x=object()\n try: print('forward identical',m.forward(x,p) is x,'dict set',p.get('input_ids') is x)\n except NotImplementedError: print('forward raised','dict set',p.get('input_ids') is x)\n if patched: print('local lru configuration',C.find_module.cache_parameters())"
+        ]
+      },
+      "result_sha256": "be58b3b807a0e7281c27e4a1137e3399884d854add86bb037bccd1f0123f2a1c"
+    },
+    "call_aa0076a51eb043ccbbaf8a6d7f38ac4c": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast, pathlib, functools\nc=next(n for n in ast.parse(pathlib.Path('exllamav3/models/model.py').read_text()).body if isinstance(n,ast.ClassDef) and n.name=='Model'); c.body=[n for n in c.body if isinstance(n,ast.FunctionDef) and n.name in {'__iter__','find_module','prepare_inputs','forward','prefill'}]\nclass Torch:\n Tensor=object\n def inference_mode(self,f):return f\nfor patched in (False,True):\n if patched:\n  for n in c.body:\n   if n.name=='find_module':n.decorator_list=[ast.Name(id='lru_cache',ctx=ast.Load())]\n   if n.name=='prepare_inputs':n.body=ast.parse('raise NotImplementedError').body\n ns={'torch':Torch(),'lru_cache':functools.lru_cache}; exec(compile(ast.fix_missing_locations(ast.Module(body=[c],type_ignores=[])),'<isolated methods>','exec'),ns)\n C=ns['Model']; m=C(); m.modules=[]\n class Layer:\n  key='k';caps={}\n  def __iter__(self):yield self\n  def prepare_for_device(self,x,p):return x\n  def forward(self,x,p):return x\n print('patched',patched,'miss',m.find_module('k')); m.modules=[Layer()]; print('after insertion hit',m.find_module('k') is m.modules[0]); p={}; x=object()\n try: print('forward identical',m.forward(x,p) is x,'dict set',p.get('input_ids') is x)\n except NotImplementedError: print('forward raised','dict set',p.get('input_ids') is x)\n if patched: print('local lru configuration',C.find_module.cache_parameters())\nimport struct\nfor n in [1,2,3,2049]: print('paired',n,2*(n//2),'tail',n%2)\nprint('bf16 one as half',struct.unpack('<e',bytes.fromhex('803f'))[0])"
+        ]
+      },
+      "result_sha256": "ca5197492f4ed3d937623007ed92f461884586f782aff52286026a7f32c742cb"
+    },
+    "call_6801228d877a4f569fc20417579bdbff": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor f,patterns,n in [('exllamav3/loader/safetensors.py',['MAX_DEFERRED_LOAD_CHUNK =','self.deferred_loads.append','padded[tuple','stloader_open_file(filename)'],9),('exllamav3/exllamav3_ext/stloader.cpp',['inplace_bf16_to_fp16_cuda'],5),('exllamav3/models/model.py',['Insufficient VRAM'],5),('exllamav3/generator/job.py',['Unsupported type in stop_conditions','self.held_logits.append','from .filter'],4),('exllamav3/conversion/convert_model.py',['strategy = mod_strategy'],7),('exllamav3/util/__init__.py',['profile_opt'],3),('exllamav3/models/gemma3.py',['preprocessor_config.json','\"vision\": Gemma3VisionModel'],6),('exllamav3/models/mistral3.py',['\"vision\": Mistral3VisionModel'],6),('examples/multimodal.py',['Model.from_config'],5),('examples/imgsearch.py',['Model.from_config'],5)]:\n a=Path(f).read_text().splitlines(); print(f)\n for i,l in enumerate(a):\n  if any(k in l for k in patterns): print(i+1,'\\n'.join(a[max(i-2,0):i+n]))"
+        ]
+      },
+      "result_sha256": "a012f3d35d9b35e9955a059bb4524240ee92eb365ad939bae7880d516d242dd7"
+    },
+    "call_66f09502a8204692a41f115db404a903": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "file": "generator/job.py",
+        "limit": 5,
+        "offset": 0
+      },
+      "result_sha256": "6e0a8b6793ffc7d0aea329c4427ec5e91306ed0c852a4fb2b4bcec7e190b3e65",
+      "catalog_only": true
+    },
+    "call_a5c7e56d72ff4a01ad44369a36770239": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "830b6a018070a327d6d261628dff496f1303cf93",
+        "max_bytes": 16000
+      },
+      "result_sha256": "7e9206989c587b27d376f2997d021ce6e95b9c2ff1b79ccc7fc39e5da68dfac1"
+    },
+    "call_07e68ef668d447ecb27f9f30c4b953d7": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "mistral3.py",
+        "symbol": "Mistral3VisionModel",
+        "limit": 15
+      },
+      "result_sha256": "56322945cc366812c7d5c9d474f20371aa91af649b8fba4b4e4678d5ce5ff19d",
+      "catalog_only": true
+    },
+    "call_70c832ff5b2c47a790e544db378bf07e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "45fa5abff9001ff373a612303e48ec01d34efe42",
+        "max_bytes": 16384
+      },
+      "result_sha256": "740b3dd8b9bfce6c96dd6a838ad173e90de9912222460e4398ec00ad00d8389d"
+    },
+    "call_6e697072f2da4eb68fc6bb44b85fc98a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/12",
+        "offset": 25200,
+        "max_bytes": 8000
+      },
+      "result_sha256": "06678c3a25f8bcf7a98403feff433c17fba2c9e18b7dd45ff2783241e7912d77"
+    },
+    "call_b40c2e9d3b464d9982bf1981b9c54897": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/38",
+        "offset": 9500,
+        "max_bytes": 3500
+      },
+      "result_sha256": "f8f6d3823b1ab5296ec97d3767b13fab32977b211f5dc2a5037223bb04f77efe"
+    },
+    "call_976ae661598e4f258a4c66ff35d144fb": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nfor f in pathlib.Path('.').rglob('*.py'):\n try:t=ast.parse(f.read_text())\n except (SyntaxError,UnicodeError):continue\n for n in ast.walk(t):\n  if isinstance(n,ast.ClassDef):\n   b=[ast.unparse(x) for x in n.bases]\n   if any(x.endswith('Model') for x in b) and 'Model' not in b: print(f,n.name,b,[x.name for x in n.body if isinstance(x,ast.FunctionDef) and x.name in ['forward','prefill','prepare_inputs','find_module']])\nfor f,lo,hi in [('exllamav3/loader/safetensors.py',263,319),('exllamav3/models/model.py',185,212),('examples/multimodal.py',63,79),('examples/imgsearch.py',79,94)]:\n print(f);print('\\n'.join(pathlib.Path(f).read_text().splitlines()[lo-1:hi]))"
+        ]
+      },
+      "result_sha256": "567ee1bb3507847334b0113ea27bbafa7bd73099dd2d55f7353160474fba8a19"
+    },
+    "call_27d7f833b9d04109b1cf03209067a888": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/27",
+        "max_bytes": 3500
+      },
+      "result_sha256": "a20dd9a4f8311f26651fdeb21b383f635c6ebffa6bcf8a1f9cc24d245c65451a"
+    },
+    "call_c28b27ddd51c4ff7adac2449b001e8dd": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 4500
+      },
+      "result_sha256": "65d84a7b3f54636130bcdbf34f01b02967021449cec2d3ad747dbb3b783b0ca9"
+    },
+    "call_cb3eef489cf6495cbcf4f3d8bf677526": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nfor fn in ['exllamav3/util/vision.py','exllamav3/models/qwen3_moe.py']:\n s=pathlib.Path(fn).read_text();t=ast.parse(s)\n for n in t.body:\n  if getattr(n,'name',None)=='size_to_longest_edge_and_patch_size':print(ast.get_source_segment(s,n))\n  if getattr(n,'name',None)=='Qwen3MoeConfig':print(ast.get_source_segment(s,n).splitlines()[:17])"
+        ]
+      },
+      "result_sha256": "9cc8d8cf08f482d79e52b7d88c5d6aa76f46201413e9a83fb9d6db39a95860a8"
+    },
+    "call_be2156758ae14c1390098fbf65867226": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from math import floor,ceil\nfor fn in [ceil,floor]:\n dims=(28,1541); ratio=max(d/1540 for d in dims); out=tuple((max(1,fn(d/ratio))+27)//28*28 for d in dims); print(fn.__name__,out)\nassert 2*1024**2//2==1048576\nprint('bf16 elements per full deferred chunk',2*1024**2//2)"
+        ]
+      },
+      "result_sha256": "4d44b12e99c0085c60266093b5d5a6cb4e6f9e6482526c4d512b2cddcad6b108"
+    },
+    "call_3d5d3e51967247058a4f2dd676feafec": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "max_bytes": 8000
+      },
+      "result_sha256": "ce38e231f5d2b86c0b320a3b434b5df3afd762b8347ceee0144d7e3d1f2232af"
+    }
+  }
+}

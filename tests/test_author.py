@@ -31,6 +31,7 @@ class AuthorTests(unittest.TestCase):
         self.assertEqual(provenance['operating_system'],platform.system())
         self.assertEqual(provenance['python_version'],platform.python_version())
         self.assertTrue((out/'raw-transcript.json').exists())
+        self.assertFalse((out/'codex-failure.json').exists())
         with self.assertRaises(FileExistsError):author(self.packet,out,self.root/'unused')
 
     def test_invalid_raw_response_is_preserved_without_publishing_draft(self):

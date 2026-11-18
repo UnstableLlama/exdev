@@ -1,0 +1,655 @@
+{
+  "schema_version": 5,
+  "sha": "ea62df9eee39fd86654971a4001cb0f846b09020",
+  "parent_shas": [
+    "e14fa3cf22ff9c4203736690522c7baaf17dd57b"
+  ],
+  "cutoff_date": "2025-07-29T21:58:50+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The indexed EXL3 multi-GEMM wrapper required the number of matrix indices to equal the number of output slots. That rejected a shorter index list even when the caller had enough output and scratch storage. The commit message describes allowing shorter lists; the implementation also accepts some lists larger than the output batch when they fit the input batch.",
+        "basis": "source",
+        "evidence": [
+          "call_c3408b079191436db72ecf021afe3fb7",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_815c7d0fce2d43389265b272f9d39e71"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The wrapper now reads N = indices.size(1), rejects N only if it exceeds both A.size(0) and C.size(0), and caps each local matrix count at N. It does not resize either tensor. The unchanged kernel iterates to the maximum of those capped counts, so an indexed invocation that reaches the kernel has N matrix iterations. The capped output count also bounds launch concurrency. The selector still uses the same per-matrix dimensions, bit width and output dtype; the change affects how many matrices run, not which GEMM specialization is selected.",
+        "basis": "source",
+        "evidence": [
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_0a220a3cb5be4c9d8a2bf8e04c42f174",
+          "call_aa337b3240ef41f4b245f90c6e288714",
+          "call_473e856e554b429dbbb4d2499d9ecec2"
+        ]
+      },
+      {
+        "text": "The useful case is reusing a larger allocation for a smaller active set: with one broadcast input, eight output slots and four indices, only the first four slots participate. A stricter wrapper could preserve that use while separately requiring output capacity for every active matrix, either one broadcast input or sufficient input slots, and enough transformed-input scratch. Bounding index traversal alone does not enforce those conditions.",
+        "basis": "inference",
+        "evidence": [
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_aa337b3240ef41f4b245f90c6e288714",
+          "call_5455199f60de41649972091eca22784a"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Whole-parent literal search found the extension binding and four direct Python calls. Attention.project_qkv passes no indices or weights, so its two-slot K/V projection bypasses the changed branch; it allocates two scratch slots and uses the fused path only when the helper exists and flattened token count is at most 32. BlockSparseMLP.forward has three indexed calls on its fused path: gate and up broadcast one token into fixed per-expert buffers; down consumes the per-expert activations and supplies routing weights. Ordinary top-k routing supplies exactly the configured slot count, so all three calls retain their existing effective sizes.",
+        "basis": "source",
+        "evidence": [
+          "call_e243af5795bc4cdaace6952d1e485210",
+          "call_45872b19ca794b7a810d1e1bf5578078",
+          "call_ddd6252234f74c4baec0e7ef4ea099d5",
+          "call_fce86c4246c649fc830cff5f25804361",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159"
+        ]
+      },
+      {
+        "text": "An earlier leading-dimension defect is narrowed, not eliminated. Capping both local counts prevents the kernel's index-position counter from exceeding the supplied list length on accepted indexed calls. It still does not validate the matrix IDs in that list, or guarantee that indexed input, output, scratch and optional weight accesses are backed by storage.",
+        "basis": "source",
+        "evidence": [
+          "call_3a02000a3b0242c0a55516e8427918d7",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_0a220a3cb5be4c9d8a2bf8e04c42f174",
+          "call_aa337b3240ef41f4b245f90c6e288714"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The read ancestor entries establish the relevant history: \u201cAdd multi-GEMM kernel\u201d describes the indexed cooperative launch and flags unequal leading dimensions; \u201cMGEMM: Use full grid when possible\u201d describes adding concurrent matrix groups and flags the scratch-capacity and zero-slice cases; the fused-attention entry explains why K/V supplies no indices; the routed-expert entry records the fixed-buffer mismatch when all experts are requested.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_5481cbec96b0455c863701843d940da0",
+          "call_d8fd91b19adf49a9a9780dbfa9abd653",
+          "call_8ccc6176b7fa436499f32072f307f8f3",
+          "call_87efbbd2248b4e079b2deecb1a8a72da"
+        ]
+      },
+      {
+        "text": "The Boolean-versus-dimension selector defect recorded in the original MGEMM entry is already absent in this task's parent: the automatic Hopper/Blackwell branch for N divisible by 256 and at most 4096, after higher bit widths have been handled, tests size_k > 8192 and bits >= 3 separately. The task leaves that expression untouched. A scalar transcription at three bits and output width 4096 returned shape 2 for K=8192 and shape 3 for K=16384.",
+        "basis": "source",
+        "evidence": [
+          "call_dba06acaad80412f8e56f78a5aed27f9",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_5455199f60de41649972091eca22784a"
+        ]
+      },
+      {
+        "text": "The related discussions have different framing: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d reports a native extension import failure; #26, \u201cSuperior 3INST parameters,\u201d proposes a codebook multiplier; #33, \u201cError converting model,\u201d reports a safetensors file-open failure; #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d reports a Cholesky failure; #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d reports nonfinite state and failed Cholesky; #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d reports Cholesky failure at several bitrates; and #53, \u201cCommand A support,\u201d requests support or an available EXL3 quant.",
+        "basis": "source",
+        "evidence": [
+          "call_efcfebc23a094f219b458015a9a19b31",
+          "call_c21d55bc7312401caa54d62a5544cd1a",
+          "call_7b851f817b354d3cbf12f7630c86fe4b",
+          "call_2caa2e31bd204912a94bed019701d95e",
+          "call_bcc014ba01504407a2ca64da7eed0f6c",
+          "call_b9797d508f0d4e5292544f0513e1052e",
+          "call_96831baa8b904c55b6ad43b4d0172bb8"
+        ]
+      },
+      {
+        "text": "These are contextual matches, not evidence of the reported reason for the fix: issue #7 names the extension that exposes the binding but fails before calling it; PR #26 discusses MCG multiplier selection, which the wrapper already supports and this diff does not edit; the conversion reports share convert_model.py with the inspected calibration code but their reported traces do not identify the MGEMM index check. The Command A request shares the broader EXL3 conversion context, not the changed matrix-count contract.",
+        "basis": "inference",
+        "evidence": [
+          "call_e243af5795bc4cdaace6952d1e485210",
+          "call_0a220a3cb5be4c9d8a2bf8e04c42f174",
+          "call_0d0de0d974d8496d89b71e2d05d2503e",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_efcfebc23a094f219b458015a9a19b31",
+          "call_c21d55bc7312401caa54d62a5544cd1a",
+          "call_7b851f817b354d3cbf12f7630c86fe4b",
+          "call_2caa2e31bd204912a94bed019701d95e",
+          "call_bcc014ba01504407a2ca64da7eed0f6c",
+          "call_b9797d508f0d4e5292544f0513e1052e",
+          "call_96831baa8b904c55b6ad43b4d0172bb8"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA compilation, GPU launch, numerical comparison or timing was performed. The Python check transcribes bounded integer arithmetic and symbolic slot indices, not native integer narrowing or overflow, GPU memory accesses, synchronization or launch error behavior.",
+      "The whole-parent literal search does not establish external or dynamically resolved callers. It does not establish that a stock model or conversion run supplies the newly accepted asymmetric or empty shapes.",
+      "The message establishes the requested capacity change, but not the specific caller or workload that motivated it. The source does not establish why the current MGEMM slice divisor is 24."
+    ],
+    "links": [
+      "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+      "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+      "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f"
+    ],
+    "chapters": [
+      {
+        "id": "quantized-inference",
+        "title": "Separate active MGEMM indices from allocated batch capacity",
+        "claims": [
+          {
+            "text": "The leading axis of A and C counts matrix slots, not token rows. A and C still share the row count on axis 1; the separate rank-two indices tensor supplies its active count on axis 1. For active slot j, the kernel uses indices[j] to choose EXL3 weight and transform pointers, uses A slot zero only when the effective input count is one, and writes scratch and C by j. When weights are present, it scales each slot's output and sums the active outputs into slot zero. Inactive capacity at the end of a larger buffer is not cleared or reduced.",
+            "basis": "source",
+            "evidence": [
+              "call_3a02000a3b0242c0a55516e8427918d7",
+              "call_e1b125485e6c4bc4b277adc9ed1bb159",
+              "call_aa337b3240ef41f4b245f90c6e288714"
+            ]
+          },
+          {
+            "text": "The grid's z width is min(total device SMs / selected SMs per matrix, effective output slots). The selector limits SMs per matrix using the K-by-N tile count divided by 24 for tile-aligned dimensions; for shape 2 the tiles are 32 by 128. Reducing active output slots can reduce concurrent matrix groups without changing that tile choice.",
+            "basis": "source",
+            "evidence": [
+              "call_0a220a3cb5be4c9d8a2bf8e04c42f174",
+              "call_473e856e554b429dbbb4d2499d9ecec2",
+              "call_d6c932fabbbd4c188e63bac9c854efcf",
+              "call_e1b125485e6c4bc4b277adc9ed1bb159"
+            ]
+          },
+          {
+            "text": "A scalar transcription confirmed that (input slots, output slots, index count) of (1,8,4) and (8,8,4) both change from rejection to four iterations. For (8,1,1), the old check passed but the old iteration bound was eight; the new bound is one. The same check exposed input or output overruns for some newly accepted unequal batches.",
+            "basis": "execution",
+            "evidence": [
+              "call_5455199f60de41649972091eca22784a"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "asymmetric-indexed-batch-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The relaxed check allows the larger tensor to satisfy the predicate even when the other tensor cannot cover the kernel's traversal.",
+        "trigger": "Call the bound exl3_mgemm with otherwise suitable tensors, valid weight IDs and (input slots, output slots, index count) of (4,2,4) or (2,4,3), with positive launch width.",
+        "expected_behavior": "Reject the incompatible capacity or ensure every active matrix has a readable input and writable output.",
+        "actual_behavior": "Both cases used to fail the equality check. The first now visits output slots 2 and 3 beyond C; the second reads input slot 2 beyond A, since only an effective input size of one broadcasts. No inspected indexed Python caller constructs these particular shapes; the extension binding is the established reach.",
+        "locations": [
+          {
+            "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          },
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+            "symbol": "exl3_mgemm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_aa337b3240ef41f4b245f90c6e288714",
+          "call_e243af5795bc4cdaace6952d1e485210",
+          "call_fce86c4246c649fc830cff5f25804361"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled acceptance, clamping and input/output slot offsets for both cases.",
+            "evidence": [
+              "call_5455199f60de41649972091eca22784a"
+            ],
+            "limits": "Symbolic bounds, not observed device accesses."
+          }
+        ]
+      },
+      {
+        "id": "empty-indices-zero-grid",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "An empty index list now passes validation against a nonempty output allocation.",
+        "trigger": "Call the bound exl3_mgemm with rank-two indices of shape (1,0), positive allocated input and output batch sizes and otherwise compatible dimensions that yield a positive selected SM count.",
+        "expected_behavior": "Reject an empty active set explicitly or return without a launch.",
+        "actual_behavior": "Both effective counts become zero, grid z becomes zero, and the wrapper still attempts the cooperative launch. The inspected attention call has no indices and the three ordinary fused expert calls use the configured top-k count; no stock empty-list caller was identified.",
+        "locations": [
+          {
+            "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_0a220a3cb5be4c9d8a2bf8e04c42f174",
+          "call_e243af5795bc4cdaace6952d1e485210",
+          "call_45872b19ca794b7a810d1e1bf5578078",
+          "call_fce86c4246c649fc830cff5f25804361"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Checked that (1,8,0) now passes and clamps to (0,0); inspected the subsequent grid construction and launch.",
+            "evidence": [
+              "call_5455199f60de41649972091eca22784a",
+              "call_0a220a3cb5be4c9d8a2bf8e04c42f174"
+            ],
+            "limits": "No CUDA error or return value was measured."
+          }
+        ]
+      },
+      {
+        "id": "all-experts-still-exceed-fused-capacity",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The relaxed bound still does not support all-expert routing with the fixed fused buffers.",
+        "trigger": "Call BlockSparseMLP.forward with one flattened token, fully EXL3 expert projections, activate_all_experts=True and more total experts than configured experts per token.",
+        "expected_behavior": "Evaluate all experts using adequate storage or route through the nonfused implementation.",
+        "actual_behavior": "Routing produces one index per expert, but the gate call has one input slot and only the configured top-k number of output slots. The new predicate rejects the gate call before up or down runs. This is a conditional module path: conversion supplies the flag during intended unquantized calibration, which is not evidence that ordinary conversion reaches the fully EXL3 branch.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          },
+          {
+            "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_ddd6252234f74c4baec0e7ef4ea099d5",
+          "call_fce86c4246c649fc830cff5f25804361",
+          "call_4ee53c1e09ec4211b761e05bf28ae846",
+          "call_d5698b1871bb42418c6c9bc7dd53bde9",
+          "call_0d0de0d974d8496d89b71e2d05d2503e",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Checked the new predicate for one input slot, two output slots and eight expert indices.",
+            "evidence": [
+              "call_5455199f60de41649972091eca22784a"
+            ],
+            "limits": "No router, model, conversion workflow or extension was executed."
+          }
+        ]
+      },
+      {
+        "id": "broadcast-scratch-capacity-unchecked",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The earlier per-matrix scratch requirement remains unchecked.",
+        "trigger": "Supply one broadcast input, more than one active matrix and A_had with room for only the input's single matrix.",
+        "expected_behavior": "Reject insufficient scratch or manage scratch so every transform uses a valid slot.",
+        "actual_behavior": "The kernel broadcasts A but writes and reads scratch at j * size_m * size_k. The cap does not check scratch storage. The inspected K/V and routed-expert call sites allocate scratch per projection or configured expert slot; the undersized-scratch case is established at the extension interface, not those calls.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+            "symbol": "exl3_mgemm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_aa337b3240ef41f4b245f90c6e288714",
+          "call_3a02000a3b0242c0a55516e8427918d7",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_45872b19ca794b7a810d1e1bf5578078",
+          "call_ddd6252234f74c4baec0e7ef4ea099d5",
+          "call_fce86c4246c649fc830cff5f25804361"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared A and scratch address calculations with the wrapper checks and direct callers' allocations.",
+            "evidence": [
+              "call_aa337b3240ef41f4b245f90c6e288714",
+              "call_e243af5795bc4cdaace6952d1e485210",
+              "call_45872b19ca794b7a810d1e1bf5578078",
+              "call_ddd6252234f74c4baec0e7ef4ea099d5",
+              "call_fce86c4246c649fc830cff5f25804361"
+            ],
+            "limits": "No GPU memory violation was observed."
+          }
+        ]
+      },
+      {
+        "id": "zero-selected-sms-persists",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The inherited division-by-zero path is still present; changing the active batch bound does not protect the per-matrix grid width.",
+        "trigger": "Call the binding with otherwise compatible tensors, valid bit width, nonempty active work, K and N both 128, and shape 2 forced.",
+        "expected_behavior": "Reject the unsupported grid explicitly or retain at least one SM block.",
+        "actual_behavior": "The selector's current divisor gives (128/32) * (128/128) / 24 = 0 in integer arithmetic, so the wrapper evaluates total_sms / num_sms with a zero denominator before launch. The four inspected Python calls use automatic shape selection; none supplies this forced-shape trigger.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_exl3_mgemm_kernel"
+          },
+          {
+            "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_d6c932fabbbd4c188e63bac9c854efcf",
+          "call_473e856e554b429dbbb4d2499d9ecec2",
+          "call_0a220a3cb5be4c9d8a2bf8e04c42f174",
+          "call_e1b125485e6c4bc4b277adc9ed1bb159",
+          "call_e243af5795bc4cdaace6952d1e485210",
+          "call_45872b19ca794b7a810d1e1bf5578078",
+          "call_fce86c4246c649fc830cff5f25804361"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the selector cap using the shape-2 tile sizes and current divisor.",
+            "evidence": [
+              "call_5455199f60de41649972091eca22784a"
+            ],
+            "limits": "Did not execute the native division or observe its runtime manifestation."
+          }
+        ]
+      }
+    ],
+    "summary": "EXL3 multi-GEMM can use fewer indices than allocated matrix slots without resizing its buffers. Existing attention and ordinary expert calls keep their behavior. The relaxed check bounds index traversal but admits some incompatible input/output sizes and an empty batch that still reaches launch."
+  },
+  "evidence": {
+    "call_e1b125485e6c4bc4b277adc9ed1bb159": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "offset": 195,
+        "max_bytes": 1034
+      },
+      "result_sha256": "02057eae51ae3465391c191ab47437a7b04cd78b79cfcd060758e21fce8218a2"
+    },
+    "call_e243af5795bc4cdaace6952d1e485210": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "exl3_mgemm"
+      },
+      "result_sha256": "ec959ab6061f06f1a4e8b83eacc72e8444f77cbb877ef77ba78e1b02184bcd21"
+    },
+    "call_0a220a3cb5be4c9d8a2bf8e04c42f174": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 5500,
+        "max_bytes": 16000
+      },
+      "result_sha256": "2d97f01f2d2659b0bb0facf5a0090b6b4d9e77ab24203028889b45f6ffe5dfcf"
+    },
+    "call_aa337b3240ef41f4b245f90c6e288714": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "max_bytes": 20000
+      },
+      "result_sha256": "232aef31ab54b57ae8e8f8e83986165df15149074a5061526159cb77c555f619"
+    },
+    "call_45872b19ca794b7a810d1e1bf5578078": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 10000,
+        "max_bytes": 5000
+      },
+      "result_sha256": "0896c4cd7e664295dbb5da394c0ea1ec48d10c4a8a2c2c1ab9d3ea0c4d103d65"
+    },
+    "call_fce86c4246c649fc830cff5f25804361": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 11000,
+        "max_bytes": 10000
+      },
+      "result_sha256": "bba3c6cd5db744593cffb9ed3bd43f803c08643f6cee4c33ccd171eccd509fde"
+    },
+    "call_ddd6252234f74c4baec0e7ef4ea099d5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 0,
+        "max_bytes": 11100
+      },
+      "result_sha256": "3a7c761dff4b679e87ae373ed22aff47481c69e6f28f5ec27a1ba9d99a44c3b3"
+    },
+    "call_3a02000a3b0242c0a55516e8427918d7": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "offset": 4350,
+        "max_bytes": 1700
+      },
+      "result_sha256": "267d0a1154ca1ad4162c8d4fdc39ab242e344963cb454c4b84b74c7a24e8b213"
+    },
+    "call_4ee53c1e09ec4211b761e05bf28ae846": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "activate_all_experts"
+      },
+      "result_sha256": "3600254b11cb583b9d7f3543a6ccff1cb54ef631a57e24ac75ce1d96e1afd042"
+    },
+    "call_f987dc6e24334131b16a4c1978ae071f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "MGEMM",
+        "limit": 35
+      },
+      "result_sha256": "2d66e7ce8ba6e2b84e8280cd642feb7eae31ba79c83563d0da3b1119b4553380"
+    },
+    "call_473e856e554b429dbbb4d2499d9ecec2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "offset": 5400,
+        "max_bytes": 5000
+      },
+      "result_sha256": "450ac1390c1312d0ce319ce169671c39597dff211701d42a170323f8168b6c71"
+    },
+    "call_dd703c0f05d04206a3d8e40997bc7645": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "until": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "limit": 20
+      },
+      "result_sha256": "7487cc7bbfe238c10ab80333a7ace73197a1f87f2d450c5f3af2f8fbaa781779"
+    },
+    "call_37414e8f0c474f4e8dad5357002446e5": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+        "until": "2025-07-29T21:58:50+02:00",
+        "limit": 20
+      },
+      "result_sha256": "f889e8b93f9cd2fb3cb67042ddb5f6630b86fe6082060720b13498a9dcafb543"
+    },
+    "call_5481cbec96b0455c863701843d940da0": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "max_bytes": 16384
+      },
+      "result_sha256": "796d27d97ee5cb87008c63674e81cb6bd10758f728d40270d35990d310a5c2ca"
+    },
+    "call_d8fd91b19adf49a9a9780dbfa9abd653": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "max_bytes": 16384
+      },
+      "result_sha256": "fba2427b6520ad93b6ba990c835f5f766ad0055e0f64ffa2f0c806804220ae66"
+    },
+    "call_8ccc6176b7fa436499f32072f307f8f3": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "f1cfd3fb4e19a201a2738803fd4e57232ca1c481",
+        "max_bytes": 16384
+      },
+      "result_sha256": "38e3ef94de2102a1854664f575cd43c56cfe5b6f104cdf306a523d4d6fdfd64e"
+    },
+    "call_87efbbd2248b4e079b2deecb1a8a72da": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "6fc153d7a062aa7f53fe13b27d008c2d90d8d62f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f96ff0c7958870e32f9e824da3faa095ef5bcbb5b74cbee3ac96c58f08ab4275"
+    },
+    "call_dba06acaad80412f8e56f78a5aed27f9": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+        "offset": 0,
+        "max_bytes": 5550
+      },
+      "result_sha256": "2e7a9f079cfd6e7e632eb56142963702d6ef3353ecfa454b1ad1ca37c7742fa8"
+    },
+    "call_815c7d0fce2d43389265b272f9d39e71": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "#define TORCH_CHECK_SHAPES"
+      },
+      "result_sha256": "50ee7b2de422487e403a592eb85488e17b950f90cff73109a79099cd21449af8"
+    },
+    "call_d5698b1871bb42418c6c9bc7dd53bde9": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "BlockSparseMLP("
+      },
+      "result_sha256": "ec15a632f5da9b8b35d5e3fc432329821445ca9eaa2194947f918bacc6e502fa"
+    },
+    "call_f1634b722d5745e0a03975b14006fa04": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "calibration_all_experts"
+      },
+      "result_sha256": "ab084ed727e1539dbb164c9f8b6bc14aacca31db4a3adeacf388e401253a68d8"
+    },
+    "call_efcfebc23a094f219b458015a9a19b31": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 12000
+      },
+      "result_sha256": "10e8cde620f9a2827e6cf474c3a3f67656a6b7fa271858dc27078a695db4056f"
+    },
+    "call_c21d55bc7312401caa54d62a5544cd1a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 16000
+      },
+      "result_sha256": "5e21e062eb096d5c937fe2df39097ad805b40b0e7ce306b79319cd0e8105903a"
+    },
+    "call_0d0de0d974d8496d89b71e2d05d2503e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 11500,
+        "max_bytes": 5700
+      },
+      "result_sha256": "b0b8d2a91e3f22db32ecc2c2e76999f8d0fc28ab59dec4134efa41bc43b0c0ae"
+    },
+    "call_7b851f817b354d3cbf12f7630c86fe4b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 3500
+      },
+      "result_sha256": "33f088758d9506700d7a73cec4025cafec52afffd538d67cd3eae1cdfb772d00"
+    },
+    "call_2caa2e31bd204912a94bed019701d95e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 5000
+      },
+      "result_sha256": "1e6725dfc700290192a408a21e71920b003ba698c297871ab8b6ccea7019890b"
+    },
+    "call_bcc014ba01504407a2ca64da7eed0f6c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 5000
+      },
+      "result_sha256": "ba72ebbbd8ab6e35181c19055368b0001fb92ab63c1c03d7acee559b4f69ab1b"
+    },
+    "call_b9797d508f0d4e5292544f0513e1052e": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 4800
+      },
+      "result_sha256": "e7fa5b06c4e6756b352fe7ba85ba1d453a8ccd645e1e3f6367f6d53173badbf4"
+    },
+    "call_96831baa8b904c55b6ad43b4d0172bb8": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 5000
+      },
+      "result_sha256": "2988b339f33c8363317b6204817b1c40367bcafbac7a3bf103787c5dfecf5cc7"
+    },
+    "call_148ab76d130041b4980a3f404bf14373": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "mgemm: too many indices for tensor batch"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_d6c932fabbbd4c188e63bac9c854efcf": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "query": "EXL3_GEMM_SHAPE_2",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cuh"
+      },
+      "result_sha256": "a635899d91960e9a09a8aa1d406f8c855bd651d083c3600bacc5d3c4dd6e5574"
+    },
+    "call_5455199f60de41649972091eca22784a": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "for a,c,n in [(1,8,4),(8,8,4),(8,1,1),(1,4,4),(4,2,4),(2,4,3),(1,8,0),(1,2,8)]:\n print((a,c,n),'old=',n==c,end=' ')\n if not(n<=a or n<=c): print('rejected'); continue\n ai,co=min(a,n),min(c,n); js=range(max(ai,co)); print('effective=',(ai,co),'steps=',len(js),'badA=',[j for j in js if (0 if ai==1 else j)>=a],'badC=',[j for j in js if j>=c],'badIndices=',[j for j in js if j>=n])\nfor k,n in [(128,128),(1024,1024)]: print('shape2',(k,n),'max_slices=',k//32*n//128//24)\nfor k in [8192,16384]: print('Hopper/Blackwell b=3 n=4096 k=',k,'shape=',3 if k>8192 and 3>=3 else 2)"
+        ]
+      },
+      "result_sha256": "39c29f8fc92c50b26611668fbdbaaa56f1ce69fd2a0a879c490ed7b29334d237"
+    },
+    "call_c3408b079191436db72ecf021afe3fb7": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "ea62df9eee39fd86654971a4001cb0f846b09020",
+        "offset": 0,
+        "max_bytes": 195
+      },
+      "result_sha256": "f0cf433800f013e22975234749b0f9ef1f7991b3ac05ff1f8424e1611eb8bbf5"
+    }
+  }
+}

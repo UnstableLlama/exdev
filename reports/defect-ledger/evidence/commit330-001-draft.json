@@ -1,0 +1,858 @@
+{
+  "schema_version": 5,
+  "sha": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+  "parent_shas": [
+    "db533103b1827e83b55bac4f4531eeef3684a57f"
+  ],
+  "cutoff_date": "2025-07-18T20:29:28+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Attention previously constructed all four projections as Linear children from checkpoint keys. This change lets a caller supply projection modules instead, but only the query and output substitutions are connected to the existing forward path. The combined key/value module is registered without replacing the downstream reads of the separate K and V projections.",
+        "basis": "source",
+        "evidence": [
+          "call_60e1b076d3ee4b4584eddba00d376871",
+          "call_06809d1868bd43bda26e8d05fdff03bd"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "This is a constructor-level extension, not a new attention backend. It preserves the named Linear path and lets callers substitute Q and output independently. The K/V substitution changes the object layout from two children to one, so it also needs changes in loading, projection execution, and conversion allocation. Registering the new child supplies lifecycle integration, not those missing operations.",
+        "basis": "inference",
+        "evidence": [
+          "call_60e1b076d3ee4b4584eddba00d376871",
+          "call_dd42cf6b1f62418481a9df556c84bcd6",
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_fee8347a63394d3c911aa7bae8c1427c"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The whole-parent Python AST check found 19 explicit constructor calls. All supply four truthy named keys and none passes a projection module: Cohere, Cohere2, DeciLM, Dots1, both Ernie variants, EXAONE4, Gemma2, both Gemma3 sites, GLM4, Llama, both Mistral3 sites, Mixtral, Phi3, Qwen3, Qwen3 MoE, and SmolLM3. Gemma3's second site uses `out_proj` rather than `o_proj`; Phi3 additionally passes `key_fused_qkv='qkv_proj'`. All 19 therefore retain the named Linear branches. The check parsed source; it did not instantiate the models.",
+        "basis": "execution",
+        "evidence": [
+          "call_165e4952ff0f448689dccbbc66cd7055",
+          "call_fcb202335b694744a4eeafe68f405bf8",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ]
+      },
+      {
+        "text": "Dots1 still clears the first output projection's `qmap` on its named Linear. The QGEMM and quantization tests use Llama projection keys for lookup, not injected modules; the Transformers wrapper occurrences are example tensor names, not reads of Attention attributes. Neither transformer block's allocation method was adapted to a combined KV child.",
+        "basis": "source",
+        "evidence": [
+          "call_82d7c7f1e4604394a9270d8494db8fc5",
+          "call_10d358e9ce274941a643bea8a5abbb04",
+          "call_a71b63c211fe44819344c98b6a2fed13",
+          "call_fee8347a63394d3c911aa7bae8c1427c",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial modules chapter describes Attention's shared projection pipeline, explicit child registration, and fused checkpoint row slicing. The projection-bitrate entry explains the separate `qbits_mod_key` and `qmap` roles and records the exact-budget allocator boundary. The Q/K LayerNorm entry records the former tensor-truth dispatch problem and native RoPE reduction and padding concerns.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_352c9515cedb47f894afc21b01d97e8f",
+          "call_d462349fb4484b39a34a2e47a0de7c25",
+          "call_6a77dbd2c9c84fd4b96220ed4c427614",
+          "call_db0cfda1370c468590938340ff5d23f6"
+        ]
+      },
+      {
+        "text": "In the inspected parent, all three normalization dispatches already use `self.q_norm_tensor is None`, so this change does not carry over the tensor-truth failure. The native RoPE frequency reads and normalization reduction remain unchanged, as does the allocator's exact-budget selection on paths that reach it.",
+        "basis": "source",
+        "evidence": [
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_03ba9ecd51354855abb0d60122100140",
+          "call_b2949c875ac54be3b0efc13d59902f38",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ]
+      },
+      {
+        "text": "Closed issue #16, \u201cRuntimeError: CUDA error: invalid configuration argument,\u201d is relevant by traceback overlap: conversion went through `decode_flash_attn_nc`, `project_qkv`, and `self.q_proj.forward` into Hessian capture. The discussion attributed the failure to tokenizer truncation and reported overriding it at tokenizer load. The shared call path is not evidence that projection injection fixes the issue or was motivated by it.",
+        "basis": "inference",
+        "evidence": [
+          "call_2ba0f18df268490cb0a436bf79cd6512",
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ]
+      },
+      {
+        "text": "Issue #27, \u201cAttention Backend,\u201d asks about supporting FlashInfer alongside FlashAttention, and #44, \u201cPlease Switch to Flash-Infer,\u201d reports a Turing compatibility concern. The overlap is the unchanged attention backend dispatch. Issue #29, \u201cAuto-YaRN for Qwen3? Maybe even set it dynamically?\u201d, overlaps through the unchanged RoPE interface. None establishes a link to the constructor change.",
+        "basis": "inference",
+        "evidence": [
+          "call_7947373fd9894ce69bdfead15e63c5bb",
+          "call_ff4f30b59b514080b4e0fdff5e00d04b",
+          "call_6bdcdf6a7c284bc0ae0b0b6b3c4714b4",
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ]
+      },
+      {
+        "text": "Other source-path matches concern different operations: #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d traces an extension import through `rope.py`; #33, \u201cError converting model,\u201d originally reports a file-open failure in conversion and later tracks a separate GLM sampling symptom; PR #26, \u201cSuperior 3INST parameters,\u201d discusses decoder multipliers and conversion experiments. Their overlap is with the imported rotary code or the conversion workflow, not with the changed constructor branches.",
+        "basis": "inference",
+        "evidence": [
+          "call_486a7234b0b54e929b86ec19cee7b1d4",
+          "call_308178e4a822462a867fad3b394c1849",
+          "call_f6c580b5a3a6486bbab7f5a4311f0a47",
+          "call_6cf9257b62114fdf949af7d218b9e25c",
+          "call_46e463f9cb504d0bb277da8371722c15",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ]
+      },
+      {
+        "text": "Issues #34, \u201ctorch._C._LinAlgError on last layer of quant,\u201d #42, \u201cconverting to 3.0 bpw causes error; block state has 0 inf values and 34 NaN values,\u201d and #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d report conversion factorization failures. #53, \u201cCommand A support,\u201d began as a model-support request and later reports a similar conversion failure. These overlap through `convert_model.py`, `Linear`, or the inspected model builders, but the reported failures occur outside projection construction. #48, \u201c`RuntimeError` when requesting logprobs with Gemma 3 models,\u201d overlaps through Gemma3 but reports a logits-buffer size mismatch. PR #4, \u201cchore: update config.py,\u201d is a spelling correction. These are contextual matches, not evidence of fixes in this commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_6a24241cdcb04db5b2f9993c34182b08",
+          "call_b6c97571fc5c4ae49280b2fb2f6275dc",
+          "call_d8558467fda849e6a63ff69771c99668",
+          "call_05cc0829bdbb40a1b582976f99b15039",
+          "call_be410e738d2345d7b062a58826d99d6c",
+          "call_4a54938639ae4b8c8d3d3be4487accfa",
+          "call_18d890159977471ba164ecf7fd1258a1",
+          "call_46e463f9cb504d0bb277da8371722c15",
+          "call_165e4952ff0f448689dccbbc66cd7055",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ]
+      }
+    ],
+    "limitations": [
+      "No Attention instance, model inference, GPU kernel, or end-to-end conversion was executed. The quantitative checks were limited to a Python attribute model, integer launch arithmetic, and an isolated allocator call with stub projections.",
+      "Literal whole-tree searches and the Python AST scan cover explicit calls, attributes, and import aliases; they do not rule out dynamic or external uses. No existing caller in the inspected tree specifies an output contract for a combined KV module."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "00ad26e86660724a794c09bb808741493703ad47",
+      "f45eb4ce2090ca5db306cf863ee2f1826810e0ff"
+    ],
+    "chapters": [
+      {
+        "id": "attention",
+        "title": "Allow caller-supplied attention projections",
+        "claims": [
+          {
+            "text": "`Attention.__init__` appends `q_proj`, `kv_proj`, and `o_proj`, each annotated `Module | None`. Truthy `key_q` and `key_o` take precedence over the corresponding objects; otherwise the constructor asserts and stores the supplied object. Truthy `key_k` selects separate K and V linears and asserts `key_v`. Falsy `key_k` instead asserts and stores `kv_proj`, even if `key_v` was provided. The selected objects become children for recursive load, unload, and traversal.",
+            "basis": "source",
+            "evidence": [
+              "call_60e1b076d3ee4b4584eddba00d376871",
+              "call_dd42cf6b1f62418481a9df556c84bcd6"
+            ]
+          },
+          {
+            "text": "Named linears keep their dimensions and metadata. Q maps hidden width to query-head count times head width; K and V each map hidden width to KV-head count times head width. Output maps flattened query heads back to hidden width. The named Q/K/V linears share the `.input` calibration label; the named output uses `.o` and receives `out_dtype`. The supplied objects are stored as-is, without those constructor settings being applied to them. The unchanged wrapper still casts the final attention result via `to2`.",
+            "basis": "source",
+            "evidence": [
+              "call_60e1b076d3ee4b4584eddba00d376871",
+              "call_06809d1868bd43bda26e8d05fdff03bd"
+            ]
+          },
+          {
+            "text": "The unchanged Q and output consumers call `.forward(tensor, params)`, so substitutes must accept those arguments and satisfy the downstream shape contract. Q must produce a result viewable as batch \u00d7 sequence \u00d7 query heads \u00d7 head width; output receives batch \u00d7 sequence \u00d7 flattened query width. A substitute that is not a `Linear` is not itself selected by the converter's Linear-only filter, even though it is registered; any qualifying Linear descendants would still need entries in the allocation strategy.",
+            "basis": "source",
+            "evidence": [
+              "call_06809d1868bd43bda26e8d05fdff03bd",
+              "call_46e463f9cb504d0bb277da8371722c15",
+              "call_b2949c875ac54be3b0efc13d59902f38",
+              "call_60e1b076d3ee4b4584eddba00d376871"
+            ]
+          },
+          {
+            "text": "Three different mechanisms should not be confused. `key_fused_qkv` still slices one stored weight into consecutive Q, K, and V output-row ranges for separate linears. `multi_kv` still batches two eligible bias-free EXL3 linears with matching output widths and inner K values; `project_qkv` uses that path only at 32 or fewer input tokens across the batch. The new `kv_proj` argument is a single supplied child, not either existing fusion mechanism, and neither mechanism invokes it.",
+            "basis": "source",
+            "evidence": [
+              "call_60e1b076d3ee4b4584eddba00d376871",
+              "call_06809d1868bd43bda26e8d05fdff03bd",
+              "call_16927df5d11f44c480b494f1f4c9f3f2"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "combined-kv-child-not-consumed",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The constructor accepts a combined KV child, but loading, forwarding, and allocation still assume separate K and V attributes.",
+        "trigger": "Construct a fresh Attention with valid Q/output choices, a falsy `key_k`, and a truthy `kv_proj`. Then load it after its children load successfully, call `project_qkv` with a valid input and `multi_kv` unset, or run a containing block's allocation with valid quantization arguments.",
+        "expected_behavior": "The chosen KV module should be invoked to produce K and V on the supported inference path, and unsupported allocation should be rejected explicitly or handled without reading absent attributes.",
+        "actual_behavior": "`Attention.load` first loads the registered children and then reads `self.k_proj` in its EXL3 fusion probe. If loading is bypassed, `project_qkv` reaches the same missing attribute in the separate projection branch. All three decode methods call `project_qkv`; the research sampler also calls it directly after loading its model. Both transformer block allocators read `self.attn.k_proj` before calling `allocate_transformer`, so conversion can fail at allocation before load. The explicit in-tree model builders do not select this branch.",
+        "locations": [
+          {
+            "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.__init__ / load / project_qkv"
+          },
+          {
+            "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.allocate_q / ParallelDecoderBlock.allocate_q"
+          }
+        ],
+        "source_evidence": [
+          "call_60e1b076d3ee4b4584eddba00d376871",
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_0fc9f5029b5d4528a3476164db08d3ca",
+          "call_07c6a097332f4489a424c3ba31c073f1",
+          "call_fee8347a63394d3c911aa7bae8c1427c",
+          "call_46e463f9cb504d0bb277da8371722c15",
+          "call_165e4952ff0f448689dccbbc66cd7055"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "A stub with only `kv_proj` and `multi_kv=None` raised `AttributeError` on the attribute reads modeled for the load probe, the projection fallback, and allocation.",
+            "evidence": [
+              "call_783df40d98644618a502d8beb46a2eea"
+            ],
+            "limits": "The stub models the missing attributes; it did not run Attention, Torch, or a model loader."
+          }
+        ]
+      },
+      {
+        "id": "fused-key-alone-no-longer-sufficient",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "external_compatibility",
+        "description": "Omitting individual projection keys now means injection rather than building a Linear that can fall back to a fused checkpoint key.",
+        "trigger": "An external caller supplies a valid `qmap`, output key, and `key_fused_qkv`, omits `key_q`, and supplies no `q_proj`; the checkpoint has the fused weight but no separate query weight.",
+        "expected_behavior": "If preserving that call form, the query Linear should still fall back to the fused weight's query slice.",
+        "actual_behavior": "Previously the constructor built the query Linear even with the default key and passed it the fused key and range; `Linear.load_fp16` could use the fused weight when the primary weight was missing. The new constructor instead asserts `q_proj` before loading. The inspected Phi3 caller is not affected because it supplies both fused and individual keys.",
+        "locations": [
+          {
+            "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_60e1b076d3ee4b4584eddba00d376871",
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_16927df5d11f44c480b494f1f4c9f3f2",
+          "call_165e4952ff0f448689dccbbc66cd7055"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the old constructor's unconditional Linear creation and fused-weight fallback with the new truthiness branch and all explicit parent call forms.",
+            "evidence": [
+              "call_60e1b076d3ee4b4584eddba00d376871",
+              "call_16927df5d11f44c480b494f1f4c9f3f2",
+              "call_165e4952ff0f448689dccbbc66cd7055"
+            ],
+            "limits": "No external caller or fused-only checkpoint was run; this describes the call form, not an observed regression in a shipped model."
+          }
+        ]
+      },
+      {
+        "id": "inherited-exact-allocation-budget",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged transformer allocator can skip an exactly affordable option. This is distinct from failing to reach the allocator with an injected KV child.",
+        "trigger": "The separate-projection allocation path has a candidate whose cost equals the computed budget and another candidate of lower cost.",
+        "expected_behavior": "Select the largest candidate within budget, including an exact match.",
+        "actual_behavior": "The search tuple `(budget,)` sorts before `(budget, pattern)`. With four unit-weight projections and a budget of 14, the actual parent allocator chose four 3-bit projections costing 12 and returned a surplus of 2 instead of selecting the 14-bit candidate.",
+        "locations": [
+          {
+            "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+            "path": "exllamav3/conversion/allocation.py",
+            "symbol": "allocate_transformer"
+          }
+        ],
+        "source_evidence": [
+          "call_b2949c875ac54be3b0efc13d59902f38",
+          "call_77abd08c794342289ff2d07ec4ad9905",
+          "call_fee8347a63394d3c911aa7bae8c1427c",
+          "call_60e1b076d3ee4b4584eddba00d376871"
+        ],
+        "verification": [
+          {
+            "method": "repository_execution",
+            "description": "Ran the parent implementation of `allocate_transformer` through `runpy` at 3.25 bpw and zero incoming surplus using four stub projections.",
+            "evidence": [
+              "call_7acdde06fe094063b98c868cfb5063c1"
+            ],
+            "limits": "Isolated Python allocator call, not a conversion run or a measurement of real model allocation frequency."
+          }
+        ]
+      },
+      {
+        "id": "inherited-native-rope-reads-and-reduction",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The constructor change does not alter the inherited native RoPE bounds and reduction concerns on paths that reach rotation.",
+        "trigger": "Use native RoPE with a frequency vector shorter than the launched x-lane count, for example a full rotary width of 80 or a rotary width of 64 on a 128-wide head. With fused RMS normalization, a padded head width also reaches unguarded weight reads, and nonuniform lane inputs exercise the shared reduction writes.",
+        "expected_behavior": "Read frequencies and weights only within their logical bounds and store one complete reduction per warp.",
+        "actual_behavior": "For a one-dimensional frequency vector the kernel reads `inv_freq[t]` before checking the rotary lane bound. Normalization reads a half2 weight per lane without a padding guard and all lanes write their shuffle-down result to the same per-warp sum slot. Attention's decode methods still call RoPE after projection when configured, and `test_rope.py` has width-80 direct calls with and without normalization. Integer launch arithmetic gives 64 x-lanes against 40 frequency entries at width 80, or 32 entries in the 128/64 partial case.",
+        "locations": [
+          {
+            "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+            "path": "exllamav3/exllamav3_ext/rope.cu",
+            "symbol": "rope_kernel / rope"
+          }
+        ],
+        "source_evidence": [
+          "call_03ba9ecd51354855abb0d60122100140",
+          "call_30c6ad68f20542828ff947415c3392b5",
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_60e1b076d3ee4b4584eddba00d376871",
+          "call_82d7c7f1e4604394a9270d8494db8fc5"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the native launch, frequency and weight reads, reduction helper, rotary wrapper, and direct test call with the constructor-only diff.",
+            "evidence": [
+              "call_03ba9ecd51354855abb0d60122100140",
+              "call_30c6ad68f20542828ff947415c3392b5",
+              "call_783df40d98644618a502d8beb46a2eea",
+              "call_82d7c7f1e4604394a9270d8494db8fc5",
+              "call_60e1b076d3ee4b4584eddba00d376871"
+            ],
+            "limits": "No CUDA execution or race detection; compiler behavior and runtime consequences were not measured."
+          },
+          {
+            "method": "scalar_transcription",
+            "description": "Computed the lane count by rounding half the head width up to a multiple of the 32-lane warp width, then compared it with the frequency count.",
+            "evidence": [
+              "call_783df40d98644618a502d8beb46a2eea"
+            ],
+            "limits": "Integer launch arithmetic only; does not model GPU scheduling, memory loads, or half-precision arithmetic."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds optional query, KV, and output projection modules to Attention. All 19 inspected model call sites retain their named linears. Query and output substitutions reuse existing forward calls, but the combined KV branch leaves loading, forward projection, and conversion allocation looking for missing separate projections."
+  },
+  "evidence": {
+    "call_60e1b076d3ee4b4584eddba00d376871": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+        "offset": 185,
+        "max_bytes": 4000
+      },
+      "result_sha256": "28d7775038b94549e56073e1f54c75b6cd299056ff711b5555d12e755cc86e01"
+    },
+    "call_fcb202335b694744a4eeafe68f405bf8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "Attention(",
+        "limit": 120
+      },
+      "result_sha256": "4de9429633c9c88ec2ed920e5b82fe00c5bb1444d7ed94bbefd5dfd19060617f"
+    },
+    "call_e4f9c6095cf24fe0b31d6fd3a8ba57a8": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "key_q =",
+        "limit": 120
+      },
+      "result_sha256": "cafa49947fcc084e44d91e7880454e066a2d19bc98175f674548124414360d73"
+    },
+    "call_1ec2d41fea2a4156b9ecfd3f5afe02da": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "key_k =",
+        "limit": 120
+      },
+      "result_sha256": "b08b520dfe374156a7dde17e86ae4e325fe015f276559e95a0bc688e2da9e040"
+    },
+    "call_94d7688f631240a2841ccc66616e9fc1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\nfor p in Path('.').rglob('*.py'):\n if '.git' in p.parts: continue\n try: t=ast.parse(p.read_text())\n except (SyntaxError,UnicodeError): continue\n for n in ast.walk(t):\n  if isinstance(n, (ast.Name,ast.Attribute)) and getattr(n,'id',getattr(n,'attr',None))=='Attention':\n   print(p,n.lineno)\n  if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='Attention':\n   print('  ',len(n.args),[(x.arg,ast.unparse(x.value)) for x in n.keywords if x.arg is None or x.arg.startswith('key_') or x.arg=='fused_qkv_reshape'])"
+        ]
+      },
+      "result_sha256": "020a9a78292cad68186bdf93cd105ccb8f9e935067383f6ea1fbe3d7e21fe838"
+    },
+    "call_06809d1868bd43bda26e8d05fdff03bd": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/modules/attn.py",
+        "max_bytes": 35000
+      },
+      "result_sha256": "f039e692513034cd605e4a6e6075b9d20cc3909bf5e07798ed3429b15ffbc6b1"
+    },
+    "call_10d358e9ce274941a643bea8a5abbb04": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": ".k_proj",
+        "limit": 100
+      },
+      "result_sha256": "175235b22105d35e3f7967c0864993d626d870c835eaaeb6633fafbc0ed6ef66"
+    },
+    "call_b69711053bd4475881634a4abcfd0e15": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": ".q_proj",
+        "limit": 100
+      },
+      "result_sha256": "a6b4f8cf60fb0306653783f391a633871ea2e19472546a6d8a94dadf6bff1465"
+    },
+    "call_5779fbce10a94bb49b1e06db55ea0868": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": ".o_proj",
+        "limit": 100
+      },
+      "result_sha256": "68c9a9a06b5655f4088c0eb2b45af6a9210f27484457d0bd769e5fdff16a7293"
+    },
+    "call_a71b63c211fe44819344c98b6a2fed13": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": ".v_proj",
+        "limit": 100
+      },
+      "result_sha256": "c6988b53a12cd71cfd812a95b85572b08d669289f3faf436486cf137b2fb6244"
+    },
+    "call_fee8347a63394d3c911aa7bae8c1427c": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/modules/transformer.py",
+        "max_bytes": 13000
+      },
+      "result_sha256": "7f36759a288cfed0094f69ebe35574e939c5f645b06926cce3caadbb76b17fe5"
+    },
+    "call_8b3861f314954bff8c5e173f114fa76a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": ".allocate_q("
+      },
+      "result_sha256": "4c0e6b037289b64ec5aa1c192b923f9adf2e279ee7152f0133a13fdb08cd2fdd"
+    },
+    "call_0fc9f5029b5d4528a3476164db08d3ca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "project_qkv("
+      },
+      "result_sha256": "8cffc18a13b256a04ff7dd618f91a1ce2094f4ccfddf522f47dc9a3c7d699f5c"
+    },
+    "call_f2aca4f7b6984ca8b9e2a1e4cb6aa9e6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "register_submodule(",
+        "path": "exllamav3/modules/module.py"
+      },
+      "result_sha256": "1e77f4d5af33c43691e9f8d4976528fd382585b4fffb0a9746785729d7a2ce81"
+    },
+    "call_dd42cf6b1f62418481a9df556c84bcd6": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/modules/module.py",
+        "max_bytes": 7300
+      },
+      "result_sha256": "2b85d67433244112248f5a5e493006e776a75fa3ffc19518c930a0f822f5645c"
+    },
+    "call_c2771617986d46a29100a38e67328dad": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "kv_proj",
+        "limit": 100
+      },
+      "result_sha256": "8b65a0deb0b9b2a080a8ba0a96f7e3a4ce8a45fac1d277e3f52badacfea26947"
+    },
+    "call_a100bb063a3e4a17b46958c8ce25b632": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/modules/attn.py",
+        "limit": 30
+      },
+      "result_sha256": "0c12a306d7105c2daae2538446730b5b71c0dc46a99334964c426cc263f4d011",
+      "catalog_only": true
+    },
+    "call_352c9515cedb47f894afc21b01d97e8f": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "modules",
+        "max_bytes": 16384
+      },
+      "result_sha256": "9600b26dbdf2528ee577f16fcabfe0589b8a3a1d29fe7622f289acb6fc127f9b"
+    },
+    "call_916a68a85fdd45aca133d1820d1cd8b5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "inv_freq[",
+        "limit": 30
+      },
+      "result_sha256": "1fe663bf444442aecf6bfe3df107c983ffa548833475c3a07483e2ea93245b5a"
+    },
+    "call_03ba9ecd51354855abb0d60122100140": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "max_bytes": 9500
+      },
+      "result_sha256": "ec4b47a713cf69ac16e18d294aa037c6788a5004b89493662a538923018550ad"
+    },
+    "call_30c6ad68f20542828ff947415c3392b5": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/exllamav3_ext/rope.cu",
+        "offset": 9500
+      },
+      "result_sha256": "2562632c594f22282666159763d5b64d810f34206528107777ac5d3c1f456d44"
+    },
+    "call_3ce0b16cee0942a49861bc3d7fc1cd24": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "partial_rotary_factor",
+        "limit": 30
+      },
+      "result_sha256": "88fef90caa9af1825819169a0a4126becf513ff7a20bf0174b8f32225d574a0f"
+    },
+    "call_2ba0f18df268490cb0a436bf79cd6512": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/16",
+        "max_bytes": 16000
+      },
+      "result_sha256": "a1322f0f7143f85982b860c5363a842b7f9e0b3ddb43b2a95b6c9229d6e570e9"
+    },
+    "call_6a24241cdcb04db5b2f9993c34182b08": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/34",
+        "max_bytes": 18000
+      },
+      "result_sha256": "3b9736d86cdce1fa4069793d878b218fdddf21f67d8c427272f70901ac0c40ae"
+    },
+    "call_b6c97571fc5c4ae49280b2fb2f6275dc": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/42",
+        "max_bytes": 18000
+      },
+      "result_sha256": "7169a263dfaa8c6acb6c357ba06a7c17d7beab14109be771f518a718aaefc7e9"
+    },
+    "call_d8558467fda849e6a63ff69771c99668": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 20000
+      },
+      "result_sha256": "ad76d22b5d1e501447e31c3b0c58e868d2f24af18d3334f63f65488045a23b36"
+    },
+    "call_05cc0829bdbb40a1b582976f99b15039": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "max_bytes": 12000
+      },
+      "result_sha256": "6d3bfc3cf090ee0284a1e7bdfa0aa2a255b6d363255827988306237acdebe490"
+    },
+    "call_be410e738d2345d7b062a58826d99d6c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/53",
+        "offset": 12000,
+        "max_bytes": 16000
+      },
+      "result_sha256": "4e3fc29898621c2a450438b0e93fe68378329a0702a0a7e825ec78116b5ff34f"
+    },
+    "call_308178e4a822462a867fad3b394c1849": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "max_bytes": 40000
+      },
+      "result_sha256": "dac03260faf460dadc160b84a1767702fd70628004e968ab0369aabfb99798ec"
+    },
+    "call_f6c580b5a3a6486bbab7f5a4311f0a47": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/33",
+        "offset": 40000,
+        "max_bytes": 7000
+      },
+      "result_sha256": "8d3f7a3a73492740f81451dd042af54f46bdff94e687c72f3ecff35ba78a530f"
+    },
+    "call_6cf9257b62114fdf949af7d218b9e25c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/26",
+        "max_bytes": 12000
+      },
+      "result_sha256": "e9fcc8761120762fc98f52cf37131ee2bf08772f0e9101470e7abf137f8cbfe1"
+    },
+    "call_486a7234b0b54e929b86ec19cee7b1d4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 10000
+      },
+      "result_sha256": "21ecb21e0bbad127fdf96016b8386cb172d886d8e81cec880a8defce77bdfbc7"
+    },
+    "call_6bdcdf6a7c284bc0ae0b0b6b3c4714b4": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/29",
+        "max_bytes": 12000
+      },
+      "result_sha256": "4c55d8a447d868eaf457186dd17f1d7eed291453d2d7af3c87a2b2bd70e8308d"
+    },
+    "call_4a54938639ae4b8c8d3d3be4487accfa": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/48",
+        "max_bytes": 13000
+      },
+      "result_sha256": "c582d8210eeb58e733fcc52d8994fdac23f881a5cbec443a81969a23856591af"
+    },
+    "call_18d890159977471ba164ecf7fd1258a1": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/4",
+        "max_bytes": 10000
+      },
+      "result_sha256": "3b9813ed6c51424b140b417ac2d7d4f458192edfe676d1bb681904ae16aa2bbd"
+    },
+    "call_7947373fd9894ce69bdfead15e63c5bb": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/27",
+        "max_bytes": 10000
+      },
+      "result_sha256": "86908b85019e91b84f12f42e1724f06e4b9abe07029b501f2475b86a421def87"
+    },
+    "call_ff4f30b59b514080b4e0fdff5e00d04b": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/44",
+        "max_bytes": 8000
+      },
+      "result_sha256": "4f86801d49050adfed884510788c89741a8abee17415989507c4c71eac82cf7e"
+    },
+    "call_46e463f9cb504d0bb277da8371722c15": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/conversion/convert_model.py",
+        "offset": 10700,
+        "max_bytes": 6200
+      },
+      "result_sha256": "4aed12f53dc60071a0d0e446d0b05e51275a33790b814fe68d344baa9356c716"
+    },
+    "call_07c6a097332f4489a424c3ba31c073f1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "science/kv_quant_exp.py",
+        "max_bytes": 4300
+      },
+      "result_sha256": "2554e7efe449097bb42a29c57187e1446e2f8692d01af3da1e7d65460561ef4c"
+    },
+    "call_bf60e898dc4a4dedb2acfce3d04838ce": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "def load(",
+        "path": "exllamav3/models/model.py"
+      },
+      "result_sha256": "65b9afc7d02981b65998efdf00e5a91540a9837baf5edb10ed0fbd6a3e86f7d2"
+    },
+    "call_34464da95c6d41beb6e2e23871ea4706": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "module.load(",
+        "limit": 30
+      },
+      "result_sha256": "5451f17e54e58de0c1a48461dd838287eb715f09439006037df9afdb733f36c8"
+    },
+    "call_eb5642546c424d92be04b54dcec5b58a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "register_submodule(self.",
+        "limit": 100
+      },
+      "result_sha256": "dc72105ae20baadbb3b59dc4dc163a9ee6d4c6602dbd26200adc4adddfb2cdcc"
+    },
+    "call_d462349fb4484b39a34a2e47a0de7c25": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "00ad26e86660724a794c09bb808741493703ad47",
+        "max_bytes": 9000
+      },
+      "result_sha256": "bdd18b019a6f67448dd28d642d99d50c7e6ab9df2f121912603f39a74e2ed463"
+    },
+    "call_6a77dbd2c9c84fd4b96220ed4c427614": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "00ad26e86660724a794c09bb808741493703ad47",
+        "offset": 9000
+      },
+      "result_sha256": "c4a4ecf3035f8dfaee71a8bd1cf7fffe0a4a06e95a8379048cb58acda4610803"
+    },
+    "call_464d66ca41334d2a9a3f8248ee2eb349": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "bisect_right",
+        "path": "exllamav3/conversion/allocation.py"
+      },
+      "result_sha256": "788462160f5130889d2cbfb3b6b98445dfdc5c2584c4034497f71955605f1444"
+    },
+    "call_77abd08c794342289ff2d07ec4ad9905": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "allocate_transformer("
+      },
+      "result_sha256": "6bb52b5436513f864c4a59c53d0162463c4dcc0f92921d7bd701b6c9f6a69ea2"
+    },
+    "call_b2949c875ac54be3b0efc13d59902f38": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/conversion/allocation.py",
+        "max_bytes": 10000
+      },
+      "result_sha256": "a044399aa945afcc60afce18ec0fd71a3c9a2f02cd0e5e0a136301846869b0d8"
+    },
+    "call_db0cfda1370c468590938340ff5d23f6": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "f45eb4ce2090ca5db306cf863ee2f1826810e0ff",
+        "max_bytes": 13000
+      },
+      "result_sha256": "dd0f5694362a99c401c34071b84ecb4d592e475e0099a56fed58b340495b2acb"
+    },
+    "call_b84f0e78cdd74000880205d3051aa925": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "warp_reduce_sum_f(",
+        "path": "exllamav3/exllamav3_ext/reduction.cuh"
+      },
+      "result_sha256": "55aa2b36ad7f601c6461faeea97f9479edf0f62a2e5592fb45a9a4440d15230e"
+    },
+    "call_b2023ee7ce6b4fb699ae97dc035cd7c7": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "warp_id] =",
+        "path": "exllamav3/exllamav3_ext/rope.cu"
+      },
+      "result_sha256": "806de22c1f38769f74daa19d40da9f745784d87eaf70f45a37556b12f79b2fcb"
+    },
+    "call_db31a61ba7174ead8937527239f6a3f2": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "def apply(",
+        "path": "exllamav3/util/rope.py"
+      },
+      "result_sha256": "01e15cd68780331f2390e5daf157bc94fff440f99ae461dc63ddae42ab5b1bb4"
+    },
+    "call_783df40d98644618a502d8beb46a2eea": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\nfor path,ranges in [('exllamav3/util/rope.py',[(91,118),(285,331)]),('exllamav3/exllamav3_ext/reduction.cuh',[(75,86)]),('tests/test_rope.py',[(44,95)]),('exllamav3/models/model.py',[(105,120),(182,201),(394,411)])]:\n print(path); a=Path(path).read_text().splitlines(); print('\\n'.join(f'{i}: {a[i-1]}' for x,y in ranges for i in range(x,min(y,len(a))+1)))\nfor d,p in [(128,64),(80,80)]:\n lanes=32*((d//2+31)//32); print(d,p,lanes,p//2,lanes-p//2)\nclass Stub: pass\ns=Stub(); s.kv_proj=Stub(); s.multi_kv=None\nfor label,f in [('load probe',lambda:s.k_proj.quant_type),('project fallback',lambda:s.k_proj.forward(None,{})),('allocation',lambda:(s.k_proj,s.v_proj))]:\n try: f()\n except AttributeError as e: print(label,type(e).__name__,e)\nfrom bisect import bisect_right\noptions=[(12,[3]*4),(14,[3,4,4,3])]; print(options[max(0,bisect_right(options,(14,))-1)])"
+        ]
+      },
+      "result_sha256": "d31d0a66b2e2c7d3044fe1be3a75964bace47380b7228822407fee289bf5f339"
+    },
+    "call_7fcb2a05940d4446895e4eab353fad74": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "query": "self.fkey",
+        "path": "exllamav3/modules/linear.py"
+      },
+      "result_sha256": "3737a10e966bde844167e74875d06c3b58d913adebbca1343ba4a78cc2aa0c8b"
+    },
+    "call_16927df5d11f44c480b494f1f4c9f3f2": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+        "path": "exllamav3/modules/linear.py",
+        "offset": 3100,
+        "max_bytes": 3000
+      },
+      "result_sha256": "0a931a0d98b7ca7d64861363e49e9a3252adb8215a1d804081cf94a712caf105"
+    },
+    "call_165e4952ff0f448689dccbbc66cd7055": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nimport ast\ncount=0\nfor p in sorted(Path('.').rglob('*.py')):\n if '.git' in p.parts: continue\n t=ast.parse(p.read_bytes()); aliases={'Attention'}\n for n in ast.walk(t):\n  if isinstance(n,ast.ImportFrom): aliases.update(a.asname or a.name for a in n.names if a.name=='Attention')\n for n in sorted((n for n in ast.walk(t) if isinstance(n,ast.Call) and (isinstance(n.func,ast.Name) and n.func.id in aliases or isinstance(n.func,ast.Attribute) and n.func.attr=='Attention')),key=lambda n:n.lineno):\n  count+=1; kw={k.arg:k.value for k in n.keywords}; assert not n.args and None not in kw; keys=[ast.literal_eval(kw[f'key_{k}']) for k in 'qkvo']; assert all(keys) and not {'q_proj','kv_proj','o_proj'}.intersection(kw); print(p,n.lineno,keys,ast.unparse(kw['key_fused_qkv']) if 'key_fused_qkv' in kw else '-')\nprint('total',count)"
+        ]
+      },
+      "result_sha256": "8ce5dec2c8ecaec058f2807d63be50cac3d217ff4c7ef062af7f6d98587cfe7b"
+    },
+    "call_e4df74dad6424df08eb619282961dd1a": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 657
+      },
+      "result_sha256": "daae5c66ce189867c468570cbe61ac79ee68ccda9bb6b135fde8827d9783d6df",
+      "catalog_only": true
+    },
+    "call_7acdde06fe094063b98c868cfb5063c1": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from runpy import run_path\nallocate=run_path('exllamav3/conversion/allocation.py')['allocate_transformer']\nclass Proj:\n def __init__(self,key): self.key=key\n def weights_numel(self): return 1\nprint(allocate(3.25,0,*(Proj(k) for k in 'qkvo'),None,None,None))"
+        ]
+      },
+      "result_sha256": "9f4cfeaa92f7af5b22703410cac454025378740fee7706e19de4a6b94415b79e"
+    },
+    "call_82d7c7f1e4604394a9270d8494db8fc5": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "from pathlib import Path\nfor p,a,b in [('exllamav3/integration/transformers.py',17,55),('tests/test_qgemm.py',6,22),('tests/test_quant_fn.py',13,31),('exllamav3/models/dots1.py',160,171),('tests/test_rope.py',9,42)]:\n print(p); print('\\n'.join(Path(p).read_text().splitlines()[a-1:b]))"
+        ]
+      },
+      "result_sha256": "7e5b6a86d6e6cc1236052b5099651b32a1ad8eb093d490b4634927ff22a78bcc"
+    }
+  }
+}

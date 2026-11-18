@@ -1,0 +1,763 @@
+{
+  "schema_version": 5,
+  "sha": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+  "parent_shas": [
+    "eeaabcdc457efa53ad56314c79e27bae06e7a88c"
+  ],
+  "cutoff_date": "2025-07-29T21:57:56+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "The commit describes a GEMM mapping fix for \u201csome odd tensor shapes.\u201d Here, \u201codd\u201d includes output widths N that are multiples of 128 but not 256. Several automatic dispatch branches could select shape 3, whose 256-column tiles do not cover those widths. The kernel rounds the N tile count down; it does not run a partial output tile.",
+        "basis": "source",
+        "evidence": [
+          "call_8ea91d7bf10f4e44814d63c705065697",
+          "call_0ac71f39100d4148895fe03424ec3c17",
+          "call_3393a7ae877d4e478e1107ca61ddc70b",
+          "call_6ee8c689f6b64f2d9479e75c6cf67a79"
+        ]
+      },
+      {
+        "text": "A separate Hopper/Blackwell branch compared `(size_k && bits >= 3)` with 8192. The left side is Boolean, so the branch could never select shape 3. The header also still declared a five-argument selector even though the definition and both internal callers already used six arguments.",
+        "basis": "source",
+        "evidence": [
+          "call_0ac71f39100d4148895fe03424ec3c17",
+          "call_4d211a8a76e743aea6b286e3bedfb769"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "The added `N % 256 == 0` tests make tile compatibility a prerequisite for the affected shape-3 preferences. Those tests also make the corrected Hopper/Blackwell K threshold safe with respect to N: repairing the comparison alone would let that branch choose shape 3 for a sufficiently large K even when N could not fill 256-column tiles.",
+        "basis": "source",
+        "evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_3393a7ae877d4e478e1107ca61ddc70b"
+        ]
+      },
+      {
+        "text": "The likely design goal is to keep the existing wider-tile preferences where they fit rather than route all matrices through the conservative 128-column shape. The tile widths explain the divisibility tests; they do not explain why the existing architecture-, bitrate-, and dimension-specific performance cutoffs were chosen.",
+        "basis": "inference",
+        "evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_0ac71f39100d4148895fe03424ec3c17",
+          "call_3393a7ae877d4e478e1107ca61ddc70b",
+          "call_6ee8c689f6b64f2d9479e75c6cf67a79"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "Both automatic dispatchers use the repaired selector: single GEMM passes `multi=false`, multi-GEMM passes `multi=true`, and both bypass it for positive forced indices. Inspected Python entry points are `LinearEXL3.forward` on its direct quantized path, the benchmark's automatic preference call, `Attention.project_qkv` on its fused K/V path, and the three fused expert projections in `BlockSparseMLP.forward`. The reconstruction path and benchmark's compatibility-checked forced runs do not use automatic selection.",
+        "basis": "source",
+        "evidence": [
+          "call_0ac71f39100d4148895fe03424ec3c17",
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_faa7ac370560461a8d685563f83de158",
+          "call_17f45a12e78f43b680df81112c6a2afb",
+          "call_9e9744b9950246669bef00096871f450",
+          "call_58010382ede04a63b865755a78f01213",
+          "call_ce263e730a3a44569c775291fc3214aa",
+          "call_63a77705cf13459e8b985f9cbedd194e",
+          "call_abcc2402838746caada742ae00bbb541",
+          "call_8f501b8b06a740cf8265833eff42a72e"
+        ]
+      },
+      {
+        "text": "The header now declares the existing six-argument `select_gemm_shape` definition, without a default for `multi`. The whole-parent literal search found just the declaration, definition, and the two already-six-argument calls; neither caller needed changing. This fixes a declaration mismatch, not a demonstrated internal build failure.",
+        "basis": "source",
+        "evidence": [
+          "call_4d211a8a76e743aea6b286e3bedfb769",
+          "call_c1bd807a99fd4162bf05037908b4caa4",
+          "call_0ac71f39100d4148895fe03424ec3c17"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The cooperative-GEMM entry (5d470a29) describes the introduction of the four shapes and records the Boolean threshold defect. The later tuning and multi-GEMM entries (c4867edd, b73d0739, a905cffb, 1284d43c) track the same expression through reuse by both dispatchers. The 1284d43c entry also records the stale declaration and zero-block cap. The concurrent-grid entry (edafdd1f) explains why a zero cap reaches the host's concurrency division and why broadcast input needs per-matrix scratch. The experimental codebook entry (d359bcc0) explains the independent codebook dimension of the dispatch tables.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_3164a4097584482c989dcd1408e74290",
+          "call_2177a51739384df692a8966b6a2dfa38",
+          "call_83e0f3639f264859a814183ab398c10b",
+          "call_293e816a782d416cb5ee99f5917988ff",
+          "call_6dad1cae2e184ad18ae71874ad97ad67",
+          "call_1b847d03b73c48c7854aa17c480556b9",
+          "call_4cb58e3671fa410e95635579dee00c09",
+          "call_3e0dc35d4c2f483885b5a9aad4966374"
+        ]
+      },
+      {
+        "text": "The task removes the inherited Boolean comparison and fixes the declaration. It leaves the multi-GEMM block cap and concurrency division in place. It also leaves the wrapper's leading-dimension and scratch handling unchanged, including the pre-dispatch index-count check that can reject the all-expert fused case. The kernel mapping fix is not a general multi-GEMM input-validation fix.",
+        "basis": "source",
+        "evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_c1bd807a99fd4162bf05037908b4caa4",
+          "call_0ac71f39100d4148895fe03424ec3c17",
+          "call_17f45a12e78f43b680df81112c6a2afb",
+          "call_8e5e7f134dba4f0fb8059a9f3615bcc4",
+          "call_b44911ec78194e368b0981d367594490",
+          "call_8f501b8b06a740cf8265833eff42a72e"
+        ]
+      },
+      {
+        "text": "Issue #5, \u201cWill exl3 quants need requanting later?\u201d, asks about storage stability and whether quantizing on Ampere is practical. Turboderp distinguishes working Ampere support from desired performance. Issue #61, \u201cRun ERNIE-4.5-300B-A47B-PT 2.25bpw with 5x20G 3080 got 'Insufficient VRAM'\u201d, reports a model-loading failure; the reporter says switching the allocator backend worked.",
+        "basis": "source",
+        "evidence": [
+          "call_bbc0976aa1e94a09a897b8b5d5acb45c",
+          "call_3d7d740dd86a4e5c84896e6d285a0082"
+        ]
+      },
+      {
+        "text": "Issue #5 is relevant background because the reply names both Ampere and the EXL3 GEMM kernel, but it reports no bad shape choice. Issue #61 shares tensor-shape and Ampere terminology, but its traceback ends in model autosplit before GEMM dispatch. Neither discussion establishes a link to this fix or validates it.",
+        "basis": "inference",
+        "evidence": [
+          "call_bbc0976aa1e94a09a897b8b5d5acb45c",
+          "call_3d7d740dd86a4e5c84896e6d285a0082",
+          "call_40831d8b34cf4edeb9683ccbde66ab82"
+        ]
+      }
+    ],
+    "limitations": [
+      "No CUDA build, kernel launch, numerical comparison, model run, or timing benchmark was performed. The Python checks transcribe bounded selector and tile arithmetic; they do not emulate fixed-width integer overflow, CUDA memory accesses, or floating-point execution.",
+      "The exact model or tensor that prompted the change is unestablished. The inspected branches and callees explain tile compatibility, not the empirical rationale for the performance thresholds.",
+      "Caller reach is based on whole-parent literal searches and inspected call sites. It does not establish which deployed models encounter the affected dimensions or enumerate dynamic and external callers."
+    ],
+    "links": [
+      "5d470a29780927c1c8c874609597823f210ae3b9",
+      "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+      "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+      "edafdd1f3d9a966a982f54334838f4f94ee51473",
+      "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+      "d359bcc0d366c64fe7bed2e13446641d9f99c163",
+      "1284d43c76349160992d42a241c81071fcc7b919"
+    ],
+    "chapters": [
+      {
+        "id": "gemm",
+        "title": "Choose EXL3 GEMM tiles that cover the output width",
+        "claims": [
+          {
+            "text": "For A[M,K] \u00d7 B[K,N], M is the row count, K the reduction dimension, and N the output width. Shapes 1\u20134 all use 16-row tiles; their (K,N) tiles are (16,128), (32,128), (32,256), and (16,512), with 256, 512, 512, and 256 threads respectively. Both kernel families feed the same inner tiled routine. It handles partial M tiles but counts only full K and N tiles. The separate `exl3_gemm_shape_compat` helper checks both divisibilities; the native dispatchers do not call it.",
+            "basis": "source",
+            "evidence": [
+              "call_3393a7ae877d4e478e1107ca61ddc70b",
+              "call_0ac71f39100d4148895fe03424ec3c17",
+              "call_8e5e7f134dba4f0fb8059a9f3615bcc4",
+              "call_6ee8c689f6b64f2d9479e75c6cf67a79"
+            ]
+          },
+          {
+            "text": "OLD/Ampere now require N divisible by 256 before entering either the at-most-four-bit branch or the N<4096 branch that can choose shape 3 at K>8192. Ada adds the same gate to its at-most-three-bit branch. An N divisible by 128 but not 256 also fails the 512-column test, so it falls through to shape 2 on those tiers.",
+            "basis": "source",
+            "evidence": [
+              "call_40831d8b34cf4edeb9683ccbde66ab82",
+              "call_0ac71f39100d4148895fe03424ec3c17",
+              "call_3393a7ae877d4e478e1107ca61ddc70b"
+            ]
+          },
+          {
+            "text": "Hopper/Blackwell add the same gate to the seven-or-more-bit branch for N\u22648192, where shape 3 requires K>32768. For lower bitrates and N\u22644096, the repaired, gated rule picks shape 3 only when K>8192 and bits\u22653. The earlier single-GEMM exception still takes priority: two- or four-bit weights with K\u22642048 use shape 1, which also has a 128-column tile. Shape 4's existing 512-column gates are unchanged; the OLD/Ampere test also requires K\u00d7N>4096\u00b2 (16,777,216 weight positions) and at most six bits.",
+            "basis": "source",
+            "evidence": [
+              "call_40831d8b34cf4edeb9683ccbde66ab82",
+              "call_0ac71f39100d4148895fe03424ec3c17",
+              "call_3393a7ae877d4e478e1107ca61ddc70b"
+            ]
+          },
+          {
+            "text": "The scalar transcription checked 196,608 combinations of three tier groups, eight K values, widths in steps of 128, all eight bitrates, and both `multi` settings. N was incompatible with the selected tile in 20,208 parent cases and none of the patched cases in this sample. At Ampere, K=4096, N=2176, and four bits, the model changes from shape 3 covering 2,048 columns to shape 2 covering all 2,176. At Hopper/Blackwell, K=16384, N=4096, and three bits, it changes from shape 2 to shape 3; both cover all columns.",
+            "basis": "execution",
+            "evidence": [
+              "call_2d7e3e5b3dc440928ef05d2ecf8c7573"
+            ]
+          },
+          {
+            "text": "After selection, the existing dispatch uses the shape index for block size and tile-based launch limits, then combines it with the codebook slot to select a function pointer from the bitrate- and output-precision-specific table. The patch changes which specialization is chosen, not the packed-weight format, kernel implementation, or precision. The added `DBGI3` line is commented out.",
+            "basis": "source",
+            "evidence": [
+              "call_40831d8b34cf4edeb9683ccbde66ab82",
+              "call_0ac71f39100d4148895fe03424ec3c17",
+              "call_3393a7ae877d4e478e1107ca61ddc70b"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "retained-zero-multi-gemm-block-cap",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "A compatible automatic tile choice can still leave multi-GEMM with zero blocks.",
+        "trigger": "An otherwise valid Ampere multi-GEMM call uses automatic selection with K=512, N=128, and two-bit weights.",
+        "expected_behavior": "Use at least one block for a nonempty supported workload, or reject it before computing launch concurrency.",
+        "actual_behavior": "Shape 2 has 16 K-by-N tiles here. The unchanged cap divides by 24 without a lower clamp, setting `num_sms` to zero. `exl3_mgemm` then evaluates `total_sms / num_sms`. Fused attention and expert callers use automatic dispatch without a minimum-tile check at the call site, but no ordinary model invocation of this exact case was established.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_exl3_mgemm_kernel"
+          },
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          }
+        ],
+        "source_evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_0ac71f39100d4148895fe03424ec3c17",
+          "call_17f45a12e78f43b680df81112c6a2afb",
+          "call_58010382ede04a63b865755a78f01213",
+          "call_abcc2402838746caada742ae00bbb541",
+          "call_8f501b8b06a740cf8265833eff42a72e"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Modeled patched selection and the integer cap; the result was shape 2, 16 tiles, and zero blocks. The subsequent division was established by source inspection.",
+            "evidence": [
+              "call_2d7e3e5b3dc440928ef05d2ecf8c7573",
+              "call_17f45a12e78f43b680df81112c6a2afb"
+            ],
+            "limits": "Did not execute the C++ division or measure its failure mode."
+          }
+        ]
+      },
+      {
+        "id": "retained-k-tile-validation-gap",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new rules enforce N alignment in the affected branches, but automatic dispatch still does not validate K against the selected tile.",
+        "trigger": "An otherwise valid direct single-GEMM call on Ampere uses automatic selection, two-bit packed weights, no optional transforms, K=144, and N=128. K meets the wrapper comment's multiple-of-16 condition.",
+        "expected_behavior": "Use a shape that covers all of K, or reject the unsupported alignment before launch.",
+        "actual_behavior": "The fallback chooses shape 2, whose K tile is 32. The inner loop counts four full K tiles, leaving 16 reduction elements out. The native binding and wrapper expose the case; the inspected direct linear caller does not establish that a checkpoint presents it. The benchmark checks compatibility for forced runs, not for its automatic query.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu",
+            "symbol": "select_exl3_gemm_kernel"
+          },
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh",
+            "symbol": "exl3_gemm_kernel_inner"
+          }
+        ],
+        "source_evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_0ac71f39100d4148895fe03424ec3c17",
+          "call_3393a7ae877d4e478e1107ca61ddc70b",
+          "call_6ee8c689f6b64f2d9479e75c6cf67a79",
+          "call_17f45a12e78f43b680df81112c6a2afb",
+          "call_9e9744b9950246669bef00096871f450",
+          "call_ce263e730a3a44569c775291fc3214aa",
+          "call_63a77705cf13459e8b985f9cbedd194e"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Checked the full-tile arithmetic for the source-selected K tile: 128 elements covered and 16 left over.",
+            "evidence": [
+              "call_bed4f69929e74be4a73056d2f06378b7"
+            ],
+            "limits": "No tensor values or GPU output were evaluated."
+          }
+        ]
+      },
+      {
+        "id": "retained-multi-gemm-leading-dimension-gap",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The unchanged multi-GEMM wrapper does not ensure that the input and output matrix groups agree with the kernel's traversal.",
+        "trigger": "An otherwise valid multi-GEMM binding call has two input matrices, one output matrix, and an indices tensor of shape (1,1).",
+        "expected_behavior": "Reject incompatible group sizes before dispatch.",
+        "actual_behavior": "The indices-width check agrees with the single output matrix, but the kernel iterates over the maximum of the input and output group sizes and attempts to use a second index. The inspected fused K/V and expert callers use broadcast or paired group sizes, so this example concerns the binding rather than those normal call shapes.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu",
+            "symbol": "exl3_mgemm"
+          },
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+            "symbol": "exl3_mgemm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_17f45a12e78f43b680df81112c6a2afb",
+          "call_8e5e7f134dba4f0fb8059a9f3615bcc4",
+          "call_58010382ede04a63b865755a78f01213",
+          "call_abcc2402838746caada742ae00bbb541",
+          "call_8f501b8b06a740cf8265833eff42a72e"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the wrapper's index check, the kernel's matrix loop, and the located Python constructions against the task diff.",
+            "evidence": [
+              "call_17f45a12e78f43b680df81112c6a2afb",
+              "call_8e5e7f134dba4f0fb8059a9f3615bcc4",
+              "call_40831d8b34cf4edeb9683ccbde66ab82"
+            ],
+            "limits": "No device memory access or failure was observed."
+          }
+        ]
+      },
+      {
+        "id": "retained-multi-gemm-broadcast-scratch-contract",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "new_requirement",
+        "description": "Broadcasting one input matrix does not broadcast its transformed-input scratch slice.",
+        "trigger": "A multi-GEMM binding caller supplies one input, multiple active outputs, and scratch sized only like the input, as the wrapper comment suggests.",
+        "expected_behavior": "Document and validate one scratch slice per active matrix, or make input-sized scratch sufficient.",
+        "actual_behavior": "The kernel advances the scratch pointer by M\u00d7K elements per matrix even when it reuses A. The wrapper does not check that capacity. Fused K/V and expert gate/up allocate per-matrix scratch; fused down uses paired matrices with matching scratch.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+            "symbol": "exl3_mgemm_kernel"
+          }
+        ],
+        "source_evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_17f45a12e78f43b680df81112c6a2afb",
+          "call_8e5e7f134dba4f0fb8059a9f3615bcc4",
+          "call_58010382ede04a63b865755a78f01213",
+          "call_abcc2402838746caada742ae00bbb541",
+          "call_8f501b8b06a740cf8265833eff42a72e"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared broadcast input addressing with scratch addressing, wrapper checks, and existing allocations.",
+            "evidence": [
+              "call_8e5e7f134dba4f0fb8059a9f3615bcc4",
+              "call_17f45a12e78f43b680df81112c6a2afb",
+              "call_abcc2402838746caada742ae00bbb541",
+              "call_8f501b8b06a740cf8265833eff42a72e"
+            ],
+            "limits": "No external caller allocation or device memory violation was observed."
+          }
+        ]
+      },
+      {
+        "id": "retained-fused-all-expert-index-count",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The mapping fix cannot resolve the inherited mismatch between all-expert routing and the fused expert buffers.",
+        "trigger": "A single token takes the fused EXL3 expert path with `activate_all_experts` enabled and more total experts than experts per token.",
+        "expected_behavior": "Allocate space for all selected experts or use the expert-grouped path.",
+        "actual_behavior": "Routing produces one index per expert, but the fused gate output has one slice per configured expert-per-token slot. The direct call from `BlockSparseMLP.forward` is rejected by the wrapper's index-width check before kernel selection. Ordinary conversion was not shown to meet the fully quantized trigger.",
+        "locations": [
+          {
+            "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+            "path": "exllamav3/modules/block_sparse_mlp.py",
+            "symbol": "BlockSparseMLP.forward"
+          }
+        ],
+        "source_evidence": [
+          "call_40831d8b34cf4edeb9683ccbde66ab82",
+          "call_591f06344fbb4b10a0e0ee94bc8872ca",
+          "call_b44911ec78194e368b0981d367594490",
+          "call_8f501b8b06a740cf8265833eff42a72e",
+          "call_17f45a12e78f43b680df81112c6a2afb"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Traced the routing count and fused gate buffer to the native width check; neither is changed by the mapper diff.",
+            "evidence": [
+              "call_b44911ec78194e368b0981d367594490",
+              "call_8f501b8b06a740cf8265833eff42a72e",
+              "call_17f45a12e78f43b680df81112c6a2afb",
+              "call_40831d8b34cf4edeb9683ccbde66ab82"
+            ],
+            "limits": "Conditional reach established from source; no routing or conversion run was performed."
+          }
+        ]
+      }
+    ],
+    "summary": "Guards automatic EXL3 GEMM shape selection against incompatible output widths, repairs a Hopper/Blackwell K threshold, and synchronizes the selector declaration. Scalar checks demonstrate the dispatch arithmetic, not GPU correctness or speed; separate multi-GEMM launch and input-validation issues remain."
+  },
+  "evidence": {
+    "call_40831d8b34cf4edeb9683ccbde66ab82": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "offset": 185,
+        "max_bytes": 2278
+      },
+      "result_sha256": "e8c5b7190311fd9af97f99dd9960623737aeaae588ec3b7f0a63d9b7a14342b8"
+    },
+    "call_c1bd807a99fd4162bf05037908b4caa4": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "offset": 2463,
+        "max_bytes": 652
+      },
+      "result_sha256": "7678ed4b2877fd0ee5fab721488d09e23727f573c760771e001e24e9b97739dc"
+    },
+    "call_0ac71f39100d4148895fe03424ec3c17": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cu"
+      },
+      "result_sha256": "3822662cf5000736314211da2dec050277ccbd298f2aa60b404d2c34fd460620"
+    },
+    "call_4d211a8a76e743aea6b286e3bedfb769": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "select_gemm_shape"
+      },
+      "result_sha256": "faab0823eeeccff96ebf8427ed7f13ab59bb037217c9af34e2b0dfb5e4893c96"
+    },
+    "call_faa7ac370560461a8d685563f83de158": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "select_exl3_"
+      },
+      "result_sha256": "a024cca8f343e232f564409ceba88021fa34efdd1577061315d8a173ffed135b"
+    },
+    "call_3393a7ae877d4e478e1107ca61ddc70b": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_kernel_map.cuh"
+      },
+      "result_sha256": "e262485c1300bc90838f293a58f99b6a76be44c8a03e454a0304a1ad37ce0586"
+    },
+    "call_17f45a12e78f43b680df81112c6a2afb": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm.cu"
+      },
+      "result_sha256": "44ae74daa39ef6adc4b2eb48f46cd4abfc19ee58c589581df0595544789134aa"
+    },
+    "call_7b5d52f60cca40f3b0566bd60899b675": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "TILESIZE_N",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh",
+        "limit": 40
+      },
+      "result_sha256": "feaf3699f523166d4418493d60b3d588e464908e801d7146797bb6216ea1e64c"
+    },
+    "call_8e5e7f134dba4f0fb8059a9f3615bcc4": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_kernel.cuh"
+      },
+      "result_sha256": "232aef31ab54b57ae8e8f8e83986165df15149074a5061526159cb77c555f619"
+    },
+    "call_0bcc7ffaf02d4e10901e87f0884024c5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh",
+        "query": "size_n"
+      },
+      "result_sha256": "7b21a80937967d19130f81b0c2af14558b04e9b3f2b7b9d2a0e8ae7e56ae3999"
+    },
+    "call_6ee8c689f6b64f2d9479e75c6cf67a79": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh",
+        "max_bytes": 5000
+      },
+      "result_sha256": "d7d8da813a066d65fcbf1ef6a18dad33bbe31ed8651fe443eae5b5ccd0d686e8"
+    },
+    "call_822a8762c0784ef993e94df03d98ec4e": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "select_gemm_shape",
+        "limit": 20
+      },
+      "result_sha256": "928c2c594fac282b12aa512e333142cc8a3a9acdd00e090a2e2b89afb8369676",
+      "catalog_only": true
+    },
+    "call_3164a4097584482c989dcd1408e74290": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "5d470a29780927c1c8c874609597823f210ae3b9",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3aa5d68c832354a9a33eb4f7c4f5ecc80c79b8f944f6dfee62b3b08581859d37"
+    },
+    "call_1b847d03b73c48c7854aa17c480556b9": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "1284d43c76349160992d42a241c81071fcc7b919",
+        "max_bytes": 16384
+      },
+      "result_sha256": "5f23d62d2c38ba528cda16ed68686c2446b6d5b5b0c6753da5cde49e0d75c958"
+    },
+    "call_2177a51739384df692a8966b6a2dfa38": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "c4867edd0d31ea9fb052668874ae52fad0e91a0f",
+        "max_bytes": 16384
+      },
+      "result_sha256": "3abe6a4e1eb86396a653d4340435f7d7cd9a986a49066000043d64aaf88d62cd"
+    },
+    "call_83e0f3639f264859a814183ab398c10b": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "b73d0739044d14ebe12a73bdbd154c1f28b36f19",
+        "max_bytes": 16384
+      },
+      "result_sha256": "796d27d97ee5cb87008c63674e81cb6bd10758f728d40270d35990d310a5c2ca"
+    },
+    "call_293e816a782d416cb5ee99f5917988ff": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0bff38e7c532c3bab8a76e92898b04f11252165fad61c191e0afb810c9edd45c"
+    },
+    "call_6dad1cae2e184ad18ae71874ad97ad67": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "a905cffb1a3f66792ea000e9b589557aac3f9d14",
+        "offset": 16384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "6dbad9a1e75a300a5d0bdcec099a02dad186aab6f41321dfaecf9132b9439bdc"
+    },
+    "call_4cb58e3671fa410e95635579dee00c09": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "edafdd1f3d9a966a982f54334838f4f94ee51473",
+        "max_bytes": 16384
+      },
+      "result_sha256": "fba2427b6520ad93b6ba990c835f5f766ad0055e0f64ffa2f0c806804220ae66"
+    },
+    "call_bcadfb811826458ea7ef722a85460483": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions",
+        "offset": 937
+      },
+      "result_sha256": "679fdbc5fa1f3c8355671f809f8f24200b66e1d373d0cd0bdf3cde1a95968729",
+      "catalog_only": true
+    },
+    "call_bbc0976aa1e94a09a897b8b5d5acb45c": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/5"
+      },
+      "result_sha256": "0eeae710a583838b1eda465c66d198ca78cd497e918afc00d6e0a4819d551ada"
+    },
+    "call_3d7d740dd86a4e5c84896e6d285a0082": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/61"
+      },
+      "result_sha256": "371bd17b358e5170637eabaa48061de66e7384931859f2937fdc297a10344c10"
+    },
+    "call_58010382ede04a63b865755a78f01213": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "exl3_mgemm",
+        "limit": 80
+      },
+      "result_sha256": "33cd2eaf5dcd634760fb8f50100b2dc376b6320b22eac3dbd6a6c1ed566b2871"
+    },
+    "call_9e9744b9950246669bef00096871f450": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "exl3_gemm(",
+        "limit": 60
+      },
+      "result_sha256": "72f2182b3c1b1c383e0782c17ab9b887e4b09f0215778fc4a70f2c1f59c624b5"
+    },
+    "call_ce263e730a3a44569c775291fc3214aa": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/modules/quant/exl3.py",
+        "max_bytes": 9000
+      },
+      "result_sha256": "f042c9bc02cad55b4e29f28352d343401a49f2aaa1a935c2792a7f6ed80f38ec"
+    },
+    "call_63a77705cf13459e8b985f9cbedd194e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "science/qgemm_benchmark.py"
+      },
+      "result_sha256": "7b13afe984deadf22b5db2e292332bf636dd1615479fb1659e311e50edf70232"
+    },
+    "call_abcc2402838746caada742ae00bbb541": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/modules/attn.py",
+        "offset": 9500,
+        "max_bytes": 5500
+      },
+      "result_sha256": "0eb6d5a27a63668d9d1b938bbd46ed42bfb24849007e35b0e9d8f5c3888cb791"
+    },
+    "call_8f501b8b06a740cf8265833eff42a72e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "offset": 10000,
+        "max_bytes": 8000
+      },
+      "result_sha256": "91296f8d8757b19f9aadaf1c81ed7d003bba21aee69ac8d3bb8844a4f629ac6f"
+    },
+    "call_67359f1af67a40cf9f0c285cfe433e05": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "odd tensor shapes"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_e78eefe8c63449ebb99521ff8189ec98": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "GEMM",
+        "limit": 35
+      },
+      "result_sha256": "a38a5e6379269126a88397d4c76f5bd89ada887b406ea6166e1ef5d3b1acdf13"
+    },
+    "call_d2794a4b9c454f328643303a3f0d530a": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "exl3_gemm_shape_compat"
+      },
+      "result_sha256": "e9e47530d7d3e69737cb29dd5990f7498fdd77e821eca501e96e152c617ce145"
+    },
+    "call_591f06344fbb4b10a0e0ee94bc8872ca": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "activate_all_experts",
+        "limit": 50
+      },
+      "result_sha256": "3600254b11cb583b9d7f3543a6ccff1cb54ef631a57e24ac75ce1d96e1afd042"
+    },
+    "call_b44911ec78194e368b0981d367594490": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/modules/block_sparse_mlp.py",
+        "max_bytes": 4600
+      },
+      "result_sha256": "4cd97e825ce6815119207c8290581660f6781eba510beaf70e82e8ba6cfdd34d"
+    },
+    "call_5fa5c03709a64b1e8ec6c344007e7749": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exl3_kernel_map",
+        "limit": 20
+      },
+      "result_sha256": "7326b334c933b2fa21c4c24c63de47c7a33d455c715661022cc51bdef1d64f51",
+      "catalog_only": true
+    },
+    "call_3e0dc35d4c2f483885b5a9aad4966374": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "d359bcc0d366c64fe7bed2e13446641d9f99c163",
+        "max_bytes": 16384
+      },
+      "result_sha256": "6def3b674258b3c913571913d81795eb4e8957a945dc62c19121fcca5e362531"
+    },
+    "call_2d7e3e5b3dc440928ef05d2ecf8c7573": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "def pick(t,k,n,b,multi,new):\n a=n%256==0; w=n%512==0; g=a or not new\n if t=='amp':\n  if g and b<=4:return 2 if n<=2048 or k<=2048 else 3\n  if g and n<4096:return 3 if k>8192 else 2\n  if w and n*k>4096**2 and b<=6:return 4\n  return 3 if a else 2\n if t=='ada':\n  if g and b<=3:return 2 if (k<=2048 and not multi) or (n<4096 and k<=12288) else 3\n  if n<=16384:return 2\n  if w and n>=32768:return 4\n  return 3 if a else 2\n if b in (2,4) and not multi and k<=2048:return 1\n if b>=7:\n  if g and n<=8192:return 3 if k>32768 else 2\n  return 4 if w and n>32768 else 2\n if g and n<=4096:return 3 if (k>8192 and b>=3 if new else int(bool(k) and b>=3)>8192) else 2\n if w and n>16384:return 4\n return 3 if a else 2\nkt=[0,16,32,32,16]; nt=[0,128,128,256,512]\nfor t,k,n,b in [('amp',4096,2176,4),('amp',16384,2176,6),('ada',16384,2176,3),('hop',32896,2176,7),('hop',16384,4096,3),('hop',8192,4096,3),('hop',16384,4096,1),('hop',16384,2176,3),('hop',2048,2176,2)]:\n s=[pick(t,k,n,b,False,x) for x in (False,True)];print(t,k,n,b,s,[n%nt[i] for i in s],[n//nt[i]*nt[i] for i in s])\nfrom itertools import product\ncases=list(product(('amp','ada','hop'),(128,512,2048,8192,12288,16384,32768,32896),range(128,65537,128),range(1,9),(False,True)))\nfor v in False,True:\n print(len(cases),v,'incompatible N',sum(n%nt[pick(t,k,n,b,m,v)]!=0 for t,k,n,b,m in cases))\ns=pick('amp',512,128,2,True,True);print('small multi',s,512//kt[s]*128//nt[s],512//kt[s]*128//nt[s]//24)"
+        ]
+      },
+      "result_sha256": "5eca11ef74d680f3751ecdb98f9edcbeedf4b88f94b43565520641f54e84e897"
+    },
+    "call_3b4749677bf440f5a009a6addd16899d": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "query": "CC_OLD",
+        "limit": 30
+      },
+      "result_sha256": "3b0a01103ba5d05cd2741fa2c423933e4b05cf21ff81cd2eb5ec04a214ca4aa8"
+    },
+    "call_0ac40d38152e4943bb7b213cb247302e": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_devctx.cu",
+        "max_bytes": 4300
+      },
+      "result_sha256": "479284659f3214b1b32860ea6628d9fa2dccfd1895228c7739b533573d226722"
+    },
+    "call_8ea91d7bf10f4e44814d63c705065697": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "e14fa3cf22ff9c4203736690522c7baaf17dd57b",
+        "offset": 0,
+        "max_bytes": 185
+      },
+      "result_sha256": "42211415b722c934cb2f9795cf14b9777424aba1b9bf433b6f6b773813cb7780"
+    },
+    "call_8b547517a0854c1cb76f2f16d1f22864": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "eeaabcdc457efa53ad56314c79e27bae06e7a88c",
+        "path": "exllamav3/exllamav3_ext/quant/exl3_gemm_inner.cuh",
+        "offset": 12000,
+        "max_bytes": 4000
+      },
+      "result_sha256": "3a39867e85ff94bc7a3916697868a0dcad94c5abcc16248fa5398586e63e7430"
+    },
+    "call_bed4f69929e74be4a73056d2f06378b7": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "k,n=144,128; print('shape 2 K remainder, K covered:', k%32,k//32*32); print('size cutoff:',4096**2); print('forced shape 3 N remainder:',2176%256)"
+        ]
+      },
+      "result_sha256": "7ec8c9b5b45379dd90555f6c53a2c2252850526b29685038a29d200e14dae4ac"
+    }
+  }
+}

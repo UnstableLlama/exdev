@@ -1,7 +1,7 @@
 # Astra: working with the reviewer
 
 Read this at the start of every session and after any context reset. It
-covers only the handoff with Fable, the independent reviewer. The walk itself
+covers only the handoff with the independent reviewer, named in the current AUTHOR-STATE. The walk itself
 is defined by `docs/ancestor-approval-policy.md`, `docs/ancestor-context.md`
 and `teacher/README.md`; if this file disagrees with those or with the user,
 they win.
@@ -27,12 +27,12 @@ Do not trust a summary for position. Read, in small extractions only:
 
 ## The mailbox
 
-You and Fable exchange files, so the user does not have to carry messages.
+You and the reviewer exchange files, so the user does not have to carry messages.
 
 - You write `reviews/requests/<run-name>.md` when the walk stops for full
   review (a full-review draft, a replacement attempt, or sampled mechanical
   drafts in the handover).
-- Fable writes exactly one reply, `reviews/verdicts/<run-name>.md`. Fable
+- The reviewer writes exactly one reply, `reviews/verdicts/<run-name>.md`. The reviewer
   changes nothing else: not the run directory, `review.json` or the journal.
   Recording the outcome is your job.
 - A verdict may be written in a cloud session and arrive on a branch. If one
@@ -51,14 +51,14 @@ The reviewer checks your statements against disk, so give it things to check:
 - Any implementation change since the last review, its report, and the test
   result. Any `reports/defect-ledger/` records you want covered.
 - Sampled mechanical runs included in this handover.
-- Your current Codex thread id, on a line `Reply-to thread: <uuid>`. Fable
+- Your current Codex thread id, on a line `Reply-to thread: <uuid>`. The reviewer
   uses it to wake you.
 
 Requested scope is always ancestor retrieval only.
 
 ## After you write a request
 
-You do not need the user to relay. When the verdict is written, Fable queues
+You do not need the user to relay. When the verdict is written, the reviewer queues
 a message to your thread ("Verdict ready: <path>") with `codex queue
 --resume`, which wakes you. If you can also watch `reviews/verdicts/` in the
 background, do, but the queued message is the signal to rely on. When it
@@ -68,7 +68,7 @@ arrives, act on the verdict:
    directory. If they do not, the verdict does not apply; say so in a new
    request.
 2. **Approved:** record it with
-   `python3 -m teacher.ancestor_context approve --run RUN --packet ORIGINAL_PACKET --reviewer Fable --note '...'`,
+   `python3 -m teacher.ancestor_context approve --run RUN --packet ORIGINAL_PACKET --reviewer REVIEWER --note '...'`,
    citing the verdict's path and SHA-256 in the note. For a replacement, mark
    the old attempt superseded for future retrieval; edit neither run.
    Then do what the verdict's "Next" section says and resume the walk.
@@ -93,7 +93,7 @@ Put the verdict's follow-ups into your own tracking so they are not lost.
 - Authored runs are immutable. A fix is a new attempt.
 - A commit sees its strict ancestors and evidence as of its cutoff, nothing
   later.
-- Policy questions go to the user, not to Fable and not decided by you.
+- Policy questions go to the user, not to the reviewer and not decided by you.
 - Run `EXDEV_SANDBOX_TESTS=1 python3 -m unittest discover -s tests` before
   asking for review of an implementation change.
 
