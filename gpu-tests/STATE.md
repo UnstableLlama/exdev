@@ -27,5 +27,8 @@
 - `lib/chatdrv.py` drives examples/chat.py through a pseudo-terminal. Copy it beside repro.py. Wait for the prompt with `(^|\\n)User:`.
 - `h.py finish` derives the outcome from the tested commits unless the meta file sets `outcome`. Attempts are never overwritten; a failed fixture or driver is committed as `inconclusive` and retried under the next number.
 
+- Default environment is now Python 3.12: later commits import `typing.override` (exllamav3/models/mimo.py), which 3.11 lacks.
+- `eval/compare_q*.py` import about a dozen heavy third-party packages at module level. `lib/stubmods.py` and `lib/cq.py` stub them, which caps those results at `inconclusive` under the worker rules. Installing the real packages could upgrade them; that has not been tried.
+
 ## Progress
 Results are the directories under `gpu-tests/results/`. In flight: working down priority 1 of the queue, top first.
