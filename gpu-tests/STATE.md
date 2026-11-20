@@ -34,9 +34,12 @@
 
 - pydantic is pinned to 2.11.7 in both environments: formatron 0.5.0 fails to import with the newest pydantic, and exllamav3 imports formatron at later commits.
 
+- Architectures without a small public checkpoint get a tiny random checkpoint generated inside repro.py (cohere-qk-normalization, empty-block-conversion). Disclose it in limits and the model field.
+
 ## Progress
 Results are the directories under `gpu-tests/results/`. Nothing is in flight.
-- Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers.
+- Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers, empty-block-conversion, fp32-mlp-intermediate-contract.
 - The three compare-q findings were rerun with real dependencies and are `fix_confirmed` at their highest attempt.
 - Skipped for now, no result yet: conversion-handle-accumulation (needs a conversion run under a lowered open-file limit).
-- Next: empty-block-conversion, then the rest of priority 1.
+- Extension tree c54b3c67 (commit e9a3b6a9) is now cached for py312-superset.
+- Next: the rest of priority 1 in queue order.
