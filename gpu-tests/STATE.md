@@ -1,7 +1,7 @@
 # GPU test worker state
 
 ## Machine
-- GPU: 2x NVIDIA GeForce RTX 3090 (24 GB). **The worker uses physical GPU 1 only** (`CUDA_VISIBLE_DEVICES=1`, `TORCH_CUDA_ARCH_LIST=8.6`), by the user's instruction.
+- GPU: 2x NVIDIA GeForce RTX 3090 (24 GB). **The worker uses physical GPU 1 only** (`CUDA_VISIBLE_DEVICES=1`, `TORCH_CUDA_ARCH_LIST=8.6`), by the user's instruction. Exception: the user allowed both GPUs on 2026-11-19 for tests that need two devices (kernel-attribute-cache-device); `h.py run --gpus 0,1`.
 - Driver 580.126.09; nvcc 12.8 (`/usr/local/cuda-12.8`). Torch builds must be CUDA 12 (cu126 or cu128), by the user's instruction.
 - OS: Linux 6.8.0-94-generic. Python: 3.12.3 (system), 3.11.15 (uv). 8 CPU threads, 125 GB RAM.
 - Disk: /home had only 44 GB free at start. Watch it; keep models small.
@@ -46,8 +46,8 @@
 
 ## Progress
 Results are the directories under `gpu-tests/results/`. Nothing is in flight.
-- Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers, empty-block-conversion, fp32-mlp-intermediate-contract, fused-shared-unreachable, gemm-zero-grid-cap, grouped-routing-unassigned, in-memory-weight-transpose, integration-example-stale-import, llamacpp-embedding-order, min-p-one-endpoint.
+- Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers, empty-block-conversion, fp32-mlp-intermediate-contract, fused-shared-unreachable, gemm-zero-grid-cap, grouped-routing-unassigned, in-memory-weight-transpose, integration-example-stale-import, llamacpp-embedding-order, min-p-one-endpoint, kernel-attribute-cache-device.
 - The three compare-q findings were rerun with real dependencies and are `fix_confirmed` at their highest attempt.
-- Skipped for now, no result yet: conversion-handle-accumulation (needs a conversion run under a lowered open-file limit); humaneval-unconditional-bos (the encoded prompt is only observable by wrapping Job, which the rules treat as a patch; asked the user 2026-11-19 whether a pass-through recorder counts); kernel-attribute-cache-device (needs two CUDA devices in one process; the worker is limited to GPU 1; asked the user 2026-11-19).
+- Skipped for now, no result yet: conversion-handle-accumulation (needs a conversion run under a lowered open-file limit); humaneval-unconditional-bos (the encoded prompt is only observable by wrapping Job, which the rules treat as a patch; the user had no view on whether a pass-through recorder counts as a patch; left for the reviewer to decide, kept skipped);
 - Extension tree c54b3c67 (commit e9a3b6a9) is now cached for py312-superset.
 - Next: the rest of priority 1 in queue order.
