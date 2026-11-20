@@ -7,10 +7,12 @@ from pathlib import Path
 import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import time
 from .codex_adapter import DISABLED_FEATURES, MODEL, LEGACY_MODEL, checked_model
+from .codex_diagnostics import LIMIT, Redactor, auth_secrets
 
 SUPPORTED_VERSION = 'codex-cli 0.167.0'
 
@@ -36,6 +38,10 @@ class CodexTransport:
         self.executable=Path(executable or shutil.which('codex') or '').resolve()
         self.timeout=timeout
         self.pending=deque(); self.buffer=b''; self.sequence=0; self.received=0
+        self.failure_diagnostics = None
+        self._error_events = []
+        self._error_bytes = 0
+        self._omitted_errors = 0
 
     def __enter__(self):
         version=subprocess.check_output([str(self.executable),'--version'],stderr=subprocess.DEVNULL,text=True).strip()
@@ -47,7 +53,10 @@ class CodexTransport:
         root=Path(self.temporary.name)
         try:
             state=root/'state';state.mkdir(mode=0o700)
-            auth=state/'auth.json';auth.write_bytes(self.auth_file.read_bytes());auth.chmod(0o600)
+            self._sandbox_auth = state/'auth.json'
+            self._initial_auth = self.auth_file.read_bytes()
+            self._sandbox_auth.write_bytes(self._initial_auth)
+            self._sandbox_auth.chmod(0o600)
             (state/'config.toml').write_text(configuration() if self.model==MODEL else configuration(self.model))
             catalog=Path(__file__).resolve().parents[1]/'schema/codex-teacher-model.json'
             if self.model == LEGACY_MODEL:
@@ -75,19 +84,65 @@ class CodexTransport:
             self.selector=selectors.DefaultSelector();self.selector.register(self.process.stdout,selectors.EVENT_READ)
             self.deadline=time.monotonic()+self.timeout
             return self
-        except BaseException:
-            self.__exit__(None,None,None)
+        except BaseException as error:
+            self.__exit__(type(error), error, error.__traceback__)
             raise
 
-    def __exit__(self,*_):
-        if hasattr(self,'process'):
-            if self.process.poll() is None:
-                os.killpg(self.process.pid,signal.SIGKILL)
-            self.process.wait()
-            self.process.stdin.close();self.process.stdout.close()
-        if hasattr(self,'selector'):self.selector.close()
-        if hasattr(self,'stderr'):self.stderr.close()
-        if hasattr(self,'temporary'):self.temporary.cleanup()
+    def __exit__(self, exc_type, _error, _traceback):
+        try:
+            if hasattr(self, 'process'):
+                if self.process.poll() is None:
+                    try:
+                        os.killpg(self.process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                self.process.wait()
+                self.process.stdin.close()
+                self.process.stdout.close()
+        finally:
+            if exc_type is not None and hasattr(self, 'stderr'):
+                self._collect_failure()
+            self._initial_auth = None
+            self._error_events.clear()
+            if hasattr(self, 'selector'):
+                self.selector.close()
+            if hasattr(self, 'stderr'):
+                self.stderr.close()
+            if hasattr(self, 'temporary'):
+                self.temporary.cleanup()
+
+    def _collect_failure(self):
+        try:
+            # The server can refresh credentials in its private state during a run.
+            fd = os.open(self._sandbox_auth, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as auth:
+                if not stat.S_ISREG(os.fstat(auth.fileno()).st_mode):
+                    raise ValueError('Expected a regular Codex auth file')
+                current_auth = auth.read(LIMIT + 1)
+            if len(current_auth) > LIMIT or len(self._initial_auth) > LIMIT:
+                raise ValueError('Codex auth exceeds diagnostics budget')
+            secrets = auth_secrets(self._initial_auth)
+            if current_auth != self._initial_auth:
+                secrets.update(auth_secrets(current_auth))
+            redactor = Redactor(secrets)
+            stderr = os.pread(self.stderr.fileno(), LIMIT + 1, 0)
+            stderr_oversize = len(stderr) > LIMIT
+            self.failure_diagnostics = {
+                'error_events': redactor.payload(self._error_events),
+                'omitted_error_events': self._omitted_errors,
+                'stderr': None if stderr_oversize else redactor.text(stderr.decode('utf-8', errors='replace')),
+                'stderr_omitted': 'size_limit' if stderr_oversize else None,
+            }
+        except Exception:
+            # Redaction or read failures must never expose raw data or replace the run error.
+            self.failure_diagnostics = {'unavailable': 'capture_or_redaction_failed'}
+
+    def _remember_error(self, event, size):
+        if len(self._error_events) >= 8 or self._error_bytes + size > LIMIT:
+            self._omitted_errors += 1
+            return
+        self._error_bytes += size
+        self._error_events.append(event)
 
     def send(self, value):
         encoded=json.dumps(value).encode()+b'\n'
@@ -109,7 +164,10 @@ class CodexTransport:
             if len(self.buffer)>4*1024**2 or self.received>64*1024**2:
                 raise ValueError('Provider response budget exceeded')
         line,self.buffer=self.buffer.split(b'\n',1)
-        return json.loads(line)
+        event = json.loads(line)
+        if isinstance(event, dict) and (event.get('method') == 'error' or 'error' in event):
+            self._remember_error(event, len(line))
+        return event
 
     def receive(self):
         return self.pending.popleft() if self.pending else self._receive()

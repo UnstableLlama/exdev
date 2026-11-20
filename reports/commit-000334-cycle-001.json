@@ -1,0 +1,139 @@
+{
+  "status": "awaiting_author_request",
+  "position": 334,
+  "run": ".teacher/runs/commit-000334-001",
+  "packet": ".teacher/retrieval/000334-001",
+  "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+  "title": "TP: Auto layer split logic",
+  "validation": {
+    "status": "validated",
+    "assessment": {
+      "tier": "full_review",
+      "reasons": [
+        "nonmechanical_path",
+        "findings_present_or_missing",
+        "execution_claim"
+      ],
+      "policy": "exdev-mechanical-ancestor",
+      "version": 1,
+      "sampled": false,
+      "changed_files": [
+        "exllamav3/cache/cache.py",
+        "exllamav3/cache/fp16.py",
+        "exllamav3/cache/quant.py",
+        "exllamav3/modules/attn.py",
+        "exllamav3/modules/block_sparse_mlp.py",
+        "exllamav3/modules/conv.py",
+        "exllamav3/modules/embedding.py",
+        "exllamav3/modules/layernorm.py",
+        "exllamav3/modules/linear.py",
+        "exllamav3/modules/mlp.py",
+        "exllamav3/modules/module.py",
+        "exllamav3/modules/pos_embedding.py",
+        "exllamav3/modules/rmsnorm.py",
+        "exllamav3/modules/transformer.py",
+        "exllamav3/util/misc.py",
+        "exllamav3/util/tp_split.py"
+      ]
+    },
+    "validation_repair_details": {
+      "validation_repair_policy": "validator-claim-diagnostics-v3",
+      "validation_repair": false
+    },
+    "packet_implementation_blob_hashes_verified": true,
+    "teacher_model": "gpt-6.2-sol",
+    "reasoning_effort": "medium",
+    "reviewer_assisted": false,
+    "tool_counts": {
+      "git_show": 17,
+      "repo_grep": 26,
+      "ancestor_read": 6,
+      "repo_read": 23,
+      "evidence_index": 1,
+      "web_fetch": 22,
+      "run": 2
+    },
+    "identical_replayed_calls": 97,
+    "shared_readonly_blob_links_verified": 4625,
+    "open_catalog_rows": 26,
+    "closed_catalog_rows": 8,
+    "task_sections_total": 16,
+    "fully_read_task_sections": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "ancestor_prose_read_count": 4,
+    "token_usage": {
+      "input": 8514589,
+      "cached_input": 8365184,
+      "output": 13430
+    },
+    "runtime": {
+      "codex_version": "codex-cli 0.167.0",
+      "python_version": "3.14.4",
+      "machine_architecture": "aarch64",
+      "operating_system": "Linux"
+    }
+  },
+  "catalog": {
+    "rule": "salience-v3-paths",
+    "qualified_count": 8,
+    "selected_count": 8,
+    "path_only_qualified_count": 7,
+    "path_only_selected_count": 7,
+    "cap": 20,
+    "truncated": false,
+    "path_qualified_cut": [],
+    "authoring_allowed": true
+  },
+  "run_calls": [
+    {
+      "id": "call_c421c73f513d4f1d8e044fece19f697a",
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nroot=pathlib.Path('.')\nfor p in sorted(root.rglob('*.py')):\n try: t=ast.parse(p.read_bytes())\n except (SyntaxError,ValueError): continue\n for n in ast.walk(t):\n  if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='Attention':\n   k={x.arg:x.value for x in n.keywords}; print(p.name,n.lineno,all(isinstance(k.get('key_'+j),ast.Constant) and bool(k['key_'+j].value) for j in 'qkvo'),list(k.keys() & {'kv_proj','q_proj','o_proj'}))\nfrom math import prod\n\ndef ratio(d,w):\n q=[d*x/sum(w) for x in w]; b=list(map(int,q)); r=d-sum(b)\n for i in sorted(range(len(b)),key=lambda i:-(q[i]-b[i]))[:r]: b[i]+=1\n return b\n\ndef step(ch, mem, sd=0, ss=0, od=0, os=0, recon=0,t=1):\n s=ratio(ch,mem); a=[(sd if m else 0)+ss*x//ch for x,m in zip(s,mem)]; o=[(od if m else 0)+t*os*x//ch+recon*x//ch for x,m in zip(s,mem)]; return s,a,o,[x+y for x,y in zip(a,o)]\nfor label,args,kw in [('replica',(1,[4,4]),dict(sd=5)),('rounded-zero',(1,[100,100]),dict(od=20,os=4,t=8)),('no-room',(1,[0,0]),{}),('no-channels',(0,[1,1]),{})]:\n try: print(label,step(*args,**kw))\n except Exception as e: print(label,type(e).__name__)\nshape=(4,256,8,128); g=8*128//32; p=shape[:2]; print('cache',4*prod(shape),4*(prod(p+(g*4,))+prod(p+(g*6,)))+4*prod(p+(g,)),4*prod(shape))"
+        ]
+      }
+    },
+    {
+      "id": "call_9cc392da195d494d9eb82afcb74c4f85",
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast,pathlib\nfor p in sorted(pathlib.Path('exllamav3/modules').glob('*.py')):\n for n in ast.walk(ast.parse(p.read_bytes())):\n  if isinstance(n,ast.FunctionDef) and n.name=='forward': print(p.name,n.lineno,[ast.unparse(x) for x in n.args.defaults])\nfrom struct import pack,unpack\nprint('half scale',unpack('e',pack('e',1e-10))[0])\nprint('cache scratch for 8 query tokens:',8*4194304)"
+        ]
+      }
+    }
+  ],
+  "hashes": {
+    ".teacher/runs/commit-000334-001/draft.json": "b1b175598cdf95a20646436d27441d583349fac49b29b55c8f7293d473cf55a4",
+    ".teacher/runs/commit-000334-001/draft.md": "0553b6127bd52bb7d150c3f27a73d65c91359dcd77b1dd408e1d8e652a048f61",
+    ".teacher/runs/commit-000334-001/raw-transcript.json": "8a8093e91a312c1b2b3a5d264581b66239aaff60b2c6a48f46427cfae0e84862",
+    ".teacher/runs/commit-000334-001/provenance.json": "5833f7e892d4ca179c39a94f7a74ea427e518335e12e82d5a4d862ceb9dca2f4",
+    ".teacher/runs/commit-000334-001/coverage.json": "721f3e3893fdd49038b849a4db99005651096cc6c08b33c27f6fff93d9d247bd",
+    ".teacher/retrieval/000334-001/manifest.json": "49a70a9d195f9eb158d12894248f509982db5d7532f43a4c54a74d97e52a50c8",
+    "reports/commit-000334-validation-001.json": "eb4c2742cf2809a1fbf10c67819e26f4f90fd6aac072657f0d681c9cd73fe237",
+    "reports/commit-000334-catalog-selection-001.json": "e4cc5f728dcac993a255ee70fefca1109661b3b9f788bf0378699b488a085089",
+    "data/evidence/github/000334-unreferenced.json": "d16e6652d4ee6b0978e09c0c80543a858a7f3c49c95a03ab02762ef9d5181ac3",
+    "data/evidence/github/000334-closed.json": "493184c9f62122f66231bfee6f33ec0fa8ce16ac2dfa48961cf28ea6039ecb20"
+  }
+}

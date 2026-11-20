@@ -25,47 +25,14 @@ Teacher: `gpt-6.2-sol` medium under accepted `teacher-model-implementation-003`;
   `queue_stop`, or the one record you need.
 - Reviewer files under `reviews/fable/` are not yours to edit.
 
-## Where the walk is (18:35 UTC, 2026-11-17)
+## Earlier boundary (17 November)
 
-- Approved and recorded for ancestor retrieval only: commits2–309 (306/002 assisted in force;306/001 rejected history). Canonical/training false.
-- **299–305**: approved and recorded; all recovery stops closed and ledger obligations accepted.
- 299 baseline recovery consumed/closed, audit reports/commit-000299-approval-recovery-001-application.json.
- Canonical follow-ups:299/300 Ernie tokenizer BOS;302 lm_head versus lm_head.weight detection limits.
- Details in ASTRA-REGISTER; reviewer observations remain administrative only.
-- **306**:002 assisted approved and recorded;001 rejected thin remains history, never in retrieval.
-  Verdict reviews/verdicts/commit-000306-002.md sha256
-  5ce849f8c332073e61f8ca88d945cc0ee052d1d5ca1bc6fe0cf388ae63efc44d.
-  All23 request bindings/published request verified; unchanged host-enabled58-call replay passed.
-  One carried odd activation tail, none new; r005 accepted in308 verdict; obligation closed.
-  Link recovery consumed and closed;3769 identical links restored,4390 verified, no teacher rerun.
-  Authored files/manifest unchanged. Application: reports/commit-000306-link-recovery-002.application.json.
-  Retry stop cleared against306/002 verdict after ascending306 then307 approvals.
-  Future retries: packet builder/hardlinks, never copytree; shared-link identity in comparison report.
-- **307**: approved and recorded after306;11 request bindings/published request verified,
-  unchanged host-enabled30-call queue replay passed. Verdict sha256
-  a2ecd28cd3f3ef52d120f2427e7e48f714dc97ab24efd381835a06eb7d596786.
-  Three carried root observations accepted, none new; reconcile checkpoint-token attribute,
-  terminal-string bypass and multisequence enqueue undercount. Reconciled and submitted with308:
-  checkpoint r003, terminal r003, first persisted generation-capacity r001 for existing root finding.
-  All four306/307 records accepted in308 verdict; obligation closed.
-  Report reports/commit-000306-307-ledger-001.json.
-  No canonical follow-ups from306/307. Canonical/training false.
-- **308**: approved and recorded for ancestor retrieval only;22 artifact bindings/published request
-  verified, unchanged host-enabled28-call approval replay passed. Verdict sha256
-  416516d81845fc89c7777242d0890cf581b3d5f04992046edced5b1072e674e2.
-  Two suspected new findings accepted (explicit-load falls through, empty-history retry/edit),
-  carried nonpositive codeblock index. Prepared two r001 records and codeblock r005;
-  schema/evidence validated, reports/commit-000308-ledger-001.json. Accepted in309 verdict; obligation closed.
-  Four306/307 ledger records accepted and closed. No blocking canonical follow-up; optional precision:
-  get_input_ids tests _prefix but appends enclosing prefix (same value at both call sites).
-  Reviewer observation remains administrative, never teacher input.
-- **309**: approved/recorded;18 bindings/request verified, host24-call replay passed. Three308 records
-  accepted. Suspected fewshot counter finding accepted; r001 prepared/validated, report
-  reports/commit-000309-ledger-001.json; accepted in310 verdict, obligation closed. Canonical: returned logits (1,1,padded_vocab)
-  float, [0,0] vocabulary vector; reviewer note administrative only.
-- Validation repair policy is `validator-keep-rest-v2`, accepted and applied to the live files
-  (`reviews/verdicts/validation-repair-implementation-004.md`). 300 is the first run under it.
-- Everything since commit 235 is uncommitted. Do not commit or push unless the user asks.
+- Positions 2–310 were recorded for ancestor retrieval only. The assisted
+  306/002 is the recorded entry. The 306/001 rejection remains in history.
+- The 299–309 recovery and ledger obligations are closed. See tracking and
+  register for the verdicts, audits, and canonical follow-ups.
+- For packet retries, use the packet builder and verify shared hardlink identity.
+- Everything since commit 235 is uncommitted. Commit or push only at user request.
 
 ## Your thread id
 
@@ -80,15 +47,35 @@ Use plain path/hash bullets and host replay for approval. Disclose repair sizes,
 
 325–329 recorded for ancestor retrieval only. Diagnostics v3 deployed after 325.
 326–329 had no repair. Report actual feedback and outcome at first v3 repair.
-328 accepted the 327 sparse-snapshot disclosure and filter-package r002. Both closed.
-Canonical follow-ups for 325–329 are in tracking.
 The user authorized the corrected author candidate for revision attempts 002.
 Applied at the empty queue after 327, verified 50 production hashes, and launched
 328. The 328 request binds the application audit, accepted verdict, and 349-test suite.
 328 completed unassisted and is approved. Fable’s patch is withdrawn.
-329 approved. Its suspected non-CUDA release asset name collision is validated
-as ledger r001 in reports/commit-000329-ledger-001.json, due with 330.
-330 running. It ran ahead of 329. Disclose the sparse snapshot in its request.
+329–330 recorded. The 329 release asset collision ledger r001 is closed.
+331 recorded for ancestor retrieval only. Fable accepted both 330 ledger r001
+records and the 331 packet’s 327 of 328 strict ancestors. No new ledger item.
+Canonical follow-ups: keep issue #34, link 330.
+Opus is the current reviewer by user decision. Its verdicts are final. The
+standard and file mailbox are unchanged. Fable confirmed all 24 stand-in verdicts
+in reviews/verdicts/standin-rereview-001.md. The 14 entry approvals through
+345/002 stand for ancestor retrieval only. Prior approvals and verdicts retain
+their original bytes and hashes. History is in the register.
+
+346/002 is recorded for ancestor retrieval only under Opus’s verdict. Its
+recovery stop is cleared and the detached 347 run is active. The queue recorder
+writes the literal Fable label; the bound verdict identifies Opus.
+With 347, submit reports/commit-000346-ledger-001.json for the eight 346
+findings and reports/standin-rereview-001-ledger.json for the four 333/335
+backfills and the cache-detach audit. Cache r003/r004 correctly carry confirmed
+status for the conditional error path; r005 separately records the fix.
+Opus passed the staged validator v4 patch and quoted the user’s approval in
+reviews/verdicts/collect-all-validation-problems-implementation-001.decision.md.
+Let 347 finish and get recorded under v3. Hold the next run until deployment
+at the empty-queue boundary and the host-enabled suite passes. If the suite
+fails, reverse the patch, file the failure and keep the walk stopped. File
+reviews/requests/collect-all-validation-problems-application-001.md with the
+hashes and deployment notes. Call out the first live v4 repair and its outcome.
+A revision attempt requires reviewer authorization.
 Flag first live revision for line-by-line review and report old/new token usage.
 Use a fresh assisted attempt if pointer-only coverage is unavailable. If provider
 usage accounting causes a run failure, report usage unavailable in the handoff.

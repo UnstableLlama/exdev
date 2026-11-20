@@ -1,0 +1,690 @@
+commit dd053a205d253e3610bbe224e4bb828a6a562ee4
+Author:     turboderp <11859846+turboderp@users.noreply.github.com>
+AuthorDate: Sun Jul 20 14:22:21 2025 +0200
+Commit:     turboderp <11859846+turboderp@users.noreply.github.com>
+CommitDate: Sun Jul 20 14:22:21 2025 +0200
+
+    TP: Auto layer split logic
+
+diff --git a/exllamav3/cache/cache.py b/exllamav3/cache/cache.py
+index 261d3ac0..5a58b34a 100644
+--- a/exllamav3/cache/cache.py
++++ b/exllamav3/cache/cache.py
+@@ -53,6 +53,14 @@ class CacheLayer(ABC):
+     def get_tensors(self):
+         pass
+ 
++    @abstractmethod
++    def storage_size(self):
++        pass
++
++    @abstractmethod
++    def overhead_size(self):
++        pass
++
+ 
+ class Cache:
+ 
+diff --git a/exllamav3/cache/fp16.py b/exllamav3/cache/fp16.py
+index 577f9aa7..985d7baf 100644
+--- a/exllamav3/cache/fp16.py
++++ b/exllamav3/cache/fp16.py
+@@ -9,6 +9,7 @@ from .cache import CacheLayer
+ from typing import TYPE_CHECKING
+ if TYPE_CHECKING:
+     from ..modules import Attention
++import numpy as np
+ 
+ class CacheLayer_fp16(CacheLayer):
+ 
+@@ -69,6 +70,17 @@ class CacheLayer_fp16(CacheLayer):
+         self.k[to_page, :num_tokens, :, :].copy_(source.k[from_page, :num_tokens, :, :], non_blocking = True)
+         self.v[to_page, :num_tokens, :, :].copy_(source.v[from_page, :num_tokens, :, :], non_blocking = True)
+ 
++
+     @override
+     def get_tensors(self):
+         return [self.k, self.v]
++
++
++    @override
++    def storage_size(self):
++        return 2 * np.prod(self.shape) * torch.half.itemsize
++
++
++    @override
++    def overhead_size(self):
++        return 0
+diff --git a/exllamav3/cache/quant.py b/exllamav3/cache/quant.py
+index ad680849..9912c1ac 100644
+--- a/exllamav3/cache/quant.py
++++ b/exllamav3/cache/quant.py
+@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
+ from exllamav3.ext import exllamav3_ext as ext
+ if TYPE_CHECKING:
+     from ..modules import Attention
++import numpy as np
+ 
+ class CacheLayer_quant(CacheLayer):
+ 
+@@ -99,6 +100,21 @@ class CacheLayer_quant(CacheLayer):
+         self.sk[to_page, :num_tokens, :].copy_(source.sk[from_page, :num_tokens, :], non_blocking = True)
+         self.sv[to_page, :num_tokens, :].copy_(source.sv[from_page, :num_tokens, :], non_blocking = True)
+ 
++
+     @override
+     def get_tensors(self):
+         return [self.qk, self.qv, self.sk, self.sv]
++
++
++    @override
++    def storage_size(self):
++        return (
++            np.prod(self.qshape_k) * torch.int.itemsize +
++            np.prod(self.qshape_v) * torch.int.itemsize +
++            2 * np.prod(self.qshape_s) * torch.half.itemsize
++        )
++
++
++    @override
++    def overhead_size(self):
++        return 2 * np.prod(self.shape) * torch.half.itemsize
+diff --git a/exllamav3/modules/attn.py b/exllamav3/modules/attn.py
+index fc16278c..8e91f873 100644
+--- a/exllamav3/modules/attn.py
++++ b/exllamav3/modules/attn.py
+@@ -14,6 +14,7 @@ from flash_attn import flash_attn_func, flash_attn_with_kvcache
+ from ..util import profile_opt
+ from .multilinear import MultiLinear
+ from ..ext import exllamav3_ext as ext
++from ..util.tp_split import TPAllocation
+ 
+ """
+ SDPA:
+@@ -508,3 +509,40 @@ class Attention(Module):
+ 
+         o = self.project_o(o, bsz, seqlen, params)
+         return o
++
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        storage = 0
++        storage += self.q_proj.storage_size()
++        storage += self.k_proj.storage_size()
++        storage += self.v_proj.storage_size()
++        storage += self.o_proj.storage_size()
++        for cl in self.cache_layers:
++            storage += cl.storage_size()
++        overhead_d = 0
++        overhead_d += self.hidden_size * (self.out_dtype or torch.half).itemsize
++        overhead_s = 0
++        for cl in self.cache_layers:
++            overhead_s += cl.overhead_size()
++        overhead_s += 2 * self.num_q_heads * self.head_dim * torch.half.itemsize  # q, o
++        overhead_s += 2 * self.num_kv_heads * self.head_dim * torch.half.itemsize  # k, v
++        recons = max(
++            self.q_proj.recons_size(),
++            self.k_proj.recons_size(),
++            self.v_proj.recons_size(),
++            self.o_proj.recons_size(),
++        )
++        # TODO: Account for flash-attn temp VRAM usage
++        tpa = TPAllocation(
++            key = self.key,
++            channel_width = 1,
++            channel_unit = "heads",
++            storage_per_device = 0,
++            storage_to_split = storage,
++            overhead_per_device = overhead_d,
++            overhead_to_split = overhead_s,
++            recons_temp = recons,
++            channels_to_split = self.num_kv_heads,
++            limit_key = "attn"
++        )
++        return [tpa]
+\ No newline at end of file
+diff --git a/exllamav3/modules/block_sparse_mlp.py b/exllamav3/modules/block_sparse_mlp.py
+index 9ac4ba8c..76126bee 100644
+--- a/exllamav3/modules/block_sparse_mlp.py
++++ b/exllamav3/modules/block_sparse_mlp.py
+@@ -13,6 +13,7 @@ from ..util import first_not_none
+ from ..util import profile_opt
+ from dataclasses import dataclass
+ from .mlp import MLP, GatedMLP
++from ..util.tp_split import TPAllocation
+ 
+ 
+ @dataclass
+@@ -447,4 +448,38 @@ class BlockSparseMLP(Module):
+         t = super().get_tensors()
+         if self.e_score_correction_bias is not None:
+             t[f"{self.key}.gate.e_score_correction_bias"] = self.e_score_correction_bias.contiguous()
+-        return t
+\ No newline at end of file
++        return t
++
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        storage = 0
++        storage += self.routing_gate.storage_size()
++        for g in self.gates: storage += g.storage_size()
++        for u in self.ups: storage += u.storage_size()
++        for d in self.downs: storage += d.storage_size()
++        # TODO: More precise overhead estimate accounting for gate etc.
++        overhead_d = self.hidden_size * (self.out_dtype or torch.half).itemsize
++        overhead_s = 4 * self.intermediate_size * (self.interm_dtype or torch.half).itemsize
++        if self.interm_dtype != torch.half:
++            overhead_s += self.intermediate_size * torch.half.itemsize
++        recons = max(
++            self.gates[0].recons_size(),
++            self.ups[0].recons_size(),
++            self.downs[0].recons_size()
++        )
++        tpa = TPAllocation(
++            key = self.key,
++            channel_width = 1,
++            channel_unit = "experts",
++            storage_per_device = 0,
++            storage_to_split = storage,
++            overhead_per_device = overhead_d,
++            overhead_to_split = overhead_s,
++            recons_temp = recons,
++            channels_to_split = self.num_experts,
++            limit_key = "moe"
++        )
++        tpa_list = [tpa]
++        if self.shared_experts:
++            tpa_list += self.shared_experts.make_tp_allocation()
++        return tpa_list
+\ No newline at end of file
+diff --git a/exllamav3/modules/conv.py b/exllamav3/modules/conv.py
+index 35b8d3d9..20bfd675 100644
+--- a/exllamav3/modules/conv.py
++++ b/exllamav3/modules/conv.py
+@@ -6,6 +6,7 @@ from torch import nn
+ from ..models import Config
+ from . import Module
+ from ..ext import exllamav3_ext as ext
++from ..util.tp_split import TPAllocation
+ 
+ class Conv(Module):
+ 
+@@ -83,4 +84,8 @@ class Conv(Module):
+             y = F.conv3d(x, self.weight, self.bias, self.kernel_size)
+             y = y.view(-1, self.out_channels).unsqueeze(0)
+ 
+-        return y
+\ No newline at end of file
++        return y
++
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        raise NotImplementedError()
+\ No newline at end of file
+diff --git a/exllamav3/modules/embedding.py b/exllamav3/modules/embedding.py
+index f92cf28a..8f475689 100644
+--- a/exllamav3/modules/embedding.py
++++ b/exllamav3/modules/embedding.py
+@@ -7,6 +7,7 @@ from ..models import Config
+ from ..util.tensor import to2
+ from . import Module
+ from ..tokenizer.mm_embedding import FIRST_MM_EMBEDDING_INDEX
++from ..util.tp_split import TPAllocation
+ 
+ class Embedding(Module):
+ 
+@@ -117,3 +118,6 @@ class Embedding(Module):
+             if self.normalize:
+                 x *= x.shape[-1] ** 0.5
+             return x
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        return []
+\ No newline at end of file
+diff --git a/exllamav3/modules/layernorm.py b/exllamav3/modules/layernorm.py
+index 40286c9a..8e41a5be 100644
+--- a/exllamav3/modules/layernorm.py
++++ b/exllamav3/modules/layernorm.py
+@@ -6,6 +6,7 @@ from torch import nn
+ from ..models import Config
+ from . import Module
+ from ..ext import exllamav3_ext as ext
++from ..util.tp_split import TPAllocation
+ 
+ class LayerNorm(Module):
+ 
+@@ -98,4 +99,15 @@ class LayerNorm(Module):
+             x *= w
+             if b is not None:
+                 x += b
+-        return x.to(out_dtype or self.out_dtype)
+\ No newline at end of file
++        return x.to(out_dtype or self.out_dtype)
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        stc = self.config.stc
++        storage = sum(stc.get_tensor_sizes(self.key))
++        overhead = storage // 2 * (self.out_dtype or torch.half).itemsize
++        tpa = TPAllocation(
++            key = self.key,
++            storage_per_device = storage,
++            overhead_per_device = overhead,
++        )
++        return [tpa]
+\ No newline at end of file
+diff --git a/exllamav3/modules/linear.py b/exllamav3/modules/linear.py
+index cf3400e0..f1883f5d 100644
+--- a/exllamav3/modules/linear.py
++++ b/exllamav3/modules/linear.py
+@@ -1,4 +1,5 @@
+ from __future__ import annotations
++from functools import lru_cache
+ from typing_extensions import override
+ import torch
+ import torch.nn.functional as F
+@@ -11,6 +12,7 @@ from .quant.exl3_lib import quantize_exl3
+ from ..ext import exllamav3_ext as ext
+ from ..conversion.allocation import allocate_linear
+ from ..util.memory import free_mem
++from ..util.tp_split import TPAllocation
+ 
+ 
+ class Linear(Module):
+@@ -332,3 +334,37 @@ class Linear(Module):
+             return "exl3"
+         else:
+             return None
++
++
++    @lru_cache
++    def storage_size(self):
++        # alt_key is only used when loading unquantized model
++        if self.is_exl3_storage(self.key):
++            return sum(self.config.stc.get_tensor_sizes(prefix = self.key))
++        else:
++            return 2 * self.in_features * self.out_features
++
++
++    def recons_size(self):
++        return 2 * self.in_features * self.out_features
++
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        storage = 0
++        storage += self.storage_size()
++        overhead_d = self.out_features * (self.out_dtype or torch.half).itemsize
++        overhead_s = self.out_features * (self.out_dtype or torch.half).itemsize
++        recons = self.recons_size()
++        tpa = TPAllocation(
++            key = self.key,
++            channel_width = 128,
++            channel_unit = "channels",
++            storage_per_device = 0,
++            storage_to_split = storage,
++            overhead_per_device = overhead_d,
++            overhead_to_split = overhead_s,
++            recons_temp = recons,
++            channels_to_split = self.out_features // 128,
++            limit_key = "linear"
++        )
++        return [tpa]
+\ No newline at end of file
+diff --git a/exllamav3/modules/mlp.py b/exllamav3/modules/mlp.py
+index 291d547a..3d324712 100644
+--- a/exllamav3/modules/mlp.py
++++ b/exllamav3/modules/mlp.py
+@@ -8,6 +8,7 @@ from ..util.tensor import to2
+ from . import Module, Linear
+ from ..ext import exllamav3_ext as ext
+ from ..constants import MAX_MLP_INTERMEDIATE
++from ..util.tp_split import TPAllocation
+ 
+ class MLP(Module):
+ 
+@@ -30,6 +31,8 @@ class MLP(Module):
+         assert key_fused_gate_up is None
+ 
+         self.out_dtype = out_dtype
++        self.hidden_size = hidden_size
++        self.intermediate_size = intermediate_size
+ 
+         self.up = Linear(
+             config,
+@@ -75,6 +78,31 @@ class MLP(Module):
+         return to2(x, out_dtype, self.out_dtype)
+ 
+ 
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        storage = 0
++        storage += self.up.storage_size()
++        storage += self.down.storage_size()
++        overhead_d = self.hidden_size * (self.out_dtype or torch.half).itemsize
++        overhead_s = self.intermediate_size * torch.half.itemsize
++        recons = max(
++            self.up.recons_size(),
++            self.down.recons_size()
++        )
++        tpa = TPAllocation(
++            key = self.key,
++            channel_width = 128,
++            channel_unit = "channels",
++            storage_per_device = 0,
++            storage_to_split = storage,
++            overhead_per_device = overhead_d,
++            overhead_to_split = overhead_s,
++            recons_temp = recons,
++            channels_to_split = self.intermediate_size // 128,
++            limit_key = "mlp",
++        )
++        return [tpa]
++
++
+ class GatedMLP(Module):
+ 
+     def __init__(
+@@ -100,6 +128,7 @@ class GatedMLP(Module):
+         self.interm_dtype = interm_dtype
+         self.activation_fn = activation_fn
+         self.intermediate_size = intermediate_size
++        self.hidden_size = hidden_size
+ 
+         if key_fused_gate_up:
+             assert not intermediate_split_size or intermediate_size <= intermediate_split_size, \
+@@ -248,3 +277,32 @@ class GatedMLP(Module):
+             del d_
+ 
+         return to2(d, out_dtype, self.out_dtype)
++
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        storage = 0
++        for g in self.gates: storage += g.storage_size()
++        for u in self.ups: storage += u.storage_size()
++        for d in self.downs: storage += d.storage_size()
++        overhead_d = self.hidden_size * (self.out_dtype or torch.half).itemsize
++        overhead_s = 2 * self.intermediate_size * (self.interm_dtype or torch.half).itemsize
++        if self.interm_dtype != torch.half:
++            overhead_s += self.intermediate_size * torch.half.itemsize
++        recons = max(
++            self.gates[0].recons_size(),
++            self.ups[0].recons_size(),
++            self.downs[0].recons_size()
++        )
++        tpa = TPAllocation(
++            key = self.key,
++            channel_width = 128 if self.num_slices == 1 else 128,
++            channel_unit = "channels" if self.num_slices == 1 else "slices",
++            storage_per_device = 0,
++            storage_to_split = storage,
++            overhead_per_device = overhead_d,
++            overhead_to_split = overhead_s,
++            recons_temp = recons,
++            channels_to_split = self.intermediate_size // 128 if self.num_slices == 1 else self.num_slices,
++            limit_key = "mlp"
++        )
++        return [tpa]
+\ No newline at end of file
+diff --git a/exllamav3/modules/module.py b/exllamav3/modules/module.py
+index 3b3e083c..f9c3440d 100644
+--- a/exllamav3/modules/module.py
++++ b/exllamav3/modules/module.py
+@@ -7,6 +7,7 @@ from torch import nn
+ from typing import TYPE_CHECKING
+ if TYPE_CHECKING:
+     from ..models import Config
++from ..util.tp_split import TPAllocation
+ 
+ # Use host bounce when moving state from device to device in layer split
+ no_p2p_copy = os.environ.get('EXLLAMA_NO_P2P_COPY', None)
+@@ -95,7 +96,7 @@ class Module(ABC):
+         self,
+         x: torch.Tensor,
+         params: dict,
+-        out_dtype: torch.dtype
++        out_dtype: torch.dtype = torch.half
+     ) -> torch.Tensor:
+         pass
+ 
+@@ -110,4 +111,11 @@ class Module(ABC):
+         return None
+ 
+     def get_name(self):
+-        return self.__class__.__name__
+\ No newline at end of file
++        return self.__class__.__name__
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        assert len(self.modules), "Tried to get TPAllocators from empty module list"
++        tpa_list = []
++        for m in self.modules:
++            tpa_list += m.make_tp_allocation()
++        return tpa_list
+\ No newline at end of file
+diff --git a/exllamav3/modules/pos_embedding.py b/exllamav3/modules/pos_embedding.py
+index 2aaaacd6..4536771a 100644
+--- a/exllamav3/modules/pos_embedding.py
++++ b/exllamav3/modules/pos_embedding.py
+@@ -7,6 +7,7 @@ from ..models import Config
+ from . import Module
+ from ..ext import exllamav3_ext as ext
+ from ..util.tensor import to2
++from ..util.tp_split import TPAllocation
+ 
+ class PosEmbedding(Module):
+ 
+@@ -73,4 +74,7 @@ class PosEmbedding(Module):
+ 
+         # TODO: Support position offset and position IDs for chunking (and GPT2 etc.)
+ 
+-        return to2(x, out_dtype, self.out_dtype)
+\ No newline at end of file
++        return to2(x, out_dtype, self.out_dtype)
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        return []
+\ No newline at end of file
+diff --git a/exllamav3/modules/rmsnorm.py b/exllamav3/modules/rmsnorm.py
+index 8bcc9d89..529f99c3 100644
+--- a/exllamav3/modules/rmsnorm.py
++++ b/exllamav3/modules/rmsnorm.py
+@@ -6,6 +6,7 @@ from torch import nn
+ from ..models import Config
+ from . import Module
+ from ..ext import exllamav3_ext as ext
++from ..util.tp_split import TPAllocation
+ 
+ class RMSNorm(Module):
+ 
+@@ -75,4 +76,15 @@ class RMSNorm(Module):
+ 
+         y = torch.empty_like(x, dtype = out_dtype or self.out_dtype)
+         ext.rms_norm(x, self.weight, y, self.rms_norm_eps, self.constant_bias)
+-        return y
+\ No newline at end of file
++        return y
++
++    def make_tp_allocation(self) -> list[TPAllocation]:
++        stc = self.config.stc
++        storage = sum(stc.get_tensor_sizes(self.key))
++        overhead = storage // 2 * (self.out_dtype or torch.half).itemsize
++        tpa = TPAllocation(
++            key = self.key,
++            storage_per_device = storage,
++            overhead_per_device = overhead,
++        )
++        return [tpa]
+\ No newline at end of file
+diff --git a/exllamav3/modules/transformer.py b/exllamav3/modules/transformer.py
+index 79568f19..b0b17363 100644
+--- a/exllamav3/modules/transformer.py
++++ b/exllamav3/modules/transformer.py
+@@ -8,6 +8,7 @@ from ..models import Config
+ from . import Module, RMSNorm, LayerNorm, Attention, GatedMLP, MLP, BlockSparseMLP
+ from ..conversion.allocation import allocate_transformer
+ from ..util import profile_opt
++from ..util.tp_split import TPAllocation
+ 
+ class TransformerBlock(Module):
+ 
+diff --git a/exllamav3/util/misc.py b/exllamav3/util/misc.py
+index cdbe6df1..169f0326 100644
+--- a/exllamav3/util/misc.py
++++ b/exllamav3/util/misc.py
+@@ -67,3 +67,18 @@ def human_time(seconds: float) -> str:
+ 
+ def first_not_none(*values):
+     return next((v for v in values if v is not None), None)
++
++
++def ratio_split(d, weights, chunk_size = 128):
++    assert d % chunk_size == 0, "Total must be divisible by chunk size"
++    total_chunks = d // chunk_size
++    total_weight = sum(weights)
++    ideal_chunks = [total_chunks * w / total_weight for w in weights]
++    base_chunks = [int(c) for c in ideal_chunks]
++    remainder = total_chunks - sum(base_chunks)
++    residuals = [c - int(c) for c in ideal_chunks]
++    for i in sorted(range(len(residuals)), key = lambda i: -residuals[i])[:remainder]:
++        base_chunks[i] += 1
++    final_alloc = [c * chunk_size for c in base_chunks]
++    assert sum(final_alloc) == d
++    return final_alloc
+\ No newline at end of file
+diff --git a/exllamav3/util/tp_split.py b/exllamav3/util/tp_split.py
+new file mode 100644
+index 00000000..11348ebd
+--- /dev/null
++++ b/exllamav3/util/tp_split.py
+@@ -0,0 +1,131 @@
++from .misc import ratio_split
++import heapq
++
++def top_k_mask_(lst, k):
++    assert 0 < k <= len(lst)
++    idx_k_largest = [i for i, _ in heapq.nlargest(k, enumerate(lst), key=lambda t: t[1])]
++    keep = set(idx_k_largest)
++    for i in range(len(lst)):
++        if i not in keep:
++            lst[i] = 0
++
++
++class TPAllocation:
++
++    def __init__(
++        self,
++        key: str,
++        channel_width: int = None,
++        channel_unit: str = None,
++        storage_per_device: int = 0,
++        storage_to_split: int = 0,
++        overhead_per_device: int = 0,  # per token
++        overhead_to_split: int = 0,  # per token
++        recons_temp: int = 0,
++        channels_to_split: int = 1,
++        limit_key: str = None,
++        max_devices: int = None
++    ):
++        self.key = key
++        self.channel_width = channel_width
++        self.channel_unit = channel_unit
++        self.limit_key = limit_key
++
++        self.storage_per_device = storage_per_device
++        self.storage_to_split = storage_to_split
++        self.overhead_per_device = overhead_per_device
++        self.overhead_to_split = overhead_to_split
++        self.recons_temp = recons_temp
++        self.channels_to_split = channels_to_split
++        self.max_devices = max_devices
++
++        self.current_split = []
++
++
++class TPAllocator:
++
++    def __init__(
++        self,
++        components: list[TPAllocation],
++        num_tokens: int,
++        output_num_tokens: int,
++        dev_limits: dict = None,
++    ):
++        self.components = components
++        self.current_split = None
++        self.current_usage = None
++        self.num_tokens = num_tokens
++        self.output_num_tokens = output_num_tokens
++        self.dev_limits = dev_limits or {}
++        self.estimate = None
++        self.num_devices = None
++        self.plan = None
++
++
++    def initial_split(
++        self,
++        max_mem: list[int],
++    ):
++        self.num_devices = len(max_mem)
++        storage_sum = [0] * self.num_devices
++        overhead_max = [0] * self.num_devices
++
++        for c in self.components:
++            rem_mem_s = [max(0, mm - ss - om) for mm, ss, om in zip(max_mem, storage_sum, overhead_max)]
++            if c.max_devices is not None or c.limit_key:
++                dev_limit = self.dev_limits.get(c.limit_key, c.max_devices)
++                if dev_limit is not None:
++                    top_k_mask_(rem_mem_s, dev_limit)
++            mask = [m > 0 for m in rem_mem_s]
++            tokens = self.output_num_tokens if c is self.components[-1] else self.num_tokens
++            channels = c.channels_to_split
++            split = ratio_split(channels, rem_mem_s, chunk_size = 1)
++            c.current_split = split
++            storage = [
++                (c.storage_per_device if m else 0)
++                + c.storage_to_split * s // channels
++                for s, m in zip(split, mask)
++            ]
++            overhead = [
++                (c.overhead_per_device if m else 0)
++                + tokens * c.overhead_to_split * s // channels
++                + c.recons_temp * s // channels
++                for s, m in zip(split, mask)
++            ]
++            storage_sum = [ss + s for ss, s in zip(storage_sum, storage)]
++            overhead_max = [max(om, o) for om, o in zip(overhead_max, overhead)]
++
++        self.estimate = [ss + om for ss, om in zip(storage_sum, overhead_max)]
++        return self.estimate
++
++
++    def print_split(self):
++        for c in self.components:
++            if c.channel_unit is None:
++                continue
++            print(f"{c.key:50}", end = "")
++            print(f"{c.channel_unit:12}", end = "")
++            for s in c.current_split:
++                print(f"{s * c.channel_width: 10}", end = "")
++            print()
++        print("-" * 100)
++        print(f"{'Total':50}", end = "")
++        print(f"{'GB':12}", end = "")
++        for e in self.estimate:
++            print(f"{e / 1024**3:10.2f}", end = "")
++        print()
++
++
++    def compile_tp_plan(self):
++        plan = []
++        for _ in range(self.num_devices):
++            plan.append({})
++        for c in self.components:
++            key = c.key
++            idx_end = 0
++            for dev in range(self.num_devices):
++                idx_beg = idx_end
++                idx_end += c.current_split[dev]
++                plan[dev][key] = (idx_beg, idx_end)
++        self.plan = plan
++        return self.plan
+\ No newline at end of file

@@ -107,6 +107,17 @@ def usage_totals(params):
     return totals
 
 
+def provider_output_schema(manifest):
+    """Keep unbounded commit allowlists in local annotation validation."""
+    schema = output_schema(manifest)
+    properties = schema['properties']
+    properties['links']['items'].pop('enum', None)
+    if 'findings' in properties:
+        locations = properties['findings']['items']['properties']['locations']
+        locations['items']['properties']['commit'].pop('enum', None)
+    return schema
+
+
 class CodexTeacher:
     def run(self, session, transport, record=None, max_calls=256, *, model=MODEL, validation_repair=True):
         checked_model(model)
@@ -116,6 +127,7 @@ class CodexTeacher:
         session.used=True
         manifest_bytes=(session.runner.packet/'manifest.json').read_bytes()
         manifest=json.loads(manifest_bytes)
+        schema=provider_output_schema(manifest)
         transcript=deepcopy(session.initial)
         prior = getattr(session, 'revision_prior', ())
         repair = None
@@ -137,7 +149,7 @@ class CodexTeacher:
         transcript[0]['teacher_runtime']={'model':started['model'], 'reasoning_effort':started['reasoningEffort']}
         thread=started['thread']['id']
         turn=transport.request('turn/start',{'threadId':thread,'model':model,'effort':session.reasoning_effort,
-            'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
+            'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':schema,
             'input':[{'type':'text','text':session.initial[1]['content']}]})['turn']['id']
         allowed={tool['name'] for tool in session.tools}
         seen=set(); final=None; final_index=None
@@ -222,7 +234,7 @@ class CodexTeacher:
                     save()
                     next_turn=transport.request('turn/start',{'threadId':thread,'model':model,
                         'effort':session.reasoning_effort, 'environments':[],
-                        'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
+                        'runtimeWorkspaceRoots':[], 'outputSchema':schema,
                         'input':[{'type':'text','text':feedback['content']}]})['turn']['id']
                     repair['feedback_sent']=True
                     save()

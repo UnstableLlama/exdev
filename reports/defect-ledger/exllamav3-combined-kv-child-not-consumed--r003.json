@@ -1,0 +1,307 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "The constructor accepts a combined KV child, but loading, forwarding, and allocation still assume separate K and V attributes.",
+  "trigger": "Construct a fresh Attention with valid Q/output choices, a falsy `key_k`, and a truthy `kv_proj`. Then load it after its children load successfully, call `project_qkv` with a valid input and `multi_kv` unset, or run a containing block's allocation with valid quantization arguments.",
+  "expected_behavior": "The chosen KV module should be invoked to produce K and V on the supported inference path, and unsupported allocation should be rejected explicitly or handled without reading absent attributes.",
+  "actual_behavior": "`Attention.load` first loads the registered children and then reads `self.k_proj` in its EXL3 fusion probe. If loading is bypassed, `project_qkv` reaches the same missing attribute in the separate projection branch. All three decode methods call `project_qkv`; the research sampler also calls it directly after loading its model. Both transformer block allocators read `self.attn.k_proj` before calling `allocate_transformer`, so conversion can fail at allocation before load. The explicit in-tree model builders do not select this branch.",
+  "verification": [
+    {
+      "method": "scalar_transcription",
+      "description": "A stub with only `kv_proj` and `multi_kv=None` raised `AttributeError` on the attribute reads modeled for the load probe, the projection fallback, and allocation.",
+      "evidence": [
+        "call_783df40d98644618a502d8beb46a2eea"
+      ],
+      "limits": "The stub models the missing attributes; it did not run Attention, Torch, or a model loader."
+    }
+  ],
+  "defect_id": "exllamav3-combined-kv-child-not-consumed",
+  "revision_id": "r003",
+  "supersedes": "r002",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+      "status": "source_supported",
+      "paths": [
+        "exllamav3/modules/attn.py"
+      ],
+      "rationale": "Introduces an injection branch that sets kv_proj without creating the k_proj and v_proj attributes still used by Attention and the block allocators."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+      "run": ".teacher/runs/commit-000330-001",
+      "local_id": "combined-kv-child-not-consumed",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "combined-kv-child-not-consumed",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The constructor accepts a combined KV child, but loading, forwarding, and allocation still assume separate K and V attributes.",
+        "trigger": "Construct a fresh Attention with valid Q/output choices, a falsy `key_k`, and a truthy `kv_proj`. Then load it after its children load successfully, call `project_qkv` with a valid input and `multi_kv` unset, or run a containing block's allocation with valid quantization arguments.",
+        "expected_behavior": "The chosen KV module should be invoked to produce K and V on the supported inference path, and unsupported allocation should be rejected explicitly or handled without reading absent attributes.",
+        "actual_behavior": "`Attention.load` first loads the registered children and then reads `self.k_proj` in its EXL3 fusion probe. If loading is bypassed, `project_qkv` reaches the same missing attribute in the separate projection branch. All three decode methods call `project_qkv`; the research sampler also calls it directly after loading its model. Both transformer block allocators read `self.attn.k_proj` before calling `allocate_transformer`, so conversion can fail at allocation before load. The explicit in-tree model builders do not select this branch.",
+        "locations": [
+          {
+            "commit": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.__init__ / load / project_qkv"
+          },
+          {
+            "commit": "db533103b1827e83b55bac4f4531eeef3684a57f",
+            "path": "exllamav3/modules/transformer.py",
+            "symbol": "TransformerBlock.allocate_q / ParallelDecoderBlock.allocate_q"
+          }
+        ],
+        "source_evidence": [
+          "call_60e1b076d3ee4b4584eddba00d376871",
+          "call_06809d1868bd43bda26e8d05fdff03bd",
+          "call_0fc9f5029b5d4528a3476164db08d3ca",
+          "call_07c6a097332f4489a424c3ba31c073f1",
+          "call_fee8347a63394d3c911aa7bae8c1427c",
+          "call_46e463f9cb504d0bb277da8371722c15",
+          "call_165e4952ff0f448689dccbbc66cd7055"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "A stub with only `kv_proj` and `multi_kv=None` raised `AttributeError` on the attribute reads modeled for the load probe, the projection fallback, and allocation.",
+            "evidence": [
+              "call_783df40d98644618a502d8beb46a2eea"
+            ],
+            "limits": "The stub models the missing attributes; it did not run Attention, Torch, or a model loader."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "run": ".teacher/runs/commit-000334-001",
+      "local_id": "tp-estimator-still-requires-separate-kv",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "tp-estimator-still-requires-separate-kv",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "TP estimation assumes more than Attention's constructor guarantees.",
+        "trigger": "Construct Attention with ordinary named Q/output projections, a falsy key_k and a supplied kv_proj, then ask it for a TP allocation directly or through its containing block.",
+        "expected_behavior": "Account for the combined child or explicitly reject that projection form.",
+        "actual_behavior": "The estimator calls storage_size on the absent k_proj. Load and the project_qkv fallback still have the preexisting separate-K/V assumption. The source scan found 19 explicit named Attention constructions, all with named Q/K/V/O and none using injection.",
+        "locations": [
+          {
+            "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.make_tp_allocation"
+          }
+        ],
+        "source_evidence": [
+          "call_202085b3d8874b1daf8651723ee6dc9e",
+          "call_92dd2016fccb439a8149f064e04804e5",
+          "call_6be7f756354d41e880fc09c162eaaea3",
+          "call_da29420d35af4403a99b74f76deb5151"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared constructor branches and their consumers, and scanned parent Python constructor call forms.",
+            "evidence": [
+              "call_202085b3d8874b1daf8651723ee6dc9e",
+              "call_92dd2016fccb439a8149f064e04804e5",
+              "call_c421c73f513d4f1d8e044fece19f697a"
+            ],
+            "limits": "Conditional on a custom call form; no Attention instance ran."
+          }
+        ]
+      },
+      "scope": "At this revision the direct TP estimator reads the same missing separate K/V attributes on an injected combined-KV Attention. No in-tree model builder selects that constructor branch."
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+      "run": ".teacher/runs/commit-000346-002",
+      "local_id": "inherited-combined-kv-estimator-failure",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "inherited-combined-kv-estimator-failure",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The new head grouping still cannot be reached for the constructor's combined-K/V form.",
+        "trigger": "Construct Attention with named Q/O projections and a supplied kv_proj instead of key_k/key_v, then ask it for a record directly or through Module's child traversal.",
+        "expected_behavior": "Account for the combined projection or reject it explicitly.",
+        "actual_behavior": "The constructor only assigns kv_proj in that branch, but the estimator reads k_proj.storage_size() before reaching the new grouping logic.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.make_tp_allocation"
+          }
+        ],
+        "source_evidence": [
+          "call_d3dcdd5a03514d84a0c347ee5b606e29",
+          "call_d1dc5d2e1b5a431b8e74b16745e8224c",
+          "call_3457c1674a594876896cd546146fb73e",
+          "call_df5d070b92d14baeb40bf111b5e92adb"
+        ],
+        "verification": [
+          {
+            "method": "source_inspection",
+            "description": "Compared the constructor branches to the unchanged estimate reads and checked the parent collector and literal kv_proj assignment references.",
+            "evidence": [
+              "call_bf7478075fc84c4ab0adef2239b9ce82",
+              "call_8ca72cda40c34a799cea34ea01d4e381",
+              "call_d3dcdd5a03514d84a0c347ee5b606e29",
+              "call_d1dc5d2e1b5a431b8e74b16745e8224c"
+            ],
+            "limits": "Conditional on the accepted custom constructor form; the literal search does not rule out dynamically supplied arguments."
+          }
+        ]
+      },
+      "scope_note": "The allocation estimator still dereferences absent k_proj in the combined-K/V constructor form. This observation is confined to allocation."
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit330-001-draft.json",
+      "sha256": "484e180803db9242d8b16cba6f7d5cb91caee96296bb19a566381b5784e93348"
+    },
+    {
+      "file": "evidence/commit330-001-transcript.json",
+      "sha256": "b992c9f76b9d4753762ec2abbf0bb49ea421b3b154abb029ef5356852205e950"
+    },
+    {
+      "file": "evidence/commit330-001-verdict.md",
+      "sha256": "b1a42166f29ede0e5c5d1670e22e8745a1ad0126f9f4e442b864c84d11e309f0"
+    },
+    {
+      "file": "evidence/commit330-001-manifest.json",
+      "sha256": "a6446d7768f24e689fed54426cf60175ec0e9323ca9b62349d0c96507b174a45"
+    },
+    {
+      "file": "evidence/commit330-001-attn.diff",
+      "sha256": "8cef3591480ebfd94eb8d8039a5f8f54db5d1eda55770410dfb29bd8e1cc29eb"
+    },
+    {
+      "file": "evidence/commit334-001-draft.json",
+      "sha256": "b1b175598cdf95a20646436d27441d583349fac49b29b55c8f7293d473cf55a4"
+    },
+    {
+      "file": "evidence/commit334-001-transcript.json",
+      "sha256": "8a8093e91a312c1b2b3a5d264581b66239aaff60b2c6a48f46427cfae0e84862"
+    },
+    {
+      "file": "evidence/commit334-001-manifest.json",
+      "sha256": "49a70a9d195f9eb158d12894248f509982db5d7532f43a4c54a74d97e52a50c8"
+    },
+    {
+      "file": "evidence/commit334-001-verdict.md",
+      "sha256": "73ecda503abc7799151b2528d86c1fdb7fc0ab6302a2c0821305492b56f030eb"
+    },
+    {
+      "file": "evidence/commit334-001-upstream.diff",
+      "sha256": "ea8fd8912cc2344fe20e6bd078c7ae04f3127003cb50ce8f282f9e108b83890e"
+    },
+    {
+      "file": "evidence/commit334-001-cache.py",
+      "sha256": "2ccf73e80574489449cfb284673fd7637643f07dd1431de67812837b3774c80d"
+    },
+    {
+      "file": "evidence/commit334-001-q_cache_kernels.cuh",
+      "sha256": "a900a2efb37fcaeb42f48c2276eacd25d6dc6d2723b2263db5f36a891ba3a0bf"
+    },
+    {
+      "file": "evidence/commit346-002-draft.json",
+      "sha256": "3a556c630ce1da0adfcf4e0b1f164b71628c339b62144695e9901bcd9f4d6a6a"
+    },
+    {
+      "file": "evidence/commit346-002-transcript.json",
+      "sha256": "e1afdfed00a0d9875f7e3cb99b437b5974c32284dd3dd28eede6e8dd4eb07f70"
+    },
+    {
+      "file": "evidence/commit346-002-manifest.json",
+      "sha256": "0bde98440836a31ce9bb253acc46cbd54cad3140f1fa37150f8b5dea29939ed7"
+    },
+    {
+      "file": "evidence/commit346-002-verdict.md",
+      "sha256": "dffaea1bf59b3fd73a13d0c3fa907753338cac5f2651a8b084fcac36a4ae0802"
+    },
+    {
+      "file": "evidence/commit346-002-upstream.diff",
+      "sha256": "f552d7d2fb6c0300679d2e9a55577fef2cff82c22f0bd2939f0c664dbe3ed115"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "db533103b1827e83b55bac4f4531eeef3684a57f",
+      "available_at": "2026-11-18T06:29:20.930779+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+      "available_at": "2026-11-18T06:29:20.930779+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "available_at": "2026-11-18T07:33:03.161008+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+      "available_at": "2025-07-29T22:25:28+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-draft.json",
+      "source_id": "evidence/commit346-002-draft.json",
+      "content_sha256": "3a556c630ce1da0adfcf4e0b1f164b71628c339b62144695e9901bcd9f4d6a6a",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-transcript.json",
+      "source_id": "evidence/commit346-002-transcript.json",
+      "content_sha256": "e1afdfed00a0d9875f7e3cb99b437b5974c32284dd3dd28eede6e8dd4eb07f70",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-manifest.json",
+      "source_id": "evidence/commit346-002-manifest.json",
+      "content_sha256": "0bde98440836a31ce9bb253acc46cbd54cad3140f1fa37150f8b5dea29939ed7",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-verdict.md",
+      "source_id": "evidence/commit346-002-verdict.md",
+      "content_sha256": "dffaea1bf59b3fd73a13d0c3fa907753338cac5f2651a8b084fcac36a4ae0802",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-upstream.diff",
+      "source_id": "evidence/commit346-002-upstream.diff",
+      "content_sha256": "f552d7d2fb6c0300679d2e9a55577fef2cff82c22f0bd2939f0c664dbe3ed115",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "3279fe188edb9e4be423fc828e5a8444c6aa6d06",
+      "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "67e0fd74413228c85e1edc65cfc7c39365b1a6ca"
+    ],
+    "limits": "Source inspection and missing-attribute scalar check support the supplied combined K/V path. No injected Attention model or native execution was tested. Position 346 applies only to the checked revision. The allocation estimator still dereferences absent k_proj in the combined-K/V constructor form. This observation is confined to allocation."
+  },
+  "recorded_at": "2026-11-18T21:36:23.791282+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

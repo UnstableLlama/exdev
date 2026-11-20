@@ -1,0 +1,130 @@
+--- a/teacher/codex_adapter.py
++++ b/teacher/codex_adapter.py
+@@ -107,6 +107,17 @@
+     return totals
+ 
+ 
++def provider_output_schema(manifest):
++    """Keep unbounded commit allowlists in local annotation validation."""
++    schema = output_schema(manifest)
++    properties = schema['properties']
++    properties['links']['items'].pop('enum', None)
++    if 'findings' in properties:
++        locations = properties['findings']['items']['properties']['locations']
++        locations['items']['properties']['commit'].pop('enum', None)
++    return schema
++
++
+ class CodexTeacher:
+     def run(self, session, transport, record=None, max_calls=256, *, model=MODEL, validation_repair=True):
+         checked_model(model)
+@@ -116,6 +127,7 @@
+         session.used=True
+         manifest_bytes=(session.runner.packet/'manifest.json').read_bytes()
+         manifest=json.loads(manifest_bytes)
++        schema=provider_output_schema(manifest)
+         transcript=deepcopy(session.initial)
+         prior = getattr(session, 'revision_prior', ())
+         repair = None
+@@ -137,7 +149,7 @@
+         transcript[0]['teacher_runtime']={'model':started['model'], 'reasoning_effort':started['reasoningEffort']}
+         thread=started['thread']['id']
+         turn=transport.request('turn/start',{'threadId':thread,'model':model,'effort':session.reasoning_effort,
+-            'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
++            'environments':[],'runtimeWorkspaceRoots':[], 'outputSchema':schema,
+             'input':[{'type':'text','text':session.initial[1]['content']}]})['turn']['id']
+         allowed={tool['name'] for tool in session.tools}
+         seen=set(); final=None; final_index=None
+@@ -222,7 +234,7 @@
+                     save()
+                     next_turn=transport.request('turn/start',{'threadId':thread,'model':model,
+                         'effort':session.reasoning_effort, 'environments':[],
+-                        'runtimeWorkspaceRoots':[], 'outputSchema':output_schema(manifest),
++                        'runtimeWorkspaceRoots':[], 'outputSchema':schema,
+                         'input':[{'type':'text','text':feedback['content']}]})['turn']['id']
+                     repair['feedback_sent']=True
+                     save()
+--- a/tests/test_validation_repair.py
++++ b/tests/test_validation_repair.py
+@@ -5,7 +5,8 @@
+ import unittest
+ from unittest.mock import Mock, patch
+ from teacher.author import author
+-from teacher.codex_adapter import CodexTeacher
++from teacher.codex_adapter import CodexTeacher, provider_output_schema
++from teacher.editorial import output_schema, validate_shape
+ from teacher.session import FreshSession
+ from teacher.validation_repair import repair_metadata, verify_final, disclosure, repair_feedback, POLICY, LEGACY_POLICY, KEEP_REST_POLICY, KEEP_REST_SENTENCE, digest
+ from teacher.ancestor_context import approve_run
+@@ -120,6 +121,71 @@
+         self.assertEqual(disclosure(transcript)['tool_calls_by_turn'],[1,0])
+         m=json.loads((self.packet/'manifest.json').read_text())
+         self.assertEqual(verify_final(fixture(),m,transcript,repair_metadata(transcript))[0],result['draft'])
++
++    def test_provider_schema_changes_only_commit_enums(self):
++        task, ancestor = 'a' * 40, 'b' * 40
++        for version in (2, 3, 4, 5):
++            for entries in ([], [{'sha': ancestor}]):
++                with self.subTest(version=version, links=bool(entries)):
++                    manifest = {
++                        'task_sha': task, 'commits': [ancestor],
++                        'ancestor_entries': entries, 'editorial_schema_version': version,
++                        'authoring_task': {
++                            'kind': 'chapter', 'id': 'one',
++                            'chapter_catalog': [{'id': 'one'}, {'id': 'two'}],
++                        },
++                    }
++                    full = output_schema(manifest)
++                    expected = deepcopy(full)
++                    links = expected['properties']['links']
++                    if entries:
++                        self.assertEqual(links['items'].pop('enum'), [ancestor])
++                    else:
++                        self.assertEqual(links['maxItems'], 0)
++                    if version >= 3:
++                        findings = expected['properties']['findings']['items']['properties']
++                        commit = findings['locations']['items']['properties']['commit']
++                        self.assertEqual(commit.pop('enum'), [task, ancestor])
++                    self.assertEqual(provider_output_schema(manifest), expected)
++                    self.assertEqual(output_schema(manifest), full)
++
++    def test_unknown_commit_hashes_enter_repair_on_reduced_provider_schema(self):
++        manifest_path = self.packet / 'manifest.json'
++        manifest = json.loads(manifest_path.read_text())
++        manifest['editorial_schema_version'] = 3
++        manifest_path.write_text(json.dumps(manifest))
++        valid = dict(fixture(), schema_version=3, findings=[])
++        finding = {
++            'id': 'fixture-boundary', 'origin': 'authoring_observation',
++            'status': 'suspected', 'classification': 'defect', 'description': 'Boundary',
++            'trigger': 'Zero input', 'expected_behavior': 'Returns zero',
++            'actual_behavior': 'Raises',
++            'locations': [{'commit': 'c' * 40, 'path': 'fixture.py', 'symbol': 'fixture'}],
++            'source_evidence': ['read-1'],
++            'verification': [{'method': 'source_inspection', 'description': 'Read fixture',
++                              'evidence': ['read-1'], 'limits': 'Source only'}],
++        }
++        for field, refused, reason in (
++            ('links', dict(valid, links=['c' * 40]), 'annotation.links[]: unknown value'),
++            ('locations', dict(valid, findings=[finding]),
++             'annotation.findings[].locations[].commit: unknown value'),
++        ):
++            with self.subTest(field=field):
++                transport = RepairTransport(first=json.dumps(refused), second=json.dumps(valid))
++                result = self.run_teacher(transport)
++                starts = [params for method, params in transport.requests if method == 'turn/start']
++                self.assertEqual(len(starts), 2)
++                for params in starts:
++                    schema = params['outputSchema']
++                    self.assertEqual(schema, provider_output_schema(manifest))
++                    validate_shape(refused, schema)
++                transcript = result['transcript']
++                event = next(message for message in transcript if message['role'] == 'validation')
++                self.assertEqual(event['error'], reason)
++                self.assertEqual(starts[1]['input'],
++                                 [{'type': 'text', 'text': repair_feedback(reason)}])
++                self.assertEqual(result['draft']['annotation'], valid)
++                verify_final(valid, manifest, transcript, repair_metadata(transcript))
+ 
+     def test_invalid_annotation_and_more_tools_repair_with_prefix_validation(self):
+         reference = 'call_' + 'a' * 32

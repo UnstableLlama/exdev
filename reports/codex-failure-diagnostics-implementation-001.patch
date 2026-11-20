@@ -1,0 +1,420 @@
+diff --git a/.gitignore b/.gitignore
+--- a/.gitignore
++++ b/.gitignore
+@@ -20,3 +20,7 @@
+ /reports/commit-000214-medgemma-references-001.json
+ /reports/commit-000214-references-combined-002.json
+ /reports/commit-000214-references-initial-four-001.json
++
++# Failure diagnostics are local administrative artifacts.
++codex-failure.json
++.codex-failure-*
+diff --git a/teacher/author.py b/teacher/author.py
+--- a/teacher/author.py
++++ b/teacher/author.py
+@@ -3,8 +3,10 @@
+ import argparse
+ import hashlib
+ import json
++import os
+ import platform
+ from pathlib import Path
++from tempfile import NamedTemporaryFile
+ from .codex_adapter import CodexTeacher, MODEL, TRIAL_MODEL
+ from .codex_transport import CodexTransport, SUPPORTED_VERSION
+ from .editorial import render
+@@ -18,6 +20,20 @@
+     pending=path.with_suffix(path.suffix+'.new')
+     pending.write_text(json.dumps(value,indent=2)+'\n')
+     pending.replace(path)
++
++
++def write_failure_diagnostics(output, diagnostics):
++    pending = None
++    try:
++        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=output,
++                                prefix='.codex-failure-', delete=False) as handle:
++            pending = Path(handle.name)
++            json.dump(diagnostics, handle, indent=2)
++            handle.write('\n')
++        os.replace(pending, output/'codex-failure.json')
++    finally:
++        if pending is not None:
++            pending.unlink(missing_ok=True)
+ 
+ 
+ def author(packet, output, auth_file, transport_factory=CodexTransport, *, validation_repair=True):
+@@ -89,8 +105,10 @@
+         write_json(output/'raw-transcript.json',transcript)
+         provenance.update(repair_metadata(transcript), token_usage=transcript[0].get('teacher_token_usage'))
+         write_json(output/'provenance.json',provenance)
++    transport_context = None
+     try:
+-        with (transport_factory(auth_file,model=model) if trial else transport_factory(auth_file)) as transport:
++        transport_context = transport_factory(auth_file, model=model) if trial else transport_factory(auth_file)
++        with transport_context as transport:
+             result=CodexTeacher().run(session,transport,
+                 model=model, record=record, validation_repair=validation_repair)
+         if manifest!=(packet/'manifest.json').read_bytes():
+@@ -111,6 +129,11 @@
+         write_json(output/'status.json',{'status':'draft','published':False})
+         return output
+     except BaseException as error:
++        if isinstance(transport_context, CodexTransport) and transport_context.failure_diagnostics is not None:
++            try:
++                write_failure_diagnostics(output, transport_context.failure_diagnostics)
++            except OSError:
++                error.add_note('Could not save Codex failure diagnostics')
+         write_json(output/'status.json',{'status':'failed','published':False,'error_type':type(error).__name__})
+         raise
+ 
+diff --git a/teacher/codex_diagnostics.py b/teacher/codex_diagnostics.py
+new file mode 100644
+--- /dev/null
++++ b/teacher/codex_diagnostics.py
+@@ -0,0 +1,70 @@
++# SPDX-License-Identifier: MIT
++"""Redact Codex failure diagnostics before they leave the authoring process."""
++import json
++import re
++from urllib.parse import quote, quote_plus
++
++REDACTED = '[REDACTED]'
++LIMIT = 64 * 1024
++KEY = (
++    r'(?:[\w-]*api[_-]?key|[\w-]*access[_-]?token|refresh[_-]?token|id[_-]?token|'
++    r'session[_-]?token|auth[_-]?token|token|authorization|proxy[_-]authorization|'
++    r'cookie|set[_-]cookie|password|passwd|client[_-]?secret|secret|credential[s]?|private[_-]?key)'
++)
++CREDENTIAL_KEY = re.compile(KEY, re.IGNORECASE)
++LABELED = re.compile(
++    rf"""(?P<label>\b{KEY}(?:["'])?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;&\]}}]+)""",
++    re.IGNORECASE,
++)
++HEADER = re.compile(r'(?im)(\b(?:proxy-)?authorization|\b(?:set-)?cookie)([ \t]*:[ \t]*)(?!["\']).*')
++SENSITIVE_TEXT = re.compile(
++    r'(?i)\b(?:Bearer|Basic)[ \t]+[\w.~+/=-]+|'
++    r'\bsk-[\w-]+|\beyJ[\w-]+\.[\w-]+\.[\w-]+|'
++    r'-----BEGIN [^-\r\n]*PRIVATE KEY-----[\s\S]*?-----END [^-\r\n]*PRIVATE KEY-----'
++)
++URL_CREDENTIALS = re.compile(r'(://)[^/\s?#]*@')
++
++
++def auth_secrets(data):
++    auth = json.loads(data)
++    if not isinstance(auth, dict):
++        raise ValueError('Invalid Codex auth document')
++    secrets = set()
++
++    def visit(value, sensitive=False):
++        if isinstance(value, dict):
++            for key, item in value.items():
++                visit(item, sensitive or CREDENTIAL_KEY.fullmatch(key) is not None)
++        elif isinstance(value, list):
++            for item in value:
++                visit(item, sensitive)
++        elif sensitive and isinstance(value, str) and value:
++            secrets.add(value)
++
++    visit(auth)
++    return secrets
++
++
++class Redactor:
++    def __init__(self, secrets):
++        variants = {variant for secret in secrets for encoded in (secret, quote(secret, safe=''), quote_plus(secret))
++                    for variant in (encoded, json.dumps(encoded)[1:-1], json.dumps(encoded, ensure_ascii=False)[1:-1])}
++        self.exact = re.compile('|'.join(map(re.escape, sorted(variants, key=len, reverse=True)))) if variants else None
++
++    def text(self, value):
++        if self.exact:
++            value = self.exact.sub(REDACTED, value)
++        value = HEADER.sub(lambda m: m[1] + m[2] + REDACTED, value)
++        value = SENSITIVE_TEXT.sub(REDACTED, value)
++        value = URL_CREDENTIALS.sub(lambda m: m[1] + REDACTED + '@', value)
++        return LABELED.sub(lambda m: m['label'] + REDACTED, value)
++
++    def payload(self, value):
++        if isinstance(value, dict):
++            return {self.text(key): REDACTED if CREDENTIAL_KEY.fullmatch(key) else self.payload(item)
++                    for key, item in value.items()}
++        if isinstance(value, list):
++            return [self.payload(item) for item in value]
++        if isinstance(value, str):
++            return self.text(value)
++        return value
+diff --git a/teacher/codex_transport.py b/teacher/codex_transport.py
+--- a/teacher/codex_transport.py
++++ b/teacher/codex_transport.py
+@@ -7,10 +7,12 @@
+ import selectors
+ import shutil
+ import signal
++import stat
+ import subprocess
+ import tempfile
+ import time
+ from .codex_adapter import DISABLED_FEATURES, MODEL, LEGACY_MODEL, checked_model
++from .codex_diagnostics import LIMIT, Redactor, auth_secrets
+ 
+ SUPPORTED_VERSION = 'codex-cli 0.167.0'
+ 
+@@ -36,6 +38,10 @@
+         self.executable=Path(executable or shutil.which('codex') or '').resolve()
+         self.timeout=timeout
+         self.pending=deque(); self.buffer=b''; self.sequence=0; self.received=0
++        self.failure_diagnostics = None
++        self._error_events = []
++        self._error_bytes = 0
++        self._omitted_errors = 0
+ 
+     def __enter__(self):
+         version=subprocess.check_output([str(self.executable),'--version'],stderr=subprocess.DEVNULL,text=True).strip()
+@@ -47,7 +53,10 @@
+         root=Path(self.temporary.name)
+         try:
+             state=root/'state';state.mkdir(mode=0o700)
+-            auth=state/'auth.json';auth.write_bytes(self.auth_file.read_bytes());auth.chmod(0o600)
++            self._sandbox_auth = state/'auth.json'
++            self._initial_auth = self.auth_file.read_bytes()
++            self._sandbox_auth.write_bytes(self._initial_auth)
++            self._sandbox_auth.chmod(0o600)
+             (state/'config.toml').write_text(configuration() if self.model==MODEL else configuration(self.model))
+             catalog=Path(__file__).resolve().parents[1]/'schema/codex-teacher-model.json'
+             if self.model == LEGACY_MODEL:
+@@ -75,19 +84,65 @@
+             self.selector=selectors.DefaultSelector();self.selector.register(self.process.stdout,selectors.EVENT_READ)
+             self.deadline=time.monotonic()+self.timeout
+             return self
+-        except BaseException:
+-            self.__exit__(None,None,None)
++        except BaseException as error:
++            self.__exit__(type(error), error, error.__traceback__)
+             raise
+ 
+-    def __exit__(self,*_):
+-        if hasattr(self,'process'):
+-            if self.process.poll() is None:
+-                os.killpg(self.process.pid,signal.SIGKILL)
+-            self.process.wait()
+-            self.process.stdin.close();self.process.stdout.close()
+-        if hasattr(self,'selector'):self.selector.close()
+-        if hasattr(self,'stderr'):self.stderr.close()
+-        if hasattr(self,'temporary'):self.temporary.cleanup()
++    def __exit__(self, exc_type, _error, _traceback):
++        try:
++            if hasattr(self, 'process'):
++                if self.process.poll() is None:
++                    try:
++                        os.killpg(self.process.pid, signal.SIGKILL)
++                    except ProcessLookupError:
++                        pass
++                self.process.wait()
++                self.process.stdin.close()
++                self.process.stdout.close()
++        finally:
++            if exc_type is not None and hasattr(self, 'stderr'):
++                self._collect_failure()
++            self._initial_auth = None
++            self._error_events.clear()
++            if hasattr(self, 'selector'):
++                self.selector.close()
++            if hasattr(self, 'stderr'):
++                self.stderr.close()
++            if hasattr(self, 'temporary'):
++                self.temporary.cleanup()
++
++    def _collect_failure(self):
++        try:
++            # The server can refresh credentials in its private state during a run.
++            fd = os.open(self._sandbox_auth, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++            with os.fdopen(fd, 'rb') as auth:
++                if not stat.S_ISREG(os.fstat(auth.fileno()).st_mode):
++                    raise ValueError('Expected a regular Codex auth file')
++                current_auth = auth.read(LIMIT + 1)
++            if len(current_auth) > LIMIT or len(self._initial_auth) > LIMIT:
++                raise ValueError('Codex auth exceeds diagnostics budget')
++            secrets = auth_secrets(self._initial_auth)
++            if current_auth != self._initial_auth:
++                secrets.update(auth_secrets(current_auth))
++            redactor = Redactor(secrets)
++            stderr = os.pread(self.stderr.fileno(), LIMIT + 1, 0)
++            stderr_oversize = len(stderr) > LIMIT
++            self.failure_diagnostics = {
++                'error_events': redactor.payload(self._error_events),
++                'omitted_error_events': self._omitted_errors,
++                'stderr': None if stderr_oversize else redactor.text(stderr.decode('utf-8', errors='replace')),
++                'stderr_omitted': 'size_limit' if stderr_oversize else None,
++            }
++        except Exception:
++            # Redaction or read failures must never expose raw data or replace the run error.
++            self.failure_diagnostics = {'unavailable': 'capture_or_redaction_failed'}
++
++    def _remember_error(self, event, size):
++        if len(self._error_events) >= 8 or self._error_bytes + size > LIMIT:
++            self._omitted_errors += 1
++            return
++        self._error_bytes += size
++        self._error_events.append(event)
+ 
+     def send(self, value):
+         encoded=json.dumps(value).encode()+b'\n'
+@@ -109,7 +164,10 @@
+             if len(self.buffer)>4*1024**2 or self.received>64*1024**2:
+                 raise ValueError('Provider response budget exceeded')
+         line,self.buffer=self.buffer.split(b'\n',1)
+-        return json.loads(line)
++        event = json.loads(line)
++        if isinstance(event, dict) and (event.get('method') == 'error' or 'error' in event):
++            self._remember_error(event, len(line))
++        return event
+ 
+     def receive(self):
+         return self.pending.popleft() if self.pending else self._receive()
+diff --git a/tests/test_author.py b/tests/test_author.py
+--- a/tests/test_author.py
++++ b/tests/test_author.py
+@@ -31,6 +31,7 @@
+         self.assertEqual(provenance['operating_system'],platform.system())
+         self.assertEqual(provenance['python_version'],platform.python_version())
+         self.assertTrue((out/'raw-transcript.json').exists())
++        self.assertFalse((out/'codex-failure.json').exists())
+         with self.assertRaises(FileExistsError):author(self.packet,out,self.root/'unused')
+ 
+     def test_invalid_raw_response_is_preserved_without_publishing_draft(self):
+diff --git a/tests/test_codex_diagnostics.py b/tests/test_codex_diagnostics.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_codex_diagnostics.py
+@@ -0,0 +1,131 @@
++# SPDX-License-Identifier: MIT
++"""Exercise failure diagnostics with a local fake stdio server and synthetic credentials."""
++import hashlib
++import json
++import os
++import stat
++import subprocess
++import sys
++from types import SimpleNamespace
++import unittest
++from unittest.mock import patch
++
++from teacher.author import author
++from teacher.codex_transport import CodexTransport, SUPPORTED_VERSION
++import test_author
++
++
++SERVER = '''
++import json
++import pathlib
++import sys
++
++settings = json.loads(sys.argv[1])
++auth = pathlib.Path(sys.argv[2])
++auth.write_text(json.dumps({'tokens': {'refresh_token': 'refreshed/value'}}))
++mode = settings['mode']
++for line in sys.stdin:
++    request = json.loads(line)
++    method = request['method']
++    if method == 'initialized':
++        continue
++    key = request['id']
++    if (mode == 'rpc' and method == 'initialize') or method == 'turn/start':
++        if mode == 'oversize':
++            print('x' * 70000, file=sys.stderr, flush=True)
++        else:
++            print('provider refused: old/value refreshed%2Fvalue', file=sys.stderr)
++            print('Authorization: Basic bW9ja19jcmVk', file=sys.stderr)
++            print('Set-Cookie: session=unknown_session; Secure', file=sys.stderr)
++            print('upstream: https://demo:user-secret@example.test/path', file=sys.stderr)
++            print('password="text with spaces"', file=sys.stderr, flush=True)
++        if mode == 'rpc':
++            print(json.dumps({'id': key, 'error': {'code': -32000, 'message': 'setup failed'}}), flush=True)
++            break
++    if method == 'initialize':
++        result = {}
++    elif method == 'thread/start':
++        result = {'model': 'gpt-6.2-sol', 'reasoningEffort': 'medium', 'thread': {'id': 'test-thread'}}
++    else:
++        result = {'turn': {'id': 'test-turn'}}
++    print(json.dumps({'id': key, 'result': result}), flush=True)
++    if method == 'turn/start':
++        payload = {'threadId': 'test-thread', 'turnId': 'test-turn', 'error': {
++            'message': 'provider refused old/value',
++            'data': {'apiKey': 'fake_unknown_key', 'notes': ['Bearer unknown_bearer', 42]},
++        }}
++        if mode == 'oversize':
++            payload['error']['data']['padding'] = 'x' * 70000
++        if mode == 'invalid_auth':
++            auth.write_text('malformed with secret')
++        print(json.dumps({'method': 'error', 'params': payload}), flush=True)
++        break
++'''
++
++
++class CodexFailureTests(unittest.TestCase):
++    setUp = test_author.AuthorTests.setUp
++    tearDown = test_author.AuthorTests.tearDown
++
++    def run_failure(self, mode, message, error_type):
++        auth = self.root/'auth.json'
++        auth.write_text(json.dumps({'OPENAI_API_KEY': 'old/value'}))
++        packet_hash = hashlib.sha256((self.packet/'manifest.json').read_bytes()).hexdigest()
++        output = self.root/'failed'
++        created = []
++
++        def fake_server(command, **kwargs):
++            state = command[command.index('--bind') + 1]
++            return subprocess.Popen([sys.executable, '-c', SERVER, json.dumps({'mode': mode}), state + '/auth.json'],
++                                    **kwargs)
++
++        def transport_factory(auth_file):
++            transport = CodexTransport(auth_file, timeout=10)
++            created.append(transport)
++            return transport
++
++        process_api = SimpleNamespace(check_output=lambda *args, **kwargs: SUPPORTED_VERSION + '\n',
++                                      DEVNULL=subprocess.DEVNULL, PIPE=subprocess.PIPE, Popen=fake_server)
++        with patch('teacher.codex_transport.subprocess', process_api):
++            with self.assertRaisesRegex(error_type, message):
++                author(self.packet, output, auth, transport_factory=transport_factory)
++        self.assertFalse((output/'draft.json').exists())
++        self.assertEqual(json.loads((output/'status.json').read_text())['status'], 'failed')
++        self.assertEqual(hashlib.sha256((self.packet/'manifest.json').read_bytes()).hexdigest(), packet_hash)
++        self.assertFalse(os.path.exists(created[0].temporary.name))
++        self.assertTrue(created[0].stderr.closed)
++        artifact = output/'codex-failure.json'
++        self.assertEqual(stat.S_IMODE(artifact.stat().st_mode), 0o600)
++        self.assertEqual(list(output.glob('.codex-failure-*')), [])
++        return json.loads(artifact.read_text()), output
++
++    def test_error_event_and_stderr_redacted_in_failed_run_only(self):
++        diagnostics, output = self.run_failure('event', 'Codex reported an authoring error', ValueError)
++        event, = diagnostics['error_events']
++        self.assertEqual(event['method'], 'error')
++        self.assertEqual(event['params']['error']['message'], 'provider refused [REDACTED]')
++        self.assertEqual(event['params']['error']['data'], {'apiKey': '[REDACTED]', 'notes': ['[REDACTED]', 42]})
++        self.assertIn('provider refused: [REDACTED] [REDACTED]', diagnostics['stderr'])
++        self.assertIn('https://[REDACTED]@example.test/path', diagnostics['stderr'])
++        encoded = json.dumps(diagnostics)
++        for secret in ('old/value', 'refreshed%2Fvalue', 'bW9ja19jcmVk', 'unknown_session', 'user-secret',
++                       'text with spaces', 'fake_unknown_key', 'unknown_bearer'):
++            self.assertNotIn(secret, encoded)
++        transcript = json.loads((output/'raw-transcript.json').read_text())
++        self.assertEqual([row['role'] for row in transcript], ['system', 'user'])
++        self.assertNotIn('provider refused', json.dumps(transcript))
++
++    def test_setup_rpc_error_is_diagnostic_and_keeps_original_exception(self):
++        diagnostics, _ = self.run_failure('rpc', 'Codex RPC failed for initialize: -32000', RuntimeError)
++        event, = diagnostics['error_events']
++        self.assertEqual(event['error'], {'code': -32000, 'message': 'setup failed'})
++        self.assertIn('provider refused', diagnostics['stderr'])
++
++    def test_oversized_streams_are_omitted_without_saving_partial_secrets(self):
++        diagnostics, _ = self.run_failure('oversize', 'Codex reported an authoring error', ValueError)
++        self.assertEqual(diagnostics, {'error_events': [], 'omitted_error_events': 1,
++                                       'stderr': None, 'stderr_omitted': 'size_limit'})
++
++    def test_bad_auth_state_fails_closed_without_replacing_original_error(self):
++        diagnostics, _ = self.run_failure('invalid_auth', 'Codex reported an authoring error', ValueError)
++        self.assertEqual(diagnostics, {'unavailable': 'capture_or_redaction_failed'})

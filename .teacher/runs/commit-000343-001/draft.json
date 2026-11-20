@@ -1,0 +1,363 @@
+{
+  "schema_version": 5,
+  "sha": "6565dee474d3f9b247673e24dbfe3b9a72ed278c",
+  "parent_shas": [
+    "784107df084163af6a13310c4cb07cf7709439ec"
+  ],
+  "cutoff_date": "2025-07-29T22:03:05+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "feature",
+    "problem": [
+      {
+        "text": "Turboderp's commit, \u201cAdd custom atexit handler,\u201d adds a utility intended to run cleanup callbacks when the main scope ends, before interpreter teardown. The diff adds the utility but does not install it in any entry point.",
+        "basis": "source",
+        "evidence": [
+          "call_a4347946c5db4f979d59f4ad3e78f7a0"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Each Cleanupper instance owns a list of zero-argument callbacks. Registration appends to the list; unregistration removes the first matching entry if present. The constructor passes its bound _shutdown method to weakref.finalize. When invoked, _shutdown walks the list in registration order and clears it only if the loop finishes.",
+        "basis": "source",
+        "evidence": [
+          "call_a4347946c5db4f979d59f4ad3e78f7a0"
+        ]
+      },
+      {
+        "text": "The bound method retains the same object the finalizer watches. A standalone transcription on CPython 3.14.4 showed that a function-local Cleanupper survived return and an explicit garbage collection. Its callbacks ran at interpreter exit, between ordinary atexit handlers registered before and after the Cleanupper was constructed.",
+        "basis": "execution",
+        "evidence": [
+          "call_772c3ea1a1e8411bb4bf3bbb9c6d175e"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The existing wildcard import in exllamav3.util exposes Cleanupper through that package, but importing the class does not construct it or register a finalizer. Whole-parent literal searches found no Cleanupper, register_atexit, _shutdown, atexit, or weakref references, and the diff adds no caller outside the class. No existing repository workflow is shown to use the new hook.",
+        "basis": "source",
+        "evidence": [
+          "call_bb3d1649e73c4fb9badd97eaae6107b1",
+          "call_60f20b35995d49e6beeba98225cdc13f",
+          "call_b012c87ea2014beb9fbf9d0dd65598ab",
+          "call_8f29b46ab44c4ce38d139c1c1ed1cde6",
+          "call_bd109d062d3d435ab40b3d517a4b63df",
+          "call_bdd782f2bba44501ae14ab04ac11a13e",
+          "call_a4347946c5db4f979d59f4ad3e78f7a0"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial commit's runtime chapter describes misc.py as a home for shared utilities and notes that util re-exports its helpers. It does not describe a shutdown callback mechanism.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_1719012b8e434d90ac1aa979286dc74a"
+        ]
+      },
+      {
+        "text": "The immediate parent added find_free_port, which binds a temporary TCP socket to port zero, reads the assigned port, and closes the socket via contextlib.closing. This task leaves that behavior unchanged; the addition begins after its return statement.",
+        "basis": "source",
+        "evidence": [
+          "call_46fdd5a93588487d892cce0f02a48305",
+          "call_a926a7dbebb4464290cf24bd9eb86c37",
+          "call_a4347946c5db4f979d59f4ad3e78f7a0"
+        ]
+      },
+      {
+        "text": "PR #22, \u201cOpenAI compatible API example,\u201d proposes an endpoint for testing with web UIs. A posted server example catches KeyboardInterrupt and calls server_close() in a finally block.",
+        "basis": "source",
+        "evidence": [
+          "call_cacbb3635b764d03994228c8328d543a",
+          "call_1c56df710c924598919f613be3e0f67d"
+        ]
+      },
+      {
+        "text": "The concrete overlap with PR #22 is cleanup at a Python entry point. Its posted example uses explicit server cleanup, not Cleanupper, and this diff does not touch the server or chat example. The discussion does not establish the motivation for this commit.",
+        "basis": "inference",
+        "evidence": [
+          "call_1c56df710c924598919f613be3e0f67d",
+          "call_a4347946c5db4f979d59f4ad3e78f7a0"
+        ]
+      }
+    ],
+    "limitations": [
+      "The successful check ran a standalone class transcription, not an ExLlamaV3 import or application. The sandbox could not start a test thread, so ordering relative to worker shutdown was not measured. Behavior on other Python versions and implementations is unestablished.",
+      "Literal searches do not establish whether external code or dynamic lookup uses the new helper."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff"
+    ],
+    "chapters": [
+      {
+        "id": "cleanup",
+        "title": "Add a cleanup callback list backed by weakref.finalize",
+        "claims": [
+          {
+            "text": "The helper groups several callbacks behind a single finalizer. The diff does not attach cleanup to a lexical scope: it adds no context-manager protocol, no explicit close method, and no try/finally at an entry point.",
+            "basis": "source",
+            "evidence": [
+              "call_a4347946c5db4f979d59f4ad3e78f7a0"
+            ]
+          },
+          {
+            "text": "If cleanup must happen when a specific operation ends, an explicit try/finally or a context manager would tie it to that boundary rather than to object collection or interpreter exit. A weakref-based design would need a callback and callback state that do not retain the watched instance.",
+            "basis": "inference",
+            "evidence": [
+              "call_a4347946c5db4f979d59f4ad3e78f7a0",
+              "call_772c3ea1a1e8411bb4bf3bbb9c6d175e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "bound-finalizer-retains-owner",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "The finalizer holds a bound method that retains the instance it is supposed to watch, preventing cleanup from being triggered by loss of the caller's last reference.",
+        "trigger": "Create a Cleanupper in a main function, register a callback, and return without keeping a strong reference in the caller.",
+        "expected_behavior": "The callbacks run as the main scope ends, as the class docstring describes.",
+        "actual_behavior": "In the transcription, the instance remained reachable after main returned and gc.collect() ran. The cleanup callbacks ran during weakref's interpreter-exit processing instead.",
+        "locations": [
+          {
+            "commit": "6565dee474d3f9b247673e24dbfe3b9a72ed278c",
+            "path": "exllamav3/util/misc.py",
+            "symbol": "Cleanupper.__init__"
+          }
+        ],
+        "source_evidence": [
+          "call_a4347946c5db4f979d59f4ad3e78f7a0",
+          "call_60f20b35995d49e6beeba98225cdc13f"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Transcribed the class and observed the instance through a weak reference after main returned, then observed callback order at normal process exit.",
+            "evidence": [
+              "call_772c3ea1a1e8411bb4bf3bbb9c6d175e"
+            ],
+            "limits": "No in-tree instantiation was found. This exercises the helper in isolation on CPython 3.14.4 and does not establish timing relative to worker teardown."
+          }
+        ]
+      },
+      {
+        "id": "callback-error-skips-remaining-cleanup",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "One failing callback skips later callbacks registered on the same instance and bypasses the list reset.",
+        "trigger": "Register at least two callbacks on one Cleanupper and let an earlier callback raise during _shutdown.",
+        "expected_behavior": "Other registered cleanup callbacks still get an attempt when one fails.",
+        "actual_behavior": "The exception escapes the unguarded loop before it reaches the later callbacks or the reset. In the standalone exit check, weakref reported the exception and continued processing a separate Cleanupper, but the later callback on the failing instance did not run.",
+        "locations": [
+          {
+            "commit": "6565dee474d3f9b247673e24dbfe3b9a72ed278c",
+            "path": "exllamav3/util/misc.py",
+            "symbol": "Cleanupper._shutdown"
+          }
+        ],
+        "source_evidence": [
+          "call_a4347946c5db4f979d59f4ad3e78f7a0",
+          "call_8f29b46ab44c4ce38d139c1c1ed1cde6",
+          "call_b012c87ea2014beb9fbf9d0dd65598ab"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Registered a raising callback before a marker callback on one transcribed instance and successfully ran the process through normal interpreter exit. The exception appeared, the marker did not, and callbacks on the separate instance ran.",
+            "evidence": [
+              "call_772c3ea1a1e8411bb4bf3bbb9c6d175e"
+            ],
+            "limits": "The direct trigger is the new finalizer's call to _shutdown. No repository application callback or entry point was shown to reach it."
+          }
+        ]
+      }
+    ],
+    "summary": "Adds an opt-in cleanup callback helper without wiring it into an entry point. In a standalone CPython check, its bound finalizer retained the instance until interpreter exit, and a callback exception skipped the remaining callbacks on that instance."
+  },
+  "evidence": {
+    "call_a4347946c5db4f979d59f4ad3e78f7a0": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "6565dee474d3f9b247673e24dbfe3b9a72ed278c",
+        "offset": 159
+      },
+      "result_sha256": "94d413cc84c0b3920bca316e500fb2952eaf11b43d218f8050c77eba4a6a4772"
+    },
+    "call_bd109d062d3d435ab40b3d517a4b63df": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "query": "atexit"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_60f20b35995d49e6beeba98225cdc13f": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "query": "Cleanupper"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_bdd782f2bba44501ae14ab04ac11a13e": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "query": "weakref"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_8f29b46ab44c4ce38d139c1c1ed1cde6": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "query": "_shutdown"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_57a75a69155943a8a944b5930104652a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "file": "exllamav3/util/misc.py"
+      },
+      "result_sha256": "199fb91f165e1ecb6730d9da696c1126648c92df154cad113115cff0389ae8ee",
+      "catalog_only": true
+    },
+    "call_1719012b8e434d90ac1aa979286dc74a": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "runtime",
+        "max_bytes": 16384
+      },
+      "result_sha256": "0de1b97ae94bf13488b4bad98c6eb3de8b285753d46b56295711c375be802464"
+    },
+    "call_a926a7dbebb4464290cf24bd9eb86c37": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "path": "exllamav3/util/misc.py"
+      },
+      "result_sha256": "cf4046df7c78f79d8348da7a42971196fd9e62bf3aa3a4b5525680efa734ec91"
+    },
+    "call_2c75a833c6dc4a738e7c53bd8cace99a": {
+      "tool": "evidence_index",
+      "arguments": {
+        "index_id": "closed_discussions"
+      },
+      "result_sha256": "c7f51ef81a7df0a20712c9854ec55b30536e3793ac914376bbbb5b75cd7923d0",
+      "catalog_only": true
+    },
+    "call_cacbb3635b764d03994228c8328d543a": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22"
+      },
+      "result_sha256": "5a3e7516158aad65f668d5267209d39781dbeb050f0eb6abdc0180e95bbb944d"
+    },
+    "call_1c56df710c924598919f613be3e0f67d": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/pull/22",
+        "offset": 16384,
+        "max_bytes": 24000
+      },
+      "result_sha256": "172fc56668154833019520a18f7e40222cf9ee530b308a00056f25afdb76a4a2"
+    },
+    "call_45528dd6d74b4425a3e361a96ba1d0af": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/util/misc.py",
+        "limit": 15
+      },
+      "result_sha256": "261deac627bbec5d546e461753157a4dfe93f00a596127db0f042bbf144deb2a"
+    },
+    "call_328a0953da874f2ebf366c91e6e78211": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec"
+      },
+      "result_sha256": "381b37e72dbc484c25966a333f7f0e24b118ef25d37d7d4075495fc8ff939584"
+    },
+    "call_46fdd5a93588487d892cce0f02a48305": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec"
+      },
+      "result_sha256": "2646532199ed79822eb36c0b93958cd3710eaf4c36b63eb5f625d78702dfe549"
+    },
+    "call_e1c15db06a4042f2826a2e5270965d86": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "query": "finalize("
+      },
+      "result_sha256": "5e4fc5c04030a6184f959e49cc8323d4ffa7b022623827ce9c6f616b09ba2e4d"
+    },
+    "call_b012c87ea2014beb9fbf9d0dd65598ab": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "query": "register_atexit"
+      },
+      "result_sha256": "19cd018adcb64d277a4adc6c35dabca3518d3932695b1d8991dd014df228d498"
+    },
+    "call_c1c41f4d96da47ea944018fda236cda5": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "query": "find_free_port"
+      },
+      "result_sha256": "4d1b6f3ce7f1508e5655a80f3a8f6d3071d2d3978d913dccce639e90b50bb884"
+    },
+    "call_5d2b12ef47fe4a5fa4f5cef96cadadb4": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import subprocess, sys\ns='''import atexit, gc, platform, sys, threading, time, weakref\nclass Cleanupper:\n    def __init__(self):\n        self.atexit_fns = []\n        weakref.finalize(self, self._shutdown)\n    def register_atexit(self, fn):\n        self.atexit_fns.append(fn)\n    def unregister_atexit(self, fn):\n        if fn in self.atexit_fns:\n            self.atexit_fns.remove(fn)\n    def _shutdown(self):\n        for fn in self.atexit_fns:\n            fn()\n        self.atexit_fns = []\nprint(platform.python_implementation(), platform.python_version(), flush=True)\natexit.register(lambda: print('ordinary earlier', flush=True))\ndef worker():\n    time.sleep(.15)\n    print('worker done', flush=True)\nthread = threading.Thread(target=worker)\nthread.start()\ndef f():\n    print('cleanup first; worker alive:', thread.is_alive(), flush=True)\n    if sys.argv[1] == 'raise':\n        raise ValueError('test callback')\ndef main():\n    c = Cleanupper()\n    c.register_atexit(f)\n    remove_me = lambda: print('unexpected', flush=True)\n    c.register_atexit(remove_me)\n    c.unregister_atexit(remove_me)\n    c.register_atexit(lambda: print('cleanup second', flush=True))\n    return weakref.ref(c)\nref = main()\ngc.collect()\nprint('after main; retained:', ref() is not None, flush=True)\natexit.register(lambda: print('ordinary later', flush=True))\n'''\nfor mode in ('ok','raise'):\n    r=subprocess.run([sys.executable,'-c',s,mode],capture_output=True,text=True,timeout=3)\n    print(mode, 'status', r.returncode); print(r.stdout,end=''); print(r.stderr,end='')"
+        ]
+      },
+      "result_sha256": "732634c182e569d3028c115fe61ef4acadcf13fb3f05b5ed6a28d2305c4d6c7c"
+    },
+    "call_d27ebb837d3748989d47056004d24959": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import atexit, gc, platform, threading, time, weakref\nclass Cleanupper:\n    def __init__(self):\n        self.atexit_fns = []\n        weakref.finalize(self, self._shutdown)\n    def register_atexit(self, fn):\n        self.atexit_fns.append(fn)\n    def unregister_atexit(self, fn):\n        if fn in self.atexit_fns:\n            self.atexit_fns.remove(fn)\n    def _shutdown(self):\n        for fn in self.atexit_fns:\n            fn()\n        self.atexit_fns = []\nprint(platform.python_implementation(), platform.python_version(), flush=True)\natexit.register(lambda: print('ordinary earlier', flush=True))\ndef worker():\n    time.sleep(.15)\n    print('worker done', flush=True)\nthread = threading.Thread(target=worker)\nthread.start()\ndef main():\n    c = Cleanupper()\n    c.register_atexit(lambda: print('cleanup first; worker alive:', thread.is_alive(), flush=True))\n    remove_me = lambda: print('unexpected', flush=True)\n    c.register_atexit(remove_me)\n    c.unregister_atexit(remove_me)\n    c.register_atexit(lambda: print('cleanup second', flush=True))\n    return weakref.ref(c)\nref = main()\ngc.collect()\nprint('after main; retained:', ref() is not None, flush=True)\natexit.register(lambda: print('ordinary later', flush=True))\nfailed = Cleanupper()\ndef fail():\n    print('failing callback', flush=True)\n    raise ValueError('test callback')\nfailed.register_atexit(fail)\nfailed.register_atexit(lambda: print('unexpected after failure', flush=True))"
+        ]
+      },
+      "result_sha256": "14481750ea7abb06c338deb1f8583e705293455f23858474c90849199a005fc1"
+    },
+    "call_772c3ea1a1e8411bb4bf3bbb9c6d175e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import atexit, gc, platform, weakref\nclass Cleanupper:\n    def __init__(self):\n        self.atexit_fns = []\n        weakref.finalize(self, self._shutdown)\n    def register_atexit(self, fn):\n        self.atexit_fns.append(fn)\n    def unregister_atexit(self, fn):\n        if fn in self.atexit_fns:\n            self.atexit_fns.remove(fn)\n    def _shutdown(self):\n        for fn in self.atexit_fns:\n            fn()\n        self.atexit_fns = []\ndef say(s): print(s, flush=True)\nsay(platform.python_implementation()+' '+platform.python_version())\natexit.register(say, 'ordinary earlier')\ndef main():\n    c = Cleanupper()\n    c.register_atexit(lambda: say('cleanup first'))\n    removed = lambda: say('unexpected removed callback')\n    c.register_atexit(removed)\n    c.unregister_atexit(removed)\n    c.register_atexit(lambda: say('cleanup second'))\n    return weakref.ref(c)\nref = main()\ngc.collect()\nsay('after main; retained: '+str(ref() is not None))\natexit.register(say, 'ordinary later')\nfailed = Cleanupper()\ndef fail():\n    say('failing callback')\n    raise ValueError('test callback')\nfailed.register_atexit(fail)\nfailed.register_atexit(lambda: say('unexpected after failure'))"
+        ]
+      },
+      "result_sha256": "d9f27d2a9649425dcc5d5e21efcddfabe049bbc8e787a46684edae812e560f53"
+    },
+    "call_bb3d1649e73c4fb9badd97eaae6107b1": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "784107df084163af6a13310c4cb07cf7709439ec",
+        "path": "exllamav3/util/__init__.py"
+      },
+      "result_sha256": "ecec40de1e31d1106f0555bd9fc2f1b3509fc5832e9ed2ae0ae20777fd0219e7"
+    }
+  }
+}

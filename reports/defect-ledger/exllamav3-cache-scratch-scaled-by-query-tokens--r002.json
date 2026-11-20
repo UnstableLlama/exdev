@@ -1,0 +1,236 @@
+{
+  "origin": "authoring_observation",
+  "classification": "defect",
+  "status": "suspected",
+  "description": "A full-cache temporary is counted as a per-forward-token temporary.",
+  "trigger": "Estimate an attention component with an attached quantized cache and more than one forward token.",
+  "expected_behavior": "Count the full-capacity K/V reconstruction pair once per call, separately from query-token-dependent activations.",
+  "actual_behavior": "CacheLayer_quant.overhead_size already covers the whole cache. Attention adds it to overhead_to_split, so initial_split multiplies it by the token count again before prorating. Conversely, overhead_per_device is documented per token but is charged once without a token multiplier.",
+  "verification": [
+    {
+      "method": "scalar_transcription",
+      "description": "For the example cache, checked that the 4 MiB reconstruction pair is charged as 32 MiB at eight forward tokens on one device.",
+      "evidence": [
+        "call_c421c73f513d4f1d8e044fece19f697a",
+        "call_9cc392da195d494d9eb82afcb74c4f85"
+      ],
+      "limits": "The arithmetic isolates the cache term and is not a peak-VRAM measurement."
+    }
+  ],
+  "defect_id": "exllamav3-cache-scratch-scaled-by-query-tokens",
+  "revision_id": "r002",
+  "supersedes": "r001",
+  "introductions": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "status": "source_supported",
+      "paths": [
+        "exllamav3/modules/attn.py",
+        "exllamav3/util/tp_split.py"
+      ],
+      "rationale": "Adds the full-cache reconstruction estimate as split overhead and applies a forward-token multiplier to it."
+    }
+  ],
+  "observations": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "run": ".teacher/runs/commit-000334-001",
+      "local_id": "cache-scratch-scaled-by-query-tokens",
+      "observer": "Astra teacher",
+      "finding": {
+        "id": "cache-scratch-scaled-by-query-tokens",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "A full-cache temporary is counted as a per-forward-token temporary.",
+        "trigger": "Estimate an attention component with an attached quantized cache and more than one forward token.",
+        "expected_behavior": "Count the full-capacity K/V reconstruction pair once per call, separately from query-token-dependent activations.",
+        "actual_behavior": "CacheLayer_quant.overhead_size already covers the whole cache. Attention adds it to overhead_to_split, so initial_split multiplies it by the token count again before prorating. Conversely, overhead_per_device is documented per token but is charged once without a token multiplier.",
+        "locations": [
+          {
+            "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.make_tp_allocation"
+          },
+          {
+            "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+            "path": "exllamav3/util/tp_split.py",
+            "symbol": "TPAllocator.initial_split"
+          }
+        ],
+        "source_evidence": [
+          "call_83c3c71a5aa84315bcea984e19661abf",
+          "call_d39c35ac8ad7416eb065daec98440baf",
+          "call_92dd2016fccb439a8149f064e04804e5",
+          "call_368480094ac744c1a77bf577252332a6"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "For the example cache, checked that the 4 MiB reconstruction pair is charged as 32 MiB at eight forward tokens on one device.",
+            "evidence": [
+              "call_c421c73f513d4f1d8e044fece19f697a",
+              "call_9cc392da195d494d9eb82afcb74c4f85"
+            ],
+            "limits": "The arithmetic isolates the cache term and is not a peak-VRAM measurement."
+          }
+        ]
+      }
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+      "run": ".teacher/runs/commit-000346-002",
+      "local_id": "inherited-quantized-cache-scratch-scaling",
+      "observer": "Sol teacher",
+      "finding": {
+        "id": "inherited-quantized-cache-scratch-scaling",
+        "origin": "authoring_observation",
+        "status": "suspected",
+        "classification": "defect",
+        "description": "Changing the attention split unit leaves the inherited token multiplier on full-cache scratch intact.",
+        "trigger": "Collect an attention record with an attached quantized cache, directly or via a containing module, then estimate it for more than one forward token.",
+        "expected_behavior": "Charge the full-size K/V reconstruction pair once per call and scale only token-dependent activations with token count.",
+        "actual_behavior": "Attention puts the full-cache pair in overhead_to_split, and the planner multiplies it by the forward-token count before prorating. Conversely, the replicated overhead field is documented per token but charged once.",
+        "locations": [
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/modules/attn.py",
+            "symbol": "Attention.make_tp_allocation"
+          },
+          {
+            "commit": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+            "path": "exllamav3/models/model_tp_alloc.py",
+            "symbol": "TPAllocator.initial_split"
+          }
+        ],
+        "source_evidence": [
+          "call_d1dc5d2e1b5a431b8e74b16745e8224c",
+          "call_3457c1674a594876896cd546146fb73e",
+          "call_2f25e3f82f6a46c9a5bff8c569a63472",
+          "call_b5db84f96ba240f18f189a30568feebd",
+          "call_8ca72cda40c34a799cea34ea01d4e381"
+        ],
+        "verification": [
+          {
+            "method": "scalar_transcription",
+            "description": "Isolated the cache term: 1,024 cache positions, eight heads, head width 128 and two bytes per element give a 4 MiB K/V pair, counted as 32 MiB at eight forward tokens.",
+            "evidence": [
+              "call_ba25788889e742a3a0a6bff576b6ec01"
+            ],
+            "limits": "This is estimate arithmetic, not peak VRAM or a live model-loading path."
+          }
+        ]
+      },
+      "scope_note": "The source still passes the full cache-pair scratch into the query-token-scaled estimate. No memory measurement."
+    }
+  ],
+  "fixes": [],
+  "evidence": [
+    {
+      "file": "evidence/commit334-001-draft.json",
+      "sha256": "b1b175598cdf95a20646436d27441d583349fac49b29b55c8f7293d473cf55a4"
+    },
+    {
+      "file": "evidence/commit334-001-transcript.json",
+      "sha256": "8a8093e91a312c1b2b3a5d264581b66239aaff60b2c6a48f46427cfae0e84862"
+    },
+    {
+      "file": "evidence/commit334-001-manifest.json",
+      "sha256": "49a70a9d195f9eb158d12894248f509982db5d7532f43a4c54a74d97e52a50c8"
+    },
+    {
+      "file": "evidence/commit334-001-verdict.md",
+      "sha256": "73ecda503abc7799151b2528d86c1fdb7fc0ab6302a2c0821305492b56f030eb"
+    },
+    {
+      "file": "evidence/commit334-001-upstream.diff",
+      "sha256": "ea8fd8912cc2344fe20e6bd078c7ae04f3127003cb50ce8f282f9e108b83890e"
+    },
+    {
+      "file": "evidence/commit334-001-cache.py",
+      "sha256": "2ccf73e80574489449cfb284673fd7637643f07dd1431de67812837b3774c80d"
+    },
+    {
+      "file": "evidence/commit334-001-q_cache_kernels.cuh",
+      "sha256": "a900a2efb37fcaeb42f48c2276eacd25d6dc6d2723b2263db5f36a891ba3a0bf"
+    },
+    {
+      "file": "evidence/commit346-002-draft.json",
+      "sha256": "3a556c630ce1da0adfcf4e0b1f164b71628c339b62144695e9901bcd9f4d6a6a"
+    },
+    {
+      "file": "evidence/commit346-002-transcript.json",
+      "sha256": "e1afdfed00a0d9875f7e3cb99b437b5974c32284dd3dd28eede6e8dd4eb07f70"
+    },
+    {
+      "file": "evidence/commit346-002-manifest.json",
+      "sha256": "0bde98440836a31ce9bb253acc46cbd54cad3140f1fa37150f8b5dea29939ed7"
+    },
+    {
+      "file": "evidence/commit346-002-verdict.md",
+      "sha256": "dffaea1bf59b3fd73a13d0c3fa907753338cac5f2651a8b084fcac36a4ae0802"
+    },
+    {
+      "file": "evidence/commit346-002-upstream.diff",
+      "sha256": "f552d7d2fb6c0300679d2e9a55577fef2cff82c22f0bd2939f0c664dbe3ed115"
+    }
+  ],
+  "dependencies": [
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "available_at": "2026-11-18T07:33:03.161008+00:00"
+    },
+    {
+      "repository": "https://github.com/turboderp-org/exllamav3",
+      "sha": "67e0fd74413228c85e1edc65cfc7c39365b1a6ca",
+      "available_at": "2025-07-29T22:25:28+02:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-draft.json",
+      "source_id": "evidence/commit346-002-draft.json",
+      "content_sha256": "3a556c630ce1da0adfcf4e0b1f164b71628c339b62144695e9901bcd9f4d6a6a",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-transcript.json",
+      "source_id": "evidence/commit346-002-transcript.json",
+      "content_sha256": "e1afdfed00a0d9875f7e3cb99b437b5974c32284dd3dd28eede6e8dd4eb07f70",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-manifest.json",
+      "source_id": "evidence/commit346-002-manifest.json",
+      "content_sha256": "0bde98440836a31ce9bb253acc46cbd54cad3140f1fa37150f8b5dea29939ed7",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-verdict.md",
+      "source_id": "evidence/commit346-002-verdict.md",
+      "content_sha256": "dffaea1bf59b3fd73a13d0c3fa907753338cac5f2651a8b084fcac36a4ae0802",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    },
+    {
+      "url": "urn:exdev:ledger-evidence:evidence/commit346-002-upstream.diff",
+      "source_id": "evidence/commit346-002-upstream.diff",
+      "content_sha256": "f552d7d2fb6c0300679d2e9a55577fef2cff82c22f0bd2939f0c664dbe3ed115",
+      "available_at": "2026-11-18T21:36:23.791282+00:00"
+    }
+  ],
+  "affected_revisions": {
+    "repository": "https://github.com/turboderp-org/exllamav3",
+    "verified_shas": [
+      "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+      "67e0fd74413228c85e1edc65cfc7c39365b1a6ca"
+    ],
+    "limits": "Direct planner or estimator inputs only. Source inspection and any scalar checks did not execute a model or GPU. Position 346 applies only to the checked revision. The source still passes the full cache-pair scratch into the query-token-scaled estimate. No memory measurement."
+  },
+  "recorded_at": "2026-11-18T21:36:23.791282+00:00",
+  "reviewed_at": null,
+  "reviewer": null,
+  "historical_context_eligible": false,
+  "training_policy_applied": false
+}

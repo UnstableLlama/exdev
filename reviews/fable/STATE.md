@@ -1532,7 +1532,7 @@ training stay false; never approve those. Journal at handoff: `ready 309 .teache
 **308 was running** (teacher session in flight, no request yet). Quota: "used_percent":90.0 at 20:37 UTC, resets
 2026-11-23 00:16 UTC; about 1% per hour, roughly 0.25% per commit. No watch survives this session.
 
-**Committed and pushed:** through 322 as `a81e1c8` (04:10 UTC 11-18). Everything since is uncommitted. Do not commit or push
+**Committed and pushed:** through 329 plus the GPU test worker design (06:25 UTC 11-18; see `git log`). Everything since is uncommitted. Do not commit or push
 unless the user asks; check for files over 100 MB first.
 
 **Only one reviewer session may run.** Check `list_sessions` first. Then start the watch
@@ -1641,6 +1641,12 @@ minutes per commit including reruns. Keep it there and report the real pace.
 
 - **329/001 approved** 06:15 UTC 11-18 (CI matrix adds Torch 2.8 rows; ran ahead of 328, did not matter; one finding: duplicate non-CUDA row can overwrite the same release wheel). Next 330.
 
+- **GPU test worker designed and pushed (06:25 UTC 11-18, user's request):** `docs/gpu-test-worker.md`, `gpu-tests/` (WORKER-PROMPT.md, export_queue.py, result.schema.json, queue.json with 223 findings), branch `gpu-tests` on GitHub. The user runs it on their GPU box with Opus. My part later: review execution reports from that branch (verdicts `reviews/verdicts/gpu-test-<defect_id>-<NNN>.md`); results never enter teacher input; ledger support for execution reports and a not-reproduced outcome is owed by the author (not yet asked: ask when the first reports arrive).
+
+- **330/001 approved** 06:31 UTC 11-18 (Attention accepts caller-supplied projection modules; real finding: the combined `kv_proj` is stored but never used, load/forward/allocation still read `k_proj`; inherited findings properly re-checked; 329 ledger r001 accepted). Next 331.
+
+- **331/001 approved** 06:43 UTC 11-18 (proxy error computed in 1,024-column Hessian blocks; algebra checked by hand; ran ahead of 330, did not matter; 330 ledger two records accepted). Next 332. Quota 94%.
+
 ## HANDOFF 2026-11-18 00:53 UTC: read this section first; it supersedes every "pending"/"Next"/"awaiting" line above
 
 **Where the walk is.** Approved and recorded for ancestor retrieval only: commits **2 to 321** (check the
@@ -1649,7 +1655,7 @@ Canonical and training stay false; never approve those. **322 was the last run o
 "322 at stop" line at the end of this section for whether it was reviewed). The user ordered a stop at about
 00:45 UTC; the author was told to submit 322 only and start nothing after it. No watch survives this session.
 
-**Committed and pushed:** through 322 as `a81e1c8` (04:10 UTC 11-18). Everything since is uncommitted. Do not commit or push
+**Committed and pushed:** through 329 plus the GPU test worker design (06:25 UTC 11-18; see `git log`). Everything since is uncommitted. Do not commit or push
 unless the user asks; check for files over 100 MB first.
 
 **Only one reviewer session may run.** Check `list_sessions` first. Then start the watch
@@ -1738,3 +1744,274 @@ source read ("Source inspection requires source evidence"). Journal: `stopped_fa
 only when the user resumes.** First job next session: check the author is up, tell it the user has resumed
 and to start 322/002, then watch. If 322/002 fails the same way, compare both refused finals and look at
 the validator message. This is the first validation failure on 6.2 (314 was repaired in one turn).
+
+## HANDOFF 2026-11-18 06:50 UTC (for the Opus stand-in): read this section first; it supersedes everything above
+
+**You are standing in for Fable as reviewer** because the user's Fable tokens ran out until about 22:00 UTC
+on 18 November. Put `Reviewer: Opus (stand-in)` at the top of every verdict you write, and keep one bullet at
+the end of this section listing those run names. Fable re-reviews each of them after the reset; until then
+they are provisional. Everything else below applies to you as it did to Fable.
+
+**Where the walk is.** Approved for ancestor retrieval only: commits **2 to 331** (check:
+`python3 -c "import json;d=json.load(open('reports/teacher-walk-001.json'));print(d['status'],d['next_position'],len(d['approved_entries']))"`).
+Canonical and training stay false; never approve those. **332 was running** when Fable stopped (run
+directory created 06:46 UTC, no request yet). The walk is NOT paused: the author keeps working and its
+requests wait for you. No watch survives this session.
+
+**Git.** Pushed through 329 plus the GPU worker design as `01781f7` on `main`. 330, 331 and this handoff are
+uncommitted. Do not commit or push unless the user asks. How: no Git identity or credential helper here;
+`git -c user.name=UnstableLlama -c user.email=<the user's address, see git log> commit ...` and
+`git -c credential.helper= -c credential.helper='!gh auth git-credential' push origin main`. Check for files
+over 100 MB and for tokens first.
+
+**Only one reviewer session may run.** Check `list_sessions` first. Then start the watch in the background
+(`timeout 590 bash reviews/fable/watch.sh`; exit 124 is only the ten-minute limit, restart it) and tell the
+author with `codex queue` that a reviewer is watching.
+
+### The author and teacher
+
+- Codex thread `01a1eac6-cc72-7af3-9172-36689bd69fc9`, `gpt-6.2-sol` medium, Claude app terminal tab
+  "Codex author (Sol 6.2)". Teacher is also `gpt-6.2-sol` medium.
+- Wake it: `~/.codex/packages/standalone/releases/0.167.0-aarch64-unknown-linux-musl/bin/codex queue --thread 01a1eac6-cc72-7af3-9172-36689bd69fc9 --resume -C $HOME/git/exdev --message "..."`
+  (the "could not resume thread" warning is normal).
+- Model and quota from its log, never from a request:
+  `L=$(ls -t ~/.codex/sessions/2026/11/*/rollout-*01a1eac6*.jsonl | head -1); grep '"type":"turn_context"' $L | tail -1 | grep -o '"model":"[^"]*"' | head -1; grep -o '"used_percent":[0-9.]*' $L | tail -1`
+- If `pgrep -af 'codex resume'` shows nothing (the VM restarted on 18 November once already; check `uptime`),
+  the window is gone. Reopen with `run_in_terminal`:
+  `/Applications/OrbStack.app/Contents/MacOS/bin/orb -m exdev-314 bash -ic "cd ~/git/exdev && codex resume 01a1eac6-cc72-7af3-9172-36689bd69fc9 --approve-for-me -m gpt-6.2-sol"`
+  then show the terminal pane. The user must say "open it" in that conversation; ask once, plainly.
+- Near the weekly limit the Codex window offers "Switch to gpt-6-luna" with option 1 preselected. You cannot
+  type into the tab: tell the user at once to press 3 (keep current model).
+- The author answers verdicts within a minute or two and is a careful engineer. It built the validator fix
+  and the revision route in about ten minutes each. It also built the revision route after being told not
+  to, and its version was better than Fable's; the user knows.
+
+### Quota
+
+94% used at 06:47 UTC, weekly reset 2026-11-23 00:16 UTC, about 1% an hour while the walk runs. **The user
+holds a banked reset and will apply it when the limit is hit; do not slow the walk to save quota, just tell
+them when it runs out.** The teacher now reports its own tokens in each request (328 used 1.28M input, 1.20M
+of it cached, 3.5K output).
+
+### Review routine (your part 3 to 5 minutes; whole cycle 10 to 13 minutes)
+
+1. `bash reviews/fable/next.sh 260` prints the journal line, the pending request without its hash list, the
+   hash check (want `bad hashes: 0`), the check and replay summary, the upstream diff and the draft.
+   Expected: `impl 46 bad []`, `evidence N calls N bad [] uncited []`, `final==annotation True`,
+   `replayed N mismatch 0`. On a run-ahead (sparse) packet: `anc N entries N-1 False` and `mismatch K` with K
+   equal to the number of `ancestor_read` calls. A refused tool argument also shows as one mismatch.
+2. Read the diff yourself, then the draft.
+3. Verify the entry's central claims in source at that sha (`git --git-dir=.sources/exllamav3.git grep/show`).
+4. Check the ledger records bound in the request (they are for the previous commit): status suspected unless
+   a source-verified fix confirms it, training false, earlier observations byte-equal, introduction sensible.
+5. Write `reviews/verdicts/<run name>.md`: must contain the run path and a `## Decision` section with
+   "Approved for ancestor retrieval only", and none of REJECTED, HELD, "NOT approved" in that section. Queue
+   "Verdict ready: ...", add one bullet at the end of this section, restart the watch.
+6. Tell the user one plain line: what the commit does, approved or not, anything needing them. No jargon,
+   short output, blockers first and alone, the measured pace now and then, and at once if the author loops
+   or stalls.
+
+### The standard
+
+- The user's: **if you had to make the commit's central check yourself, reject as thin** and send questions
+  only. On 6.2 this has not happened in 311 to 331.
+- Fable's, added 18 November and told to the user (who did not object): **an entry that states something
+  false about the source at its commit is rejected** even if the rest is excellent, because the claim would
+  travel through ancestor retrieval. Precedent: 323/001 repeated a stale finding from an earlier entry.
+  **Known 6.2 weak spot: inherited findings.** For every finding carried over from an ancestor entry, check
+  it still holds at this commit. 325 to 331 all re-checked theirs correctly.
+- Editorial only, never a rejection: 6.2 summarises many unrelated discussions in Source Notes. List it
+  under "Must fix before canonical".
+- Run-ahead: each request should say "Ran ahead of"; judge whether the missing entry mattered (so far
+  never). 327's request got this wrong once and corrected it.
+- Architecture commits stop first for reference discovery: verify every pin with your own Hugging Face API
+  query (latest commit at or before the cutoff), read configs and headers from the packet yourself before
+  the entry arrives, and hold the entry to them (how: the 323 bullets above).
+- Failed validation with no draft: write a recovery verdict authorising one fresh unassisted attempt
+  (format: `commit-000324-recovery-001.md`).
+
+### New this session
+
+- **Validator message v3 is live** (`validator-claim-diagnostics-v3`): a refused entry is now told which
+  claim and which reference were rejected. No repair has needed it yet; the first one is the test. Ask what
+  the teacher was told and whether one turn fixed it.
+- **Revision route is live and unused.** After a rejection the teacher can revise its own entry instead of
+  starting over. To use it, file `reviews/verdicts/<new run name>.coverage.md` with 1 to 12 lines, each exactly
+  ``- What does `path` [at lines N–M] [in `symbol`] define|return|check|change?`` where `path` is one of the
+  task's changed files or a file in the direct parent, and say in the rejection verdict that a revision is
+  authorised. Anything you cannot phrase that way goes to a fresh assisted attempt (free-form questions,
+  no facts; format: `commit-000323-002.coverage.md`). **The first live revision needs a line-by-line
+  comparison with the attempt it revises and token totals for both.** `check.py` and `review.sh` were
+  updated for imported evidence but are untested on a real revision. Unknown: whether Codex accepts the
+  430 KB opening message a revision of a large entry produces.
+- **GPU test worker** (the user's idea): designed and pushed, `docs/gpu-test-worker.md` and `gpu-tests/`,
+  branch `gpu-tests`. The user will run it on their GPU box with Opus. It is not part of your job unless
+  reports arrive; if they do, review per that document and ask the author for ledger support for execution
+  reports and a "not reproduced" outcome (not yet asked).
+
+### Owed
+
+- From the author: `run-ahead-rerun-implementation-002`, ledger validator support for `reviewer_observation`,
+  a proposal to cut ASTRA-TRACKING's current section under 15 KB. None blocks commits; do not let them.
+- Must-fix-before-canonical lists are in the verdicts of 297 to 300, 302, 309, 310, 314, 319 and every
+  verdict from 322 on.
+- To the user: nothing open.
+
+### Session record (Fable, 03:40 to 06:50 UTC)
+
+322/002, 323/002 (after rejecting 323/001), 324/002, 325 to 331 approved: ten commits in about three hours,
+the last seven first-attempt at 10 to 13 minutes each.
+
+### Stand-in verdicts (Opus adds run names here)
+
+- commit-000332-001 (approved, provisional)
+- commit-000333-001 (approved, provisional)
+- commit-000334-001 (approved, provisional)
+- commit-000335-001 (approved, provisional)
+- commit-000336-recovery-001 (fresh attempt authorised, provisional)
+- commit-000336-recovery-002 (rerun mechanics authorised, provisional)
+- commit-000336-repeated-failure-001 (stopped, waiting for the user, provisional)
+- codex-failure-diagnostics-implementation-001 (patch passes review, not applied, waiting for the user, provisional; once applied, expect impl 47)
+- commit-000336-recovery-003 (user said "Yes, do both": patch applied and one more 336 attempt authorised, provisional)
+- commit-000336-repeated-failure-002 (cause found: provider schema limit from commit-hash enums; stopped, fix to be prepared, waiting for the user, provisional)
+- codex-output-schema-implementation-001 (fix passes review, not applied, waiting for the user, provisional)
+- commit-000336-recovery-004 (user said "Yes, apply and retry": schema fix and one more 336 attempt authorised, provisional)
+- commit-000336-recovery-004-path (names the stopped run in full for the recovery tool, same authority, provisional)
+- commit-000336-004 (approved, provisional; first run on the reduced provider schema, packet 000336-002)
+- commit-000337-001 (approved, provisional; cache-detach-count-diagnostic r005 accepted)
+- commit-000338-001 (approved, provisional; run-ahead of 337; prefill r003 and exaone r002 accepted; commit breaks Gemma3/Mistral3 image embedding)
+- commit-000339-001 (approved, provisional; run-ahead of 338; three 338 ledger records accepted)
+- commit-000340-001 (approved, provisional; run-ahead of 339; five 339 ledger records accepted)
+- commit-000341-001 (approved, provisional; run-ahead of 340; six 340 ledger records accepted)
+- commit-000342-001 (approved, provisional; run-ahead of 341)
+- commit-000343-001 (approved, provisional; run-ahead of 342, same file, no effect)
+- commit-000344-001 (approved, provisional; run-ahead of 343; two 343 ledger records accepted)
+- commit-000345-recovery-001 (fresh attempt authorised after a mistyped evidence ID, provisional; three 344 ledger records accepted)
+- commit-000345-002 (approved, provisional; second attempt after commit-000345-001 failed validation)
+
+## HANDOFF 2026-11-18 18:47 UTC (from the Opus stand-in, for Fable): read this section first; it supersedes every earlier "pending" note
+
+The user asked me to close the stand-in session here. **No reviewer is watching now.** My watch is stopped, and nothing is committed or pushed.
+
+### Where things stand
+
+- Walk: `stopped_failure`, next position 346, 345 approved entries. No teacher run is active.
+- **One request is waiting and I did not review it: `reviews/requests/commit-000346-recovery-001.md`.** Its 13 hashes check out; that is all
+  I verified. It asks for one fresh unassisted 346/002 (upstream `67e0fd74` "TP: Refactor/fix auto allocation"). It also submits two 345 ledger
+  records, also unreviewed: `activation-odd-tail` r006 and `mistral-sliding-window-omission` r001.
+- What I saw of 346/001: no draft, zero provider error events. Validation first refused an absent citation at `source_notes[2].evidence[2]`.
+  The author reports that the repair removed it, and the repair final was then refused because `findings[6].verification[0]` says
+  `source_inspection` but cites only `run` results. Check that second refusal yourself.
+- The author has been told not to start 346/002 until a verdict exists.
+- Author window: still running on gpt-6.2-sol. Weekly Codex quota 96%, resets 2026-11-23 00:16 UTC. The user holds a banked reset.
+- Git: last commit `01781f7`, which is the pushed baseline through 329. Everything from 330 on is uncommitted, including all stand-in verdicts.
+
+### First steps
+
+1. Check that no other reviewer session is running, then start the watch from the previous handoff. It will report the pending 346 request at once.
+2. Review the 346 request and the two 345 ledger records.
+3. Re-review the stand-in verdicts listed at the end of this section. All are provisional.
+
+### What changed in force while I stood in (both applied to the working tree, uncommitted)
+
+The user approved each one in chat. Their words are quoted in the verdicts.
+
+- `reports/codex-failure-diagnostics-implementation-001.patch`: a failed run now keeps `codex-failure.json` (mode 0600, redacted). User: "Yes, do both".
+  Verdict `commit-000336-recovery-003`. `impl` became 47.
+- `reports/codex-output-schema-implementation-001.patch`: the schema sent to the provider no longer carries the two commit-hash enums.
+  Local validation still uses the full schema. User: "Yes, apply and retry". Verdict `commit-000336-recovery-004`.
+
+Why: commits 336/001 to 003 failed with HTTP 400 `invalid_json_schema`, "regex construction fuel exhausted". The two enums grew with history, and the
+limit was crossed between 335 and 336. The sent schema went from 34,713 to 5,433 bytes for 336, and the provider has accepted it on every run since.
+A bad hash now costs a repair turn instead of being impossible; I saw none.
+
+### Watch for
+
+- **Mistyped or invalid evidence citations.** 345/001 and 346/001 both ended in validation failure after one repair. In 345/001 the teacher mistyped a call ID in two
+  places and the repair message named only the first. A plain text search finds this refusal in 8 of 398 run transcripts, the others being 266, 270, 271, 314, 324 and 325, so
+  it is not new, but two in a row cost about 6.5M and 2.9M input tokens, mostly cached. I have not established a cause. It is not explained by the schema change:
+  evidence IDs were never in the removed enums.
+- **Proposal, not in force:** report every location of a rejected reference in the repair message. It changes what the teacher is told, so it needs review and the user's word.
+- Entries keep padding Source Notes with discussions that are unrelated. I marked this "Must fix before canonical" each time and never rejected for it.
+
+### Tool notes
+
+- `reviews/fable/review.sh` and `check.py` assume the packet attempt equals the run attempt, so they fail when a rerun reuses an older packet, as 336/004 did with packet 002.
+  I ran them on a corrected copy and did not change them.
+- The replay reports a refused tool call as a mismatch, because it compares an exception with the recorded `ok: false` error. So one `evidence_index` call with
+  `Invalid max_bytes` gives a harmless extra mismatch. It happened on 344 and 345/002. Look at the mismatches rather than only counting them.
+- `recover --retry-position N` requires the stopped run's full literal path in the verdict. A shortened `-003` was refused.
+- No C++ compiler in the VM. For selector logic I translated the C mechanically from Git into Python.
+
+### Still owed by the author (not blocking)
+
+`run-ahead-rerun-implementation-002`, ledger validator support for `reviewer_observation`, and a proposal to cut the current ASTRA-TRACKING section under 15 KB.
+
+### Stand-in verdicts (Reviewer: Opus (stand-in); all provisional, for Fable to re-review)
+
+- commit-000332-001 (approved, provisional)
+- commit-000333-001 (approved, provisional)
+- commit-000334-001 (approved, provisional)
+- commit-000335-001 (approved, provisional)
+- commit-000336-recovery-001 (fresh attempt authorised, provisional)
+- commit-000336-recovery-002 (rerun mechanics authorised, provisional)
+- commit-000336-repeated-failure-001 (stopped, waiting for the user, provisional)
+- codex-failure-diagnostics-implementation-001 (patch passes review, not applied, waiting for the user, provisional; once applied, expect impl 47)
+- commit-000336-recovery-003 (user said "Yes, do both": patch applied and one more 336 attempt authorised, provisional)
+- commit-000336-repeated-failure-002 (cause found: provider schema limit from commit-hash enums; stopped, fix to be prepared, waiting for the user, provisional)
+- codex-output-schema-implementation-001 (fix passes review, not applied, waiting for the user, provisional)
+- commit-000336-recovery-004 (user said "Yes, apply and retry": schema fix and one more 336 attempt authorised, provisional)
+- commit-000336-recovery-004-path (names the stopped run in full for the recovery tool, same authority, provisional)
+- commit-000336-004 (approved, provisional; first run on the reduced provider schema, packet 000336-002)
+- commit-000337-001 (approved, provisional; cache-detach-count-diagnostic r005 accepted)
+- commit-000338-001 (approved, provisional; run-ahead of 337; prefill r003 and exaone r002 accepted; commit breaks Gemma3/Mistral3 image embedding)
+- commit-000339-001 (approved, provisional; run-ahead of 338; three 338 ledger records accepted)
+- commit-000340-001 (approved, provisional; run-ahead of 339; five 339 ledger records accepted)
+- commit-000341-001 (approved, provisional; run-ahead of 340; six 340 ledger records accepted)
+- commit-000342-001 (approved, provisional; run-ahead of 341)
+- commit-000343-001 (approved, provisional; run-ahead of 342, same file, no effect)
+- commit-000344-001 (approved, provisional; run-ahead of 343; two 343 ledger records accepted)
+- commit-000345-recovery-001 (fresh attempt authorised after a mistyped evidence ID, provisional; three 344 ledger records accepted)
+- commit-000345-002 (approved, provisional; second attempt after commit-000345-001 failed validation)
+
+## HANDOFF 2026-11-18 21:30 UTC (Fable, back after the token reset): read this section first; it supersedes every earlier "pending" note
+
+**Fable is reviewing again and the watch is running from this session.** One reviewer only: check `list_sessions`.
+
+- Stand-in work: all 24 Opus verdicts re-reviewed and confirmed, none overturned. Record:
+  `reviews/verdicts/standin-rereview-001.md`. The stand-in files are untouched (ledger records bind their hashes).
+  They are no longer provisional.
+- 346: `commit-000346-recovery-001` written; 346/002 started at about 21:19 UTC. Both 345 ledger records accepted.
+- Why 345/001 and 346/001 failed: the validator raises on the first problem and there is one repair turn, so a
+  final with two problems cannot pass. Not a teacher regression.
+- `collect-all-validation-problems-proposal-001`: design passes review with six conditions; the author may prepare
+  the patch but not apply it. **Applying needs the user's word; asked on 18 November, not yet answered.**
+- Asked of the author in the re-review record: missing ledger observations for carried findings at 333 and 335,
+  and the `cache-detach-count-diagnostic` r003/r004 status. Not yet sent as a message; raise with the next verdict.
+- The user said on 18 November: "perhaps we can use opus only in the future". Not decided. My reading of the
+  evidence: Opus's 14 approvals all held and it diagnosed the 336 schema failure correctly; it did not find the
+  cause of the 345/346 double failure. No rejection was needed in 332 to 345, so its strictness is untested.
+- Tool notes, quota, git state and "still owed" in the Opus handoff above remain current. Nothing is committed
+  or pushed since `01781f7`; everything from 330 on is uncommitted.
+
+## HANDOFF 2026-11-18 21:25 UTC (reviewer is now Opus): read this section first; it supersedes every earlier "pending" note and the "not decided" line above
+
+**The user switched the reviewer to Opus** ("alright we are switching to opus then", after the re-review showed no errors in the
+stand-in's work). The session model is `claude-opus-5-5`.
+
+- Put `Reviewer: Opus` at the top of every verdict. Verdicts are **not provisional** and no re-review is scheduled. The user expects
+  "some fable checks in the future" but "dont need it just yet": do not start any until they ask.
+- The review standard is unchanged, including rejection: thin entries and entries that state something false about the source are rejected.
+  No rejection came up in 332 to 345, so apply it deliberately. The file paths keep the name `reviews/fable/`.
+- Everything in the section above stays current: 346/002 is running, the watch is `reviews/fable/watch.sh`, and applying the
+  collect-all-validation-problems patch still needs the user's word.
+- The author has been told of the switch and given the two ledger follow-ups from `standin-rereview-001.md`.
+
+### Update 2026-11-18 (Opus)
+
+- 346/002 approved. `collect-all-validation-problems-implementation-001` passes review, **not applied; waiting for the user's word**, then a
+  separate verdict quoting it, applied at a queue boundary with no teacher run active.
+- Testing a patch: copy the tree to a disk path such as `~/git/<name>`, excluding `.teacher`, `.sources`, `.git` and `store`, never to `/tmp`
+  (a 6.3 GB tmpfs; a full copy filled it briefly during the 347 run). Never symlink `.teacher` into a copy. Put the Codex `bin` directory on `PATH`
+  and set `EXDEV_SANDBOX_TESTS=1`, or the three wire tests fail.
+- `review.sh` prints its open-issue list for the wrong date; do not rely on it.

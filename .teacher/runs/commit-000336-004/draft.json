@@ -1,0 +1,289 @@
+{
+  "schema_version": 5,
+  "sha": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+  "parent_shas": [
+    "3be1ea105bdc1c214904d47ebc611ec001c5ed39"
+  ],
+  "cutoff_date": "2025-07-23T03:17:45+02:00",
+  "annotation": {
+    "schema_version": 5,
+    "type": "bugfix",
+    "problem": [
+      {
+        "text": "With assertions enabled, detaching a cache from a model with a different number of cache layers raised TypeError instead of the intended AssertionError. The failure message tried to call model_num_layers, even though len(model.get_cache_layers()) had already produced an integer.",
+        "basis": "source",
+        "evidence": [
+          "call_847071d347214205bbe5bd88c17c71de",
+          "call_b6eeb02c98304ddb9d1c7a21362b5556"
+        ]
+      }
+    ],
+    "reasoning": [
+      {
+        "text": "Turboderp's commit message, \u201cFix typo,\u201d matches the one-line edit: interpolate the computed count rather than calling it. The patch keeps the same layer-count check and leaves the removal loop untouched. Cache.attach_to_model already formats its corresponding mismatch message this way.",
+        "basis": "source",
+        "evidence": [
+          "call_b6eeb02c98304ddb9d1c7a21362b5556",
+          "call_847071d347214205bbe5bd88c17c71de"
+        ]
+      }
+    ],
+    "impact": [
+      {
+        "text": "The correction affects the mismatch path, whether the caller supplies a model or defaults to the cache's original model. A whole-parent literal search found one direct caller, examples/loading.py. That example constructs the cache on the same model it later unloads and detaches from, so its ordinary path uses matching counts and does not evaluate the changed message.",
+        "basis": "source",
+        "evidence": [
+          "call_97e988a6c88c402ab2fc2c544148a762",
+          "call_ced43a42102a446eb69683a2d2d9885f",
+          "call_847071d347214205bbe5bd88c17c71de",
+          "call_b6eeb02c98304ddb9d1c7a21362b5556"
+        ]
+      }
+    ],
+    "source_notes": [
+      {
+        "text": "The initial generation chapter describes detachment as removing cache registration. The later \u201cSupport per-layer cache shape\u201d entry records the switch to the ordered cache-capable module list and the mismatch-message defect; \u201cTP: Auto layer split logic\u201d records that the defect persisted at that point.",
+        "basis": "ancestor",
+        "evidence": [
+          "call_764c433b5b49497cbbf249e8cfc6df67",
+          "call_7d226b8760374b9489bf7bf4eec35db3",
+          "call_e84b28cabfd04b5ea89a1809cb6009a8"
+        ]
+      },
+      {
+        "text": "The per-layer cache change introduced the integer call when it replaced the configured hidden-layer count with len(model.get_cache_layers()). The same call survives in the task parent; this patch removes it without reverting the use of the model's cache-layer list.",
+        "basis": "source",
+        "evidence": [
+          "call_67bf9739f45d4b37845c07ef6cc64b23",
+          "call_fa56a84a4a0e484f8e05f67d11ab3525",
+          "call_847071d347214205bbe5bd88c17c71de",
+          "call_b6eeb02c98304ddb9d1c7a21362b5556"
+        ]
+      },
+      {
+        "text": "Issue #1, \u201cCache Quantization Strategy,\u201d asks how the KV cache is encoded. Issue #50, \u201cRuntimeError: Insufficient VRAM in split for model and cache despite remaining 1GB VRAM (exllamav3 + tabbyAPI),\u201d reports memory pressure while loading. Both concern the model's KV cache, but neither describes the detach assertion, and the diff changes neither cache encoding nor allocation.",
+        "basis": "inference",
+        "evidence": [
+          "call_5fa5d9dc978549e9b775edf752fb66f0",
+          "call_33c9d19daf2e4d419986975cd86c1cbe",
+          "call_b6eeb02c98304ddb9d1c7a21362b5556"
+        ]
+      },
+      {
+        "text": "Issue #7, \u201cquantizing model: undefined symbol: __cxa_call_terminate,\u201d overlaps the historical per-layer patch through models/model.py in its import traceback, but reports a native-extension import failure. Issue #52, \u201cError converting moonshotai/Kimi-Dev-72B,\u201d overlaps that historical patch through a comment naming models/llama.py, but reports a Cholesky failure during conversion. Neither overlap connects the report to detachment.",
+        "basis": "inference",
+        "evidence": [
+          "call_e5888c0665434182b604e1c826e7f693",
+          "call_b590b649b88b412dbffd8439ee04112f",
+          "call_fa56a84a4a0e484f8e05f67d11ab3525",
+          "call_b6eeb02c98304ddb9d1c7a21362b5556"
+        ]
+      }
+    ],
+    "limitations": [
+      "The execution isolated the method with stand-in objects; it did not import the package or run the loading example, a real model, Torch, or CUDA.",
+      "The literal caller search does not cover dynamic references or external callers. No motivating report is established."
+    ],
+    "links": [
+      "543c4b27714c6a677a6e714c452d62532f634cff",
+      "4fa0e6863e130adf7319d4b00293284c4f33296d",
+      "dd053a205d253e3610bbe224e4bb828a6a562ee4"
+    ],
+    "chapters": [
+      {
+        "id": "cache",
+        "title": "Report mismatched cache-layer counts on detach",
+        "claims": [
+          {
+            "text": "Cache construction records the size of the original model's cache-layer list and attaches one cache layer per module in that list. On detachment, the assertion compares the target's count with the stored count before any removal. When the counts match, detachment still removes each paired cache object from its module's registration list; this count check is not an identity check or a tensor-freeing operation.",
+            "basis": "source",
+            "evidence": [
+              "call_847071d347214205bbe5bd88c17c71de",
+              "call_b6eeb02c98304ddb9d1c7a21362b5556"
+            ]
+          },
+          {
+            "text": "A Python check extracted the parent method and applied the one-line replacement. With assertions enabled, a one-layer cache and a two-layer target produced TypeError before the edit and `AssertionError: Cannot detach cache with 1 layers from model with 2 layers.` after it. Neither mismatch removed a registration; the matching-count case removed its registration in both versions. Compiling with optimization level 1 skipped the assertion in both versions, so the edit does not make the check unconditional.",
+            "basis": "execution",
+            "evidence": [
+              "call_b6eeb02c98304ddb9d1c7a21362b5556",
+              "call_e258705845ee40ff86a087a41da3983e"
+            ]
+          }
+        ]
+      }
+    ],
+    "findings": [],
+    "summary": "Fixes the cache-detach mismatch message so assertions report both layer counts instead of raising TypeError. Matching-count detachment is unchanged."
+  },
+  "evidence": {
+    "call_b6eeb02c98304ddb9d1c7a21362b5556": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "37f80fb98cf6247f9da12d9b942253f38f6dbd82",
+        "offset": 142,
+        "max_bytes": 744
+      },
+      "result_sha256": "72d8cb1c3f65a7b80a7947f83d6a37e6edb68a513a83c87cd218017417f1cebe"
+    },
+    "call_847071d347214205bbe5bd88c17c71de": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3be1ea105bdc1c214904d47ebc611ec001c5ed39",
+        "path": "exllamav3/cache/cache.py"
+      },
+      "result_sha256": "8c5ff7b6a7d8e6b5d277236e3ba83c82fe19aa3f03e82f8243165696589676cd"
+    },
+    "call_97e988a6c88c402ab2fc2c544148a762": {
+      "tool": "repo_grep",
+      "arguments": {
+        "commit": "3be1ea105bdc1c214904d47ebc611ec001c5ed39",
+        "query": "detach_from_model"
+      },
+      "result_sha256": "b2015e3ec9aeba40fa12ad5a849743e23f55322e8975c1c8746382dea3bb4e74"
+    },
+    "call_ced43a42102a446eb69683a2d2d9885f": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "3be1ea105bdc1c214904d47ebc611ec001c5ed39",
+        "path": "examples/loading.py"
+      },
+      "result_sha256": "79bb990913974980a2fcef1079846ae5d1b102238a61aa241d1e73cf1a6930cd"
+    },
+    "call_f3805285107c4543b0e728ac49530a52": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/cache/cache.py",
+        "until": "3be1ea105bdc1c214904d47ebc611ec001c5ed39",
+        "limit": 20
+      },
+      "result_sha256": "b6e48ab6d1484c2b316422e109bc2e9d633820e5bd0c20382ad35eb215a2b8fc"
+    },
+    "call_224ba2b390774c3b8398b29784f82e88": {
+      "tool": "git_log",
+      "arguments": {
+        "path": "exllamav3/cache/cache.py",
+        "limit": 20
+      },
+      "result_sha256": "04abc9d841870024c965f3a8988c7806c2f64e678d68be2d8abf9387f71a33f1"
+    },
+    "call_b5124315d7b84b03abe1c050c086ac39": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "search",
+        "symbol": "detach_from_model"
+      },
+      "result_sha256": "33def1ccc016780bb2605ce733fc3afc9f2be39901f03dfbfa7d3d52d82ff9d1",
+      "catalog_only": true
+    },
+    "call_764c433b5b49497cbbf249e8cfc6df67": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "max_bytes": 16384
+      },
+      "result_sha256": "f6e224671cf1acd067e79899a1ab9164bd9529f50e19b372cfde44ee97664cc6"
+    },
+    "call_792fc0c0ba8c4e9683c84b21a1a61878": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "chapter": "generation",
+        "offset": 16384,
+        "max_bytes": 16384
+      },
+      "result_sha256": "46408465c2ee6e58d5a9559e17e3a68044c895ae9fbc960c84151cfa7f82e6a5"
+    },
+    "call_f9893f9fec8145efaf2b84425b1559b5": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+        "max_bytes": 16384
+      },
+      "result_sha256": "46318eea56234e53770b5a25eaa0ee35e07b18de3f37b6a6b4e005dce2c636a0"
+    },
+    "call_e84b28cabfd04b5ea89a1809cb6009a8": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "dd053a205d253e3610bbe224e4bb828a6a562ee4",
+        "offset": 16384
+      },
+      "result_sha256": "baa6c3379b4682205ebcf5cad3b4151eddf59875d88b94c7abfdae276a55d688"
+    },
+    "call_67bf9739f45d4b37845c07ef6cc64b23": {
+      "tool": "repo_read",
+      "arguments": {
+        "commit": "543c4b27714c6a677a6e714c452d62532f634cff",
+        "path": "exllamav3/cache/cache.py",
+        "offset": 0,
+        "max_bytes": 10000
+      },
+      "result_sha256": "39badd4b464d9f45866594742e13e7ce5e177c7c809f02006026d51046777a98"
+    },
+    "call_7d226b8760374b9489bf7bf4eec35db3": {
+      "tool": "ancestor_read",
+      "arguments": {
+        "mode": "content",
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "max_bytes": 16384
+      },
+      "result_sha256": "84d644c6ca6265befdf210ff9153f1a204e9c934ffc0796bd591382048abfc30"
+    },
+    "call_fa56a84a4a0e484f8e05f67d11ab3525": {
+      "tool": "git_show",
+      "arguments": {
+        "commit": "4fa0e6863e130adf7319d4b00293284c4f33296d",
+        "max_bytes": 11000
+      },
+      "result_sha256": "6805ca22db3112faca4633f0ea9180bc2793b6e95929f7125be0784553b18754"
+    },
+    "call_5fa5d9dc978549e9b775edf752fb66f0": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/1",
+        "max_bytes": 12000
+      },
+      "result_sha256": "ae48483ea903968b0b697feec40227a325103cb203ea12c45785ded10247eb88"
+    },
+    "call_e5888c0665434182b604e1c826e7f693": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/7",
+        "max_bytes": 16000
+      },
+      "result_sha256": "933941a2ee8a4f9c80750877c1f481f679b55f72baa5a346e6f1768dd7221805"
+    },
+    "call_b590b649b88b412dbffd8439ee04112f": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/52",
+        "max_bytes": 16000
+      },
+      "result_sha256": "32949a8be95513ea97079fa1b4d33311573c786ecea7b5ca64e93fb4b1136f1c"
+    },
+    "call_e258705845ee40ff86a087a41da3983e": {
+      "tool": "run",
+      "arguments": {
+        "argv": [
+          "python3",
+          "-c",
+          "import ast, pathlib, types\nsrc=pathlib.Path('exllamav3/cache/cache.py').read_text()\ncls=next(n for n in ast.parse(src).body if isinstance(n,ast.ClassDef) and n.name=='Cache')\nold=ast.get_source_segment(src,next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='detach_from_model'))\nassert old.count('{model_num_layers()}')==1\nnew=old.replace('{model_num_layers()}','{model_num_layers}')\nfor version,method in [('parent',old),('patched',new)]:\n for opt in (0,1):\n  ns={}; exec(compile('from __future__ import annotations\\n'+method,'<isolated detach_from_model>','exec',optimize=opt),ns)\n  for count in (1,2):\n   layer=object(); modules=[types.SimpleNamespace(cache_layers=[layer]) for _ in range(count)]\n   model=types.SimpleNamespace(get_cache_layers=lambda: modules)\n   cache=types.SimpleNamespace(model=model,num_layers=1,layers=[layer]); outcome='returned'\n   try: ns['detach_from_model'](cache)\n   except (TypeError,AssertionError) as e: outcome=f'{type(e).__name__}: {e}'\n   print(version, 'opt',opt,'target',count,outcome,'registrations',[len(m.cache_layers) for m in modules])"
+        ]
+      },
+      "result_sha256": "9169ddc8129f383bf0b1f278b51c12dcea84f30f60fd3a3a371d50df51ac174e"
+    },
+    "call_33c9d19daf2e4d419986975cd86c1cbe": {
+      "tool": "web_fetch",
+      "arguments": {
+        "url": "https://github.com/turboderp-org/exllamav3/issues/50",
+        "max_bytes": 16000
+      },
+      "result_sha256": "514d081b1a61a803868b3714179927db74e59b5592d11decf8cf1463c18fc519"
+    }
+  }
+}
