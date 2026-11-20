@@ -54,4 +54,5 @@ Results are the directories under `gpu-tests/results/`. Nothing is in flight.
 - The three compare-q findings were rerun with real dependencies and are `fix_confirmed` at their highest attempt.
 - Skipped for now, no result yet: humaneval-unconditional-bos (the encoded prompt is only observable by wrapping Job, which the rules treat as a patch; the user had no view on whether a pass-through recorder counts as a patch; left for the reviewer to decide, kept skipped); reference-test-discarded-results (the claim is that tests/test_rope.py is vacuous; showing it needs a fault injected into the code under test, which caps it at inconclusive; same reviewer question);
 - Extension tree c54b3c67 (commit e9a3b6a9) is now cached for py312-superset.
-- Priority 1 done except the skipped items above. Next: priority 2 in queue order.
+- Priority 1 done except the skipped items above (main merged 2026-11-19; it added multi-gemm-leading-dimension-validation, done).
+- Priority 2 (single-commit tests, no fix recorded) in progress. Done: async-job-doc-reference, asymmetric-norm-validation, activation-odd-tail.
