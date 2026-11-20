@@ -42,6 +42,8 @@
 
 - Extension tree 3571fd3b (commit 647bb7d5, 2025-05-03) does not build: stloader.cpp and stloader.cu both produce stloader.o under ninja. Its failed cache dir has no .ok; do not retry without a reason.
 
+- eval/compare_q* functions with @disk_lru_cache write __disk_lru_cache__ beside sys.argv[0] (the result dir). Use fresh paths per run and delete the directory before finish.
+
 ## Progress
 Results are the directories under `gpu-tests/results/`. Nothing is in flight.
 - Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers, empty-block-conversion, fp32-mlp-intermediate-contract, fused-shared-unreachable, gemm-zero-grid-cap, grouped-routing-unassigned, in-memory-weight-transpose, integration-example-stale-import, llamacpp-embedding-order.
