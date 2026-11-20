@@ -40,10 +40,12 @@
 
 - Upstream 6735462a (2025-07-06) cannot run Config.from_directory: architectures.py imports ernie4_5, added only in 47d83f56. Build the config class directly (e.g. MixtralConfig(dir)) for commits in that window.
 
+- Extension tree 3571fd3b (commit 647bb7d5, 2025-05-03) does not build: stloader.cpp and stloader.cu both produce stloader.o under ninja. Its failed cache dir has no .ok; do not retry without a reason.
+
 ## Progress
 Results are the directories under `gpu-tests/results/`. Nothing is in flight.
-- Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers, empty-block-conversion, fp32-mlp-intermediate-contract, fused-shared-unreachable, gemm-zero-grid-cap, grouped-routing-unassigned.
+- Finished, in queue order: architecture-mismatch-diagnostic, chat-context-count-overwritten, chat-stream-argument-mismatch, chat-top-k-float, cohere-qk-normalization, compare-q-cache-clear-argument-mismatch, compare-q-no-reference-finalization, compare-q-split-result-serialization, disabled-options-unbound, dots-default-prompt-format, eager-undeclared-transformers, empty-block-conversion, fp32-mlp-intermediate-contract, fused-shared-unreachable, gemm-zero-grid-cap, grouped-routing-unassigned, in-memory-weight-transpose.
 - The three compare-q findings were rerun with real dependencies and are `fix_confirmed` at their highest attempt.
-- Skipped for now, no result yet: conversion-handle-accumulation (needs a conversion run under a lowered open-file limit).
+- Skipped for now, no result yet: conversion-handle-accumulation (needs a conversion run under a lowered open-file limit); humaneval-unconditional-bos (the encoded prompt is only observable by wrapping Job, which the rules treat as a patch; asked the user 2026-11-19 whether a pass-through recorder counts).
 - Extension tree c54b3c67 (commit e9a3b6a9) is now cached for py312-superset.
 - Next: the rest of priority 1 in queue order.
